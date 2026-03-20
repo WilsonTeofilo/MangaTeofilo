@@ -1,0 +1,209 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Roboto+Mono:wght@300;400&display=swap');
+
+:root {
+  --neon-pink: #ff00aa;
+  --neon-cyan: #00ffff;
+  --neon-purple: #aa00ff;
+  --dark-void: #0a0015;
+  --glow-pink: rgba(255, 0, 170, 0.7);
+  --glow-cyan: rgba(0, 255, 255, 0.6);
+  --error-red: #ff3366;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--dark-void);
+  font-family: 'Orbitron', sans-serif;
+  color: white;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Container Principal - Fundo com Nebula */
+.login-void {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 30% 70%, #1a0033, #000011 60%);
+  overflow: hidden;
+}
+
+.nebula-bg {
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(circle at 20% 30%, var(--neon-purple) 0%, transparent 25%),
+    radial-gradient(circle at 80% 60%, var(--neon-pink) 0%, transparent 35%);
+  opacity: 0.15;
+  pointer-events: none;
+  animation: nebulaDrift 20s infinite alternate ease-in-out;
+}
+
+@keyframes nebulaDrift {
+  0%   { transform: scale(1); opacity: 0.15; }
+  100% { transform: scale(1.2) translate(5%, -5%); opacity: 0.25; }
+}
+
+/* Card Central (Vessel) */
+.login-vessel {
+  position: relative;
+  width: 90%;
+  max-width: 420px;
+  padding: 3rem 2.5rem;
+  background: rgba(15, 5, 35, 0.7);
+  border: 1px solid rgba(170, 0, 255, 0.3);
+  border-radius: 20px;
+  backdrop-filter: blur(15px);
+  box-shadow: 0 0 50px rgba(170, 0, 255, 0.2);
+  z-index: 10;
+  transition: transform 0.4s ease;
+}
+
+.login-vessel:hover {
+  transform: translateY(-5px);
+  border-color: var(--neon-pink);
+}
+
+/* Título e Efeito Glitch */
+.title-glitch {
+  font-size: 4rem;
+  font-weight: 900;
+  text-align: center;
+  color: white;
+  text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-pink);
+  letter-spacing: -2px;
+  margin-bottom: 0.5rem;
+  position: relative;
+  animation: glitch 3s infinite;
+}
+
+@keyframes glitch {
+  0% { text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-pink); }
+  2% { text-shadow: -3px 0 var(--neon-cyan), 3px 0 var(--neon-pink); }
+  4% { text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-pink); }
+  100% { text-shadow: 2px 0 var(--neon-cyan), -2px 0 var(--neon-pink); }
+}
+
+.subtitle-seduce {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--neon-cyan);
+  margin-bottom: 2rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* Inputs */
+.input-wrapper {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.neon-input {
+  width: 100%;
+  padding: 1rem;
+  background: rgba(10, 0, 30, 0.8);
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  border-radius: 8px;
+  color: white;
+  font-family: 'Roboto Mono', monospace;
+  transition: all 0.3s;
+}
+
+.neon-input:focus {
+  outline: none;
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 15px var(--glow-cyan);
+}
+
+.input-glow {
+  position: absolute;
+  inset: -2px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+  opacity: 0;
+  z-index: -1;
+  transition: opacity 0.3s;
+}
+
+.neon-input:focus + .input-glow {
+  opacity: 0.4;
+}
+
+/* Botão Submit */
+.submit-pulse {
+  width: 100%;
+  padding: 1rem;
+  background: var(--neon-pink);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: 0 0 20px var(--glow-pink);
+  transition: all 0.3s;
+}
+
+.submit-pulse:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 0 35px var(--glow-pink);
+}
+
+.submit-pulse:disabled {
+  background: #333;
+  color: #777;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Erros e Toggle */
+.error-seductive {
+  color: var(--error-red);
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 1rem;
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+.toggle-soul {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.toggle-soul:hover {
+  color: var(--neon-cyan);
+}
+
+.loader {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Responsividade */
+@media (max-width: 480px) {
+  .login-vessel { padding: 2rem 1.5rem; }
+  .title-glitch { font-size: 3rem; }
+}

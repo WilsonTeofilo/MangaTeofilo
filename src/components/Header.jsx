@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAuth, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
+
+// 1. IMPORTAÇÃO DO SERVICE CENTRAL
+import { auth } from '../services/firebase';
+
 import './Header.css';
 
 export default function Header({ usuario }) {
   const navigate = useNavigate();
-  const auth = getAuth();
   const [menuAberto, setMenuAberto] = useState(false);
-  const ADMIN_UID = "n5JTPLsxpyQPeC5qQtraSrBa4rG3"; // Seu UID de Admin
+  
+  // Seu UID de Administrador para o link de lançamento
+  const ADMIN_UID = "n5JTPLsxpyQPeC5qQtraSrBa4rG3"; 
 
-  // Função para deslogar e limpar o estado do menu
+  // Função para deslogar
   const handleLogout = async (e) => {
     e.stopPropagation(); 
     try {
@@ -17,11 +22,11 @@ export default function Header({ usuario }) {
       setMenuAberto(false);
       navigate('/login');
     } catch (error) {
-      console.error("Erro ao sair:", error);
+      console.error("Erro ao sair da tempestade:", error);
     }
   };
 
-  // Navegação que garante o fechamento do menu no mobile
+  // Navegação que fecha o menu mobile automaticamente
   const pushRoute = (path) => {
     navigate(path);
     setMenuAberto(false);
@@ -31,29 +36,30 @@ export default function Header({ usuario }) {
     <nav className="reader-header">
       <div className="nav-container">
         
-        {/* LOGO - Sempre leva para a Home */}
+        {/* LOGO */}
         <div className="nav-logo" onClick={() => pushRoute('/')}>
           SHITO
         </div>
 
-        {/* ÍCONE HAMBÚRGUER - Visível apenas no Mobile via CSS */}
+        {/* ÍCONE HAMBÚRGUER (Mobile) */}
         <div 
           className={`mobile-menu-icon ${menuAberto ? 'active' : ''}`} 
           onClick={() => setMenuAberto(!menuAberto)}
+          aria-label="Menu"
         >
           <span className="bar"></span>
           <span className="bar"></span>
           <span className="bar"></span>
         </div>
 
-        {/* MENU DE NAVEGAÇÃO */}
+        {/* LINKS DE NAVEGAÇÃO */}
         <ul className={`nav-menu ${menuAberto ? 'active' : ''}`}>
           <li onClick={() => pushRoute('/')}>Início</li>
           <li onClick={() => pushRoute('/capitulos')}>Capítulos</li>
           <li onClick={() => pushRoute('/sobre-autor')}>Sobre o Autor</li>
           <li onClick={() => pushRoute('/apoie')}>Apoie a Obra</li>
 
-          {/* LINK DE ADMIN - Aparece apenas para o seu UID */}
+          {/* ÁREA ADMIN: Só aparece para você */}
           {usuario && usuario.uid === ADMIN_UID && (
             <li 
               className="admin-link-highlight"
@@ -63,7 +69,7 @@ export default function Header({ usuario }) {
             </li>
           )}
           
-          {/* Opção de Sair dentro do menu mobile para facilitar */}
+          {/* Logout visível apenas no menu mobile aberto */}
           {usuario && menuAberto && (
             <li className="mobile-only-logout" onClick={handleLogout}>
               Sair da Conta
@@ -71,7 +77,7 @@ export default function Header({ usuario }) {
           )}
         </ul>
 
-        {/* ÁREA DE AUTH / PERFIL */}
+        {/* IDENTIDADE DO USUÁRIO */}
         <div className="nav-auth">
           {!usuario ? (
             <button className="btn-login-header" onClick={() => pushRoute('/login')}>
@@ -80,11 +86,10 @@ export default function Header({ usuario }) {
           ) : (
             <div 
               className="user-info-header" 
-              onClick={() => pushRoute('/perfil')}
               title="Acessar Perfil"
             >
-              {/* Avatar estilo bolinha com o zoom que você pediu */}
-              <div className="header-avatar-wrapper">
+              {/* Avatar com fallback para caso a imagem falhe */}
+              <div className="header-avatar-wrapper" onClick={() => pushRoute('/perfil')}>
                 <img 
                   src={usuario.photoURL || '/assets/avatares/ava1.webp'} 
                   alt="Avatar" 
@@ -94,7 +99,7 @@ export default function Header({ usuario }) {
               </div>
               
               <div className="user-text-group">
-                <span className="welcome-text">
+                <span className="welcome-text" onClick={() => pushRoute('/perfil')}>
                   Olá, {usuario.displayName?.split(' ')[0] || 'Guerreiro'}
                 </span>
                 <button className="btn-logout-header" onClick={handleLogout}>

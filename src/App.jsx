@@ -1,112 +1,81 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
-// Componentes e Páginas
-import Header from './Header'; 
-import Login from './Login';
-import ShitoGame from './ShitoGame';
-import SobreAutor from './SobreAutor';
-import Apoie from './Apoie';
-import AdminPanel from './AdminPanel';
-import Capitulos from './Capitulos'; 
-import Leitor from './Leitor';
-import Perfil from './Perfil';
+// 1. FIREBASE
+import { auth } from './services/firebase'; 
+import { onAuthStateChanged } from 'firebase/auth';
 
-// Configuração do Firebase
-const firebaseConfig = {
-  apiKey: "AIzaSyCIfoyLhykhz6IstjXNfHvMOltnPUHNvIA",
-  authDomain: "shitoproject-ed649.firebaseapp.com",
-  projectId: "shitoproject-ed649",
-  storageBucket: "shitoproject-ed649.firebasestorage.app",
-  messagingSenderId: "613627655546",
-  appId: "1:613627655546:web:370838bb5e3867f431d2c3",
-  measurementId: "G-5QNETWX5RW",
-  databaseURL: "https://shitoproject-ed649-default-rtdb.firebaseio.com"
-};
+// 2. COMPONENTES (Arquivos .jsx na pasta components)
+import Header from './components/Header.jsx'; 
+import ScrollToTop from './components/ScrollToTop.jsx';
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+// 3. PÁGINAS (Baseado na sua estrutura de pastas atual)
+import ShitoManga from './pages/Home/ShitoManga.jsx'; 
+import SobreAutor from './pages/Home/SobreAutor.jsx';
+import Apoie from './pages/Home/Apoie.jsx';
+import Login from './pages/Auth/Login.jsx';     
+import Perfil from './pages/Perfil/Perfil.jsx'; 
+import Capitulos from './pages/Capitulos/Capitulos.jsx'; 
+import Leitor from './pages/Leitor/Leitor.jsx';          
+import AdminPanel from './pages/Admin/AdminPanel.jsx';
 
-// Componente para rolar a página para o topo em trocas de rota
-function ScrollToTop() {
-  const { pathname } = useLocation();
-  useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
-  return null;
-}
+import './index.css'; 
 
 export default function App() {
   const [usuario, setUsuario] = useState(null);
   const [carregando, setCarregando] = useState(true);
   
+  // Seu UID de Admin (Regra do Database)
   const ADMIN_UID = "n5JTPLsxpyQPeC5qQtraSrBa4rG3";
 
   useEffect(() => {
+    // Monitor de autenticação
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUsuario(user);
       setCarregando(false);
     });
-    return () => unsubscribe();
+
+    // Fallback para não travar a tela se o Firebase demorar
+    const timer = setTimeout(() => setCarregando(false), 3000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
-  if (carregando) {
-    return (
-      <div className="shito-loading-screen">
-        <div className="shito-loader-content">
-          <div className="shito-spinner"></div>
-          <h2 className="shito-loading-text">DESPERTANDO ALMA...</h2>
-          <p className="shito-loading-sub">A névoa está se dissipando</p>
-        </div>
-      </div>
-    );
-  }
+  // Sem Splash de cuzao: Se estiver carregando, mostra o fundo preto
+  if (carregando) return <div style={{background: '#050505', height: '100vh'}} />;
 
   return (
     <Router>
       <ScrollToTop />
-      {/* O Header recebe o objeto usuario para gerenciar o menu e perfil */}
+      {/* Passando o usuario para o Header conforme o seu monolito fazia */}
       <Header usuario={usuario} />
-
+      
       <main className="shito-main-content">
         <Routes>
-          {/* NAVEGAÇÃO PRINCIPAL */}
-          <Route path="/" element={<ShitoGame user={usuario} />} />
+          {/* Rotas Principais */}
+          <Route path="/" element={<ShitoManga user={usuario} />} />
           <Route path="/capitulos" element={<Capitulos user={usuario} />} />
           <Route path="/ler/:id" element={<Leitor user={usuario} />} />
+          <Route path="/sobre-autor" element={<SobreAutor />} />
+          <Route path="/apoie" element={<Apoie />} />
           
-          {/* ÁREA DO USUÁRIO */}
+          {/* Auth System */}
+          <Route path="/login" element={!usuario ? <Login /> : <Navigate to="/perfil" />} />
           <Route path="/perfil" element={usuario ? <Perfil user={usuario} /> : <Navigate to="/login" />} />
-          <Route path="/login" element={!usuario ? <Login /> : <Navigate to="/" />} />
           
-          {/* INSTITUCIONAL */}
-          <Route path="/sobre-autor" element={<SobreAutor user={usuario} />} />
-          <Route path="/apoie" element={<Apoie user={usuario} />} />
-
-          {/* ADMINISTRAÇÃO - Segurança em dobro (Rota e Componente) */}
+          {/* Admin System (Restringido pelo seu UID) */}
           <Route 
             path="/admin" 
             element={usuario?.uid === ADMIN_UID ? <AdminPanel user={usuario} /> : <Navigate to="/" />} 
           />
           
-          {/* 404 - ESTILIZADO */}
-          <Route path="*" element={<Pagina404 />} />
+          {/* 404 */}
+          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
     </Router>
-  );
-}
-
-// Componente Interno para 404 (Mantém o App.js organizado)
-function Pagina404() {
-  return (
-    <div className="shito-404-container">
-      <h1 className="shito-404-title">404</h1>
-      <div className="shito-404-divider"></div>
-      <p className="shito-404-text">Caminho perdido na névoa eterna.</p>
-      <button className="shito-404-btn" onClick={() => window.location.href = '/'}>
-        RETORNAR AO INÍCIO
-      </button>
-    </div>
   );
 }

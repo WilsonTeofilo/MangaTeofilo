@@ -1,21 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { getDatabase, ref, onValue, runTransaction } from "firebase/database";
+import { ref, onValue, runTransaction } from "firebase/database";
 import { useNavigate } from 'react-router-dom';
+
+// 1. IMPORTAÇÃO CENTRALIZADA (Usa o db do seu service)
+import { db } from '../../services/firebase'; 
+
+// 2. CSS LOCAL NA PASTA Capitulos
 import './Capitulos.css';
 
 export default function Capitulos() {
   const [listaCapitulos, setListaCapitulos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
+  const [buscandoDados, setBuscandoDados] = useState(true);
   const navigate = useNavigate();
-  const db = getDatabase();
 
   useEffect(() => {
+    // Referência para a coleção de capítulos no Realtime Database
     const capitulosRef = ref(db, 'capitulos');
     
     const unsubscribe = onValue(capitulosRef, (snapshot) => {
       const dados = snapshot.val();
       if (dados) {
         const arrayCapitulos = Object.keys(dados).map(key => {
+          // Conta comentários com segurança
           const qtdComentarios = dados[key].comentarios 
             ? Object.keys(dados[key].comentarios).length 
             : 0;
@@ -27,19 +33,20 @@ export default function Capitulos() {
           };
         });
         
-        // Ordenação por número (mais recente no topo)
-        const ordenados = arrayCapitulos.sort((a, b) => b.numero - a.numero);
+        // Ordenação: Capítulo mais alto (recente) no topo
+        const ordenados = arrayCapitulos.sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0));
         setListaCapitulos(ordenados);
       }
-      setCarregando(false);
+      setBuscandoDados(false);
     });
 
     return () => unsubscribe();
-  }, [db]);
+  }, []);
 
   const handleAbrirCapitulo = (capId) => {
     const viewRef = ref(db, `capitulos/${capId}/visualizacoes`);
     
+    // Incremento atômico para não bugar se muita gente clicar ao mesmo tempo
     runTransaction(viewRef, (currentViews) => {
       return (currentViews || 0) + 1;
     });
@@ -47,11 +54,11 @@ export default function Capitulos() {
     navigate(`/ler/${capId}`);
   };
 
-  if (carregando) {
+  // Se o App.jsx já passou pelo LoadingScreen, mas ainda estamos buscando os capítulos...
+  if (buscandoDados) {
     return (
-      <div className="loading-container">
-        <div className="shito-loader"></div>
-        <p className="loading-text">CONVOCANDO OS FRAGMENTOS...</p>
+      <div className="capitulos-placeholder">
+        <p className="loading-text-shito">CONVOCANDO OS FRAGMENTOS DA TEMPESTADE...</p>
       </div>
     );
   }
@@ -74,6 +81,7 @@ export default function Capitulos() {
                 onClick={() => handleAbrirCapitulo(cap.id)}
                 role="button"
                 tabIndex="0"
+                onKeyDown={(e) => e.key === 'Enter' && handleAbrirCapitulo(cap.id)}
               >
                 {/* LADO ESQUERDO: Número e Imagem */}
                 <div className="cap-left-info">
@@ -86,17 +94,16 @@ export default function Capitulos() {
                   <div className="cap-main-content">
                     <div className="shito-cap-miniature-wrapper">
                       <img 
-                        src={cap.capaUrl} 
-                        alt={`Capa do capítulo ${cap.numero}`} 
+                        src={cap.capaUrl || '/assets/fotos/shito.jpg'} 
+                        alt={`Capa ${cap.numero}`} 
                         className="shito-cap-miniature" 
                         loading="lazy"
                       />
                     </div>
                     
                     <div className="cap-text-details">
-                      <h3 className="shito-cap-title">{cap.titulo}</h3>
+                      <h3 className="shito-cap-title">{cap.titulo || "Capítulo sem título"}</h3>
                       
-                      {/* STATS: Agora com FontAwesome para visual profissional */}
                       <div className="cap-stats-row">
                         <span className="stat-item">
                           <i className="fa-regular fa-eye"></i> {cap.visualizacoes || 0}
@@ -116,7 +123,7 @@ export default function Capitulos() {
                       ? new Date(cap.dataUpload).toLocaleDateString('pt-BR', { 
                           day: '2-digit', 
                           month: 'short' 
-                        }).replace('.', '') // Remove o ponto do mês abreviado
+                        }).replace('.', '') 
                       : 'Névoa'}
                   </time>
                   <i className="fa-solid fa-chevron-right arrow-mobile"></i>
@@ -126,7 +133,7 @@ export default function Capitulos() {
           ) : (
             <div className="no-chapters">
               <i className="fa-solid fa-ghost"></i>
-              <p>Nenhum capítulo encontrado na tempestade...</p>
+              <p>Nenhum fragmento encontrado nesta era...</p>
             </div>
           )}
         </main>

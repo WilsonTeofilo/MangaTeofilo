@@ -1,1 +1,32 @@
-body { margin: 0; padding: 0; }
+/* src/index.css */
+:root {
+  /* Seus Tokens de Cores */
+  --charcoal-dark: #0a0a0a;
+  --surface-card: #141414;
+  --text-pure: #ffffff;
+  --text-muted: #a0a0a0;
+  --naraa-gold: #ffcc00;
+  --miomya-purple: #9d00ff;
+  --kuroi-fire: #ff4500;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--charcoal-dark);
+  color: var(--text-pure);
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+  /* O Header tem 70px ou 80px, mantemos o respiro global aqui */
+  padding-top: 70px; 
+}
+
+/* Scrollbar que a gente falou */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: var(--naraa-gold); border-radius: 10px; }

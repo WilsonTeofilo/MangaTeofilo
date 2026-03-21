@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import * as db from 'firebase/database';
-import * as storage from 'firebase/storage';
+import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
+import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
+
+// 1. IMPORTAÇÃO CENTRALIZADA (Usa o db, storage e auth do seu service)
+import { db, storage, auth } from '../../services/firebase'; 
+
+// 2. CSS NA MESMA PASTA
 import './AdminPanel.css';
 
-// --- COMPONENTE AUXILIAR: MODO ECONÔMICO (Lazy Load) ---
-// Coloquei aqui fora para o React não remontar ele toda hora e gastar banda à toa.
+// --- COMPONENTE AUXILIAR: MODO ECONÔMICO ---
 function PaginaCard({ index, url, onTrocar }) {
   const [visivel, setVisivel] = useState(false);
 
@@ -34,10 +38,9 @@ function PaginaCard({ index, url, onTrocar }) {
   );
 }
 
-export default function AdminPanel({ user }) {
+export default function AdminPanel() {
   const navigate = useNavigate();
-  const databaseInstance = db.getDatabase();
-  const storageInstance = storage.getStorage();
+  const user = auth.currentUser;
 
   // Estados do Form
   const [titulo, setTitulo] = useState('');
@@ -53,16 +56,18 @@ export default function AdminPanel({ user }) {
   const [progressoMsg, setProgressoMsg] = useState('');
   const [porcentagem, setPorcentagem] = useState(0);
 
+  // Seu UID de administrador
   const ADMIN_UID = "n5JTPLsxpyQPeC5qQtraSrBa4rG3";
 
   useEffect(() => {
+    // Proteção de Rota
     if (!user || user.uid !== ADMIN_UID) {
       navigate('/');
       return;
     }
 
-    const capitulosRef = db.ref(databaseInstance, 'capitulos');
-    db.onValue(capitulosRef, (snapshot) => {
+    const capitulosListRef = dbRef(db, 'capitulos');
+    const unsubscribe = onValue(capitulosListRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const lista = Object.entries(data).map(([id, valores]) => ({
@@ -73,22 +78,24 @@ export default function AdminPanel({ user }) {
         setCapitulos([]);
       }
     });
-  }, [user, navigate, databaseInstance]);
 
-  // FUNÇÃO CIRÚRGICA (Edita apenas UMA página)
+    return () => unsubscribe();
+  }, [user, navigate]);
+
+  // FUNÇÃO PARA TROCAR APENAS UMA PÁGINA
   const handleTrocarPaginaUnica = async (index, arquivoNovo) => {
     if (!arquivoNovo) return;
     setLoading(true);
     setProgressoMsg(`Substituindo página ${index + 1}...`);
     try {
       const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}`;
-      const fileRef = storage.ref(storageInstance, pathStorage);
-      await storage.uploadBytes(fileRef, arquivoNovo);
-      const urlNova = await storage.getDownloadURL(fileRef);
+      const fileRef = storageRef(storage, pathStorage);
+      await uploadBytes(fileRef, arquivoNovo);
+      const urlNova = await getDownloadURL(fileRef);
 
       const updates = {};
       updates[`capitulos/${editandoId}/paginas/${index}`] = urlNova;
-      await db.update(db.ref(databaseInstance), updates);
+      await dbUpdate(dbRef(db), updates);
 
       const novasPaginas = [...paginasExistentes];
       novasPaginas[index] = urlNova;
@@ -106,15 +113,19 @@ export default function AdminPanel({ user }) {
     const urls = [];
     for (let i = 0; i < arquivos.length; i++) {
       const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}`;
-      const fileRef = storage.ref(storageInstance, pathStorage);
-      const uploadTask = storage.uploadBytesResumable(fileRef, arquivos[i]);
+      const fileRef = storageRef(storage, pathStorage);
+      const uploadTask = uploadBytesResumable(fileRef, arquivos[i]);
+      
       await new Promise((res, rej) => {
         uploadTask.on('state_changed', 
-          (snap) => setPorcentagem(Math.round((i * (100 / arquivos.length)) + (snap.bytesTransferred / snap.totalBytes) * (100 / arquivos.length))),
+          (snap) => {
+            const p = Math.round((i * (100 / arquivos.length)) + (snap.bytesTransferred / snap.totalBytes) * (100 / arquivos.length));
+            setPorcentagem(p);
+          },
           rej, res
         );
       });
-      urls.push(await storage.getDownloadURL(uploadTask.snapshot.ref));
+      urls.push(await getDownloadURL(uploadTask.snapshot.ref));
     }
     return urls;
   };
@@ -126,32 +137,50 @@ export default function AdminPanel({ user }) {
     try {
       let urlCapa = null;
       let urlsPaginas = [];
+
       if (capaCapitulo) {
-        const capaRef = storage.ref(storageInstance, `capas/${Date.now()}_${capaCapitulo.name}`);
-        await storage.uploadBytes(capaRef, capaCapitulo);
-        urlCapa = await storage.getDownloadURL(capaRef);
+        const capaRef = storageRef(storage, `capas/${Date.now()}_${capaCapitulo.name}`);
+        await uploadBytes(capaRef, capaCapitulo);
+        urlCapa = await getDownloadURL(capaRef);
       }
+
       if (arquivosPaginas.length > 0) {
         urlsPaginas = await handleUploadManga(arquivosPaginas, titulo);
       }
 
-      const dados = { titulo, numero: parseInt(numeroCapitulo), dataUpload: new Date().toISOString() };
+      const dados = { 
+        titulo, 
+        numero: parseInt(numeroCapitulo), 
+        dataUpload: new Date().toISOString() 
+      };
+
       if (urlCapa) dados.capaUrl = urlCapa;
       if (urlsPaginas.length > 0) dados.paginas = urlsPaginas;
 
       if (editandoId) {
-        await db.update(db.ref(databaseInstance, `capitulos/${editandoId}`), dados);
+        await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
       } else {
-        if (!urlCapa || urlsPaginas.length === 0) throw new Error("Anexe capa e páginas!");
-        await db.set(db.push(db.ref(databaseInstance, 'capitulos')), dados);
+        if (!urlCapa || (urlsPaginas.length === 0 && arquivosPaginas.length === 0)) {
+            throw new Error("Anexe capa e páginas para um novo capítulo!");
+        }
+        await set(push(dbRef(db, 'capitulos')), dados);
       }
-      setEditandoId(null); setTitulo(''); setNumeroCapitulo(''); setPaginasExistentes([]); e.target.reset();
-    } catch (err) { alert(err.message); } finally { setLoading(false); }
+
+      setEditandoId(null); setTitulo(''); setNumeroCapitulo(''); setPaginasExistentes([]); 
+      setArquivosPaginas([]); setCapaCapitulo(null);
+      e.target.reset();
+      setProgressoMsg('Capítulo forjado com sucesso!');
+    } catch (err) { 
+      alert(err.message); 
+    } finally { 
+      setLoading(false); 
+      setTimeout(() => setProgressoMsg(''), 3000);
+    }
   };
 
   const handleDeletar = async (cap) => {
     if (window.confirm(`Apagar fragmento ${cap.numero}?`)) {
-      await db.remove(db.ref(databaseInstance, `capitulos/${cap.id}`));
+      await remove(dbRef(db, `capitulos/${cap.id}`));
     }
   };
 
@@ -180,12 +209,11 @@ export default function AdminPanel({ user }) {
               <input type="text" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} required />
             </div>
 
-            {/* EDITOR ECONÔMICO: Só carrega a foto se você clicar */}
             {editandoId && paginasExistentes.length > 0 && (
               <div className="cirurgia-paginas">
                 <div className="cirurgia-info">
                   <h3>Edição Cirúrgica de Páginas</h3>
-                  <p>Economizando sua banda do Firebase. As fotos só carregam ao clicar em VER.</p>
+                  <p>As fotos só carregam ao clicar em VER para economizar dados.</p>
                 </div>
                 <div className="paginas-edit-grid">
                   {paginasExistentes.map((url, index) => (
@@ -202,7 +230,7 @@ export default function AdminPanel({ user }) {
 
             <div className="file-inputs">
               <label>Capa: <input type="file" accept="image/*" onChange={(e) => setCapaCapitulo(e.target.files[0])} /></label>
-              <label>Substituir Cap. Inteiro (Cuidado): <input type="file" multiple accept="image/*" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
+              <label>Substituir Cap. Inteiro: <input type="file" multiple accept="image/*" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
             </div>
 
             {loading && (

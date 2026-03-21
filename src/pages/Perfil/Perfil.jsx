@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { getAuth, updateProfile } from 'firebase/auth';
-import { getDatabase, ref, update } from "firebase/database"; // IMPORTANTE: Adicionado para o Database
+import { updateProfile } from 'firebase/auth'; // Removido getAuth daqui
+import { ref, update } from "firebase/database"; // Removido getDatabase daqui
 import { useNavigate } from 'react-router-dom';
+
+// 1. IMPORTAÇÃO CENTRALIZADA (Usa a mesma conexão que o Leitor)
+import { auth, db } from '../../services/firebase'; 
+
+// 2. CSS NA MESMA PASTA
 import './Perfil.css';
 
 export default function Perfil() {
-  const auth = getAuth();
   const navigate = useNavigate();
-  const db = getDatabase(); // Inicializa o Database
   const user = auth.currentUser;
 
   const [novoNome, setNovoNome] = useState('');
@@ -15,6 +18,7 @@ export default function Perfil() {
   const [loading, setLoading] = useState(false);
   const [mensagem, setMensagem] = useState({ texto: '', tipo: '' });
 
+  // Avatares apontando para a raiz da pasta public
   const listaAvatares = Array.from({ length: 17 }, (_, i) => `/assets/avatares/ava${i + 1}.webp`);
 
   useEffect(() => {
@@ -34,14 +38,14 @@ export default function Perfil() {
     setMensagem({ texto: '', tipo: '' });
 
     try {
-      // 1. ATUALIZA NO AUTH (Sistema de Login)
+      // 1. ATUALIZA NO AUTH (Sistema de Login do Firebase)
       await updateProfile(user, {
         displayName: novoNome.trim(),
         photoURL: avatarSelecionado
       });
 
-      // 2. ATUALIZA NO DATABASE (Para os comentários e chat)
-      // É aqui que a mágica acontece para o nome mudar no site todo
+      // 2. ATUALIZA NO DATABASE (Onde o Leitor.jsx "escuta" a mudança)
+      // Usando o 'db' centralizado para garantir sincronia imediata
       const userRef = ref(db, `usuarios/${user.uid}`);
       await update(userRef, {
         userName: novoNome.trim(),
@@ -51,7 +55,7 @@ export default function Perfil() {
 
       setMensagem({ texto: "Perfil forjado com sucesso!", tipo: 'sucesso' });
       
-      // Delay para o usuário ler a mensagem de sucesso
+      // Pequeno delay para o usuário ver o sucesso
       setTimeout(() => navigate('/'), 1500);
     } catch (error) {
       console.error("Erro na forja:", error);

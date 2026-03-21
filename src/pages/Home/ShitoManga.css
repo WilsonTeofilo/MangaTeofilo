@@ -1,0 +1,537 @@
+/* ==========================================================================
+   SHITO PROJECT - HOME STYLESHEET (Refatorado - Modo Full Ultra)
+   ========================================================================== */
+
+:root {
+  /* Paleta de Cores Base (Tokens) */
+  --charcoal-dark: #0a0a0a;
+  --surface-card: #141414;
+  --text-pure: #ffffff;
+  --text-muted: #a0a0a0;
+  
+  /* Cores Temáticas dos Personagens */
+  --naraa-gold: #ffcc00;
+  --miomya-purple: #9d00ff;
+  --rin-shadow: #444444;
+  --kuroi-fire: #ff4500;
+  
+  /* Efeitos e Glassmorphism */
+  --glass-bg: rgba(10, 10, 10, 0.85);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --gold-glow: rgba(255, 204, 0, 0.35);
+
+  /* Transições Complexas */
+  --transition-smooth: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-bounce: 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-fast: 0.2s ease-out;
+}
+
+/* Reset de Performance & Base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--charcoal-dark);
+  color: var(--text-pure);
+  font-family: 'Poppins', 'Inter', sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+  padding-top: 70px; /* Alinhado com o Header */
+}
+
+/* ==========================================================================
+   HEADER DE NAVEGAÇÃO
+   ========================================================================== */
+
+.reader-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000;
+  background: var(--glass-bg);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.8rem 5%;
+  transition: var(--transition-smooth);
+}
+
+.nav-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.nav-logo {
+  font-size: 2.4rem;
+  font-weight: 900;
+  letter-spacing: -2px;
+  color: var(--text-pure);
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition-bounce);
+}
+
+.nav-logo:hover {
+  color: var(--naraa-gold);
+  transform: scale(1.05);
+  text-shadow: 0 0 30px var(--gold-glow);
+}
+
+.nav-menu {
+  display: flex;
+  gap: 2.5rem;
+  list-style: none;
+}
+
+.nav-menu li {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition-fast);
+}
+
+.nav-menu li::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--naraa-gold);
+  transition: var(--transition-smooth);
+}
+
+.nav-menu li:hover {
+  color: var(--text-pure);
+}
+
+.nav-menu li:hover::after {
+  width: 100%;
+}
+
+.nav-auth {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.btn-login-header {
+  padding: 0.7rem 2rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-pure);
+  font-weight: 700;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-login-header:hover {
+  background: var(--text-pure);
+  color: var(--charcoal-dark);
+  border-color: var(--text-pure);
+  box-shadow: 0 0 25px rgba(255, 255, 255, 0.2);
+}
+
+.user-info-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.user-info-header span {
+  font-weight: 600;
+  color: var(--naraa-gold);
+}
+
+.user-info-header button {
+  padding: 0.5rem 1.2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.user-info-header button:hover {
+  background: var(--kuroi-fire);
+  color: white;
+  border-color: var(--kuroi-fire);
+}
+
+/* ==========================================================================
+   MAIN BANNER (O Impacto Visual)
+   ========================================================================== */
+
+.main-banner {
+  position: relative;
+  height: 100vh;
+  min-height: 800px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  overflow: hidden;
+}
+
+/* Camada de Granulado Estilo Mangá */
+.main-banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("https://www.transparenttextures.com/patterns/stardust.png");
+  opacity: 0.15;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.main-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(circle at 50% 40%, transparent 10%, rgba(10,10,10,0.9) 80%),
+    linear-gradient(to bottom, transparent 60%, var(--charcoal-dark) 100%);
+  z-index: 2;
+}
+
+.banner-content {
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  padding: 0 5%;
+}
+
+.game-logo {
+  font-size: clamp(5rem, 15vw, 12rem);
+  font-weight: 900;
+  letter-spacing: -5px;
+  text-transform: uppercase;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.6);
+  filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.1));
+  animation: logo-drift 6s ease-in-out infinite alternate;
+}
+
+@keyframes logo-drift {
+  from { transform: translateY(0); opacity: 0.7; }
+  to { transform: translateY(-15px); opacity: 1; -webkit-text-stroke: 1.5px var(--naraa-gold); }
+}
+
+.game-sublogo {
+  font-size: clamp(1rem, 3vw, 1.8rem);
+  letter-spacing: clamp(8px, 2vw, 20px);
+  font-weight: 300;
+  margin-top: -1.5rem;
+  color: var(--text-pure);
+  opacity: 0.6;
+  text-transform: uppercase;
+}
+
+/* ==========================================================================
+   SEÇÃO LORE
+   ========================================================================== */
+
+.lore-summary {
+  padding: 150px 5% 100px;
+  text-align: center;
+  max-width: 1000px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.lore-date {
+  display: block;
+  color: var(--naraa-gold);
+  letter-spacing: 5px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  margin-bottom: 2rem;
+  text-transform: uppercase;
+}
+
+.lore-summary h3 {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 800;
+  margin-bottom: 2rem;
+  line-height: 1.1;
+  background: linear-gradient(to bottom, #fff, #666);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.lore-summary p {
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1.8;
+  margin-bottom: 2rem;
+}
+
+.lore-highlight {
+  font-family: 'Inter', sans-serif;
+  font-style: italic;
+  color: #ccc;
+  font-size: 1.4rem;
+  max-width: 800px;
+  margin: 3rem auto 0;
+  padding-left: 20px;
+  border-left: 3px solid var(--naraa-gold);
+}
+
+.lore-banner-image {
+  width: 100vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin: 100px -50vw;
+  background: #000;
+  display: flex;
+  justify-content: center;
+  box-shadow: 0 0 100px rgba(0,0,0,0.8);
+}
+
+.lore-banner-image img {
+  width: 85%;
+  max-width: 1600px;
+  height: auto;
+  filter: grayscale(20%) brightness(0.9) contrast(1.1);
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  transition: var(--transition-smooth);
+}
+
+.lore-banner-image:hover img {
+  filter: grayscale(0%) brightness(1.1);
+  transform: scale(1.02);
+}
+
+/* ==========================================================================
+   PERSONAGENS (Grid & Cards High-End)
+   ========================================================================== */
+
+.characters-section {
+  padding: 100px 5% 150px;
+  background: linear-gradient(to bottom, var(--charcoal-dark), #000);
+}
+
+.section-title {
+  text-align: center;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  font-weight: 900;
+  margin-bottom: 100px;
+  letter-spacing: 10px;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+}
+
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 3rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.char-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  transition: var(--transition-smooth);
+}
+
+.gif-box {
+  width: 100%;
+  height: 450px;
+  overflow: hidden;
+  background: #050505;
+  position: relative;
+}
+
+.gif-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(100%) contrast(1.2) brightness(0.7);
+  transition: var(--transition-smooth);
+}
+
+.char-desc {
+  padding: 2.5rem 2rem;
+  background: linear-gradient(to top, #000 40%, transparent);
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+}
+
+.char-desc h4 {
+  font-size: 2rem;
+  font-weight: 900;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+}
+
+.char-card:hover {
+  transform: translateY(-20px) scale(1.02);
+  border-color: rgba(255,255,255,0.2);
+  z-index: 10;
+}
+
+.char-card:hover .gif-box img {
+  filter: grayscale(0%) contrast(1.1) brightness(1);
+  transform: scale(1.1);
+}
+
+/* Efeitos de Assinatura por Personagem */
+.char-card.naraa:hover { box-shadow: 0 30px 60px -15px rgba(255, 204, 0, 0.2); border-color: var(--naraa-gold); }
+.char-card.naraa h4 { color: var(--naraa-gold); }
+
+.char-card.miomya:hover { box-shadow: 0 30px 60px -15px rgba(157, 0, 255, 0.2); border-color: var(--miomya-purple); }
+.char-card.miomya h4 { color: var(--miomya-purple); }
+
+.char-card.rin:hover { box-shadow: 0 30px 60px -15px rgba(255, 255, 255, 0.1); border-color: #fff; }
+.char-card.rin h4 { color: #fff; }
+
+.char-card.kuroi:hover {
+  box-shadow: 0 30px 60px -15px rgba(255, 69, 0, 0.3);
+  border-color: var(--kuroi-fire);
+  animation: heat-shake 0.5s infinite linear;
+}
+.char-card.kuroi h4 { color: var(--kuroi-fire); }
+
+@keyframes heat-shake {
+  0% { transform: translateY(-20px) scale(1.02) rotate(0deg); }
+  25% { transform: translateY(-20px) scale(1.02) rotate(0.5deg); }
+  75% { transform: translateY(-20px) scale(1.02) rotate(-0.5deg); }
+  100% { transform: translateY(-20px) scale(1.02) rotate(0deg); }
+}
+
+/* ==========================================================================
+   FOOTER & CALL TO ACTION
+   ========================================================================== */
+
+.site-footer {
+  padding: 120px 5% 80px;
+  background: #050505;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.footer-stats {
+  max-width: 900px;
+  margin: 0 auto 80px;
+  text-align: center;
+}
+
+.footer-stats h3 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 3rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 6rem;
+  margin-bottom: 4rem;
+}
+
+.stats-row p {
+  font-size: 1.4rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.stats-row span {
+  display: block;
+  font-size: 3rem;
+  color: var(--naraa-gold);
+  font-weight: 900;
+  margin-bottom: 0.5rem;
+}
+
+.btn-read-now {
+  padding: 1.5rem 4rem;
+  background: var(--naraa-gold);
+  color: #000;
+  font-size: 1.4rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--transition-smooth);
+}
+
+.btn-read-now::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  transition: 0.5s;
+}
+
+.btn-read-now:hover {
+  transform: translateY(-8px) scale(1.05);
+  box-shadow: 0 20px 40px rgba(255, 204, 0, 0.4);
+}
+
+.btn-read-now:hover::before {
+  left: 100%;
+}
+
+.copyright {
+  color: rgba(255,255,255,0.2);
+  font-size: 0.85rem;
+  margin-top: 6rem;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+/* ==========================================================================
+   RESPONSIVIDADE (Ajustes de Precisão)
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .stats-row { gap: 3rem; }
+  .gif-box { height: 400px; }
+}
+
+@media (max-width: 768px) {
+  .reader-header { padding: 1.2rem 5%; }
+  .nav-menu { display: none; } /* Idealmente aqui entraria um Menu Hamburguer */
+  
+  .main-banner { min-height: 600px; }
+  .game-logo { -webkit-text-stroke: 1px rgba(255, 255, 255, 0.6); }
+
+  .lore-banner-image img { width: 100%; mask-image: none; }
+  
+  .stats-row { flex-direction: column; gap: 3rem; }
+  .stats-row span { font-size: 2.5rem; }
+}

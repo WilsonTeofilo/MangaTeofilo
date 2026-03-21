@@ -1,0 +1,451 @@
+/* =========================
+CONTAINER GERAL
+========================= */
+
+.leitor-container{
+width:100%;
+min-height:100vh;
+background:#0d0d0d;
+color:#fff;
+font-family:'Inter',sans-serif;
+padding-bottom:80px;
+}
+
+
+/* =========================
+HEADER
+========================= */
+
+.leitor-header{
+display:flex;
+align-items:center;
+justify-content:center;
+gap:20px;
+
+padding:20px;
+
+border-bottom:1px solid rgba(255,255,255,0.05);
+
+background:#111;
+position:sticky;
+top:0;
+z-index:20;
+}
+
+.leitor-header h1{
+font-size:20px;
+font-weight:600;
+letter-spacing:1px;
+color:#fff;
+}
+
+.btn-config{
+position:absolute;
+right:20px;
+
+background:none;
+border:none;
+
+font-size:20px;
+color:#bbb;
+
+cursor:pointer;
+transition:0.2s;
+}
+
+.btn-config:hover{
+color:#fff;
+}
+
+
+/* =========================
+CONFIG PANEL
+========================= */
+
+.config-panel{
+display:flex;
+gap:15px;
+justify-content:center;
+align-items:center;
+
+padding:15px;
+background:#161616;
+
+border-bottom:1px solid rgba(255,255,255,0.05);
+}
+
+.config-panel button{
+background:#222;
+border:none;
+
+color:#fff;
+
+padding:8px 14px;
+border-radius:6px;
+
+cursor:pointer;
+transition:0.2s;
+}
+
+.config-panel button:hover{
+background:#333;
+}
+
+.config-panel .active{
+background:#ffcc00;
+color:#000;
+font-weight:600;
+}
+
+
+/* =========================
+VERTICAL READER
+========================= */
+
+.paginas-lista{
+max-width:900px;
+margin:auto;
+padding-top:30px;
+}
+
+.paginas-lista img{
+max-width:100%;
+margin-bottom:25px;
+
+border-radius:6px;
+
+box-shadow:0 5px 20px rgba(0,0,0,0.6);
+}
+
+
+/* =========================
+HORIZONTAL READER
+========================= */
+
+.horizontal-reader{
+
+position:relative;
+
+display:flex;
+align-items:center;
+justify-content:center;
+
+height:calc(100vh - 120px);
+
+overflow:hidden;
+
+background:#000;
+}
+
+
+/* imagem */
+
+.pagina-unica{
+
+max-width:1000px;
+width:100%;
+
+display:flex;
+justify-content:center;
+align-items:center;
+}
+
+.pagina-unica img{
+
+max-height:85vh;
+
+border-radius:6px;
+
+box-shadow:0 10px 40px rgba(0,0,0,0.8);
+
+transition:0.3s;
+}
+
+
+/* =========================
+SETAS
+========================= */
+
+.seta{
+
+position:absolute;
+top:50%;
+
+transform:translateY(-50%);
+
+background:rgba(0,0,0,0.4);
+border:none;
+
+color:#fff;
+
+font-size:40px;
+
+width:60px;
+height:80px;
+
+cursor:pointer;
+
+display:flex;
+align-items:center;
+justify-content:center;
+
+transition:0.2s;
+
+z-index:10;
+}
+
+.seta:hover{
+
+background:rgba(255,255,255,0.15);
+
+}
+
+.seta:disabled{
+
+opacity:0.2;
+cursor:default;
+
+}
+
+.seta.esquerda{
+
+left:10px;
+
+}
+
+.seta.direita{
+
+right:10px;
+
+}
+
+
+/* =========================
+CONTADOR DE PAGINA
+========================= */
+
+.contador{
+
+position:absolute;
+
+bottom:15px;
+left:50%;
+
+transform:translateX(-50%);
+
+background:rgba(0,0,0,0.6);
+
+padding:6px 14px;
+
+border-radius:20px;
+
+font-size:13px;
+
+color:#ccc;
+
+backdrop-filter:blur(6px);
+}
+
+
+/* =========================
+FOOTER
+========================= */
+
+.leitor-footer{
+
+display:flex;
+justify-content:center;
+
+padding:30px;
+}
+
+.leitor-footer button{
+
+background:#ffcc00;
+
+border:none;
+
+padding:12px 25px;
+
+border-radius:8px;
+
+font-weight:600;
+
+cursor:pointer;
+
+transition:0.2s;
+}
+
+.leitor-footer button:hover{
+
+background:#ffd93d;
+
+}
+
+
+/* =========================
+COMENTARIOS
+========================= */
+
+.comentarios-section{
+
+max-width:900px;
+
+margin:auto;
+
+padding:50px 20px;
+
+border-top:1px solid rgba(255,255,255,0.05);
+}
+
+.comentarios-section h3{
+
+margin-bottom:20px;
+
+font-size:20px;
+font-weight:600;
+
+}
+
+
+/* textarea */
+
+.comentarios-section textarea{
+
+width:100%;
+
+background:#161616;
+
+border:1px solid rgba(255,255,255,0.05);
+
+color:#fff;
+
+padding:12px;
+
+border-radius:6px;
+
+resize:none;
+
+margin-bottom:10px;
+}
+
+.comentarios-section textarea:focus{
+
+outline:none;
+border-color:#ffcc00;
+
+}
+
+
+/* botão comentar */
+
+.comentarios-section form button{
+
+background:#ffcc00;
+
+border:none;
+
+padding:10px 18px;
+
+border-radius:6px;
+
+font-weight:600;
+
+cursor:pointer;
+}
+
+
+/* =========================
+LISTA COMENTARIOS
+========================= */
+
+.comentario{
+
+display:flex;
+gap:12px;
+
+margin-top:25px;
+
+background:#141414;
+
+padding:15px;
+
+border-radius:8px;
+
+border:1px solid rgba(255,255,255,0.04);
+}
+
+
+/* avatar */
+
+.comentario img{
+
+width:40px;
+height:40px;
+
+border-radius:50%;
+
+object-fit:cover;
+}
+
+
+/* texto */
+
+.comentario p{
+
+margin:6px 0;
+
+color:#ddd;
+}
+
+
+/* like */
+
+.comentario button{
+
+background:none;
+
+border:none;
+
+color:#ff6b6b;
+
+cursor:pointer;
+
+font-size:14px;
+}
+
+
+/* =========================
+RESPONSIVO
+========================= */
+
+@media (max-width:768px){
+
+.leitor-header h1{
+
+font-size:16px;
+
+}
+
+.seta{
+
+font-size:32px;
+
+width:45px;
+height:65px;
+
+}
+
+.paginas-lista{
+
+padding:10px;
+
+}
+
+.horizontal-reader{
+
+height:calc(100vh - 100px);
+
+}
+
+}

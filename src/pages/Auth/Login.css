@@ -1,0 +1,400 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;900&display=swap');
+
+:root {
+  --naraa-gold: #ffcc00;
+  --naraa-gold-hover: #ffdd44;
+  --naraa-gold-glow: rgba(255, 204, 0, 0.35);
+  --kuroi-fire: #ff4444;
+  --bg-main: #0a0a0a;
+  --tempest-gradient: linear-gradient(135deg, #0a0a0a 0%, #0f1421 50%, #1a1a2e 100%);
+  --surface-card: rgba(20, 20, 28, 0.92);
+  --surface-modal: #1c1f26;
+  --bg-input: #141418;
+  --border-input: rgba(255, 255, 255, 0.06);
+  --text-pure: #ffffff;
+  --text-muted: #a8b0c0;
+  --text-dim: #6b7280;
+  --transition-smooth: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --shadow-glow-gold: 0 0 25px var(--naraa-gold-glow);
+  --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.login-content {
+  min-height: 100vh;
+  background: var(--tempest-gradient);
+  font-family: 'Poppins', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+  color: var(--text-pure);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Fundo sutil com névoa/efeito tempestuoso (opcional, mas dá imersão) */
+.login-content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(255, 204, 0, 0.04) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-card {
+  background: var(--surface-card);
+  width: 100%;
+  max-width: 420px;
+  padding: 48px 36px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-card), inset 0 0 0 1px var(--border-input);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-input);
+  position: relative;
+  z-index: 1;
+  animation: cardRise 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes cardRise {
+  from { opacity: 0; transform: translateY(40px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.login-title {
+  font-size: 3.5rem;
+  font-weight: 900;
+  text-align: center;
+  color: var(--naraa-gold);
+  letter-spacing: -3px;
+  text-shadow: 0 0 30px var(--naraa-gold-glow);
+  margin-bottom: 8px;
+  line-height: 0.9;
+}
+
+.login-subtitle {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 36px;
+}
+
+/* Avatar Preview (apenas registro) */
+.avatar-preview-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 32px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.avatar-preview-container:hover {
+  transform: scale(1.05);
+}
+
+.avatar-circle-wrapper {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, var(--naraa-gold) 0%, #d4a017 100%);
+  padding: 5px;
+  box-shadow: var(--shadow-glow-gold);
+}
+
+.avatar-preview-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--bg-main);
+  transition: var(--transition-smooth);
+}
+
+.edit-overlay {
+  position: absolute;
+  inset: 5px;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  color: white;
+  font-size: 1.8rem;
+}
+
+.avatar-circle-wrapper:hover .edit-overlay {
+  opacity: 1;
+}
+
+.avatar-change-text {
+  margin-top: 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--naraa-gold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Inputs com ícone */
+.input-field {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.input-field i {
+  position: absolute;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  transition: var(--transition-smooth);
+}
+
+.input-field input {
+  width: 100%;
+  padding: 16px 16px 16px 52px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 10px;
+  color: var(--text-pure);
+  font-size: 0.98rem;
+  font-family: inherit;
+  transition: var(--transition-smooth);
+}
+
+.input-field input:focus {
+  outline: none;
+  border-color: var(--naraa-gold);
+  box-shadow: 0 0 0 3px rgba(255, 204, 0, 0.15);
+}
+
+.input-field input:focus + i {
+  color: var(--naraa-gold);
+}
+
+/* Botão principal (CADASTRAR / ENTRAR) */
+.btn-submit-shito {
+  background: linear-gradient(90deg, var(--naraa-gold) 0%, #ffdd44 100%);
+  color: #0f0f14;
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  box-shadow: 0 8px 25px rgba(255, 204, 0, 0.25);
+}
+
+.btn-submit-shito:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 35px rgba(255, 204, 0, 0.4);
+}
+
+.btn-submit-shito:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Botão Google – pequeno e central */
+.btn-google-shito {
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  background: #ffffff;
+  color: #1f1f1f;
+  padding: 12px 20px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.btn-google-shito img {
+  height: 18px;
+}
+
+.btn-google-shito:hover:not(:disabled) {
+  background: #f8f8f8;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+}
+
+/* Divider OU */
+.social-divider {
+  display: flex;
+  align-items: center;
+  margin: 28px 0;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.social-divider::before,
+.social-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-input);
+  margin: 0 16px;
+}
+
+/* Modal de Avatar */
+.avatar-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.avatar-modal-card {
+  background: var(--surface-modal);
+  width: 90%;
+  max-width: 520px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 204, 0, 0.15);
+  box-shadow: var(--shadow-card);
+}
+
+.avatar-modal-header {
+  padding: 20px 24px;
+  background: #17191f;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-input);
+}
+
+.avatar-modal-header h3 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--naraa-gold);
+}
+
+.btn-close-modal {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 2.2rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-close-modal:hover {
+  color: var(--naraa-gold);
+  transform: rotate(90deg);
+}
+
+.avatar-modal-body {
+  padding: 28px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.avatar-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 16px;
+}
+
+.avatar-option-item {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 3px solid transparent;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  background: var(--bg-input);
+}
+
+.avatar-option-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-option-item:hover {
+  transform: scale(1.08);
+  box-shadow: var(--shadow-glow-gold);
+}
+
+.avatar-option-item.selected {
+  border-color: var(--naraa-gold);
+  box-shadow: var(--shadow-glow-gold), inset 0 0 0 3px rgba(255, 204, 0, 0.2);
+}
+
+/* Erro e toggle */
+.error-banner {
+  color: var(--kuroi-fire);
+  background: rgba(255, 68, 68, 0.12);
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  text-align: center;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+}
+
+.toggle-register {
+  text-align: center;
+  margin-top: 28px;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.toggle-register span {
+  color: var(--naraa-gold);
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.toggle-register span:hover {
+  color: var(--naraa-gold-hover);
+  text-shadow: 0 0 10px var(--naraa-gold-glow);
+}
+
+/* Responsividade básica */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 36px 24px;
+  }
+  .login-title {
+    font-size: 2.8rem;
+  }
+  .avatar-circle-wrapper {
+    width: 96px;
+    height: 96px;
+  }
+}

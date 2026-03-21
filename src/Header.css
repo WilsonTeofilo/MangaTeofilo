@@ -1,0 +1,225 @@
+/* Header.css - Estilo Premium Shito */
+:root {
+  --naraa-gold: #ffcc00;
+  --naraa-gold-hover: #ffe066;
+  --header-height: 80px;
+  --header-mobile-height: 70px;
+  --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.reader-header {
+  background: #000;
+  border-bottom: 2px solid var(--naraa-gold);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+}
+
+.nav-container {
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.nav-logo {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--naraa-gold);
+  cursor: pointer;
+  letter-spacing: -1px;
+}
+
+/* --- MENU DESKTOP --- */
+.nav-menu {
+  display: flex;
+  list-style: none;
+  gap: 25px;
+  margin: 0;
+  padding: 0;
+  transition: var(--transition-smooth);
+}
+
+.nav-menu li {
+  color: #888;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  text-transform: uppercase;
+}
+
+.nav-menu li:hover {
+  color: var(--naraa-gold);
+}
+
+.admin-link-highlight {
+  color: var(--naraa-gold) !important;
+  border: 1px solid var(--naraa-gold);
+  padding: 5px 12px;
+  border-radius: 4px;
+}
+
+/* --- AUTH / PERFIL --- */
+.nav-auth {
+  display: flex;
+  align-items: center;
+}
+
+.user-info-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.header-avatar-wrapper {
+  width: 55px;
+  height: 55px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--naraa-gold);
+  background: #1a1a1a;
+  flex-shrink: 0;
+  transition: var(--transition-smooth);
+}
+
+.header-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+/* Efeito de Zoom e Brilho */
+.user-info-header:hover .header-avatar-wrapper {
+  box-shadow: 0 0 15px var(--naraa-gold);
+  border-color: var(--naraa-gold-hover);
+}
+
+.user-info-header:hover .header-avatar-img {
+  transform: scale(1.1);
+}
+
+.user-text-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.welcome-text {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.btn-logout-header {
+  background: none;
+  border: none;
+  color: var(--naraa-gold);
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  width: fit-content;
+}
+
+/* --- HAMBURGUER --- */
+.mobile-menu-icon {
+  display: none;
+  cursor: pointer;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bar {
+  width: 25px;
+  height: 3px;
+  background-color: white;
+  transition: var(--transition-smooth);
+}
+
+/* ... (Mantenha o resto do CSS igual, substitua apenas a parte do Mobile) ... */
+
+/* --- RESPONSIVIDADE (FIX TOTAL MOBILE) --- */
+@media (max-width: 900px) {
+  .reader-header {
+    height: var(--header-mobile-height);
+    padding: 0 15px;
+  }
+
+  .nav-container {
+    justify-content: flex-start; /* Logo na esquerda */
+    position: relative;
+  }
+
+  /* ÍCONE FIXO NO CANTO DIREITO */
+  .mobile-menu-icon {
+    display: flex;
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1100; /* Fica acima de TUDO */
+  }
+
+  /* GAVETA LATERAL DIREITA */
+  .nav-menu {
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 260px; /* Um pouco mais estreito pra não cobrir tudo */
+    height: 100vh;
+    background: #0a0a0a;
+    flex-direction: column;
+    padding: 80px 30px; /* Espaço no topo pro X não atropelar */
+    gap: 20px;
+    border-left: 2px solid var(--naraa-gold);
+    box-shadow: -10px 0 30px rgba(0,0,0,0.9);
+    align-items: flex-start; /* Opções alinhadas à esquerda */
+    text-align: left;
+  }
+
+  .nav-menu.active {
+    right: 0;
+  }
+
+  .nav-menu li {
+    width: 100%;
+    padding: 15px 0;
+    border-bottom: 1px solid #1a1a1a;
+    font-size: 1rem;
+    letter-spacing: 1px;
+  }
+
+  /* AVATAR NO MEIO (OPCIONAL) */
+  .nav-auth {
+    position: absolute;
+    right: 70px; /* Fica ao lado do hambúrguer */
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .user-text-group {
+    display: none; /* Esconde texto para não poluir o topo */
+  }
+
+  .header-avatar-wrapper {
+    width: 45px;
+    height: 45px;
+  }
+
+  .mobile-only-logout {
+    margin-top: auto;
+    color: #ff4444 !important;
+    font-weight: 800 !important;
+    border: none !important;
+  }
+}

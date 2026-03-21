@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getDatabase, ref, onValue } from "firebase/database";
+import { getDatabase, ref, onValue, runTransaction } from "firebase/database";
 import { useNavigate } from 'react-router-dom';
 import './Capitulos.css';
 
@@ -15,12 +15,19 @@ export default function Capitulos() {
     const unsubscribe = onValue(capitulosRef, (snapshot) => {
       const dados = snapshot.val();
       if (dados) {
-        const arrayCapitulos = Object.keys(dados).map(key => ({
-          id: key,
-          ...dados[key]
-        }));
+        const arrayCapitulos = Object.keys(dados).map(key => {
+          const qtdComentarios = dados[key].comentarios 
+            ? Object.keys(dados[key].comentarios).length 
+            : 0;
+
+          return {
+            id: key,
+            ...dados[key],
+            totalComentarios: qtdComentarios
+          };
+        });
         
-        // Ordenação: O número mais alto (lançamento mais recente) no topo
+        // Ordenação por número (mais recente no topo)
         const ordenados = arrayCapitulos.sort((a, b) => b.numero - a.numero);
         setListaCapitulos(ordenados);
       }
@@ -30,11 +37,21 @@ export default function Capitulos() {
     return () => unsubscribe();
   }, [db]);
 
+  const handleAbrirCapitulo = (capId) => {
+    const viewRef = ref(db, `capitulos/${capId}/visualizacoes`);
+    
+    runTransaction(viewRef, (currentViews) => {
+      return (currentViews || 0) + 1;
+    });
+
+    navigate(`/ler/${capId}`);
+  };
+
   if (carregando) {
     return (
       <div className="loading-container">
         <div className="shito-loader"></div>
-        <p>CONVOCANDO OS FRAGMENTOS...</p>
+        <p className="loading-text">CONVOCANDO OS FRAGMENTOS...</p>
       </div>
     );
   }
@@ -45,60 +62,74 @@ export default function Capitulos() {
         
         <header className="section-header">
           <div className="header-line"></div>
-          <h2>TODOS OS CAPÍTULOS</h2>
+          <h2 className="shito-title-glitch">BIBLIOTECA DE FRAGMENTOS</h2>
         </header>
 
-        {/* CONTAINER DA LISTA SLIM (Substituindo a antiga manga-grid) */}
-        <div className="shueisha-capitulos-list">
+        <main className="shueisha-capitulos-list">
           {listaCapitulos.length > 0 ? (
             listaCapitulos.map((cap) => (
-              
-              <div 
+              <article 
                 key={cap.id} 
                 className="shito-cap-row"
-                onClick={() => navigate(`/ler/${cap.id}`)}
+                onClick={() => handleAbrirCapitulo(cap.id)}
+                role="button"
+                tabIndex="0"
               >
-                {/* LADO ESQUERDO: Número e Conteúdo Principal */}
+                {/* LADO ESQUERDO: Número e Imagem */}
                 <div className="cap-left-info">
-                  
-                  {/* Número formatado: #001, #002... */}
-                  <span className="shito-cap-number">
-                    #{String(cap.numero || 0).padStart(3, '0')}
-                  </span>
+                  <div className="shito-cap-number-wrapper">
+                    <span className="shito-cap-number">
+                      #{String(cap.numero || 0).padStart(3, '0')}
+                    </span>
+                  </div>
                   
                   <div className="cap-main-content">
-                    {/* Miniatura discreta */}
                     <div className="shito-cap-miniature-wrapper">
                       <img 
                         src={cap.capaUrl} 
-                        alt={cap.titulo} 
+                        alt={`Capa do capítulo ${cap.numero}`} 
                         className="shito-cap-miniature" 
+                        loading="lazy"
                       />
                     </div>
                     
-                    {/* Título do Capítulo */}
-                    <span className="shito-cap-title">{cap.titulo}</span>
+                    <div className="cap-text-details">
+                      <h3 className="shito-cap-title">{cap.titulo}</h3>
+                      
+                      {/* STATS: Agora com FontAwesome para visual profissional */}
+                      <div className="cap-stats-row">
+                        <span className="stat-item">
+                          <i className="fa-regular fa-eye"></i> {cap.visualizacoes || 0}
+                        </span>
+                        <span className="stat-item">
+                          <i className="fa-regular fa-comment"></i> {cap.totalComentarios}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* LADO DIREITO: Data de postagem */}
+                {/* LADO DIREITO: Data formatada */}
                 <div className="cap-right-info">
-                  <span className="shito-cap-date">
+                  <time className="shito-cap-date">
                     {cap.dataUpload 
-                      ? new Date(cap.dataUpload).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
-                      : 'Data oculta'}
-                  </span>
+                      ? new Date(cap.dataUpload).toLocaleDateString('pt-BR', { 
+                          day: '2-digit', 
+                          month: 'short' 
+                        }).replace('.', '') // Remove o ponto do mês abreviado
+                      : 'Névoa'}
+                  </time>
+                  <i className="fa-solid fa-chevron-right arrow-mobile"></i>
                 </div>
-
-              </div>
+              </article>
             ))
           ) : (
             <div className="no-chapters">
-              <p>Nenhum capítulo encontrado na névoa...</p>
+              <i className="fa-solid fa-ghost"></i>
+              <p>Nenhum capítulo encontrado na tempestade...</p>
             </div>
           )}
-        </div>
-
+        </main>
       </div>
     </div>
   );

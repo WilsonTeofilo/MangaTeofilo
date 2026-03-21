@@ -1,250 +1,234 @@
-/* Capitulos.css - Lista de Capítulos no estilo Shito × Manga Plus (thumb WIDESCREEN) */
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
 
 :root {
-  --charcoal-dark: #0a0a0a;
-  --surface-card: #141414;
+  --charcoal-dark: #050505;
+  --surface-card: #0f0f0f;
   --text-pure: #ffffff;
-  --text-muted: #a0a0a0;
+  --text-muted: #777;
   --naraa-gold: #ffcc00;
-  --border-subtle: #222222;
-  --transition-fast: 0.25s ease;
-  --transition-smooth: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  --naraa-gold-glow: rgba(255, 204, 0, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* =============================================
-   PÁGINA INTEIRA
-============================================= */
 .capitulos-page {
   min-height: 100vh;
   background: var(--charcoal-dark);
   color: var(--text-pure);
   font-family: 'Poppins', sans-serif;
-  padding: 80px 20px 40px;
+  padding: 100px 20px 60px;
 }
 
 .capitulos-container {
-  max-width: 1200px; /* um pouco mais largo para thumbs widescreen */
+  max-width: 1000px;
   margin: 0 auto;
 }
 
-/* Header da seção */
+/* --- HEADER GLITCH --- */
 .section-header {
-  position: relative;
+  margin-bottom: 50px;
   text-align: center;
-  margin-bottom: 3rem;
 }
 
-.header-line {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(to right, transparent, #333, transparent);
-  z-index: 0;
-}
-
-.section-header h2 {
-  position: relative;
-  z-index: 1;
-  display: inline-block;
-  background: var(--charcoal-dark);
-  padding: 0 2.5rem;
-  font-size: 2rem;
-  font-weight: 800;
-  letter-spacing: 4px;
+.shito-title-glitch {
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  font-weight: 900;
+  letter-spacing: 6px;
   color: var(--naraa-gold);
   text-transform: uppercase;
+  position: relative;
+  display: inline-block;
 }
 
-/* =============================================
-   LISTA COMPACTADA - Thumb WIDESCREEN
-============================================= */
+.shito-title-glitch::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 25%;
+  width: 50%;
+  height: 2px;
+  background: var(--naraa-gold);
+  box-shadow: 0 0 10px var(--naraa-gold);
+}
+
+/* --- LISTA DE LINHAS (ESTILO MANGA PLUS) --- */
 .shueisha-capitulos-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .shito-cap-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   background: var(--surface-card);
-  border-radius: 12px;
-  padding: 16px 20px;
-  cursor: pointer;
-  transition: var(--transition-smooth);
   border: 1px solid var(--border-subtle);
-  user-select: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  transition: var(--transition-smooth);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 
 .shito-cap-row:hover {
-  background: #181818;
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6),
-              0 0 30px rgba(255, 204, 0, 0.18);
-  border-color: rgba(255, 204, 0, 0.35);
+  border-color: var(--naraa-gold);
+  background: #141414;
+  transform: translateX(10px);
+  box-shadow: -5px 0 20px var(--naraa-gold-glow);
 }
 
-/* Lado esquerdo: # + miniatura widescreen + título */
+/* Info da Esquerda */
 .cap-left-info {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  flex: 1;
+}
+
+.shito-cap-number {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #222; /* Número fica "apagado" no fundo */
+  transition: var(--transition-smooth);
+  min-width: 70px;
+}
+
+.shito-cap-row:hover .shito-cap-number {
+  color: var(--naraa-gold);
+  text-shadow: 0 0 15px var(--naraa-gold-glow);
+}
+
+/* Conteúdo Principal (Thumb + Texto) */
+.cap-main-content {
   display: flex;
   align-items: center;
   gap: 20px;
   flex: 1;
-  min-width: 0;
 }
 
-.shito-cap-number {
-  font-size: 1.7rem;
-  font-weight: 900;
-  color: var(--naraa-gold);
-  letter-spacing: -1.5px;
-  min-width: 90px;
-  text-align: left;
-  flex-shrink: 0;
-}
-
-/* Miniatura WIDESCREEN: largo e visível */
 .shito-cap-miniature-wrapper {
-  width: 184px;             
-  height: 104px;             
-  flex-shrink: 0;
-  border-radius: 10px;
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
   overflow: hidden;
-  background: #0f0f0f;
-  border: 1px solid #2a2a2a;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.75);
+  background: #000;
+  border: 1px solid #1a1a1a;
+  flex-shrink: 0;
 }
 
 .shito-cap-miniature {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.45s ease;
+  opacity: 0.8;
+  transition: var(--transition-smooth);
 }
 
 .shito-cap-row:hover .shito-cap-miniature {
-  transform: scale(1.08);
+  opacity: 1;
+  transform: scale(1.1);
 }
 
-/* Título principal */
-.cap-main-content {
+.cap-text-details {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
+  gap: 4px;
 }
 
 .shito-cap-title {
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--text-pure);
-  line-height: 1.45;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #eee;
+  text-transform: uppercase;
 }
 
-/* Lado direito: Data */
+/* Stats (Views e Coments) */
+.cap-stats-row {
+  display: flex;
+  gap: 15px;
+}
+
+.stat-item {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stat-item i {
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.shito-cap-row:hover .stat-item i {
+  color: var(--naraa-gold);
+}
+
+/* Info da Direita (Data) */
 .cap-right-info {
-  flex-shrink: 0;
-  text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
 .shito-cap-date {
-  font-size: 0.95rem;
-  color: var(--text-muted);
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #333;
+  text-transform: uppercase;
 }
 
-/* Empty state */
-.no-chapters {
-  text-align: center;
-  padding: 6rem 1rem;
-  color: var(--text-muted);
-  font-size: 1.3rem;
-  font-weight: 500;
+.shito-cap-row:hover .shito-cap-date {
+  color: #fff;
 }
 
-/* Loading */
+/* Loader customizado */
 .loading-container {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  color: var(--naraa-gold);
-  font-size: 1.4rem;
-  gap: 2rem;
+  align-items: center;
+  background: var(--charcoal-dark);
 }
 
 .shito-loader {
-  width: 70px;
-  height: 70px;
-  border: 6px solid #222;
-  border-top: 6px solid var(--naraa-gold);
+  width: 50px;
+  height: 50px;
+  border: 3px solid #111;
+  border-top: 3px solid var(--naraa-gold);
   border-radius: 50%;
-  animation: spin 1.3s linear infinite;
+  animation: spin 1s infinite linear;
+  margin-bottom: 20px;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  to { transform: rotate(360deg); }
 }
 
-/* Responsividade - thumb reduz proporcionalmente */
+/* --- RESPONSIVIDADE --- */
 @media (max-width: 768px) {
-  .capitulos-page {
-    padding: 70px 16px 30px;
-  }
-
   .shito-cap-row {
-    padding: 14px 16px;
-    flex-wrap: wrap;
-    gap: 14px;
-  }
-
-  .cap-left-info {
-    flex: 1 1 100%;
-  }
-
-  .cap-right-info {
-    width: 100%;
-    text-align: left;
-    font-size: 0.9rem;
-  }
-
-  .shito-cap-miniature-wrapper {
-    width: 140px;
-    height: 78px; /* mantém widescreen em mobile */
+    padding: 15px;
   }
 
   .shito-cap-number {
-    font-size: 1.5rem;
-    min-width: 80px;
+    display: none; /* Esconde o número gigante em mobile para ganhar espaço */
+  }
+
+  .shito-cap-miniature-wrapper {
+    width: 100px;
   }
 
   .shito-cap-title {
-    font-size: 1.08rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .shito-cap-miniature-wrapper {
-    width: 120px;
-    height: 67px;
+    font-size: 0.95rem;
   }
 
-  .shito-cap-number {
-    font-size: 1.35rem;
-    min-width: 70px;
-  }
-
-  .section-header h2 {
-    font-size: 1.7rem;
+  .arrow-mobile {
+    color: var(--naraa-gold);
+    font-size: 0.8rem;
   }
 }

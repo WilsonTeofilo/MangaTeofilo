@@ -1,14 +1,8 @@
-import emailjs from '@emailjs/browser';
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, onValue, increment, update } from "firebase/database";
-import {
-  getAuth,
-  signInWithPopup,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signOut
-} from "firebase/auth";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getDatabase, ref, onValue, increment, update } from "firebase/database";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { useNavigate } from 'react-router-dom';
 import './App.css';
 
 // --- CONFIGURAÇÃO FIREBASE ---
@@ -23,147 +17,136 @@ const firebaseConfig = {
   databaseURL: "https://shitoproject-ed649-default-rtdb.firebaseio.com"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getDatabase(app);
 const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
 
-emailjs.init("Nb2y-2UnBdpeLWHr9");
-
-// MUDANÇA AQUI: De "App" para "ShitoGame"
-export default function ShitoGame() { 
-  const [email, setEmail] = useState("");
+export default function ShitoGame() {
   const [visitas, setVisitas] = useState(0);
-  const [preSavesCount, setPreSavesCount] = useState(0);
   const [usuario, setUsuario] = useState(null);
   const hasIncremented = useRef(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
+    // Contador de visualizações globais da obra
     if (!hasIncremented.current) {
       update(ref(db, 'stats'), { contador: increment(1) });
       hasIncremented.current = true;
     }
     
     const unsubVisitas = onValue(ref(db, 'stats/contador'), (s) => setVisitas(s.val() || 0));
-    const unsubPreSaves = onValue(ref(db, 'stats/totalPreSaves'), (s) => setPreSavesCount(s.val() || 0));
     const unsubAuth = onAuthStateChanged(auth, (user) => setUsuario(user));
-
     return () => {
       unsubVisitas();
-      unsubPreSaves();
       unsubAuth();
     };
   }, []);
 
-  const enviarEmailConfirmacao = (emailDestino, nomeUsuario = "Aventureiro") => {
-    const templateParams = {
-      email: emailDestino,
-      name: nomeUsuario,
-      reply_to: 'drakenteofilo@gmail.com'
-    };
-
-    emailjs.send(
-      'service_ggs06v8',
-      'template_jjncsqm',
-      templateParams,
-      'Nb2y-2UnBdpeLWHr9'
-    )
-    .then((res) => console.log("Sucesso! E-mail enviado:", res.status))
-    .catch((err) => console.error("Falha no EmailJS:", err));
-  };
-
-  const incrementarPreSave = () => {
-    update(ref(db, 'stats'), { totalPreSaves: increment(1) });
-  };
-
-  const loginGoogle = () => {
-    signInWithPopup(auth, googleProvider).then((res) => {
-      update(ref(db, 'usuarios/' + res.user.uid), {
-        nome: res.user.displayName,
-        email: res.user.email,
-        vincular_alma: "Sucesso"
-      });
-      incrementarPreSave();
-      enviarEmailConfirmacao(res.user.email, res.user.displayName);
-      alert("Sua alma foi vinculada via Google!");
-    }).catch(err => console.error("Erro no Login Google:", err));
-  };
-
-  const salvarEmail = (e) => {
-    e.preventDefault();
-    const emailAEnviar = email;
-    set(ref(db, 'preSaves/' + emailAEnviar.replace(/\./g, '_')), {
-      email: emailAEnviar,
-      timestamp: Date.now()
-    }).then(() => {
-      incrementarPreSave();
-      enviarEmailConfirmacao(emailAEnviar);
-      alert("Sua alma foi vinculada!");
-      setEmail("");
-    });
-  };
-
   return (
     <div className="shito-page">
+      {/* NOVO HEADER: Estilo Plataforma de Leitura */}
+      <nav className="reader-header">
+        <div className="nav-container">
+          <div className="nav-logo" onClick={() => navigate('/')}>SHITO</div>
+          <ul className="nav-menu">
+            <li onClick={() => navigate('/')}>Início</li>
+            <li onClick={() => navigate('/capitulos')}>Capítulos</li>
+            <li onClick={() => navigate('/sobre-autor')}>Sobre o Autor</li>
+            <li onClick={() => navigate('/apoie')}>Apoie a Obra</li> {/* CORRIGIDO AQUI */}
+          </ul>
+          <div className="nav-auth">
+            {!usuario ? (
+              <button className="btn-login-header" onClick={() => navigate('/login')}>
+                ENTRAR / CADASTRAR
+              </button>
+            ) : (
+              <div className="user-info-header">
+                <span>Olá, {usuario.displayName || 'Guerreiro'}</span>
+                <button onClick={() => signOut(auth)}>Sair</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      {/* BANNER PRINCIPAL */}
       <header className="main-banner">
         <div className="banner-content">
-          <h1 className="game-logo">SHITO:</h1>
+          <h1 className="game-logo">SHITO</h1>
           <h2 className="game-sublogo">FRAGMENTOS DA TEMPESTADE</h2>
         </div>
       </header>
 
+      {/* SINOPSE DETALHADA */}
       <section className="lore-summary">
-        <h3>UM MUNDO QUEBRADO</h3>
-        <p>Após 474 anos, o Flágelo retornou.</p>
+        <span className="lore-date">750 D.C. — CONTINENTE DE BRAJIRU</span>
+        <h3>A CICATRIZ DOS DEUSES</h3>
+        <p>
+          Antes das feridas que retalharam o mundo, Shito era uma massa única regida pelas linhagens Kiraya e Moshiki.
+          O Cataclisma (226-252 D.C.) trouxe a guerra entre divindades: Yukio, Orochi e Matatabi.
+          Dessa era de agonia, restou o <strong>Miasma</strong>, uma névoa tóxica que isola os continentes e corrompe as almas.
+        </p>
         <div className="lore-banner-image">
-          <img src="/assets/fotos/shito.jpg" alt="Banner" />
+          <img src="/assets/fotos/shito.jpg" alt="A Grande Guerra" />
         </div>
+        <p className="lore-highlight">
+          Quatro séculos depois, na densa selva de Brajiru, a caçadora <strong>Miomya Inpachi</strong> resgata do gelo
+          um homem de 350 D.C. <strong>Naraa</strong> desperta em um futuro quebrado, portando memórias de um tempo
+          onde deuses sangravam e a esperança ainda tinha nome.
+        </p>
       </section>
 
+      {/* ELENCO DETALHADO */}
       <section className="characters-section">
+        <h3 className="section-title">O ELENCO</h3>
         <div className="character-grid">
           <div className="char-card naraa">
             <div className="gif-box"><img src="/assets/Gifs/NaraaGIF.gif" alt="Naraa" /></div>
-            <div className="char-desc"><h4>NARAA</h4><p>Miasma Gélido.</p></div>
+            <div className="char-desc">
+              <h4>NARAA</h4>
+              <p>O Fantasma de 350 D.C. Criado por lobos, ele é o "espécime raro" que detém segredos do passado antigo.</p>
+            </div>
           </div>
+          
           <div className="char-card miomya">
             <div className="gif-box"><img src="/assets/Gifs/MiomyaGIF.gif" alt="Miomya" /></div>
-            <div className="char-desc"><h4>MIOMYA</h4><p>Névoa Dilacerante.</p></div>
+            <div className="char-desc">
+              <h4>MIOMYA</h4>
+              <p>Caçadora de elite de Brajiru. Pequena em altura, mas capaz de erguer feras de 4 metros acima da cabeça.</p>
+            </div>
           </div>
+
           <div className="char-card rin">
             <div className="gif-box"><img src="/assets/Gifs/RinGIF.gif" alt="Rin" /></div>
-            <div className="char-desc"><h4>RIN</h4><p>Gravidade.</p></div>
+            <div className="char-desc">
+              <h4>RIN</h4>
+              <p>Manipuladora de gravidade. Sua pressão espiritual é capaz de congelar a atmosfera ao seu redor.</p>
+            </div>
           </div>
+
           <div className="char-card kuroi">
             <div className="gif-box"><img src="/assets/Gifs/KuroiGIF.gif" alt="Kuroi" /></div>
-            <div className="char-desc"><h4>KUROI</h4><p>Combustão.</p></div>
+            <div className="char-desc">
+              <h4>KUROI</h4>
+              <p>O mestre do degelo e da combustão. Amigo leal que protege o grupo com suas chamas purificadoras.</p>
+            </div>
           </div>
         </div>
       </section>
 
+      {/* FOOTER */}
       <footer className="site-footer">
-        <div className="pre-save-container">
-          <h3 className="section-title">PRÉ-SAVE DISPONÍVEL</h3>
-          {!usuario ? (
-            <div className="auth-box">
-              <button onClick={loginGoogle} className="google-btn-custom">PRÉ-SAVE COM GOOGLE</button>
-              <form className="email-form" onSubmit={salvarEmail}>
-                <input type="email" placeholder="Seu e-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
-                <button type="submit">CADASTRAR</button>
-              </form>
-            </div>
-          ) : (
-            <div className="user-logged">
-              <p>Guerreiro: <strong>{usuario.displayName}</strong></p>
-              <button onClick={() => signOut(auth)}>SAIR</button>
-            </div>
-          )}
+        <div className="footer-stats">
+          <h3>ESTATÍSTICAS DA OBRA</h3>
+          <div className="stats-row">
+            <p>Visualizações Totais: <span>{visitas}</span></p>
+            <p>Status: <span>Em Lançamento</span></p>
+          </div>
+          <button className="btn-read-now" onClick={() => navigate('/capitulos')}>
+            COMEÇAR LEITURA
+          </button>
         </div>
-
-        <div className="visit-counter">
-          <p>Almas Vinculadas (Pré-Saves): <span>{preSavesCount}</span></p>
-          <p>Visitantes na Tempestade: <span>{visitas}</span></p>
-        </div>
+        <p className="copyright">© 2026 Shito: Fragmentos da Tempestade - Todos os direitos reservados.</p>
       </footer>
     </div>
   );

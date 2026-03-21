@@ -1,209 +1,258 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Roboto+Mono:wght@300;400&display=swap');
+/* Login.css - Ajustado pra Discord real: desktop side-by-side se quiser, mobile stack limpo, botões não quebram */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;900&display=swap');
 
-:root {
-  --neon-pink: #ff00aa;
-  --neon-cyan: #00ffff;
-  --neon-purple: #aa00ff;
-  --dark-void: #0a0015;
-  --glow-pink: rgba(255, 0, 170, 0.7);
-  --glow-cyan: rgba(0, 255, 255, 0.6);
-  --error-red: #ff3366;
+.nav-container {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;   /* ← Isso força tudo pro início (esquerda) */
+  gap: 40px;                     /* ← Espaço grande entre logo e menu (ou futuro conteúdo) */
+  width: 100%;
+  max-width: 1200px;             /* ou o que você já tem */
+  margin: 0 auto;
+  padding: 0 24px;               /* padding lateral pra não colar na borda da tela */
 }
 
-* {
-  margin: 0;
-  padding: 0;
+:root {
+  --tempest-gradient: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+  --surface-card: rgba(35, 39, 42, 0.94); /* cinza escuro Discord-like */
+  --naraa-gold: #ffcc00;
+  --kuroi-fire: #ff4444;
+  --text-pure: #ffffff;
+  --text-muted: #a0a0b0;
+  --transition: all 0.2s ease;
+}
+
+.login-page {
+  min-height: 100vh;
+  background: var(--tempest-gradient);
+  color: var(--text-pure);
+  font-family: 'Poppins', sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
   box-sizing: border-box;
 }
 
-body {
-  background: var(--dark-void);
-  font-family: 'Orbitron', sans-serif;
-  color: white;
-  min-height: 100vh;
-  overflow-x: hidden;
+.reader-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
 }
 
-/* Container Principal - Fundo com Nebula */
-.login-void {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
+.nav-logo {
+  font-size: 2.6rem;
+  font-weight: 900;
+  color: var(--naraa-gold);
+  letter-spacing: -1.5px;
+  text-shadow: 0 2px 8px rgba(255,204,0,0.3);
+  cursor: pointer;
+}
+
+/* Card principal */
+.login-content {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 30% 70%, #1a0033, #000011 60%);
-  overflow: hidden;
-}
-
-.nebula-bg {
-  position: absolute;
-  inset: 0;
-  background: 
-    radial-gradient(circle at 20% 30%, var(--neon-purple) 0%, transparent 25%),
-    radial-gradient(circle at 80% 60%, var(--neon-pink) 0%, transparent 35%);
-  opacity: 0.15;
-  pointer-events: none;
-  animation: nebulaDrift 20s infinite alternate ease-in-out;
-}
-
-@keyframes nebulaDrift {
-  0%   { transform: scale(1); opacity: 0.15; }
-  100% { transform: scale(1.2) translate(5%, -5%); opacity: 0.25; }
-}
-
-/* Card Central (Vessel) */
-.login-vessel {
-  position: relative;
-  width: 90%;
-  max-width: 420px;
-  padding: 3rem 2.5rem;
-  background: rgba(15, 5, 35, 0.7);
-  border: 1px solid rgba(170, 0, 255, 0.3);
-  border-radius: 20px;
-  backdrop-filter: blur(15px);
-  box-shadow: 0 0 50px rgba(170, 0, 255, 0.2);
-  z-index: 10;
-  transition: transform 0.4s ease;
-}
-
-.login-vessel:hover {
-  transform: translateY(-5px);
-  border-color: var(--neon-pink);
-}
-
-/* Título e Efeito Glitch */
-.title-glitch {
-  font-size: 4rem;
-  font-weight: 900;
-  text-align: center;
-  color: white;
-  text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-pink);
-  letter-spacing: -2px;
-  margin-bottom: 0.5rem;
-  position: relative;
-  animation: glitch 3s infinite;
-}
-
-@keyframes glitch {
-  0% { text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-pink); }
-  2% { text-shadow: -3px 0 var(--neon-cyan), 3px 0 var(--neon-pink); }
-  4% { text-shadow: 3px 0 var(--neon-cyan), -3px 0 var(--neon-pink); }
-  100% { text-shadow: 2px 0 var(--neon-cyan), -2px 0 var(--neon-pink); }
-}
-
-.subtitle-seduce {
-  text-align: center;
-  font-size: 0.9rem;
-  color: var(--neon-cyan);
-  margin-bottom: 2rem;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
-
-/* Inputs */
-.input-wrapper {
-  position: relative;
-  margin-bottom: 1.5rem;
-}
-
-.neon-input {
   width: 100%;
-  padding: 1rem;
-  background: rgba(10, 0, 30, 0.8);
-  border: 1px solid rgba(0, 255, 255, 0.2);
-  border-radius: 8px;
-  color: white;
-  font-family: 'Roboto Mono', monospace;
-  transition: all 0.3s;
+  padding-top: 80px; /* espaço header */
 }
 
-.neon-input:focus {
+.login-card {
+  background: var(--surface-card);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  width: 100%;
+  max-width: 520px; /* Desktop: confortável, não gigante */
+  padding: 40px 32px;
+  box-sizing: border-box;
+}
+
+/* Se quiser adicionar QR side-by-side no futuro, use flex aqui:
+.login-card {
+  display: flex;
+  gap: 48px;
+}
+.form-side { flex: 1; }
+.qr-side { width: 240px; text-align: center; }
+@media (max-width: 768px) { .login-card { flex-direction: column; } }
+Mas por enquanto mantemos single column pra simplicidade.
+*/
+
+.login-title {
+  font-size: 2.6rem;
+  font-weight: 800;
+  text-align: center;
+  color: var(--naraa-gold);
+  margin: 0 0 8px;
+}
+
+.login-subtitle {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  margin: 0 0 32px;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-input {
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: #202225;
+  border: 1px solid #202225;
+  border-radius: 4px;
+  color: white;
+  font-size: 1rem;
+}
+
+.login-input:focus {
+  border-color: var(--naraa-gold);
+  box-shadow: 0 0 0 3px rgba(255,204,0,0.25);
   outline: none;
-  border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px var(--glow-cyan);
 }
 
-.input-glow {
-  position: absolute;
-  inset: -2px;
-  border-radius: 10px;
-  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
-  opacity: 0;
-  z-index: -1;
-  transition: opacity 0.3s;
-}
-
-.neon-input:focus + .input-glow {
-  opacity: 0.4;
-}
-
-/* Botão Submit */
-.submit-pulse {
+.btn-submit,
+.btn-google {
   width: 100%;
-  padding: 1rem;
-  background: var(--neon-pink);
-  color: white;
+  padding: 14px;
   border: none;
-  border-radius: 8px;
-  font-weight: 900;
-  letter-spacing: 2px;
+  border-radius: 4px;
+  font-size: 1.05rem;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 0 20px var(--glow-pink);
-  transition: all 0.3s;
+  transition: var(--transition);
+  white-space: nowrap; /* IMP: impede quebra de linha no texto */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.submit-pulse:hover:not(:disabled) {
-  transform: scale(1.02);
-  box-shadow: 0 0 35px var(--glow-pink);
+.btn-submit {
+  background: var(--naraa-gold);
+  color: #000;
 }
 
-.submit-pulse:disabled {
-  background: #333;
-  color: #777;
-  cursor: not-allowed;
-  box-shadow: none;
+.btn-submit:hover {
+  background: #ffdd44;
 }
 
-/* Erros e Toggle */
-.error-seductive {
-  color: var(--error-red);
-  font-size: 0.85rem;
+.btn-google {
+  background: white;
+  color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.btn-google img {
+  height: 22px;
+}
+
+.social-divider {
+  display: flex;
+  align-items: center;
+  margin: 24px 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.social-divider::before,
+.social-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 0 12px;
+}
+
+.error-message {
+  color: var(--kuroi-fire);
   text-align: center;
-  margin-top: 1rem;
-  animation: shake 0.4s ease-in-out;
+  margin: 12px 0;
+  font-size: 0.95rem;
 }
 
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-5px); }
-  75% { transform: translateX(5px); }
-}
-
-.toggle-soul {
-  margin-top: 1.5rem;
+.toggle-register {
   text-align: center;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  margin-top: 20px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.toggle-register span {
+  color: var(--naraa-gold);
   cursor: pointer;
-  transition: color 0.3s;
 }
 
-.toggle-soul:hover {
-  color: var(--neon-cyan);
+/* RESPONSIVIDADE - MOBILE PRIMEIRO, breakpoints agressivos */
+@media (max-width: 768px) {
+  .login-card {
+    max-width: 95%;
+    padding: 32px 24px;
+  }
+
+  .login-title {
+    font-size: 2.3rem;
+  }
+
+  .btn-submit, .btn-google {
+    padding: 14px 20px;
+    font-size: 1rem;
+  }
+
+  .reader-header {
+    height: 64px;
+    padding: 0 16px;
+  }
+
+  .nav-logo {
+    font-size: 2.2rem;
+  }
 }
 
-.loader {
-  animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-/* Responsividade */
 @media (max-width: 480px) {
-  .login-vessel { padding: 2rem 1.5rem; }
-  .title-glitch { font-size: 3rem; }
+  .login-card {
+    padding: 24px 16px;
+    border-radius: 0; /* opcional: full bleed em mobile pequeno */
+  }
+
+  .login-input {
+    padding: 12px 14px;
+    font-size: 0.95rem;
+  }
+
+  .btn-submit, .btn-google {
+    padding: 13px;
+    font-size: 0.98rem;
+  }
+
+  .social-divider {
+    margin: 20px 0;
+  }
+}
+
+@media (max-width: 360px) { /* Telas muito pequenas, ex: iPhone SE antigo */
+  .btn-submit, .btn-google {
+    font-size: 0.95rem;
+    padding: 12px;
+  }
+
+  .login-subtitle {
+    font-size: 1rem;
+  }
 }

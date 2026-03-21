@@ -1,0 +1,244 @@
+/* Apoie.css - Refatorado e estilizado */
+
+/* Variáveis globais (já compatíveis com seu projeto) */
+:root {
+  --charcoal-dark: #0a0a0a;
+  --surface-card: #141414;
+  --text-pure: #ffffff;
+  --text-muted: #a0a0a0;
+  --naraa-gold: #ffcc00;
+  --naraa-gold-dark: #d4a017;
+  --glow-gold: rgba(255, 204, 0, 0.35);
+  --tempest-gradient: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+  --transition-smooth: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  --transition-fast: 0.25s ease;
+}
+
+/* Página inteira */
+.apoie-page {
+  background: var(--tempest-gradient);
+  color: var(--text-pure);
+  min-height: 100vh;
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
+}
+
+/* Conteúdo principal (com espaço pro header fixo) */
+.apoie-content {
+  padding: 140px 5% 80px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Título principal */
+.apoie-section h1 {
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: -2px;
+  color: var(--naraa-gold);
+  text-shadow: 0 0 30px rgba(255, 204, 0, 0.4);
+  margin-bottom: 1.5rem;
+}
+
+/* Texto introdutório */
+.apoie-texto {
+  text-align: center;
+  font-size: 1.3rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  max-width: 800px;
+  margin: 0 auto 3rem;
+}
+
+.apoie-texto strong {
+  color: var(--text-pure);
+  font-weight: 700;
+}
+
+/* Grid de opções de apoio */
+.apoie-opcoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  margin: 4rem 0;
+}
+
+/* Card individual */
+.apoie-card {
+  background: var(--surface-card);
+  border: 1px solid rgba(255, 204, 0, 0.15);
+  border-radius: 16px;
+  padding: 2.5rem 1.8rem;
+  text-align: center;
+  transition: var(--transition-smooth);
+  position: relative;
+  overflow: hidden;
+}
+
+.apoie-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 204, 0, 0.08) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+}
+
+.apoie-card:hover::before {
+  opacity: 1;
+}
+
+.apoie-card:hover {
+  transform: translateY(-12px);
+  box-shadow: 0 25px 60px rgba(0,0,0,0.6), 0 0 40px var(--glow-gold);
+  border-color: var(--naraa-gold);
+}
+
+/* Títulos dos cards */
+.apoie-card h3 {
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: var(--naraa-gold);
+  margin-bottom: 1rem;
+  letter-spacing: 1px;
+}
+
+/* Preço */
+.preco {
+  font-size: 3.2rem;
+  font-weight: 900;
+  color: var(--text-pure);
+  margin: 0.8rem 0;
+  text-shadow: 0 0 15px rgba(255, 204, 0, 0.3);
+}
+
+/* Descrição */
+.descricao {
+  font-size: 1.15rem;
+  color: var(--text-muted);
+  min-height: 60px;
+  margin-bottom: 2rem;
+}
+
+/* Botões de apoio */
+.btn-apoie {
+  padding: 1.2rem 2.5rem;
+  font-size: 1.2rem;
+  font-weight: 800;
+  background: var(--naraa-gold);
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  box-shadow: 0 8px 25px rgba(255, 204, 0, 0.3);
+  letter-spacing: 1px;
+}
+
+.btn-apoie:hover {
+  background: #ffdd44;
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 15px 40px rgba(255, 204, 0, 0.5);
+}
+
+.btn-apoie:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Variações de tamanho (pequeno, medio, grande) */
+.btn-apoie.pequeno { padding: 1rem 2rem; font-size: 1.1rem; }
+.btn-apoie.medio   { padding: 1.1rem 2.2rem; font-size: 1.15rem; }
+.btn-apoie.grande  { padding: 1.3rem 2.8rem; font-size: 1.25rem; }
+
+/* Destaque para GG (quando descomentar) */
+.apoie-card.destaque {
+  border: 2px solid var(--naraa-gold);
+  background: linear-gradient(to bottom, #1e1a0f, var(--surface-card));
+  box-shadow: 0 0 30px rgba(255, 204, 0, 0.25);
+}
+
+.apoie-card.destaque h3 {
+  font-size: 2.5rem;
+}
+
+/* Nota de pagamento */
+.apoie-nota {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  margin: 2rem 0 4rem;
+  font-style: italic;
+}
+
+/* Seção de recompensas */
+.apoie-recompensa {
+  background: rgba(20, 20, 20, 0.6);
+  border-radius: 16px;
+  padding: 2.5rem;
+  border: 1px solid rgba(255, 204, 0, 0.1);
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.apoie-recompensa h3 {
+  text-align: center;
+  font-size: 2rem;
+  color: var(--naraa-gold);
+  margin-bottom: 1.8rem;
+}
+
+.apoie-recompensa ul {
+  list-style: none;
+  padding: 0;
+}
+
+.apoie-recompensa li {
+  font-size: 1.2rem;
+  margin-bottom: 1.2rem;
+  padding-left: 2rem;
+  position: relative;
+}
+
+.apoie-recompensa li::before {
+  content: '⚡';
+  position: absolute;
+  left: 0;
+  color: var(--naraa-gold);
+  font-size: 1.4rem;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+  .apoie-content {
+    padding: 120px 4% 60px;
+  }
+
+  .apoie-section h1 {
+    font-size: clamp(2.5rem, 10vw, 4rem);
+  }
+
+  .apoie-texto {
+    font-size: 1.1rem;
+  }
+
+  .preco {
+    font-size: 2.8rem;
+  }
+
+  .btn-apoie {
+    width: 100%;
+    padding: 1.2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .apoie-recompensa {
+    padding: 1.8rem;
+  }
+
+  .apoie-recompensa li {
+    font-size: 1.05rem;
+  }
+}

@@ -1,52 +1,88 @@
-import React, { useState } from 'react';
-import { 
-  getAuth, 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword 
-} from "firebase/auth";
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
+} from 'firebase/auth';
+
 import './Login.css';
 
-export default function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+// Recebendo a prop 'user' que vem lá do App.jsx
+export default function Login({ user }) {
+  const navigate = useNavigate();
+  const auth = getAuth();
+  const googleProvider = new GoogleAuthProvider();
+
+  // Estados do formulário
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const auth = getAuth();
+  // Se o usuário já estiver logado, manda ele pra home automaticamente
+  useEffect(() => {
+    if (user) {
+      navigate('/');
+    }
+  }, [user, navigate]);
 
-  const handleSubmit = async (e) => {
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await signInWithPopup(auth, googleProvider);
+      navigate('/');
+    } catch (err) {
+      setError(`Falha ao conectar com Google: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setError('');
     setLoading(true);
 
-    try {
-      const action = isRegistering 
-        ? createUserWithEmailAndPassword 
-        : signInWithEmailAndPassword;
+    if (isRegistering) {
+      if (!displayName.trim()) {
+        setError('Escolha um nome para sua alma.');
+        setLoading(false);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('As senhas não coincidem.');
+        setLoading(false);
+        return;
+      }
+    }
 
-      await action(auth, email.trim(), password);
-      // O Firebase Auth detectará a mudança e o App.jsx fará o redirecionamento.
+    try {
+      if (isRegistering) {
+        // Cria usuário e atualiza o nome imediatamente
+        const res = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        await updateProfile(res.user, { 
+          displayName: displayName.trim() 
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+      }
+      navigate('/');
     } catch (err) {
-      let message = "Erro ao conectar à Tempestade";
-      
+      let message = 'Erro ao conectar à Tempestade';
       switch (err.code) {
-        case "auth/invalid-email":
-          message = "O e-mail inserido é inválido.";
-          break;
-        case "auth/user-not-found":
-        case "auth/wrong-password":
-        case "auth/invalid-credential":
-          message = "Credenciais incorretas.";
-          break;
-        case "auth/email-already-in-use":
-          message = "Este e-mail já possui uma alma vinculada.";
-          break;
-        case "auth/weak-password":
-          message = "A senha deve ter pelo menos 6 fragmentos (caracteres).";
-          break;
-        default:
-          message = "Falha na Matrix: " + err.message;
+        case 'auth/invalid-email': message = 'E-mail inválido.'; break;
+        case 'auth/invalid-credential': message = 'E-mail ou senha incorretos.'; break;
+        case 'auth/email-already-in-use': message = 'Este e-mail já está em uso.'; break;
+        case 'auth/weak-password': message = 'Senha muito fraca.'; break;
+        default: message = `Erro: ${err.code}`;
       }
       setError(message);
     } finally {
@@ -54,73 +90,91 @@ export default function Login() {
     }
   };
 
-  return (
-    <div className="login-void">
-      <div className="nebula-bg"></div>
-      
-      <div className="login-vessel">
-        <div className="glitch-hover">
-          <h1 className="title-glitch" data-text="SHITO">SHITO</h1>
-        </div>
-        
-        <p className="subtitle-seduce">
-          {isRegistering ? "DESPERTAR NOVA ALMA" : "ENTRAR NA TEMPESTADE"}
-        </p>
+  const toggleMode = () => {
+    setIsRegistering(!isRegistering);
+    setError('');
+  };
 
-        <form onSubmit={handleSubmit}>
-          <div className="input-wrapper">
+  return (
+    <div className="login-page">
+      <nav className="reader-header">
+        <div className="nav-container">
+          <div className="nav-logo" onClick={() => navigate('/')}>SHITO</div>
+          <ul className="nav-menu">
+            <li onClick={() => navigate('/')}>Início</li>
+            <li onClick={() => navigate('/sobre-autor')}>Sobre</li>
+          </ul>
+        </div>
+      </nav>
+
+      <main className="login-content">
+        <div className="login-card">
+          <h1 className="login-title">SHITO</h1>
+          <p className="login-subtitle">
+            {isRegistering ? 'Despertar Nova Alma' : 'Entrar na Tempestade'}
+          </p>
+
+          <form onSubmit={handleFormSubmit}>
+            {isRegistering && (
+              <input
+                className="login-input"
+                type="text"
+                placeholder="Nome do Usuário (ex: Marcelly)"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                maxLength={35}
+                required
+              />
+            )}
             <input
-              className="neon-input"
+              className="login-input"
               type="email"
               placeholder="E-mail"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              disabled={loading}
             />
-            <div className="input-glow"></div>
-          </div>
-
-          <div className="input-wrapper">
             <input
-              className="neon-input"
+              className="login-input"
               type="password"
               placeholder="Senha"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              disabled={loading}
             />
-            <div className="input-glow"></div>
-          </div>
-
-          <button 
-            type="submit" 
-            className={`submit-pulse ${loading ? "loading" : ""}`}
-            disabled={loading || !email.trim() || password.length < 6}
-          >
-            {loading ? (
-              <span className="loader">CONECTANDO...</span>
-            ) : (
-              isRegistering ? "CRIAR CONTA" : "ENTRAR"
+            {isRegistering && (
+              <input
+                className="login-input"
+                type="password"
+                placeholder="Confirmar Senha"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
             )}
+            <button type="submit" className="btn-submit" disabled={loading}>
+              {loading ? 'CARREGANDO...' : isRegistering ? 'CADASTRAR' : 'ENTRAR'}
+            </button>
+          </form>
+
+          <div className="social-divider">ou</div>
+
+          <button type="button" className="btn-google" onClick={handleGoogleSignIn} disabled={loading}>
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" />
+            GOOGLE
           </button>
-        </form>
 
-        {error && <p className="error-seductive">{error}</p>}
+          {error && <p className="error-message">{error}</p>}
 
-        <p 
-          className="toggle-soul"
-          onClick={() => {
-            setIsRegistering(!isRegistering);
-            setError("");
-          }}
-        >
-          {isRegistering 
-            ? "Já possui conta? Entrar" 
-            : "Ainda não tem conta? Despertar"}
-        </p>
-      </div>
+          <p className="toggle-register">
+            {isRegistering ? (
+              <>Já tem conta? <span onClick={toggleMode}>Entrar</span></>
+            ) : (
+              <>Novo por aqui? <span onClick={toggleMode}>Despertar</span></>
+            )}
+          </p>
+        </div>
+      </main>
     </div>
   );
 }

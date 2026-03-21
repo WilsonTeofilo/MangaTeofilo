@@ -1,271 +1,494 @@
 :root {
-    /* Paleta de Cores (Tokens) */
-    --charcoal-dark: #0a0a0a;
-    --surface-card: #141414;
-    --text-pure: #ffffff;
-    --text-muted: #a0a0a0;
-   
-    /* Cores das Habilidades */
-    --naraa-gold: #ffcc00;
-    --miomya-purple: #9d00ff;
-    --rin-shadow: #444444;
-    --kuroi-fire: #ff4500;
-   
-    /* Transições */
-    --transition-smooth: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  /* Paleta de Cores (Tokens) */
+  --charcoal-dark: #0a0a0a;
+  --surface-card: #141414;
+  --text-pure: #ffffff;
+  --text-muted: #a0a0a0;
+  
+  /* Cores dos Personagens */
+  --naraa-gold:   #ffcc00;
+  --miomya-purple: #9d00ff;
+  --rin-shadow:    #444444;
+  --kuroi-fire:    #ff4500;
+  
+  /* Transições */
+  --transition-smooth: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  --transition-fast:   0.25s ease;
 }
 
-/* Reset Básico */
+/* Reset + Base */
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-    background-color: var(--charcoal-dark);
-    color: var(--text-pure);
-    font-family: 'Poppins', sans-serif;
-    overflow-x: hidden;
-    line-height: 1.6;
+  background-color: var(--charcoal-dark);
+  color: var(--text-pure);
+  font-family: 'Poppins', sans-serif;
+  overflow-x: hidden;
+  line-height: 1.6;
+  padding-top: 70px; /* Espaço para o header fixo */
 }
 
-/* 1. HEADER / BANNER */
+/* =============================================
+   HEADER DE NAVEGAÇÃO (plataforma style)
+============================================= */
+.reader-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1000;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #222;
+  padding: 1rem 5%;
+}
+
+.nav-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.nav-logo {
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: -1.5px;
+  color: var(--text-pure);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.nav-logo:hover {
+  color: var(--naraa-gold);
+  text-shadow: 0 0 20px rgba(255, 204, 0, 0.5);
+}
+
+.nav-menu {
+  display: flex;
+  gap: 2rem;
+  list-style: none;
+}
+
+.nav-menu li {
+  color: var(--text-muted);
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  white-space: nowrap;
+}
+
+.nav-menu li:hover {
+  color: var(--text-pure);
+}
+
+.nav-auth {
+  display: flex;
+  align-items: center;
+}
+
+.btn-login-header {
+  padding: 0.75rem 1.8rem;
+  background: transparent;
+  border: 2px solid var(--text-pure);
+  color: var(--text-pure);
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  white-space: nowrap;
+}
+
+.btn-login-header:hover {
+  background: var(--text-pure);
+  color: var(--charcoal-dark);
+}
+
+.user-info-header {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.user-info-header span {
+  font-weight: 500;
+}
+
+.user-info-header button {
+  padding: 0.6rem 1.4rem;
+  background: #222;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.user-info-header button:hover {
+  background: var(--kuroi-fire);
+  color: white;
+}
+
+/* =============================================
+   MAIN BANNER
+============================================= */
 .main-banner {
-    height: 100vh;
-    background-size: cover;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    border-bottom: 5px solid var(--surface-card);
+  position: relative;
+  height: 100vh;
+  min-height: 700px;
+  max-height: 1100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  overflow: hidden;
 }
 
-/* Efeito de Vinheta e Degradê Inferior */
 .main-banner::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: radial-gradient(circle, transparent 20%, rgba(0,0,0,0.9) 100%),
-                linear-gradient(to bottom, transparent 70%, var(--charcoal-dark) 100%);
-}
-
-
-/* FORÇANDO IMPACTO TOTAL >FOTO BANNER<*/
-.lore-banner-image {
-    width: 100vw; /* Ocupa 100% da largura da janela do navegador */
-    position: relative;
-    left: 50%;
-    right: 50%;
-    margin-left: -50vw;
-    margin-right: -50vw;
-    margin-top: 50px;
-    margin-bottom: 80px;
-    display: flex;
-    justify-content: center;
-    background: #000; /* Fundo preto caso a imagem demore a carregar */
-}
-
-.lore-banner-image img {
-    width: 65%;
-    max-width: 100%;
-    height: auto;
-    display: block;
-   
-    /* Brilho e Nitidez */
-    filter: brightness(1.1) contrast(1.1);
-   
-   
-    border-top: 1px solid #222;
-    border-bottom: 1px solid #222;
-   
-    transition: transform 1s ease;
-}
-
-.lore-banner-image img:hover {
-    transform: scale(1.02); /* Zoom sutil sem quebrar o layout */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 35%, transparent 15%, rgba(0,0,0,0.75) 65%),
+              linear-gradient(to bottom, transparent 55%, var(--charcoal-dark) 98%);
+  z-index: 2;
+  pointer-events: none;
 }
 
 .banner-content {
-    position: relative;
-    z-index: 2;
-    text-align: center;
+  position: relative;
+  z-index: 3;
+  text-align: center;
+  padding: 0 5%;
+  max-width: 1200px;
+  width: 100%;
 }
 
 .game-logo {
-    font-size: clamp(4rem, 10vw, 8rem);
-    font-weight: 900;
-    letter-spacing: -2px;
-    text-transform: uppercase;
-    color: transparent;
-    -webkit-text-stroke: 2px var(--text-pure);
-    filter: drop-shadow(0 0 15px rgba(255,255,255,0.3));
+  font-size: clamp(4.5rem, 12vw, 10rem);
+  font-weight: 900;
+  letter-spacing: -3px;
+  text-transform: uppercase;
+  color: transparent;
+  -webkit-text-stroke: 2.5px var(--text-pure);
+  text-shadow: 0 0 35px rgba(255,255,255,0.3);
 }
 
 .game-sublogo {
-    font-size: 1.2rem;
-    letter-spacing: 8px;
-    font-weight: 300;
-    margin-top: -10px;
-    color: var(--text-pure);
+  font-size: clamp(1.3rem, 4vw, 2.2rem);
+  letter-spacing: 10px;
+  font-weight: 300;
+  margin-top: -1rem;
+  color: var(--text-pure);
+  opacity: 0.92;
 }
 
-/* 2. SEÇÃO LORE */
+/* =============================================
+   SEÇÃO LORE
+============================================= */
 .lore-summary {
-    padding: 100px 20px;
-    text-align: center;
-    max-width: 800px;
-    margin: 0 auto;
+  padding: 100px 5% 80px;
+  text-align: center;
+  max-width: 950px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 10;
+}
+
+.lore-date {
+  display: block;
+  color: var(--naraa-gold);
+  letter-spacing: 3px;
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
 }
 
 .lore-summary h3 {
-    font-size: 2.5rem;
-    margin-bottom: 20px;
-    letter-spacing: 2px;
+  font-size: clamp(2.2rem, 5.5vw, 3.4rem);
+  margin-bottom: 1.8rem;
+  letter-spacing: 2px;
 }
 
 .lore-summary p {
-    color: var(--text-muted);
-    font-size: 1.1rem;
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  margin-bottom: 1.6rem;
 }
 
-/* 3. GRID DE PERSONAGENS */
+.lore-highlight {
+  font-style: italic;
+  color: #e0e0e0;
+  font-size: 1.25rem;
+  margin-top: 2rem;
+  line-height: 1.7;
+}
+
+.lore-banner-image {
+  width: 100vw;
+  position: relative;
+  left: 50%;
+  right: 50%;
+  margin: 60px -50vw;
+  background: #000;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.lore-banner-image img {
+  width: 75%;
+  max-width: 1400px;
+  height: auto;
+  object-fit: cover;
+  filter: brightness(1.08) contrast(1.12);
+  border-top: 1px solid #222;
+  border-bottom: 1px solid #222;
+  transition: transform 1.3s ease;
+}
+
+.lore-banner-image img:hover {
+  transform: scale(1.015);
+}
+
+/* =============================================
+   PERSONAGENS
+============================================= */
 .characters-section {
-    padding: 80px 5%;
+  padding: 100px 5% 140px;
 }
 
 .section-title {
-    text-align: center;
-    font-size: 2rem;
-    margin-bottom: 50px;
-    text-transform: uppercase;
+  text-align: center;
+  font-size: clamp(2.2rem, 5vw, 3.2rem);
+  margin-bottom: 70px;
+  text-transform: uppercase;
+  letter-spacing: 4px;
 }
 
 .character-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 30px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2.2rem;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .char-card {
-    background: var(--surface-card);
-    border: 1px solid #222;
-    border-radius: 12px;
-    overflow: hidden;
-    transition: var(--transition-smooth);
-    position: relative;
+  background: var(--surface-card);
+  border: 1px solid #1e1e1e;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: var(--transition-smooth);
 }
 
 .gif-box {
-    width: 100%;
-    height: 350px;
-    overflow: hidden;
-    background: #000;
+  width: 100%;
+  height: 360px;
+  overflow: hidden;
+  background: #000;
 }
 
 .gif-box img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    filter: grayscale(100%) contrast(1.2);
-    transition: var(--transition-smooth);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(85%) contrast(1.15);
+  transition: var(--transition-smooth);
 }
 
 .char-desc {
-    padding: 25px;
-    background: linear-gradient(to top, #000, transparent);
+  padding: 1.8rem 1.5rem 2.2rem;
+  background: linear-gradient(to top, #000 30%, transparent);
 }
 
 .char-desc h4 {
-    font-size: 1.8rem;
-    margin-bottom: 10px;
+  font-size: 1.7rem;
+  margin-bottom: 0.8rem;
 }
 
-/* EFEITOS DE HOVER PERSONALIZADOS */
 .char-card:hover {
-    transform: translateY(-15px) scale(1.02);
+  transform: translateY(-14px);
 }
 
-.char-card:hover img {
-    filter: grayscale(0%) contrast(1);
+.char-card:hover .gif-box img {
+  filter: grayscale(0%) contrast(1.1);
 }
 
-/* Naraa Glow */
-.char-card.naraa:hover { box-shadow: 0 10px 40px -10px var(--naraa-gold); border-color: var(--naraa-gold); }
-.char-card.naraa h4 { color: var(--naraa-gold); }
+/* Glows por personagem */
+.char-card.naraa:hover { box-shadow: 0 12px 50px -12px var(--naraa-gold);   border-color: var(--naraa-gold); }
+.char-card.naraa       h4 { color: var(--naraa-gold); }
 
-/* Miomya Glow */
-.char-card.miomya:hover { box-shadow: 0 10px 40px -10px var(--miomya-purple); border-color: var(--miomya-purple); }
-.char-card.miomya h4 { color: var(--miomya-purple); }
+.char-card.miomya:hover { box-shadow: 0 12px 50px -12px var(--miomya-purple); border-color: var(--miomya-purple); }
+.char-card.miomya      h4 { color: var(--miomya-purple); }
 
-/* Rin Glow */
-.char-card.rin:hover { box-shadow: 0 10px 40px -10px var(--text-muted); border-color: var(--text-pure); }
+.char-card.rin:hover   { box-shadow: 0 12px 50px -12px #666; border-color: #888; }
+.char-card.rin         h4 { color: #ccc; }
 
-/* Kuroi Glow + Shake */
 .char-card.kuroi:hover {
-    box-shadow: 0 10px 40px -10px var(--kuroi-fire);
-    border-color: var(--kuroi-fire);
-    animation: shake 0.3s infinite;
+  box-shadow: 0 12px 50px -12px var(--kuroi-fire);
+  border-color: var(--kuroi-fire);
+  animation: shake 0.4s infinite;
 }
-.char-card.kuroi h4 { color: var(--kuroi-fire); }
+.char-card.kuroi       h4 { color: var(--kuroi-fire); }
 
 @keyframes shake {
-    0% { transform: translate(1px, 1px) scale(1.02); }
-    25% { transform: translate(-1px, -1px) scale(1.02); }
-    50% { transform: translate(-2px, 1px) scale(1.02); }
-    75% { transform: translate(1px, -1px) scale(1.02); }
-    100% { transform: translate(1px, 1px) scale(1.02); }
+  0%, 100% { transform: translate(0,0) scale(1.015); }
+  25%      { transform: translate(1.5px, 1px) scale(1.015); }
+  75%      { transform: translate(-1.5px, -1px) scale(1.015); }
 }
 
-/* 4. FOOTER E PRÉ-SAVE */
+/* =============================================
+   FOOTER
+============================================= */
 .site-footer {
-    padding: 100px 5%;
-    background: #050505;
-    text-align: center;
-    border-top: 1px solid #111;
+  padding: 100px 5% 60px;
+  background: #050505;
+  text-align: center;
+  border-top: 1px solid #111;
 }
 
-.email-form {
-    margin-top: 30px;
-    display: flex;
-    justify-content: center;
-    gap: 10px;
+.footer-stats {
+  max-width: 800px;
+  margin: 0 auto 60px;
+}
+
+.footer-stats h3 {
+  font-size: 1.8rem;
+  margin-bottom: 2rem;
+  letter-spacing: 2px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 4rem;
+  flex-wrap: wrap;
+  margin-bottom: 2.5rem;
+}
+
+.stats-row p {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+}
+
+.stats-row span {
+  color: var(--naraa-gold);
+  font-weight: 700;
+}
+
+.btn-read-now {
+  padding: 1.2rem 3.2rem;
+  background: var(--naraa-gold);
+  color: #000;
+  font-size: 1.25rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  box-shadow: 0 8px 30px rgba(255,204,0,0.35);
+}
+
+.btn-read-now:hover {
+  transform: translateY(-5px) scale(1.05);
+  box-shadow: 0 16px 50px rgba(255,204,0,0.55);
+}
+
+.copyright {
+  color: #444;
+  font-size: 0.9rem;
+  margin-top: 4rem;
+}
+
+/* =============================================
+   RESPONSIVIDADE
+============================================= */
+@media (max-width: 1024px) {
+  .main-banner {
+    height: 85vh;
+    min-height: 600px;
+  }
+  
+  .game-logo {
+    font-size: clamp(4rem, 10vw, 7rem);
+  }
+  
+  .lore-banner-image img {
+    width: 85%;
+  }
+}
+
+@media (max-width: 768px) {
+  .reader-header {
+    padding: 1rem 4%;
+  }
+  
+  .nav-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.2rem;
+  }
+  
+  .nav-menu {
     flex-wrap: wrap;
+    gap: 1.2rem;
+    justify-content: center;
+    width: 100%;
+    text-align: center;
+  }
+  
+  .main-banner {
+    height: 70vh;
+    min-height: 500px;
+  }
+  
+  .banner-content {
+    padding: 0 15px;
+  }
+  
+  .lore-summary {
+    padding: 60px 5% 50px;
+  }
+  
+  .lore-banner-image {
+    margin: 40px -50vw;
+  }
+  
+  .lore-banner-image img {
+    width: 95%;
+  }
+  
+  .characters-section {
+    padding: 60px 5% 100px;
+  }
+  
+  .stats-row {
+    gap: 2rem;
+    flex-direction: column;
+  }
+  
+  .btn-read-now {
+    padding: 1rem 2.5rem;
+    font-size: 1.1rem;
+  }
 }
 
-.email-form input {
-    padding: 15px 25px;
-    background: #111;
-    border: 1px solid #333;
-    color: white;
-    border-radius: 5px;
-    width: 300px;
-}
-
-.email-form button {
-    padding: 15px 40px;
-    background: var(--text-pure);
-    color: black;
-    border: none;
-    font-weight: 900;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: 0.3s;
-    border-radius: 5px;
-}
-
-.email-form button:hover {
-    background: var(--naraa-gold);
-    letter-spacing: 2px;
-}
-
-.visit-counter {
-    margin-top: 50px;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-}
-
-.visit-counter span {
-    color: var(--naraa-gold);
-    font-weight: bold;
+@media (max-width: 480px) {
+  .game-logo {
+    font-size: clamp(3rem, 9vw, 5rem);
+  }
+  
+  .game-sublogo {
+    font-size: 1.1rem;
+    letter-spacing: 5px;
+  }
 }

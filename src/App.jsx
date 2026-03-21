@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
@@ -6,11 +5,17 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
 
+// Componentes Globais
+import Header from './Header'; 
+
 // Pages
 import Login from './Login';
 import ShitoGame from './ShitoGame';
 import SobreAutor from './SobreAutor';
-import Apoie from './Apoie';  // ← Import corrigido (ajuste o caminho se estiver em src/pages/Apoie.jsx)
+import Apoie from './Apoie';
+import AdminPanel from './AdminPanel';
+import Capitulos from './Capitulos'; // Novo Import
+import Leitor from './Leitor';       // Novo Import (o próximo que vamos criar)
 
 const firebaseConfig = {
   apiKey: "AIzaSyCIfoyLhykhz6IstjXNfHvMOltnPUHNvIA",
@@ -23,7 +28,6 @@ const firebaseConfig = {
   databaseURL: "https://shitoproject-ed649-default-rtdb.firebaseio.com"
 };
 
-// Inicializa Firebase apenas uma vez
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 
@@ -36,37 +40,50 @@ export default function App() {
       setUsuario(user);
       setCarregando(false);
     });
-
-    // Cleanup do listener
     return () => unsubscribe();
   }, []);
 
   if (carregando) {
-    return <div className="loading">Carregando Alma...</div>;
+    return (
+      <div className="loading-screen" style={{
+        height: '100vh', background: '#050505', display: 'flex', 
+        alignItems: 'center', justifyContent: 'center', color: '#ffcc00'
+      }}>
+        Carregando Alma...
+      </div>
+    );
   }
 
   return (
     <Router>
+      {/* O Header recebe o usuário para mostrar "Olá, Wilson" ou o botão Login */}
+      <Header usuario={usuario} />
+
       <Routes>
+        {/* HOME */}
         <Route path="/" element={<ShitoGame user={usuario} />} />
+        
+        {/* VITRINE DE CAPÍTULOS (Manga Livre style) */}
+        <Route path="/capitulos" element={<Capitulos user={usuario} />} />
+
+        {/* O LEITOR (Onde as páginas do mangá aparecem) */}
+        <Route path="/ler/:id" element={<Leitor user={usuario} />} />
+        
+        {/* AUTH E ADMIN */}
         <Route path="/login" element={<Login user={usuario} />} />
+        <Route path="/admin" element={<AdminPanel user={usuario} />} />
+        
+        {/* INSTITUCIONAL */}
         <Route path="/sobre-autor" element={<SobreAutor user={usuario} />} />
-        <Route path="/apoie" element={<Apoie user={usuario} />} />  {/* ← Rota corrigida e adicionada */}
+        <Route path="/apoie" element={<Apoie user={usuario} />} />
 
-        {/* Rota futura para capítulos */}
-        {/* <Route path="/capitulos" element={<Capitulos user={usuario} />} /> */}
-
-        {/* Rota 404 para evitar páginas em branco vazias */}
+        {/* Rota 404 */}
         <Route path="*" element={
           <div style={{ 
-            height: '100vh', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            color: 'white', 
-            fontSize: '2rem' 
+            height: '80vh', display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', color: 'white', fontSize: '1.5rem' 
           }}>
-            Página não encontrada (404) — Volte para <a href="/" style={{ color: '#ffcc00' }}>Início</a>
+            A névoa encobriu esta página (404)
           </div>
         } />
       </Routes>

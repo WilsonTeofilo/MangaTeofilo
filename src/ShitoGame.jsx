@@ -1,73 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp, getApps, getApp } from "firebase/app";
 import { getDatabase, ref, onValue, increment, update } from "firebase/database";
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { useNavigate } from 'react-router-dom';
 import './App.css';
 
-// --- CONFIGURAÇÃO FIREBASE ---
-const firebaseConfig = {
-  apiKey: "AIzaSyCIfoyLhykhz6IstjXNfHvMOltnPUHNvIA",
-  authDomain: "shitoproject-ed649.firebaseapp.com",
-  projectId: "shitoproject-ed649",
-  storageBucket: "shitoproject-ed649.firebasestorage.app",
-  messagingSenderId: "613627655546",
-  appId: "1:613627655546:web:370838bb5e3867f431d2c3",
-  measurementId: "G-5QNETWX5RW",
-  databaseURL: "https://shitoproject-ed649-default-rtdb.firebaseio.com"
-};
-
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getDatabase(app);
-const auth = getAuth(app);
-
 export default function ShitoGame() {
   const [visitas, setVisitas] = useState(0);
-  const [usuario, setUsuario] = useState(null);
   const hasIncremented = useRef(false);
   const navigate = useNavigate();
+  const db = getDatabase(); // Pega a instância já inicializada no App.jsx
 
   useEffect(() => {
-    // Contador de visualizações globais da obra
+    // 1. Contador de visualizações (Executa apenas uma vez ao carregar a home)
     if (!hasIncremented.current) {
       update(ref(db, 'stats'), { contador: increment(1) });
       hasIncremented.current = true;
     }
     
-    const unsubVisitas = onValue(ref(db, 'stats/contador'), (s) => setVisitas(s.val() || 0));
-    const unsubAuth = onAuthStateChanged(auth, (user) => setUsuario(user));
-    return () => {
-      unsubVisitas();
-      unsubAuth();
-    };
-  }, []);
+    // 2. Escuta o valor das visitas em tempo real
+    const unsubVisitas = onValue(ref(db, 'stats/contador'), (s) => {
+      setVisitas(s.val() || 0);
+    });
+
+    return () => unsubVisitas();
+  }, [db]);
 
   return (
     <div className="shito-page">
-      {/* NOVO HEADER: Estilo Plataforma de Leitura */}
-      <nav className="reader-header">
-        <div className="nav-container">
-          <div className="nav-logo" onClick={() => navigate('/')}>SHITO</div>
-          <ul className="nav-menu">
-            <li onClick={() => navigate('/')}>Início</li>
-            <li onClick={() => navigate('/capitulos')}>Capítulos</li>
-            <li onClick={() => navigate('/sobre-autor')}>Sobre o Autor</li>
-            <li onClick={() => navigate('/apoie')}>Apoie a Obra</li> {/* CORRIGIDO AQUI */}
-          </ul>
-          <div className="nav-auth">
-            {!usuario ? (
-              <button className="btn-login-header" onClick={() => navigate('/login')}>
-                ENTRAR / CADASTRAR
-              </button>
-            ) : (
-              <div className="user-info-header">
-                <span>Olá, {usuario.displayName || 'Guerreiro'}</span>
-                <button onClick={() => signOut(auth)}>Sair</button>
-              </div>
-            )}
-          </div>
-        </div>
-      </nav>
+      {/* O HEADER SUMIU DAQUI! 
+         Ele agora é renderizado pelo App.jsx automaticamente.
+      */}
 
       {/* BANNER PRINCIPAL */}
       <header className="main-banner">

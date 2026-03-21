@@ -96,16 +96,7 @@ export default function Login({ user }) {
   };
 
   return (
-    <div className="login-page">
-      <nav className="reader-header">
-        <div className="nav-container">
-          <div className="nav-logo" onClick={() => navigate('/')}>SHITO</div>
-          <ul className="nav-menu">
-            <li onClick={() => navigate('/')}>Início</li>
-            <li onClick={() => navigate('/sobre-autor')}>Sobre</li>
-          </ul>
-        </div>
-      </nav>
+   
 
       <main className="login-content">
         <div className="login-card">
@@ -175,6 +166,6 @@ export default function Login({ user }) {
           </p>
         </div>
       </main>
-    </div>
+
   );
 }

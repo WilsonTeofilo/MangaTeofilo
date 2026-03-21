@@ -1,0 +1,250 @@
+/* Capitulos.css - Lista de Capítulos no estilo Shito × Manga Plus (thumb WIDESCREEN) */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --charcoal-dark: #0a0a0a;
+  --surface-card: #141414;
+  --text-pure: #ffffff;
+  --text-muted: #a0a0a0;
+  --naraa-gold: #ffcc00;
+  --border-subtle: #222222;
+  --transition-fast: 0.25s ease;
+  --transition-smooth: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* =============================================
+   PÁGINA INTEIRA
+============================================= */
+.capitulos-page {
+  min-height: 100vh;
+  background: var(--charcoal-dark);
+  color: var(--text-pure);
+  font-family: 'Poppins', sans-serif;
+  padding: 80px 20px 40px;
+}
+
+.capitulos-container {
+  max-width: 1200px; /* um pouco mais largo para thumbs widescreen */
+  margin: 0 auto;
+}
+
+/* Header da seção */
+.section-header {
+  position: relative;
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.header-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, #333, transparent);
+  z-index: 0;
+}
+
+.section-header h2 {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  background: var(--charcoal-dark);
+  padding: 0 2.5rem;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: var(--naraa-gold);
+  text-transform: uppercase;
+}
+
+/* =============================================
+   LISTA COMPACTADA - Thumb WIDESCREEN
+============================================= */
+.shueisha-capitulos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shito-cap-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-card);
+  border-radius: 12px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  border: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
+.shito-cap-row:hover {
+  background: #181818;
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6),
+              0 0 30px rgba(255, 204, 0, 0.18);
+  border-color: rgba(255, 204, 0, 0.35);
+}
+
+/* Lado esquerdo: # + miniatura widescreen + título */
+.cap-left-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shito-cap-number {
+  font-size: 1.7rem;
+  font-weight: 900;
+  color: var(--naraa-gold);
+  letter-spacing: -1.5px;
+  min-width: 90px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+/* Miniatura WIDESCREEN: largo e visível */
+.shito-cap-miniature-wrapper {
+  width: 184px;             
+  height: 104px;             
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0f0f0f;
+  border: 1px solid #2a2a2a;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.75);
+}
+
+.shito-cap-miniature {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.45s ease;
+}
+
+.shito-cap-row:hover .shito-cap-miniature {
+  transform: scale(1.08);
+}
+
+/* Título principal */
+.cap-main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.shito-cap-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-pure);
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Lado direito: Data */
+.cap-right-info {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.shito-cap-date {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Empty state */
+.no-chapters {
+  text-align: center;
+  padding: 6rem 1rem;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+
+/* Loading */
+.loading-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--naraa-gold);
+  font-size: 1.4rem;
+  gap: 2rem;
+}
+
+.shito-loader {
+  width: 70px;
+  height: 70px;
+  border: 6px solid #222;
+  border-top: 6px solid var(--naraa-gold);
+  border-radius: 50%;
+  animation: spin 1.3s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsividade - thumb reduz proporcionalmente */
+@media (max-width: 768px) {
+  .capitulos-page {
+    padding: 70px 16px 30px;
+  }
+
+  .shito-cap-row {
+    padding: 14px 16px;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+
+  .cap-left-info {
+    flex: 1 1 100%;
+  }
+
+  .cap-right-info {
+    width: 100%;
+    text-align: left;
+    font-size: 0.9rem;
+  }
+
+  .shito-cap-miniature-wrapper {
+    width: 140px;
+    height: 78px; /* mantém widescreen em mobile */
+  }
+
+  .shito-cap-number {
+    font-size: 1.5rem;
+    min-width: 80px;
+  }
+
+  .shito-cap-title {
+    font-size: 1.08rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .shito-cap-miniature-wrapper {
+    width: 120px;
+    height: 67px;
+  }
+
+  .shito-cap-number {
+    font-size: 1.35rem;
+    min-width: 70px;
+  }
+
+  .section-header h2 {
+    font-size: 1.7rem;
+  }
+}

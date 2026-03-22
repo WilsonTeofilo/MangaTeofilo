@@ -45,21 +45,22 @@
 
         {/* SINOPSE DETALHADA */}
         <section className="lore-summary">
-          <span className="lore-date">750 D.C. — CONTINENTE DE BRAJIRU</span>
+          <span className="lore-date">Shito - Antes do cataclismo</span>
           <h3>A CICATRIZ DOS DEUSES</h3>
           <p>
             Antes das feridas que retalharam o mundo, Shito era uma massa única regida pelas linhagens Kiraya e Moshiki.
-            O Cataclisma (226-252 D.C.) trouxe a guerra entre divindades: Yukio, Orochi e Matatabi.
-            Dessa era de agonia, restou o <strong>Miasma</strong>, uma névoa tóxica que isola os continentes e corrompe as almas.
+           A guerra entre divindades, Yukio , Orochi e Matatabi trouxeram o cataclismo
+            que fragmentou o planeta, danddo origem aos continentes e as novas formas de vidas. A humanidade, antes subjugada, emergiu como a raça dominante, mas as cicatrizes da guerra divina ainda ecoam em cada canto do mundo.
           </p>
           <div className="lore-banner-image">
             {/* Certifique-se que esta imagem está em public/assets/fotos/ */}
             <img src="/assets/fotos/shito.jpg" alt="A Grande Guerra" />
           </div>
           <p className="lore-highlight">
-            Quatro séculos depois, na densa selva de Brajiru, a caçadora <strong>Miomya Inpachi</strong> resgata do gelo
-            um homem de 350 D.C. <strong>Naraa</strong> desperta em um futuro quebrado, portando memórias de um tempo
-            onde deuses sangravam e a esperança ainda tinha nome.
+                <span className="lore-date">DEPOIS DO CATACLISMO (D.C) - SHITO, BRAJIRU.</span>
+            Na densa selva de Brajiru, a caçadora <strong>Miomya Inpachi</strong> resgata do gelo
+            um homem de 350 D.C, que estava a 400 anos congelado. <strong>Naraa</strong> Desperta em um futuro quebrado, portando memórias fragmentadas, sem se lembrar de seu nome ou passado, mas com um poder latente que o torna uma peça-chave em um mundo onde a luta por sobrevivência é constante. Juntos, eles enfrentam as ameaças do mundo repleto por guerras, monstros e segredos antigos, em uma jornada que os levará a confrontar as forças misteriosas.
+     
           </p>
         </section>
 
@@ -71,7 +72,7 @@
               <div className="gif-box"><img src="/assets/Gifs/NaraaGIF.gif" alt="Naraa" /></div>
               <div className="char-desc">
                 <h4>NARAA</h4>
-                <p>O Fantasma de 350 D.C. Criado por lobos, ele é o "espécime raro" que detém segredos do passado antigo.</p>
+                <p>Com Poderes gélidos , Naraa é implacável na caça e veloz contra seus adversários.</p>
               </div>
             </div>
             
@@ -79,15 +80,15 @@
               <div className="gif-box"><img src="/assets/Gifs/MiomyaGIF.gif" alt="Miomya" /></div>
               <div className="char-desc">
                 <h4>MIOMYA</h4>
-                <p>Caçadora de elite de Brajiru. Pequena em altura, mas capaz de erguer feras de 4 metros acima da cabeça.</p>
+                <p>Caçadora de elite de Brajiru. Pequena em altura, mas capaz de erguer feras enormes e de nocautear gigantes.</p>
               </div>
             </div>
 
             <div className="char-card rin">
               <div className="gif-box"><img src="/assets/Gifs/RinGIF.gif" alt="Rin" /></div>
               <div className="char-desc">
-                <h4>RIN</h4>
-                <p>Manipuladora de gravidade. Sua pressão espiritual é capaz de congelar a atmosfera ao seu redor.</p>
+                <h4>RIN </h4>
+                <p>Manipuladora dos raios. Sua pressão espiritual é capaz de mudar a atmosfera ao seu redor.</p>
               </div>
             </div>
 
@@ -95,7 +96,7 @@
               <div className="gif-box"><img src="/assets/Gifs/KuroiGIF.gif" alt="Kuroi" /></div>
               <div className="char-desc">
                 <h4>KUROI</h4>
-                <p>O mestre do degelo e da combustão. Amigo leal que protege o grupo com suas chamas purificadoras.</p>
+                <p>O mestre do fogo, da manipulação da chama. Amigo leal que protege o grupo com suas labaredas purificadoras.</p>
               </div>
             </div>
           </div>
@@ -113,7 +114,7 @@
               COMEÇAR LEITURA
             </button>
           </div>
-          <p className="copyright">© 2026 Shito: Fragmentos da Tempestade - Todos os direitos reservados.</p>
+          <p className="copyright">© 2026 Shito: Fragmentos da Tempestade - Todos os direitos reservados para Wilson Teofilo.</p>
         </footer>
       </div>
     );

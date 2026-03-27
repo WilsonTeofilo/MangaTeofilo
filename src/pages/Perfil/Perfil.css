@@ -88,6 +88,29 @@
   text-transform: uppercase;
 }
 
+.notify-group {
+  margin-top: -8px;
+}
+
+.notify-label {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem !important;
+  color: #cfcfcf !important;
+  text-transform: none !important;
+  letter-spacing: 0.2px !important;
+  line-height: 1.35;
+}
+
+.notify-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--naraa-gold);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .perfil-input {
   width: 100%;
   box-sizing: border-box; /* Evita que o padding estoure a largura */
@@ -106,6 +129,30 @@
   border-color: var(--naraa-gold);
   background: #222;
   box-shadow: 0 0 15px rgba(255, 204, 0, 0.1);
+}
+
+select.perfil-input {
+  appearance: none;
+  cursor: pointer;
+}
+
+.account-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  background: #141414;
+  color: #cfcfcf;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.account-type-badge.premium {
+  border-color: rgba(255, 204, 0, 0.5);
+  background: rgba(255, 204, 0, 0.12);
+  color: var(--naraa-gold);
 }
 
 /* GRID DE SELEÇÃO */

@@ -1,69 +1,131 @@
+// src/pages/Perfil/Perfil.jsx
 import React, { useState, useEffect } from 'react';
-import { updateProfile } from 'firebase/auth'; // Removido getAuth daqui
-import { ref, update } from "firebase/database"; // Removido getDatabase daqui
+import { updateProfile } from 'firebase/auth';
+import { ref, update, get, onValue } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
-// 1. IMPORTAÇÃO CENTRALIZADA (Usa a mesma conexão que o Leitor)
-import { auth, db } from '../../services/firebase'; 
-
-// 2. CSS NA MESMA PASTA
+import { db } from '../../services/firebase';
+import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser } from '../../constants'; // ✅ centralizado
 import './Perfil.css';
 
-export default function Perfil() {
+// ✅ Recebe `user` via prop (consistente com App.jsx)
+// Não usa mais auth.currentUser diretamente para evitar dessincronização
+export default function Perfil({ user }) {
   const navigate = useNavigate();
-  const user = auth.currentUser;
 
-  const [novoNome, setNovoNome] = useState('');
+  const [novoNome, setNovoNome]               = useState('');
   const [avatarSelecionado, setAvatarSelecionado] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [mensagem, setMensagem] = useState({ texto: '', tipo: '' });
-
-  // Avatares apontando para a raiz da pasta public
-  const listaAvatares = Array.from({ length: 17 }, (_, i) => `/assets/avatares/ava${i + 1}.webp`);
+  const [notifyNewChapter, setNotifyNewChapter] = useState(false);
+  const [listaAvatares, setListaAvatares] = useState(LISTA_AVATARES);
+  const [gender, setGender] = useState('nao_informado');
+  const [birthYear, setBirthYear] = useState('');
+  const [accountType, setAccountType] = useState('comum');
+  const [loading, setLoading]                 = useState(false);
+  const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
 
   useEffect(() => {
+    const carregarPerfil = async () => {
+      const snap = await get(ref(db, `usuarios/${user.uid}`));
+      const perfil = snap.val() || {};
+      setNotifyNewChapter(Boolean(perfil.notifyNewChapter));
+      setGender(perfil.gender || 'nao_informado');
+      if (isAdminUser(user)) {
+        setAccountType('admin');
+      } else {
+        setAccountType(perfil.accountType || 'comum');
+      }
+      setBirthYear(
+        typeof perfil.birthYear === 'number' && perfil.birthYear > 1900
+          ? String(perfil.birthYear)
+          : ''
+      );
+    };
+
     if (!user) {
       navigate('/login');
-    } else {
-      setNovoNome(user.displayName || '');
-      setAvatarSelecionado(user.photoURL || listaAvatares[0]);
+      return;
     }
+    setNovoNome(user.displayName || '');
+    setAvatarSelecionado(user.photoURL || LISTA_AVATARES[0]);
+    carregarPerfil().catch(() => setNotifyNewChapter(false));
   }, [user, navigate]);
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'avatares'), (snap) => {
+      if (!snap.exists()) return;
+      const data = Object.values(snap.val() || {})
+        .filter((item) => item?.active !== false && typeof item?.url === 'string')
+        .sort((a, b) => {
+          const aOrder = typeof a?.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
+          const bOrder = typeof b?.order === 'number' ? b.order : Number.MAX_SAFE_INTEGER;
+          if (aOrder !== bOrder) return aOrder - bOrder;
+          return (b?.createdAt || 0) - (a?.createdAt || 0);
+        })
+        .map((item) => item.url);
+      if (data.length > 0) {
+        setListaAvatares(data);
+        setAvatarSelecionado((prev) => (data.includes(prev) ? prev : data[0]));
+      }
+    });
+    return () => unsub();
+  }, []);
 
   const handleSalvar = async (e) => {
     e.preventDefault();
-    if (!novoNome.trim()) return setMensagem({ texto: "Dê um nome à sua alma!", tipo: 'erro' });
-    
+
+    if (!novoNome.trim()) {
+      setMensagem({ texto: 'Dê um nome à sua alma!', tipo: 'erro' });
+      return;
+    }
+
+    const anoAtual = new Date().getFullYear();
+    const ano = Number(birthYear);
+    if (birthYear && (!Number.isInteger(ano) || ano < 1900 || ano > anoAtual)) {
+      setMensagem({ texto: 'Informe um ano de nascimento válido.', tipo: 'erro' });
+      return;
+    }
+
     setLoading(true);
     setMensagem({ texto: '', tipo: '' });
 
     try {
-      // 1. ATUALIZA NO AUTH (Sistema de Login do Firebase)
+      // 1. Atualiza no Firebase Auth
       await updateProfile(user, {
         displayName: novoNome.trim(),
-        photoURL: avatarSelecionado
+        photoURL: avatarSelecionado,
       });
 
-      // 2. ATUALIZA NO DATABASE (Onde o Leitor.jsx "escuta" a mudança)
-      // Usando o 'db' centralizado para garantir sincronia imediata
-      const userRef = ref(db, `usuarios/${user.uid}`);
-      await update(userRef, {
+      // 2. Atualiza no Realtime Database (Leitor.jsx escuta daqui)
+      await update(ref(db, `usuarios/${user.uid}`), {
+        userName:   novoNome.trim(),
+        userAvatar: avatarSelecionado,
+        uid:        user.uid,
+        notifyNewChapter,
+        gender,
+        birthYear: birthYear ? ano : null,
+        lastLogin: Date.now(),
+      });
+
+      await update(ref(db, `usuarios_publicos/${user.uid}`), {
+        uid: user.uid,
         userName: novoNome.trim(),
         userAvatar: avatarSelecionado,
-        uid: user.uid
+        accountType,
+        updatedAt: Date.now(),
       });
 
-      setMensagem({ texto: "Perfil forjado com sucesso!", tipo: 'sucesso' });
-      
-      // Pequeno delay para o usuário ver o sucesso
+      setMensagem({ texto: 'Perfil forjado com sucesso!', tipo: 'sucesso' });
       setTimeout(() => navigate('/'), 1500);
+
     } catch (error) {
-      console.error("Erro na forja:", error);
-      setMensagem({ texto: "Erro ao atualizar: " + error.message, tipo: 'erro' });
+      console.error('Erro na forja:', error);
+      setMensagem({ texto: 'Erro ao atualizar: ' + error.message, tipo: 'erro' });
     } finally {
       setLoading(false);
     }
   };
+
+  if (!user) return null; // guard enquanto o useEffect redireciona
 
   return (
     <main className="perfil-page">
@@ -74,15 +136,19 @@ export default function Perfil() {
         <form onSubmit={handleSalvar}>
           <div className="avatar-big-preview">
             <div className="circle-wrap">
-              <img src={avatarSelecionado} alt="Preview Avatar" />
+              <img
+                src={avatarSelecionado}
+                alt="Preview Avatar"
+                onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
+              />
             </div>
           </div>
 
           <div className="input-group">
             <label>NOME DE EXIBIÇÃO</label>
-            <input 
-              type="text" 
-              className="perfil-input" 
+            <input
+              type="text"
+              className="perfil-input"
               value={novoNome}
               onChange={(e) => setNovoNome(e.target.value)}
               maxLength={25}
@@ -90,19 +156,68 @@ export default function Perfil() {
             />
           </div>
 
+          <div className="input-group">
+            <label>ANO DE NASCIMENTO</label>
+            <input
+              type="number"
+              className="perfil-input"
+              value={birthYear}
+              onChange={(e) => setBirthYear(e.target.value)}
+              placeholder="Ex: 2001"
+              min="1900"
+              max={new Date().getFullYear()}
+            />
+          </div>
+
+          <div className="input-group">
+            <label>SEXO</label>
+            <select
+              className="perfil-input"
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+            >
+              <option value="nao_informado">Prefiro não informar</option>
+              <option value="masculino">Masculino</option>
+              <option value="feminino">Feminino</option>
+              <option value="outro">Outro</option>
+            </select>
+          </div>
+
+          <div className="input-group">
+            <label>TIPO DE CONTA</label>
+            <div className={`account-type-badge ${accountType !== 'comum' ? 'premium' : ''}`}>
+              {accountType === 'admin' ? '🛡️ Conta Admin' : accountType !== 'comum' ? '👑 Conta Premium' : 'Conta Comum'}
+            </div>
+          </div>
+
           <div className="avatar-selection-section">
             <label>ESCOLHA SEU NOVO VISUAL</label>
             <div className="avatar-options-grid">
               {listaAvatares.map((url, i) => (
-                <div 
-                  key={i} 
+                <div
+                  key={i}
                   className={`avatar-option-card ${avatarSelecionado === url ? 'active' : ''}`}
                   onClick={() => setAvatarSelecionado(url)}
                 >
-                  <img src={url} alt={`Opção ${i + 1}`} />
+                  <img
+                    src={url}
+                    alt={`Opção ${i + 1}`}
+                    onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
+                  />
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="input-group notify-group">
+            <label className="notify-label">
+              <input
+                type="checkbox"
+                checked={notifyNewChapter}
+                onChange={(e) => setNotifyNewChapter(e.target.checked)}
+              />
+              Receber notificacoes por e-mail quando novo capitulo for lancado
+            </label>
           </div>
 
           {mensagem.texto && (
@@ -122,3 +237,4 @@ export default function Perfil() {
     </main>
   );
 }
+

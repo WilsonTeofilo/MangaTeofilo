@@ -22,6 +22,7 @@
 .capitulos-container {
   max-width: 1000px;
   margin: 0 auto;
+  width: 100%;
 }
 
 /* --- HEADER GLITCH --- */
@@ -230,5 +231,61 @@
   .arrow-mobile {
     color: var(--naraa-gold);
     font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .capitulos-page {
+    padding: 84px 12px 36px;
+  }
+
+  .section-header {
+    margin-bottom: 28px;
+  }
+
+  .shito-title-glitch {
+    letter-spacing: 3px;
+  }
+
+  .shito-cap-row {
+    padding: 12px;
+  }
+
+  .cap-left-info {
+    gap: 12px;
+  }
+
+  .cap-main-content {
+    gap: 12px;
+  }
+
+  .shito-cap-miniature-wrapper {
+    width: 82px;
+  }
+
+  .cap-right-info {
+    gap: 10px;
+  }
+
+  .shito-cap-date {
+    font-size: 0.72rem;
+  }
+}
+
+@media (min-width: 1700px) {
+  .capitulos-container {
+    max-width: 1240px;
+  }
+
+  .shito-cap-row {
+    padding: 14px 28px;
+  }
+
+  .shito-cap-miniature-wrapper {
+    width: 190px;
+  }
+
+  .shito-cap-title {
+    font-size: 1.2rem;
   }
 }

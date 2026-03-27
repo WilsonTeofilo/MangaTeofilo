@@ -4,7 +4,18 @@ import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'fi
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 
 import { db, storage, auth } from '../../services/firebase'; 
+import { isAdminUser } from '../../constants';
 import './AdminPanel.css';
+
+const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+
+function validarImagemUpload(file, label = 'arquivo') {
+  if (!file) return `${label} nao encontrado.`;
+  if (!IMAGE_TYPES.includes(file.type)) return `${label} invalido. Use JPG, PNG ou WEBP.`;
+  if (file.size > MAX_IMAGE_SIZE_BYTES) return `${label} excede 5MB.`;
+  return '';
+}
 
 // --- COMPONENTE: MODAL DE ERRO ---
 function ModalErro({ mensagem, aoFechar }) {
@@ -111,7 +122,7 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, o
         <input 
           type="file" 
           hidden 
-          accept="image/*"
+          accept="image/jpeg,image/jpg,image/png,image/webp"
           onChange={(e) => onTrocar(e.target.files[0])} 
         />
       </label>
@@ -138,10 +149,8 @@ export default function AdminPanel() {
   const [mostrarTodasAsFotos, setMostrarTodasAsFotos] = useState(false);
   const [erroModal, setErroModal] = useState('');
 
-  const ADMIN_UID = "n5JTPLsxpyQPeC5qQtraSrBa4rG3";
-
   useEffect(() => {
-    if (!user || user.uid !== ADMIN_UID) {
+    if (!isAdminUser(user)) {
       navigate('/');
       return;
     }
@@ -158,7 +167,9 @@ export default function AdminPanel() {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+    };
   }, [user, navigate]);
 
   const handleReordenarPagina = async (indexAntigo, indexNovo) => {
@@ -183,6 +194,11 @@ export default function AdminPanel() {
 
   const handleTrocarPaginaUnica = async (index, arquivoNovo) => {
     if (!arquivoNovo) return;
+    const erroArquivo = validarImagemUpload(arquivoNovo, 'Pagina');
+    if (erroArquivo) {
+      setErroModal(erroArquivo);
+      return;
+    }
     setLoading(true);
     setProgressoMsg(`Trocando página ${index + 1}...`);
     try {
@@ -207,6 +223,10 @@ export default function AdminPanel() {
   const handleUploadManga = async (arquivos, tituloObra) => {
     const urls = [];
     for (let i = 0; i < arquivos.length; i++) {
+      const erroArquivo = validarImagemUpload(arquivos[i], `Pagina ${i + 1}`);
+      if (erroArquivo) {
+        throw new Error(erroArquivo);
+      }
       const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}`;
       const fileRef = storageRef(storage, pathStorage);
       const uploadTask = uploadBytesResumable(fileRef, arquivos[i]);
@@ -236,12 +256,20 @@ export default function AdminPanel() {
       let urlsPaginas = [];
 
       if (capaCapitulo) {
+        const erroCapa = validarImagemUpload(capaCapitulo, 'Capa');
+        if (erroCapa) {
+          throw new Error(erroCapa);
+        }
         const capaRef = storageRef(storage, `capas/${Date.now()}_${capaCapitulo.name}`);
         await uploadBytes(capaRef, capaCapitulo);
         urlCapa = await getDownloadURL(capaRef);
       }
 
       if (arquivosPaginas.length > 0) {
+        arquivosPaginas.forEach((file, idx) => {
+          const erro = validarImagemUpload(file, `Pagina ${idx + 1}`);
+          if (erro) throw new Error(erro);
+        });
         urlsPaginas = await handleUploadManga(arquivosPaginas, titulo);
       }
 
@@ -337,8 +365,8 @@ export default function AdminPanel() {
             )}
 
             <div className="file-inputs">
-              <label>Alterar Capa: <input type="file" accept="image/*" onChange={(e) => setCapaCapitulo(e.target.files[0])} /></label>
-              <label>Refazer Capítulo: <input type="file" multiple accept="image/*" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
+              <label>Alterar Capa: <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => setCapaCapitulo(e.target.files[0])} /></label>
+              <label>Refazer Capítulo: <input type="file" multiple accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
             </div>
 
             {loading && (

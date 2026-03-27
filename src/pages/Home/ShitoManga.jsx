@@ -1,9 +1,10 @@
   import React, { useState, useEffect, useRef } from 'react';
   import { ref, onValue, increment, update } from "firebase/database";
+  import { onAuthStateChanged } from 'firebase/auth';
   import { useNavigate } from 'react-router-dom';
 
   // 1. IMPORTAÇÃO DO SERVICE CENTRAL (Subindo dois níveis: Home -> Pages -> Src)
-  import { db } from '../../services/firebase';
+  import { auth, db } from '../../services/firebase';
 
   // 2. CSS COM NOME ATUALIZADO
   import './ShitoManga.css';
@@ -14,21 +15,25 @@
     const navigate = useNavigate();
 
     useEffect(() => {
-      // 1. CONTADOR DE VISUALIZAÇÕES (Executa apenas uma vez para não inflar os dados)
-      if (!hasIncremented.current) {
+      // 1. CONTADOR DE VISUALIZAÇÕES (somente usuário autenticado/ativo pelas regras)
+      const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+        if (!currentUser || hasIncremented.current) return;
         const statsRef = ref(db, 'stats');
         update(statsRef, { contador: increment(1) })
           .catch(err => console.error("Erro ao atualizar stats:", err));
         hasIncremented.current = true;
-      }
-      
+      });
+
       // 2. ESCUTA AS VISITAS EM TEMPO REAL
       const contadorRef = ref(db, 'stats/contador');
       const unsubVisitas = onValue(contadorRef, (snapshot) => {
         setVisitas(snapshot.val() || 0);
       });
 
-      return () => unsubVisitas();
+      return () => {
+        unsubAuth();
+        unsubVisitas();
+      };
     }, []);
 
     return (

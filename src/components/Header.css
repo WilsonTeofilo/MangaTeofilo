@@ -1,76 +1,190 @@
-/* Header.css - Estilo Premium Shito */
+/* Header.css - Polido AAA */
 :root {
   --naraa-gold: #ffcc00;
   --naraa-gold-hover: #ffe066;
   --header-height: 80px;
   --header-mobile-height: 70px;
-  --transition-smooth: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .reader-header {
-  background: #000;
-  border-bottom: 2px solid var(--naraa-gold);
   position: sticky;
   top: 0;
-  z-index: 1000;
+  z-index: 1100;
   width: 100%;
   height: var(--header-height);
   display: flex;
   align-items: center;
+  background: linear-gradient(120deg, rgba(6, 6, 10, 0.98), rgba(12, 12, 18, 0.98));
+  border-bottom: 1px solid rgba(255, 204, 0, 0.35);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
 }
 
 .nav-container {
-  max-width: 1200px;
+  max-width: 1280px;
   width: 100%;
   margin: 0 auto;
+  padding: 0 22px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  gap: 18px;
 }
 
 .nav-logo {
-  font-size: 1.8rem;
+  font-size: 1.75rem;
   font-weight: 900;
+  letter-spacing: 0.4px;
   color: var(--naraa-gold);
   cursor: pointer;
-  letter-spacing: -1px;
+  text-shadow: 0 0 16px rgba(255, 204, 0, 0.18);
+  transition: var(--transition-smooth);
 }
 
-/* --- MENU DESKTOP --- */
+.nav-logo:hover {
+  color: var(--naraa-gold-hover);
+  transform: translateY(-1px);
+}
+
 .nav-menu {
-  display: flex;
   list-style: none;
-  gap: 25px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
   margin: 0;
   padding: 0;
   transition: var(--transition-smooth);
 }
 
 .nav-menu li {
-  color: #888;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: var(--transition-smooth);
+  color: #9ca4b5;
+  font-weight: 700;
+  font-size: 0.84rem;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition-smooth);
+}
+
+.nav-menu li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -8px;
+  width: 0%;
+  height: 2px;
+  background: var(--naraa-gold);
+  transition: var(--transition-smooth);
 }
 
 .nav-menu li:hover {
+  color: #f2f5ff;
+}
+
+.nav-menu li:hover::after {
+  width: 100%;
+}
+
+.admin-menu-item {
+  position: relative;
+  padding: 10px 0;
+  margin: -10px 0;
+}
+
+.admin-menu-item::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: -24px;
+  right: -24px;
+  bottom: -14px;
+  pointer-events: none;
+}
+
+.admin-menu-trigger {
+  border: 1px solid rgba(255, 204, 0, 0.62);
+  background: rgba(255, 204, 0, 0.08);
   color: var(--naraa-gold);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.7px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
 }
 
-.admin-link-highlight {
-  color: var(--naraa-gold) !important;
-  border: 1px solid var(--naraa-gold);
-  padding: 5px 12px;
-  border-radius: 4px;
+.admin-menu-trigger:hover {
+  background: rgba(255, 204, 0, 0.2);
+  color: #fff;
 }
 
-/* --- AUTH / PERFIL --- */
+.admin-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 230px;
+  display: none;
+  flex-direction: column;
+  background: #101520;
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  z-index: 1300;
+}
+
+.admin-menu-item:hover .admin-dropdown,
+.admin-menu-item.open .admin-dropdown {
+  display: flex;
+}
+
+.admin-dropdown button {
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: #dbe4f5;
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.admin-dropdown button:last-child {
+  border-bottom: none;
+}
+
+.admin-dropdown button:hover {
+  background: rgba(255, 204, 0, 0.13);
+  color: #fff;
+}
+
 .nav-auth {
   display: flex;
   align-items: center;
+}
+
+.btn-login-header {
+  border: 1px solid rgba(255, 204, 0, 0.58);
+  background: rgba(255, 204, 0, 0.08);
+  color: var(--naraa-gold);
+  font-weight: 800;
+  font-size: 0.76rem;
+  letter-spacing: 0.8px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.btn-login-header:hover {
+  background: rgba(255, 204, 0, 0.18);
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .user-info-header {
@@ -81,13 +195,13 @@
 }
 
 .header-avatar-wrapper {
-  width: 55px;
-  height: 55px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   overflow: hidden;
-  border: 2px solid var(--naraa-gold);
+  border: 2px solid rgba(255, 204, 0, 0.85);
   background: #1a1a1a;
-  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(255, 204, 0, 0.1);
   transition: var(--transition-smooth);
 }
 
@@ -95,96 +209,111 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
+  transition: transform var(--transition-smooth);
 }
 
-/* Efeito de Zoom e Brilho */
 .user-info-header:hover .header-avatar-wrapper {
-  box-shadow: 0 0 15px var(--naraa-gold);
+  box-shadow: 0 0 20px rgba(255, 204, 0, 0.32);
   border-color: var(--naraa-gold-hover);
 }
 
 .user-info-header:hover .header-avatar-img {
-  transform: scale(1.1);
+  transform: scale(1.08);
 }
 
 .user-text-group {
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
 
 .welcome-text {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 700;
-  color: #fff;
+  color: #edf0f8;
 }
 
 .btn-logout-header {
-  background: none;
-  border: none;
+  min-width: 74px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 204, 0, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 204, 0, 0.04);
   color: var(--naraa-gold);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 800;
   cursor: pointer;
-  text-align: left;
-  padding: 0;
-  width: fit-content;
-}
-
-/* --- HAMBURGUER --- */
-.mobile-menu-icon {
-  display: none;
-  cursor: pointer;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.bar {
-  width: 25px;
-  height: 3px;
-  background-color: white;
+  text-align: center;
   transition: var(--transition-smooth);
 }
 
-/* ... (Mantenha o resto do CSS igual, substitua apenas a parte do Mobile) ... */
+.btn-logout-header:hover {
+  color: #fff2b8;
+  background: rgba(255, 204, 0, 0.12);
+  border-color: rgba(255, 204, 0, 0.45);
+}
 
-/* --- RESPONSIVIDADE (FIX TOTAL MOBILE) --- */
-@media (max-width: 900px) {
+.mobile-menu-icon {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.bar {
+  width: 24px;
+  height: 2.5px;
+  border-radius: 4px;
+  background: #fff;
+  transition: var(--transition-smooth);
+}
+
+.mobile-menu-icon.active .bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.mobile-menu-icon.active .bar:nth-child(2) {
+  opacity: 0;
+}
+
+.mobile-menu-icon.active .bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+@media (max-width: 980px) {
   .reader-header {
     height: var(--header-mobile-height);
-    padding: 0 15px;
   }
 
   .nav-container {
-    justify-content: flex-start; /* Logo na esquerda */
+    justify-content: flex-start;
     position: relative;
+    padding: 0 16px;
   }
 
-  /* ÍCONE FIXO NO CANTO DIREITO */
   .mobile-menu-icon {
     display: flex;
     position: absolute;
-    right: 20px;
+    right: 16px;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 1100; /* Fica acima de TUDO */
+    z-index: 1200;
   }
 
-  /* GAVETA LATERAL DIREITA */
   .nav-menu {
     position: fixed;
     top: 0;
     right: -100%;
-    width: 260px; /* Um pouco mais estreito pra não cobrir tudo */
+    width: min(82vw, 320px);
     height: 100vh;
-    background: #0a0a0a;
     flex-direction: column;
-    padding: 80px 30px; /* Espaço no topo pro X não atropelar */
-    gap: 20px;
-    border-left: 2px solid var(--naraa-gold);
-    box-shadow: -10px 0 30px rgba(0,0,0,0.9);
-    align-items: flex-start; /* Opções alinhadas à esquerda */
-    text-align: left;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 88px 22px 22px;
+    background: linear-gradient(170deg, #0d0f15, #08090d);
+    border-left: 1px solid rgba(255, 204, 0, 0.35);
+    box-shadow: -18px 0 35px rgba(0, 0, 0, 0.6);
+    z-index: 1150;
   }
 
   .nav-menu.active {
@@ -193,33 +322,100 @@
 
   .nav-menu li {
     width: 100%;
-    padding: 15px 0;
-    border-bottom: 1px solid #1a1a1a;
-    font-size: 1rem;
-    letter-spacing: 1px;
+    padding: 13px 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.94rem;
+    color: #d8deea;
   }
 
-  /* AVATAR NO MEIO (OPCIONAL) */
+  .nav-menu li::after {
+    display: none;
+  }
+
+  .admin-menu-item {
+    width: 100%;
+  }
+
+  .admin-menu-trigger {
+    width: 100%;
+    text-align: left;
+    border-radius: 8px;
+  }
+
+  .admin-dropdown {
+    position: static;
+    min-width: 100%;
+    margin-top: 8px;
+    box-shadow: none;
+  }
+
   .nav-auth {
     position: absolute;
-    right: 70px; /* Fica ao lado do hambúrguer */
+    right: 58px;
     top: 50%;
     transform: translateY(-50%);
   }
 
   .user-text-group {
-    display: none; /* Esconde texto para não poluir o topo */
+    display: none;
   }
 
   .header-avatar-wrapper {
-    width: 45px;
-    height: 45px;
+    width: 42px;
+    height: 42px;
   }
 
   .mobile-only-logout {
     margin-top: auto;
-    color: #ff4444 !important;
-    font-weight: 800 !important;
-    border: none !important;
+    color: #ff6a6a !important;
+    font-weight: 900 !important;
+    border-bottom: none !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .nav-container {
+    max-width: 1440px;
+    padding: 0 28px;
+  }
+
+  .nav-logo {
+    font-size: 1.95rem;
+  }
+
+  .nav-menu li {
+    font-size: 0.9rem;
+  }
+}
+
+@media (min-width: 1920px) {
+  .reader-header {
+    height: 92px;
+  }
+
+  .nav-container {
+    max-width: 1700px;
+    padding: 0 36px;
+  }
+
+  .nav-logo {
+    font-size: 2.2rem;
+  }
+
+  .nav-menu {
+    gap: 30px;
+  }
+
+  .nav-menu li {
+    font-size: 0.98rem;
+  }
+
+  .header-avatar-wrapper {
+    width: 58px;
+    height: 58px;
+  }
+
+  .welcome-text {
+    font-size: 0.95rem;
   }
 }

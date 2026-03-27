@@ -109,7 +109,7 @@ export const cleanupUsers = onSchedule(
 export const notifyNewChapter = onValueCreated(
   {
     ref: '/capitulos/{capId}',
-    region: 'southamerica-east1',
+    region: 'us-central1',
     memory: '256MiB',
     timeoutSeconds: 120,
     secrets: [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM],

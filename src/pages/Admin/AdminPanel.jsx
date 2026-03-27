@@ -3,28 +3,109 @@ import { useNavigate } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 
-// 1. IMPORTAÇÃO CENTRALIZADA (Usa o db, storage e auth do seu service)
 import { db, storage, auth } from '../../services/firebase'; 
-
-// 2. CSS NA MESMA PASTA
 import './AdminPanel.css';
 
-// --- COMPONENTE AUXILIAR: MODO ECONÔMICO ---
-function PaginaCard({ index, url, onTrocar }) {
+// --- COMPONENTE: MODAL DE ERRO ---
+function ModalErro({ mensagem, aoFechar }) {
+  if (!mensagem) return null;
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <div className="modal-header">⚠️ OPERAÇÃO BLOQUEADA</div>
+        <div className="modal-body">
+          <p>{mensagem}</p>
+        </div>
+        <button onClick={aoFechar} className="btn-modal-close">CORRIGIR AGORA</button>
+      </div>
+    </div>
+  );
+}
+
+// --- COMPONENTE: CARD DA PÁGINA (INPUT + DRAG AND DROP) ---
+function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, onErro }) {
   const [visivel, setVisivel] = useState(false);
+  const [valorInput, setValorInput] = useState(index + 1);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    setValorInput(index + 1);
+  }, [index]);
+
+  useEffect(() => {
+    if (forcarRevelar) setVisivel(true);
+  }, [forcarRevelar]);
+
+  const validarEReordenar = () => {
+    const valorDigitado = parseInt(valorInput);
+    if (isNaN(valorDigitado)) {
+      setValorInput(index + 1);
+      return;
+    }
+    if (valorDigitado > total || valorDigitado < 1) {
+      onErro(`Página ${valorDigitado} não existe! Este capítulo só tem ${total} páginas.`);
+      setValorInput(index + 1);
+      return;
+    }
+    const novoIndex = valorDigitado - 1;
+    if (novoIndex !== index) {
+      onReordenar(index, novoIndex);
+    }
+  };
+
+  // Funções de Arrastar (Drag and Drop)
+  const handleDragStart = (e) => {
+    e.dataTransfer.setData("indexOrigem", index);
+    setIsDragging(true);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const indexOrigem = parseInt(e.dataTransfer.getData("indexOrigem"));
+    setIsDragging(false);
+    if (indexOrigem !== index) {
+      onReordenar(indexOrigem, index);
+    }
+  };
 
   return (
-    <div className="pagina-edit-card">
+    <div 
+      className={`pagina-edit-card ${isDragging ? 'dragging' : ''}`}
+      draggable="true"
+      onDragStart={handleDragStart}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+      onDragEnd={() => setIsDragging(false)}
+    >
+      <div className="reorder-control">
+        <label>Posição:</label>
+        <input 
+          type="number" 
+          value={valorInput}
+          className="input-reorder"
+          onChange={(e) => setValorInput(e.target.value)} 
+          onBlur={validarEReordenar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              validarEReordenar();
+            }
+          }}
+        />
+      </div>
+
       <span className="badge-pg">Pág {index + 1}</span>
+      
       <div className="preview-placeholder">
         {visivel ? (
-          <img src={url} alt={`página ${index}`} />
+          <img src={url} alt={`página ${index}`} draggable="false" />
         ) : (
           <button type="button" className="btn-revelar" onClick={() => setVisivel(true)}>
             VER PÁGINA
           </button>
         )}
       </div>
+
       <label className="btn-trocar">
         TROCAR JPG
         <input 
@@ -38,36 +119,34 @@ function PaginaCard({ index, url, onTrocar }) {
   );
 }
 
+// --- COMPONENTE PRINCIPAL ---
 export default function AdminPanel() {
   const navigate = useNavigate();
   const user = auth.currentUser;
 
-  // Estados do Form
   const [titulo, setTitulo] = useState('');
   const [numeroCapitulo, setNumeroCapitulo] = useState('');
   const [capaCapitulo, setCapaCapitulo] = useState(null);
   const [arquivosPaginas, setArquivosPaginas] = useState([]);
   const [paginasExistentes, setPaginasExistentes] = useState([]);
 
-  // Estados de Controle
   const [capitulos, setCapitulos] = useState([]);
   const [editandoId, setEditandoId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progressoMsg, setProgressoMsg] = useState('');
   const [porcentagem, setPorcentagem] = useState(0);
+  const [mostrarTodasAsFotos, setMostrarTodasAsFotos] = useState(false);
+  const [erroModal, setErroModal] = useState('');
 
-  // Seu UID de administrador
   const ADMIN_UID = "n5JTPLsxpyQPeC5qQtraSrBa4rG3";
 
   useEffect(() => {
-    // Proteção de Rota
     if (!user || user.uid !== ADMIN_UID) {
       navigate('/');
       return;
     }
 
-    const capitulosListRef = dbRef(db, 'capitulos');
-    const unsubscribe = onValue(capitulosListRef, (snapshot) => {
+    const unsubscribe = onValue(dbRef(db, 'capitulos'), (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const lista = Object.entries(data).map(([id, valores]) => ({
@@ -82,30 +161,46 @@ export default function AdminPanel() {
     return () => unsubscribe();
   }, [user, navigate]);
 
-  // FUNÇÃO PARA TROCAR APENAS UMA PÁGINA
+  const handleReordenarPagina = async (indexAntigo, indexNovo) => {
+    if (indexNovo < 0 || indexNovo >= paginasExistentes.length) return;
+
+    setLoading(true);
+    setProgressoMsg("Reordenando...");
+    try {
+      const novasPaginas = [...paginasExistentes];
+      const [paginaMovida] = novasPaginas.splice(indexAntigo, 1);
+      novasPaginas.splice(indexNovo, 0, paginaMovida);
+
+      await dbUpdate(dbRef(db, `capitulos/${editandoId}`), { paginas: novasPaginas });
+      setPaginasExistentes(novasPaginas);
+    } catch (err) {
+      setErroModal("Erro ao reordenar: " + err.message);
+    } finally {
+      setLoading(false);
+      setProgressoMsg('');
+    }
+  };
+
   const handleTrocarPaginaUnica = async (index, arquivoNovo) => {
     if (!arquivoNovo) return;
     setLoading(true);
-    setProgressoMsg(`Substituindo página ${index + 1}...`);
+    setProgressoMsg(`Trocando página ${index + 1}...`);
     try {
       const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}`;
       const fileRef = storageRef(storage, pathStorage);
       await uploadBytes(fileRef, arquivoNovo);
       const urlNova = await getDownloadURL(fileRef);
 
-      const updates = {};
-      updates[`capitulos/${editandoId}/paginas/${index}`] = urlNova;
-      await dbUpdate(dbRef(db), updates);
-
       const novasPaginas = [...paginasExistentes];
       novasPaginas[index] = urlNova;
+      
+      await dbUpdate(dbRef(db, `capitulos/${editandoId}`), { paginas: novasPaginas });
       setPaginasExistentes(novasPaginas);
-      setProgressoMsg('Sucesso!');
     } catch (err) {
-      setProgressoMsg('Erro: ' + err.message);
+      setErroModal("Erro no Upload: " + err.message);
     } finally {
       setLoading(false);
-      setTimeout(() => setProgressoMsg(''), 3000);
+      setProgressoMsg('');
     }
   };
 
@@ -132,8 +227,10 @@ export default function AdminPanel() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
     setLoading(true);
-    setProgressoMsg('Sincronizando com o Trono...');
+    setProgressoMsg('Sincronizando...');
     try {
       let urlCapa = null;
       let urlsPaginas = [];
@@ -161,26 +258,20 @@ export default function AdminPanel() {
         await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
       } else {
         if (!urlCapa || (urlsPaginas.length === 0 && arquivosPaginas.length === 0)) {
-            throw new Error("Anexe capa e páginas para um novo capítulo!");
+            throw new Error("Obrigatório: Capa + Arquivos.");
         }
         await set(push(dbRef(db, 'capitulos')), dados);
       }
 
       setEditandoId(null); setTitulo(''); setNumeroCapitulo(''); setPaginasExistentes([]); 
-      setArquivosPaginas([]); setCapaCapitulo(null);
+      setArquivosPaginas([]); setCapaCapitulo(null); setMostrarTodasAsFotos(false);
       e.target.reset();
-      setProgressoMsg('Capítulo forjado com sucesso!');
+      setProgressoMsg('FORJADO COM SUCESSO!');
     } catch (err) { 
-      alert(err.message); 
+      setErroModal(err.message); 
     } finally { 
       setLoading(false); 
       setTimeout(() => setProgressoMsg(''), 3000);
-    }
-  };
-
-  const handleDeletar = async (cap) => {
-    if (window.confirm(`Apagar fragmento ${cap.numero}?`)) {
-      await remove(dbRef(db, `capitulos/${cap.id}`));
     }
   };
 
@@ -189,11 +280,14 @@ export default function AdminPanel() {
     setTitulo(cap.titulo);
     setNumeroCapitulo(cap.numero);
     setPaginasExistentes(cap.paginas || []);
+    setMostrarTodasAsFotos(false);
     window.scrollTo(0, 0);
   };
 
   return (
     <div className="admin-panel">
+      <ModalErro mensagem={erroModal} aoFechar={() => setErroModal('')} />
+
       <header className="admin-header">
         <h1>SHITO - FORJA DO AUTOR</h1>
         <button className="btn-voltar" onClick={() => navigate('/')}>Sair</button>
@@ -201,7 +295,7 @@ export default function AdminPanel() {
 
       <main className="admin-container">
         <section className="form-section">
-          <h2>{editandoId ? 'Editar Fragmento' : 'Novo Capítulo'}</h2>
+          <h2>{editandoId ? '🔧 Cirurgia de Fragmento' : '✨ Novo Capítulo'}</h2>
           
           <form onSubmit={handleSubmit} className="admin-form">
             <div className="input-row">
@@ -211,17 +305,31 @@ export default function AdminPanel() {
 
             {editandoId && paginasExistentes.length > 0 && (
               <div className="cirurgia-paginas">
-                <div className="cirurgia-info">
-                  <h3>Edição Cirúrgica de Páginas</h3>
-                  <p>As fotos só carregam ao clicar em VER para economizar dados.</p>
+                <div className="cirurgia-header">
+                  <div className="cirurgia-info">
+                    <h3>Páginas Atuais</h3>
+                    <p>Arraste para reordenar ou use o campo de posição.</p>
+                  </div>
+                  <button 
+                    type="button" 
+                    className={`btn-revelar-tudo ${mostrarTodasAsFotos ? 'ativo' : ''}`}
+                    onClick={() => setMostrarTodasAsFotos(!mostrarTodasAsFotos)}
+                  >
+                    {mostrarTodasAsFotos ? 'ESCONDER TUDO' : 'REVELAR TODAS'}
+                  </button>
                 </div>
+
                 <div className="paginas-edit-grid">
                   {paginasExistentes.map((url, index) => (
                     <PaginaCard 
-                      key={`${editandoId}-${index}`}
+                      key={`${editandoId}-${url}`} 
                       index={index}
                       url={url}
+                      total={paginasExistentes.length}
                       onTrocar={(file) => handleTrocarPaginaUnica(index, file)}
+                      onReordenar={handleReordenarPagina}
+                      forcarRevelar={mostrarTodasAsFotos}
+                      onErro={setErroModal}
                     />
                   ))}
                 </div>
@@ -229,8 +337,8 @@ export default function AdminPanel() {
             )}
 
             <div className="file-inputs">
-              <label>Capa: <input type="file" accept="image/*" onChange={(e) => setCapaCapitulo(e.target.files[0])} /></label>
-              <label>Substituir Cap. Inteiro: <input type="file" multiple accept="image/*" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
+              <label>Alterar Capa: <input type="file" accept="image/*" onChange={(e) => setCapaCapitulo(e.target.files[0])} /></label>
+              <label>Refazer Capítulo: <input type="file" multiple accept="image/*" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
             </div>
 
             {loading && (
@@ -242,11 +350,11 @@ export default function AdminPanel() {
 
             <div className="form-actions">
               <button type="submit" className="btn-save" disabled={loading}>
-                {loading ? 'PROCESSANDO...' : editandoId ? 'SALVAR TÍTULO/CAPA' : 'LANÇAR CAPÍTULO'}
+                {loading ? 'PROCESSANDO...' : editandoId ? 'SALVAR ALTERAÇÕES' : 'LANÇAR CAPÍTULO'}
               </button>
               {editandoId && (
                 <button type="button" className="btn-cancel" onClick={() => {setEditandoId(null); setPaginasExistentes([]);}}>
-                  CANCELAR
+                  CANCELAR EDIÇÃO
                 </button>
               )}
             </div>
@@ -254,7 +362,7 @@ export default function AdminPanel() {
         </section>
 
         <section className="list-section">
-          <h2>CRUD de Fragmentos</h2>
+          <h2>CRUD - Lista de Capítulos</h2>
           <div className="capitulos-grid">
             {capitulos.map((cap) => (
               <div key={cap.id} className="cap-card">
@@ -264,7 +372,9 @@ export default function AdminPanel() {
                 </div>
                 <div className="cap-actions">
                   <button className="btn-edit" onClick={() => prepararEdicao(cap)}>EDITAR</button>
-                  <button className="btn-delete" onClick={() => handleDeletar(cap)}>APAGAR</button>
+                  <button className="btn-delete" onClick={() => {
+                    if (window.confirm(`Apagar fragmento ${cap.numero}?`)) remove(dbRef(db, `capitulos/${cap.id}`));
+                  }}>APAGAR</button>
                 </div>
               </div>
             ))}

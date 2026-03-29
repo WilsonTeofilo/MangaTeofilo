@@ -8,23 +8,162 @@ import {
   signInWithPopup,
   sendPasswordResetEmail,
   sendEmailVerification,
-  reload,
   signOut,
+  applyActionCode,
+  checkActionCode,
+  onAuthStateChanged,
+  ActionCodeOperation,
 } from 'firebase/auth';
-import { ref, set, get, update, onValue } from 'firebase/database';
+import { ref, get, onValue } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
 import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser } from '../../constants';
+import { ensureUsuarioRecord, refreshAuthUser, ativarContaUsuario } from '../../userProfileSync';
 import './Login.css';
 
 const PENDING_METHOD_KEY = 'login_pending_method';
 const PENDING_EMAIL_KEY  = 'login_pending_email';
+/** UID da conta Google em ativação (fallback se a flag por e-mail não bater). */
+const PENDING_GOOGLE_UID_KEY = 'login_pending_google_uid';
 const RESEND_KEY         = 'login_resend_verification_until';
 const FORGOT_KEY         = 'login_forgot_password_until';
+/** Só libera ativação Google após applyActionCode do link do Firebase (não basta emailVerified do Google). */
+const VERIFY_LINK_OK_KEY = 'shito_firebase_verify_link_ok';
+
+const MSG_VERIFY_GOOGLE_BLOCK =
+  'Não foi possível prosseguir. Verifique sua caixa de spam ou lixeira, abra o link que enviamos para ativar sua conta e volte aqui. Use "Já verifiquei (Google)" com a mesma conta.';
+
+const MSG_GOOGLE_CONTA_ERRADA = (esperado, recebido) =>
+  `Você entrou com outra conta Google (${recebidoShort(recebido)}). Esta ativação é para ${esperado}. Toque em "Reenviar e-mail" para mandar outro link para o e-mail certo.`;
+
+function recebidoShort(email) {
+  return (email || '').trim() || 'outra conta';
+}
+
+function verifyLinkStorageKey(email) {
+  const em = (email || '').trim().toLowerCase();
+  return em ? `shito_verify_link_${em}` : '';
+}
+
+function setVerifyLinkOk(email, uidOptional) {
+  sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+  const k = verifyLinkStorageKey(email);
+  if (k) localStorage.setItem(k, '1');
+  if (uidOptional) {
+    localStorage.setItem(`shito_verify_uid_${uidOptional}`, '1');
+  }
+}
+
+/** Domínio da URL deve estar em Authentication → Authorized domains no Console. */
+function getEmailVerificationActionSettings() {
+  return {
+    url: `${window.location.origin}/login`,
+    handleCodeInApp: true,
+  };
+}
+
+/** Firebase pode mandar mode/oob na query ou no hash (ex.: #/login?mode=...). */
+function parseAuthEmailLinkParams() {
+  const search = new URLSearchParams(window.location.search);
+  let mode = search.get('mode');
+  let oobCode = search.get('oobCode');
+  if (oobCode && mode) return { mode, oobCode };
+
+  const hash = window.location.hash || '';
+  if (hash) {
+    const q = hash.indexOf('?');
+    const raw = q >= 0 ? hash.slice(q + 1) : hash.replace(/^#/, '');
+    const hp = new URLSearchParams(raw);
+    mode = mode || hp.get('mode');
+    oobCode = oobCode || hp.get('oobCode');
+  }
+  return { mode, oobCode };
+}
+
+function clearVerifyLinkFlags(emailOptional, uidOptional) {
+  sessionStorage.removeItem(VERIFY_LINK_OK_KEY);
+  const k = verifyLinkStorageKey(emailOptional);
+  if (k) localStorage.removeItem(k);
+  const uid = uidOptional || sessionStorage.getItem(PENDING_GOOGLE_UID_KEY);
+  if (uid) localStorage.removeItem(`shito_verify_uid_${uid}`);
+}
+
+/** Aceita flag na sessão, por e-mail, ou por UID Google (link aplicado no mesmo aparelho). */
+function hasVerifyLinkOk(email, googleUidOptional) {
+  if (sessionStorage.getItem(VERIFY_LINK_OK_KEY) === '1') return true;
+  const k = verifyLinkStorageKey(email);
+  if (k && localStorage.getItem(k) === '1') return true;
+  const uid = googleUidOptional || sessionStorage.getItem(PENDING_GOOGLE_UID_KEY);
+  if (uid && localStorage.getItem(`shito_verify_uid_${uid}`) === '1') return true;
+  return false;
+}
+
+/** Copia qualquer flag `shito_verify_link_*` do localStorage para a sessão antes de validar. */
+function syncVerifyLinkFromStorage(expectedEmail, googleUidOptional) {
+  if (sessionStorage.getItem(VERIFY_LINK_OK_KEY) === '1') return;
+  const uid = googleUidOptional || sessionStorage.getItem(PENDING_GOOGLE_UID_KEY);
+  if (uid && localStorage.getItem(`shito_verify_uid_${uid}`) === '1') {
+    sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+    return;
+  }
+  const tryEmail = (expectedEmail || sessionStorage.getItem(PENDING_EMAIL_KEY) || '').trim();
+  if (tryEmail) {
+    const k = verifyLinkStorageKey(tryEmail);
+    if (k && localStorage.getItem(k) === '1') {
+      sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+      return;
+    }
+  }
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('shito_verify_link_') && localStorage.getItem(key) === '1') {
+      sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+      break;
+    }
+  }
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('shito_verify_uid_') && localStorage.getItem(key) === '1') {
+      sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+      break;
+    }
+  }
+}
+
 const ATTEMPT_LIMITS_KEY = 'login_attempt_limits_v1';
 const ATTEMPT_RULES = {
-  login:    { max: 6, windowMs: 10 * 60 * 1000, blockMs: 15 * 60 * 1000 },
-  register: { max: 3, windowMs: 60 * 60 * 1000, blockMs: 60 * 60 * 1000 },
+  login:    { max: 12, windowMs: 10 * 60 * 1000, blockMs: 10 * 60 * 1000 },
+  register: { max: 5, windowMs: 60 * 60 * 1000, blockMs: 45 * 60 * 1000 },
 };
+
+function emailsIguais(a, b) {
+  return (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+}
+
+/** Conta Google criada agora (não confundir com “sem nó no RTDB” por recovery). */
+function isContaGoogleNovaProvavel(user) {
+  if (!user?.metadata?.creationTime || !user?.metadata?.lastSignInTime) return true;
+  const c = new Date(user.metadata.creationTime).getTime();
+  const l = new Date(user.metadata.lastSignInTime).getTime();
+  return Number.isFinite(c) && Number.isFinite(l) && Math.abs(l - c) < 3 * 60 * 1000;
+}
+
+/** Força reload real da SPA: `replace('/login')` na mesma URL às vezes não remonta o React. */
+function irParaLoginAtivarConta() {
+  const u = new URL(`${window.location.origin}/login`);
+  u.searchParams.set('ativar', '1');
+  u.searchParams.set('t', String(Date.now()));
+  window.location.replace(u.toString());
+}
+
+/** Evita corrida: App lê perfil no RTDB antes de liberar a rota /. */
+function delayNavigateHome(navigate, ms = 120) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      navigate('/', { replace: true });
+      resolve();
+    }, ms);
+  });
+}
 
 // Avisa o App.jsx que o sessionStorage mudou — ele escuta esse evento
 // para atualizar o estado `temPending` de forma reativa.
@@ -32,11 +171,20 @@ function notificarPendingChanged() {
   window.dispatchEvent(new Event('pendingVerificationChanged'));
 }
 
+/** Limpa pendência em session + flags de link (sem setState; uso pós-link ou ativação automática). */
+function clearPendingVerificationSession(emailOptional, uidOptional) {
+  sessionStorage.removeItem(PENDING_METHOD_KEY);
+  sessionStorage.removeItem(PENDING_EMAIL_KEY);
+  sessionStorage.removeItem(PENDING_GOOGLE_UID_KEY);
+  clearVerifyLinkFlags(emailOptional || '', uidOptional);
+  notificarPendingChanged();
+}
+
 export default function Login() {
   const navigate = useNavigate();
 
   const [displayName,     setDisplayName]     = useState('');
-  const [email,           setEmail]           = useState('');
+  const [email,           setEmail]           = useState(() => sessionStorage.getItem(PENDING_EMAIL_KEY) || '');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isRegistering,   setIsRegistering]   = useState(false);
@@ -45,9 +193,13 @@ export default function Login() {
   const [loading,         setLoading]         = useState(false);
 
   // 'idle' | 'pending_email' | 'pending_google'
-  const [verificationState,     setVerificationState]     = useState('idle');
+  const [verificationState,     setVerificationState]     = useState(() => {
+    const method = sessionStorage.getItem(PENDING_METHOD_KEY);
+    if (!method) return 'idle';
+    return method === 'google' ? 'pending_google' : 'pending_email';
+  });
   const [showVerificationModal, setShowVerificationModal] = useState(false);
-  const [pendingEmailDisplay,   setPendingEmailDisplay]   = useState('');
+  const [pendingEmailDisplay,   setPendingEmailDisplay]   = useState(() => sessionStorage.getItem(PENDING_EMAIL_KEY) || '');
 
   const [resendCooldown,  setResendCooldown]  = useState(0);
   const [forgotCooldown,  setForgotCooldown]  = useState(0);
@@ -88,7 +240,158 @@ export default function Login() {
   useEffect(() => { if (resendCooldown === 0) sessionStorage.removeItem(RESEND_KEY); }, [resendCooldown]);
   useEffect(() => { if (forgotCooldown === 0) sessionStorage.removeItem(FORGOT_KEY); }, [forgotCooldown]);
 
-  // ── Retoma verificação pendente entre recargas ────────────────────────────
+  // ── Link do e-mail Firebase (oobCode) → e-mail via checkActionCode (funciona sem sessão) ─
+  useEffect(() => {
+    const { mode, oobCode } = parseAuthEmailLinkParams();
+    if (!oobCode || mode !== 'verifyEmail') return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const info = await checkActionCode(auth, oobCode);
+        if (cancelled) return;
+        if (info.operation !== ActionCodeOperation.VERIFY_EMAIL) {
+          setError('Este link não é de verificação de e-mail.');
+          return;
+        }
+        const emailFromCode = (info.data?.email || '').trim();
+
+        await applyActionCode(auth, oobCode);
+        if (cancelled) return;
+
+        if (auth.currentUser) await refreshAuthUser(auth.currentUser);
+
+        const uid = auth.currentUser?.uid || null;
+        const em =
+          emailFromCode ||
+          auth.currentUser?.email?.trim() ||
+          sessionStorage.getItem(PENDING_EMAIL_KEY) ||
+          '';
+        setVerifyLinkOk(em, uid);
+
+        if (auth.currentUser) {
+          const u = auth.currentUser;
+          const av = LISTA_AVATARES[0] || AVATAR_FALLBACK;
+          const isGoogle = u.providerData?.some((p) => p.providerId === 'google.com');
+          await updateProfile(u, {
+            photoURL: isGoogle ? av : (u.photoURL || av),
+            displayName: u.displayName || 'Guerreiro',
+          });
+          await refreshAuthUser(u);
+          await ensureUsuarioRecord(
+            u,
+            u.displayName || 'Guerreiro',
+            isGoogle ? av : (u.photoURL || av),
+            LISTA_AVATARES
+          );
+          await ativarContaUsuario(u.uid);
+          clearPendingVerificationSession(em, uid);
+          window.history.replaceState({}, '', '/login');
+          setInfo('Conta ativada! Entrando...');
+          window.location.replace(`${window.location.origin}/`);
+          return;
+        }
+
+        window.history.replaceState({}, '', '/login');
+        setInfo(
+          'E-mail confirmado. Use "CONECTAR COM GOOGLE" de novo com a mesma conta — a conta será ativada e você entra direto.'
+        );
+        notificarPendingChanged();
+      } catch (e) {
+        if (cancelled) return;
+        const code = e?.code;
+        const msg =
+          code === 'auth/invalid-action-code' || code === 'auth/expired-action-code'
+            ? 'Link expirado ou já usado. Use "Reenviar e-mail" e abra o novo link.'
+            : e?.message || 'Não foi possível confirmar o link.';
+        setError(msg);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Outra aba gravou confirmação no localStorage → sincroniza esta aba
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.newValue !== '1') return;
+      const k = e.key || '';
+      if (!k.startsWith('shito_verify_link_') && !k.startsWith('shito_verify_uid_')) return;
+      sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+      setInfo((prev) => prev || 'Confirmação encontrada neste navegador. Use "Já verifiquei".');
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Após signOut (ex.: fluxo Google pendente), o React às vezes não mostra ATIVAR — alinha com sessionStorage
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) return;
+      const method = sessionStorage.getItem(PENDING_METHOD_KEY);
+      if (!method) return;
+      const em = sessionStorage.getItem(PENDING_EMAIL_KEY) || '';
+      setPendingEmailDisplay(em);
+      setEmail(em);
+      setVerificationState(method === 'google' ? 'pending_google' : 'pending_email');
+      setInfo((prev) =>
+        prev ||
+        (method === 'google'
+          ? 'Conta pendente. Abra o link no e-mail e depois use "Já verifiquei (Google)".'
+          : 'Conta pendente. Verifique seu e-mail e use "Já verifiquei meu e-mail".')
+      );
+    });
+    return () => unsub();
+  }, []);
+
+  // Volta do app de e-mail / outra aba no mesmo navegador: copia flag do localStorage
+  useEffect(() => {
+    const syncVerify = () => {
+      const pendEm = sessionStorage.getItem(PENDING_EMAIL_KEY);
+      if (sessionStorage.getItem(VERIFY_LINK_OK_KEY) === '1') return;
+      if (pendEm) {
+        const k = verifyLinkStorageKey(pendEm);
+        if (k && localStorage.getItem(k) === '1') {
+          sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+          setInfo((prev) => prev || 'Confirmação encontrada. Use "Já verifiquei".');
+          return;
+        }
+      }
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('shito_verify_link_') && localStorage.getItem(key) === '1') {
+          sessionStorage.setItem(VERIFY_LINK_OK_KEY, '1');
+          setInfo((prev) => prev || 'Link de e-mail confirmado neste aparelho. Use "Já verifiquei".');
+          break;
+        }
+      }
+    };
+    syncVerify();
+    window.addEventListener('focus', syncVerify);
+    document.addEventListener('visibilitychange', syncVerify);
+    return () => {
+      window.removeEventListener('focus', syncVerify);
+      document.removeEventListener('visibilitychange', syncVerify);
+    };
+  }, []);
+
+  // Volta do redirect pós-Google (?ativar=1 força reload; alinha estado com sessionStorage)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('ativar')) return;
+    const method = sessionStorage.getItem(PENDING_METHOD_KEY);
+    if (method) {
+      const em = sessionStorage.getItem(PENDING_EMAIL_KEY) || '';
+      setPendingEmailDisplay(em);
+      setEmail(em);
+      setVerificationState(method === 'google' ? 'pending_google' : 'pending_email');
+    }
+    window.history.replaceState({}, '', '/login');
+  }, []);
+
+  // ── Retoma verificação pendente (ex.: outra aba alterou sessionStorage) ─────
   useEffect(() => {
     const method = sessionStorage.getItem(PENDING_METHOD_KEY);
     const em     = sessionStorage.getItem(PENDING_EMAIL_KEY);
@@ -96,7 +399,11 @@ export default function Login() {
     setPendingEmailDisplay(em || '');
     setEmail(em || '');
     setVerificationState(method === 'google' ? 'pending_google' : 'pending_email');
-    setInfo('Conta pendente. Verifique seu e-mail e clique em "Já verifiquei meu e-mail".');
+    setInfo(
+      method === 'google'
+        ? 'Conta pendente. Abra o link no e-mail e depois use "Já verifiquei (Google)".'
+        : 'Conta pendente. Verifique seu e-mail e clique em "Já verifiquei meu e-mail".'
+    );
   }, []);
 
   // ── Avatares dinâmicos ────────────────────────────────────────────────────
@@ -149,104 +456,62 @@ export default function Login() {
     localStorage.setItem(ATTEMPT_LIMITS_KEY, JSON.stringify(parsed));
   };
 
-  // ── Sincroniza perfil público ─────────────────────────────────────────────
-  const sincronizarUsuarioPublico = async (usuario, nome, foto, accountType = 'comum') => {
-    await set(ref(db, `usuarios_publicos/${usuario.uid}`), {
-      uid:        usuario.uid,
-      userName:   nome || 'Guerreiro',
-      userAvatar: foto || AVATAR_FALLBACK,
-      accountType,
-      updatedAt:  Date.now(),
-    });
-  };
-
-  // ── Sincroniza perfil privado ─────────────────────────────────────────────
-  const sincronizarUsuarioNoBanco = async (usuario, nome, foto, avataresList) => {
-    const userRef  = ref(db, `usuarios/${usuario.uid}`);
-    const snapshot = await get(userRef);
-    const agora    = Date.now();
-    const av       = (avataresList && avataresList[0]) || AVATAR_FALLBACK;
-
-    const defaults = {
-      uid:               usuario.uid,
-      userName:          nome || 'Guerreiro',
-      userAvatar:        foto || av,
-      role:              'user',
-      accountType:       'comum',
-      gender:            'nao_informado',
-      birthYear:         null,
-      status:            'pendente',
-      notifyNewChapter:  false,
-      marketingOptIn:    false,
-      marketingOptInAt:  null,
-      membershipStatus:  'inativo',
-      memberUntil:       null,
-      currentPlanId:     null,
-      lastPaymentAt:     null,
-      sourceAcquisition: 'organico',
-      createdAt:         agora,
-      lastLogin:         agora,
-    };
-
-    if (!snapshot.exists() || !snapshot.val()?.status) {
-      await set(userRef, defaults);
-      await sincronizarUsuarioPublico(usuario, defaults.userName, defaults.userAvatar, defaults.accountType);
-      return;
-    }
-
-    const atual = snapshot.val() || {};
-    const patch  = { lastLogin: agora };
-    if (!atual.uid)         patch.uid         = usuario.uid;
-    if (!atual.userName)    patch.userName    = defaults.userName;
-    if (!atual.userAvatar)  patch.userAvatar  = defaults.userAvatar;
-    if (!atual.createdAt)   patch.createdAt   = agora;
-    if (!atual.role)        patch.role        = 'user';
-    if (!atual.accountType) patch.accountType = 'comum';
-    if (!atual.gender)      patch.gender      = 'nao_informado';
-    if (typeof atual.birthYear !== 'number' && atual.birthYear !== null) patch.birthYear = null;
-    if (!atual.status)      patch.status      = 'pendente';
-    if (typeof atual.notifyNewChapter !== 'boolean') patch.notifyNewChapter = false;
-    if (typeof atual.marketingOptIn   !== 'boolean') patch.marketingOptIn   = false;
-    if (typeof atual.marketingOptInAt !== 'number' && atual.marketingOptInAt !== null) patch.marketingOptInAt = null;
-    if (!atual.membershipStatus)  patch.membershipStatus  = 'inativo';
-    if (typeof atual.memberUntil   !== 'number' && atual.memberUntil   !== null) patch.memberUntil   = null;
-    if (typeof atual.currentPlanId !== 'string' && atual.currentPlanId !== null) patch.currentPlanId = null;
-    if (typeof atual.lastPaymentAt !== 'number' && atual.lastPaymentAt !== null) patch.lastPaymentAt = null;
-    if (!atual.sourceAcquisition) patch.sourceAcquisition = 'organico';
-
-    await update(userRef, patch);
-    await sincronizarUsuarioPublico(
-      usuario,
-      atual.userName    || patch.userName    || defaults.userName,
-      atual.userAvatar  || patch.userAvatar  || defaults.userAvatar,
-      atual.accountType || patch.accountType || defaults.accountType
-    );
-  };
-
+  /** null = nó inexistente (ex.: apagado no console). */
   const carregarStatusConta = async (uid) => {
     const snap = await get(ref(db, `usuarios/${uid}`));
-    if (!snap.exists()) return 'pendente';
-    return snap.val()?.status || 'pendente';
+    if (!snap.exists()) return null;
+    return snap.val()?.status ?? 'pendente';
   };
 
-  const ativarConta = async (uid) => {
-    await update(ref(db, `usuarios/${uid}`), { status: 'ativo', lastLogin: Date.now() });
-  };
+  // Recria ficha se Auth existe mas RTDB foi apagado (recuperação).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const u = auth.currentUser;
+      if (!u || sessionStorage.getItem(PENDING_METHOD_KEY)) return;
+      const snap = await get(ref(db, `usuarios/${u.uid}`));
+      if (cancelled || snap.exists()) return;
+      const av = listaAvatares[0] || AVATAR_FALLBACK;
+      try {
+        await refreshAuthUser(u);
+        await ensureUsuarioRecord(u, u.displayName || 'Guerreiro', u.photoURL || av, listaAvatares);
+        const isGoogle = u.providerData?.some((p) => p.providerId === 'google.com');
+        if (u.emailVerified && !isGoogle) await ativarContaUsuario(u.uid);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listaAvatares]);
 
   // ── Helpers de verificação ────────────────────────────────────────────────
-  const iniciarFluxoVerificacao = (method, emailAddr) => {
+  const iniciarFluxoVerificacao = (method, emailAddr, googleUid = null) => {
+    const prevEm = sessionStorage.getItem(PENDING_EMAIL_KEY);
+    const prevUid = sessionStorage.getItem(PENDING_GOOGLE_UID_KEY);
+    if (prevEm) clearVerifyLinkFlags(prevEm, prevUid);
+    sessionStorage.removeItem(PENDING_GOOGLE_UID_KEY);
+    clearVerifyLinkFlags(emailAddr);
     sessionStorage.setItem(PENDING_METHOD_KEY, method);
     sessionStorage.setItem(PENDING_EMAIL_KEY, emailAddr);
+    if (method === 'google' && googleUid) {
+      sessionStorage.setItem(PENDING_GOOGLE_UID_KEY, googleUid);
+    }
     notificarPendingChanged(); // ← avisa o App para re-renderizar
     setPendingEmailDisplay(emailAddr);
     setEmail(emailAddr);
     setVerificationState(method === 'google' ? 'pending_google' : 'pending_email');
-    setShowVerificationModal(true);
+    setShowVerificationModal(false);
   };
 
   const limparFluxoVerificacao = () => {
+    const em = sessionStorage.getItem(PENDING_EMAIL_KEY);
+    const uid = sessionStorage.getItem(PENDING_GOOGLE_UID_KEY);
     sessionStorage.removeItem(PENDING_METHOD_KEY);
     sessionStorage.removeItem(PENDING_EMAIL_KEY);
+    sessionStorage.removeItem(PENDING_GOOGLE_UID_KEY);
+    clearVerifyLinkFlags(em || '', uid);
     notificarPendingChanged(); // ← avisa o App para re-renderizar
     setVerificationState('idle');
     setPendingEmailDisplay('');
@@ -259,15 +524,21 @@ export default function Login() {
     setError('');
     setInfo('');
     isNewAccountRef.current = false;
+    let skipLoadingReset = false;
+    const av = listaAvatares[0] || AVATAR_FALLBACK;
     try {
-      const result     = await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
       const googleUser = result.user;
+      await updateProfile(googleUser, {
+        photoURL: av,
+        displayName: googleUser.displayName || 'Guerreiro',
+      });
+      await refreshAuthUser(googleUser);
 
-      // Admin sempre entra direto
       if (isAdminUser(googleUser)) {
-        await sincronizarUsuarioNoBanco(googleUser, googleUser.displayName, listaAvatares[0] || AVATAR_FALLBACK, listaAvatares);
-        await ativarConta(googleUser.uid);
-        navigate('/');
+        await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares);
+        await ativarContaUsuario(googleUser.uid);
+        await delayNavigateHome(navigate);
         return;
       }
 
@@ -280,33 +551,54 @@ export default function Login() {
       }
 
       if (statusAtual === 'ativo') {
-        // Conta já ativa — entra direto
-        await sincronizarUsuarioNoBanco(googleUser, googleUser.displayName, listaAvatares[0] || AVATAR_FALLBACK, listaAvatares);
-        navigate('/');
+        await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares);
+        await delayNavigateHome(navigate);
         return;
       }
 
-      // Conta nova ou pendente — avatar do sistema, nome do Google
-      await sincronizarUsuarioNoBanco(
-        googleUser,
-        googleUser.displayName,
-        listaAvatares[0] || AVATAR_FALLBACK,
-        listaAvatares
-      );
-      await sendEmailVerification(googleUser);
+      // Link do e-mail Firebase já foi clicado neste aparelho → ativa RTDB e entra (sem novo e-mail / loop)
+      syncVerifyLinkFromStorage(googleUser.email || '', googleUser.uid);
+      if (
+        (statusAtual === 'pendente' || statusAtual === null) &&
+        hasVerifyLinkOk(googleUser.email || '', googleUser.uid)
+      ) {
+        await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares);
+        await ativarContaUsuario(googleUser.uid);
+        limparFluxoVerificacao();
+        setInfo('Conta ativa! Bem-vindo à Tempestade.');
+        await delayNavigateHome(navigate);
+        return;
+      }
+
+      // Ficha apagada no RTDB mas Auth existe: recuperação (não é conta acabada de criar no Google)
+      if (
+        statusAtual === null &&
+        googleUser.emailVerified &&
+        !isContaGoogleNovaProvavel(googleUser)
+      ) {
+        await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares);
+        await ativarContaUsuario(googleUser.uid);
+        await delayNavigateHome(navigate);
+        return;
+      }
+
+      // Pendente ou primeira vez: link do Firebase obrigatório (conta nova Google cai aqui, não no atalho acima)
+      await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares);
+      await sendEmailVerification(googleUser, getEmailVerificationActionSettings());
+      iniciarFluxoVerificacao('google', googleUser.email || '', googleUser.uid);
       await signOut(auth);
-
-      iniciarFluxoVerificacao('google', googleUser.email || '');
-      setInfo('Conta criada! Verifique seu e-mail e clique em "Já verifiquei meu e-mail".');
-
+      skipLoadingReset = true;
+      irParaLoginAtivarConta();
+      return;
     } catch (err) {
       const msgs = {
-        'auth/popup-closed-by-user':                     'Popup fechado. Tente novamente.',
-        'auth/account-exists-with-different-credential': 'Essa conta já existe com outro método de login.',
+        'auth/popup-closed-by-user': 'Popup fechado. Você continua na tela de login.',
+        'auth/account-exists-with-different-credential':
+          'Essa conta já existe com outro método de login.',
       };
       setError(msgs[err.code] || `Falha ao conectar com Google: ${err.message}`);
     } finally {
-      setLoading(false);
+      if (!skipLoadingReset) setLoading(false);
     }
   };
 
@@ -337,26 +629,29 @@ export default function Login() {
         isNewAccountRef.current = true;
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         await updateProfile(cred.user, { displayName: displayName.trim(), photoURL: selectedAvatar });
-        await sincronizarUsuarioNoBanco(cred.user, displayName.trim(), selectedAvatar, listaAvatares);
-        await sendEmailVerification(cred.user);
+        await ensureUsuarioRecord(cred.user, displayName.trim(), selectedAvatar, listaAvatares);
+        await sendEmailVerification(cred.user, getEmailVerificationActionSettings());
         await signOut(auth);
 
-        iniciarFluxoVerificacao('email', email.trim());
-        setInfo('Conta criada! Verifique seu e-mail e clique em "Já verifiquei meu e-mail".');
-        registerAttemptResult('register', true);
         setIsRegistering(false);
+        iniciarFluxoVerificacao('email', email.trim());
+        registerAttemptResult('register', true);
+        irParaLoginAtivarConta();
         return;
 
       } else {
         // ── LOGIN ─────────────────────────────────────────────────────────
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-        await reload(cred.user);
+        await refreshAuthUser(cred.user);
 
-        // Admin entra direto sempre
+        const av = listaAvatares[0] || AVATAR_FALLBACK;
+
         if (isAdminUser(cred.user)) {
-          await sincronizarUsuarioNoBanco(cred.user, cred.user.displayName, cred.user.photoURL, listaAvatares);
+          const foto = cred.user.photoURL || av;
+          await updateProfile(cred.user, { photoURL: foto });
+          await ensureUsuarioRecord(cred.user, cred.user.displayName || 'Guerreiro', foto, listaAvatares);
           registerAttemptResult('login', true);
-          setTimeout(() => navigate('/'), 800);
+          await delayNavigateHome(navigate);
           return;
         }
 
@@ -368,23 +663,31 @@ export default function Login() {
           return;
         }
 
-        // Email não verificado → manda pro fluxo de verificação
         if (!cred.user.emailVerified) {
-          await sendEmailVerification(cred.user);
+          await sendEmailVerification(cred.user, getEmailVerificationActionSettings());
           await signOut(auth);
           iniciarFluxoVerificacao('email', email.trim());
-          setError('Seu e-mail ainda não foi verificado. Verifique sua caixa e clique no link.');
+          irParaLoginAtivarConta();
           return;
         }
 
-        // Email verificado + pendente → ativa agora
-        if (statusConta === 'pendente' && cred.user.emailVerified) {
-          await ativarConta(cred.user.uid);
+        const foto = cred.user.photoURL || av;
+
+        if (statusConta === null) {
+          await ensureUsuarioRecord(cred.user, cred.user.displayName || 'Guerreiro', foto, listaAvatares);
+          await ativarContaUsuario(cred.user.uid);
+          registerAttemptResult('login', true);
+          await delayNavigateHome(navigate);
+          return;
         }
 
-        await sincronizarUsuarioNoBanco(cred.user, cred.user.displayName, cred.user.photoURL, listaAvatares);
+        if (statusConta === 'pendente') {
+          await ativarContaUsuario(cred.user.uid);
+        }
+
+        await ensureUsuarioRecord(cred.user, cred.user.displayName || 'Guerreiro', foto, listaAvatares);
         registerAttemptResult('login', true);
-        setTimeout(() => navigate('/'), 800);
+        await delayNavigateHome(navigate);
       }
 
     } catch (err) {
@@ -425,101 +728,187 @@ export default function Login() {
     } finally { setLoading(false); }
   };
 
-  // ── REENVIAR VERIFICAÇÃO ──────────────────────────────────────────────────
+  // ── REENVIAR VERIFICAÇÃO (não conta no rate limit de login) ───────────────
   const handleResendVerification = async () => {
-    setError(''); setInfo('');
-    if (resendCooldown > 0) { setError(`Aguarde ${resendCooldown}s para reenviar.`); return; }
+    setError('');
+    setInfo('');
+    if (resendCooldown > 0) {
+      setError(`Aguarde ${resendCooldown}s para reenviar.`);
+      return;
+    }
     setLoading(true);
+    const av = listaAvatares[0] || AVATAR_FALLBACK;
+    const esperado = (pendingEmailDisplay || sessionStorage.getItem(PENDING_EMAIL_KEY) || '').trim();
     try {
       let currentUser = null;
 
       if (verificationState === 'pending_google') {
         const result = await signInWithPopup(auth, googleProvider);
-        await reload(result.user);
         currentUser = result.user;
+        await refreshAuthUser(currentUser);
+        if (esperado && !emailsIguais(currentUser.email, esperado)) {
+          await signOut(auth);
+          setError(MSG_GOOGLE_CONTA_ERRADA(esperado, currentUser.email));
+          return;
+        }
       } else {
         if (!email.trim() || !password) {
-          setError('Preencha e-mail e senha para reenviar.');
+          setError('Preencha e-mail e senha (os mesmos do cadastro) para reenviar.');
+          setLoading(false);
+          return;
+        }
+        if (esperado && !emailsIguais(email.trim(), esperado)) {
+          setError('Use o mesmo e-mail que está em ativação (o que recebeu o link).');
           setLoading(false);
           return;
         }
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-        await reload(cred.user);
         currentUser = cred.user;
+        await refreshAuthUser(currentUser);
       }
 
-      // Já verificou antes de reenviar — ativa e libera
-      if (currentUser.emailVerified) {
-        await ativarConta(currentUser.uid);
-        await sincronizarUsuarioNoBanco(currentUser, currentUser.displayName, currentUser.photoURL, listaAvatares);
+      // Google já vem com emailVerified=true sem abrir o link do Firebase — NUNCA ativar só por isso.
+      if (currentUser.emailVerified && verificationState !== 'pending_google') {
+        await updateProfile(currentUser, {
+          photoURL: currentUser.photoURL || av,
+          displayName: currentUser.displayName || 'Guerreiro',
+        });
+        await ensureUsuarioRecord(
+          currentUser,
+          currentUser.displayName || 'Guerreiro',
+          currentUser.photoURL || av,
+          listaAvatares
+        );
+        await ativarContaUsuario(currentUser.uid);
         limparFluxoVerificacao();
         setInfo('E-mail já confirmado! Entrando...');
-        setTimeout(() => navigate('/'), 800);
+        await delayNavigateHome(navigate);
         return;
       }
 
-      // Não verificou — reenvia e avisa que o link anterior foi invalidado
-      await sendEmailVerification(currentUser);
+      clearVerifyLinkFlags(currentUser.email || esperado, currentUser.uid);
+      await sendEmailVerification(currentUser, getEmailVerificationActionSettings());
       await signOut(auth);
       sessionStorage.setItem(RESEND_KEY, String(Date.now() + 60_000));
       setResendCooldown(60);
-      setInfo('Novo e-mail enviado. O link anterior foi invalidado. Confira sua caixa e spam.');
+      setInfo('Novo e-mail enviado. Confira caixa e spam. Você continua nesta tela.');
     } catch (err) {
       const msgs = {
-        'auth/invalid-email':        'E-mail inválido.',
-        'auth/user-not-found':       'Conta não encontrada.',
-        'auth/wrong-password':       'Senha incorreta.',
-        'auth/invalid-credential':   'Credenciais inválidas.',
-        'auth/too-many-requests':    'Muitas tentativas. Aguarde.',
-        'auth/popup-closed-by-user': 'Popup fechado. Tente novamente.',
+        'auth/invalid-email': 'E-mail inválido.',
+        'auth/user-not-found': 'Conta não encontrada.',
+        'auth/wrong-password': 'Senha incorreta.',
+        'auth/invalid-credential': 'Credenciais inválidas.',
+        'auth/too-many-requests': 'Muitas tentativas. Aguarde.',
+        'auth/popup-closed-by-user': 'Popup fechado. Você continua aqui para tentar de novo.',
       };
       setError(msgs[err.code] || 'Não foi possível reenviar o e-mail.');
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ── JÁ VERIFIQUEI MEU E-MAIL ──────────────────────────────────────────────
   const handleCheckVerification = async () => {
-    setError(''); setInfo('');
+    setError('');
+    setInfo('');
     setLoading(true);
+    const av = listaAvatares[0] || AVATAR_FALLBACK;
+    const esperado = (pendingEmailDisplay || sessionStorage.getItem(PENDING_EMAIL_KEY) || '').trim();
     try {
       let currentUser = null;
 
       if (verificationState === 'pending_google') {
         const result = await signInWithPopup(auth, googleProvider);
-        await reload(result.user);
         currentUser = result.user;
+        await refreshAuthUser(currentUser);
+        if (esperado && !emailsIguais(currentUser.email, esperado)) {
+          await signOut(auth);
+          setError(MSG_GOOGLE_CONTA_ERRADA(esperado, currentUser.email));
+          return;
+        }
       } else {
         if (!email.trim() || !password) {
           setError('Preencha e-mail e senha para validar.');
           setLoading(false);
           return;
         }
+        if (esperado && !emailsIguais(email.trim(), esperado)) {
+          setError('Use o mesmo e-mail que está em ativação.');
+          setLoading(false);
+          return;
+        }
         const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-        await reload(cred.user);
         currentUser = cred.user;
+        await refreshAuthUser(currentUser);
       }
 
-      if (!currentUser.emailVerified) {
+      await refreshAuthUser(currentUser);
+
+      if (verificationState === 'pending_google') {
+        syncVerifyLinkFromStorage(esperado || currentUser.email || '', currentUser.uid);
+        const emAlvo = (esperado || currentUser.email || '').trim();
+        if (!hasVerifyLinkOk(emAlvo, currentUser.uid)) {
+          await signOut(auth);
+          setError(
+            'Confirmação do link não encontrada neste navegador. Abra o e-mail de ativação de novo e use o link (ele deve abrir esta página em /login). Se o Gmail abriu outro navegador, copie o link e abra no mesmo navegador onde você está logando. Depois use "Já verifiquei (Google)".'
+          );
+          return;
+        }
+      } else if (!currentUser.emailVerified) {
         await signOut(auth);
-        setError('E-mail ainda não confirmado. Clique no link no seu e-mail e tente novamente.');
+        setError(
+          'Ainda não detectamos o clique no link. Abra o e-mail, confirme e clique em "VALIDAR CONTA" de novo.'
+        );
         return;
       }
 
-      await ativarConta(currentUser.uid);
-      await sincronizarUsuarioNoBanco(currentUser, currentUser.displayName, currentUser.photoURL, listaAvatares);
+      if (verificationState === 'pending_google') {
+        await updateProfile(currentUser, {
+          photoURL: av,
+          displayName: currentUser.displayName || 'Guerreiro',
+        });
+      }
+
+      await ensureUsuarioRecord(
+        currentUser,
+        currentUser.displayName || 'Guerreiro',
+        verificationState === 'pending_google' ? av : (currentUser.photoURL || av),
+        listaAvatares
+      );
+      await ativarContaUsuario(currentUser.uid);
       limparFluxoVerificacao();
-      setInfo('E-mail confirmado! Bem-vindo à Tempestade.');
-      setTimeout(() => navigate('/'), 800);
+      setInfo('Conta ativa! Bem-vindo à Tempestade.');
+      await delayNavigateHome(navigate);
     } catch (err) {
+      console.error('validar conta:', err);
+      const raw = (err?.message || String(err)).trim();
+      const code = err?.code;
       const msgs = {
-        'auth/invalid-email':        'E-mail inválido.',
-        'auth/user-not-found':       'Conta não encontrada.',
-        'auth/wrong-password':       'Senha incorreta.',
-        'auth/invalid-credential':   'Credenciais inválidas.',
-        'auth/popup-closed-by-user': 'Popup fechado. Tente novamente.',
+        'auth/invalid-email': 'E-mail inválido.',
+        'auth/user-not-found': 'Conta não encontrada.',
+        'auth/wrong-password': 'Senha incorreta.',
+        'auth/invalid-credential': 'Credenciais inválidas.',
+        'auth/popup-closed-by-user': 'Popup fechado. Você continua nesta tela.',
+        'auth/too-many-requests': 'Muitas tentativas. Aguarde um pouco e tente de novo.',
       };
-      setError(msgs[err.code] || 'Não foi possível validar. Tente novamente.');
-    } finally { setLoading(false); }
+      if (msgs[code]) {
+        setError(msgs[code]);
+      } else if (
+        code === 'PERMISSION_DENIED' ||
+        code === 'permission_denied' ||
+        /permission|PERMISSION_DENIED/i.test(raw)
+      ) {
+        setError(
+          'Não foi possível salvar sua ativação agora (permissão negada). Toque em "Reenviar e-mail", confirme o link e tente "Já verifiquei" de novo com a mesma conta.'
+        );
+      } else if (raw) {
+        setError(`Não foi possível concluir: ${raw}`);
+      } else {
+        setError('Não foi possível validar. Tente de novo ou use "Reenviar e-mail".');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const estaEmVerificacao = verificationState !== 'idle';
@@ -631,6 +1020,8 @@ export default function Login() {
                   placeholder="E-mail"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  maxLength={254}
+                  autoComplete="email"
                   required
                   disabled={loading}
                 />
@@ -698,34 +1089,29 @@ export default function Login() {
               CONECTAR COM GOOGLE
             </button>
 
-            {/* Botão VALIDAR CONTA — aparece na tela de login normal */}
-            {/* Útil para quem saiu da tela e voltou sem ter ativado */}
             {!isRegistering && (
               <button
                 type="button"
-                className="btn-text-action"
+                className="btn-validar-conta-destaque"
                 onClick={() => {
                   const method = sessionStorage.getItem(PENDING_METHOD_KEY);
-                  const em     = sessionStorage.getItem(PENDING_EMAIL_KEY);
+                  const em = sessionStorage.getItem(PENDING_EMAIL_KEY);
                   if (method) {
                     setPendingEmailDisplay(em || email);
                     setEmail(em || email);
                     setVerificationState(method === 'google' ? 'pending_google' : 'pending_email');
-                    setError(''); setInfo('');
+                    setError('');
+                    setInfo('Conclua a ativação nos botões abaixo.');
+                  } else if (!email.trim()) {
+                    setError('Digite o e-mail que você usou no cadastro e clique de novo em VALIDAR CONTA.');
                   } else {
-                    // Não tem pending salvo — pede email e manda pro fluxo
-                    if (!email.trim()) {
-                      setError('Digite seu e-mail para validar a conta.');
-                      return;
-                    }
                     iniciarFluxoVerificacao('email', email.trim());
-                    setInfo('Digite sua senha e clique em "Já verifiquei meu e-mail".');
+                    setInfo('Digite sua senha e use "Já verifiquei meu e-mail".');
                   }
                 }}
-                style={{ marginTop: '0.25rem' }}
                 disabled={loading}
               >
-                Validar conta
+                VALIDAR CONTA
               </button>
             )}
 
@@ -810,4 +1196,3 @@ export default function Login() {
     </main>
   );
 }
-

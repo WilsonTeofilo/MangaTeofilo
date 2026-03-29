@@ -21,7 +21,8 @@ export default function Header({ usuario }) {
       return undefined;
     }
     const unsub = onValue(ref(db, `usuarios/${usuario.uid}/accountType`), (snap) => {
-      setAccountType(snap.val() || 'comum');
+      const v = snap.val() ?? 'comum';
+      setAccountType(String(v).toLowerCase());
     });
     return () => unsub();
   }, [usuario?.uid]);
@@ -67,7 +68,9 @@ export default function Header({ usuario }) {
   }, []);
 
   const isAdmin = isAdminUser(usuario);
-  const isPremium = accountType === 'membro' || accountType === 'premium' || accountType === 'admin';
+  /** Coroa só para plano membro/premium; admin do site não é "premium" visualmente. */
+  const isPremium =
+    !isAdmin && (accountType === 'membro' || accountType === 'premium');
 
   return (
     <nav className="reader-header">

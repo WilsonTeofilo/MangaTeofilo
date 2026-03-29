@@ -29,10 +29,12 @@ export default function Perfil({ user }) {
       const perfil = snap.val() || {};
       setNotifyNewChapter(Boolean(perfil.notifyNewChapter));
       setGender(perfil.gender || 'nao_informado');
+      const rawTipo = String(perfil.accountType ?? 'comum').toLowerCase();
+      const tipoValido = ['comum', 'membro', 'premium', 'admin'].includes(rawTipo) ? rawTipo : 'comum';
       if (isAdminUser(user)) {
         setAccountType('admin');
       } else {
-        setAccountType(perfil.accountType || 'comum');
+        setAccountType(tipoValido);
       }
       setBirthYear(
         typeof perfil.birthYear === 'number' && perfil.birthYear > 1900
@@ -185,8 +187,16 @@ export default function Perfil({ user }) {
 
           <div className="input-group">
             <label>TIPO DE CONTA</label>
-            <div className={`account-type-badge ${accountType !== 'comum' ? 'premium' : ''}`}>
-              {accountType === 'admin' ? '🛡️ Conta Admin' : accountType !== 'comum' ? '👑 Conta Premium' : 'Conta Comum'}
+            <div
+              className={`account-type-badge ${
+                accountType === 'admin' ? 'admin' : accountType !== 'comum' ? 'premium' : ''
+              }`}
+            >
+              {accountType === 'admin'
+                ? '🛡️ Conta Admin'
+                : accountType === 'membro' || accountType === 'premium'
+                  ? '👑 Conta Premium'
+                  : 'Conta Comum'}
             </div>
           </div>
 

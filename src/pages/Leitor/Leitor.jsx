@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ref, onValue, push, set, runTransaction, serverTimestamp, update } from 'firebase/database';
+import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update } from 'firebase/database';
 
 import { db } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
@@ -8,8 +8,9 @@ import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
 const isContaPremium = (perfil) => {
-  const tipo = perfil?.accountType;
-  return tipo === 'membro' || tipo === 'premium' || tipo === 'admin';
+  const tipo = String(perfil?.accountType ?? 'comum').toLowerCase();
+  if (tipo === 'admin') return false;
+  return tipo === 'membro' || tipo === 'premium';
 };
 
 export default function Leitor({ user }) {
@@ -96,11 +97,16 @@ export default function Leitor({ user }) {
   const sincronizarPerfilPublico = async (usuario) => {
     if (!usuario) return;
     try {
+      const tipoSnap = await get(ref(db, `usuarios/${usuario.uid}/accountType`));
+      const tipoRaw = tipoSnap.exists() ? String(tipoSnap.val() ?? 'comum').toLowerCase() : 'comum';
+      const accountTypePub = ['comum', 'membro', 'premium', 'admin'].includes(tipoRaw)
+        ? tipoRaw
+        : 'comum';
       await update(ref(db, `usuarios_publicos/${usuario.uid}`), {
         uid:         usuario.uid,
         userName:    usuario.displayName || 'Guerreiro',
         userAvatar:  usuario.photoURL    || AVATAR_FALLBACK,
-        accountType: 'comum',
+        accountType: accountTypePub,
         updatedAt:   Date.now(),
       });
     } catch (err) {

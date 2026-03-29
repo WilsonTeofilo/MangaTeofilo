@@ -13,6 +13,13 @@ import {
   criarPreferenciaApoio,
   criarPreferenciaApoioValorLivre,
 } from './mercadoPagoApoio.js';
+import {
+  PREMIUM_PRICE_BRL,
+  PREMIUM_D_MS,
+  PREMIUM_PLAN_ID,
+  parsePremiumExternalRef,
+  criarPreferenciaPremium,
+} from './mercadoPagoPremium.js';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
@@ -41,6 +48,10 @@ const SMTP_PASS = defineSecret('SMTP_PASS');
 const SMTP_FROM = defineSecret('SMTP_FROM');
 /** Opcional: Access Token Mercado Pago (produção ou teste) para Checkout via API */
 const MP_ACCESS_TOKEN = defineSecret('MP_ACCESS_TOKEN');
+/** Base pública das HTTPS functions (webhook MP). Ajuste se o projeto usar outro host. */
+const FUNCTIONS_PUBLIC_URL = defineString('FUNCTIONS_PUBLIC_URL', {
+  default: 'https://us-central1-shitoproject-ed649.cloudfunctions.net',
+});
 
 // ── CORS ───────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -171,6 +182,214 @@ function buildLoginEmailHtml(code, isNewUser) {
     </body>
     </html>
   `;
+}
+
+function formatarDataBr(ms) {
+  try {
+    return new Date(ms).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+  } catch {
+    return String(ms);
+  }
+}
+
+function buildPremiumConfirmedHtml(memberUntilMs) {
+  const fim = formatarDataBr(memberUntilMs);
+  return `
+    <!DOCTYPE html>
+    <html lang="pt-BR"><head><meta charset="UTF-8"></head>
+    <body style="margin:0;padding:0;background:#0a0a0a;font-family:Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 0;">
+        <tr><td align="center">
+          <table width="520" cellpadding="0" cellspacing="0" style="background:#111;border-radius:12px;border:1px solid #222;overflow:hidden;">
+            <tr><td style="background:linear-gradient(90deg,#b8860b,#ffcc00);padding:20px;text-align:center;">
+              <h1 style="margin:0;color:#000;font-size:22px;">Membro Premium — Shito</h1>
+            </td></tr>
+            <tr><td style="padding:32px;color:#ddd;font-size:15px;line-height:1.6;">
+              <p style="margin:0 0 16px;">Pagamento confirmado. Sua assinatura de <strong>30 dias</strong> está ativa.</p>
+              <p style="margin:0 0 8px;color:#aaa;">Válida até:</p>
+              <p style="margin:0 0 24px;color:#ffcc00;font-size:18px;font-weight:bold;">${fim}</p>
+              <p style="margin:0;color:#888;font-size:13px;">Regalias: acesso antecipado a capítulos (quando marcado no lançamento), leitura sem anúncios, distintivo nos comentários e mais melhorias no perfil.</p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body></html>
+  `;
+}
+
+function buildPremiumExpiryWarningHtml(memberUntilMs) {
+  const fim = formatarDataBr(memberUntilMs);
+  const base = APP_BASE_URL.value().replace(/\/$/, '');
+  return `
+    <!DOCTYPE html>
+    <html lang="pt-BR"><head><meta charset="UTF-8"></head>
+    <body style="margin:0;padding:0;background:#0a0a0a;font-family:Arial,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 0;">
+        <tr><td align="center">
+          <table width="520" cellpadding="0" cellspacing="0" style="background:#111;border-radius:12px;border:1px solid #333;">
+            <tr><td style="padding:28px;color:#ddd;font-size:15px;line-height:1.6;">
+              <h2 style="margin:0 0 16px;color:#ffcc00;">Sua assinatura Premium termina em breve</h2>
+              <p style="margin:0 0 16px;">Faltam cerca de <strong>5 dias</strong> para o fim do período atual.</p>
+              <p style="margin:0 0 8px;color:#aaa;">Encerra em:</p>
+              <p style="margin:0 0 24px;color:#fff;">${fim}</p>
+              <a href="${base}/apoie" style="display:inline-block;background:#ffcc00;color:#000;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Renovar em Apoie a Obra</a>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body></html>
+  `;
+}
+
+/** Extrai ID de pagamento de notificação Mercado Pago (POST JSON ou GET IPN). */
+function extractMercadoPagoPaymentId(req) {
+  if (req.method === 'GET') {
+    const topic = req.query?.topic;
+    const id = req.query?.id ?? req.query?.['data.id'];
+    if (topic === 'payment' && id != null && String(id).length > 0) return String(id);
+    return null;
+  }
+  if (req.method !== 'POST') return null;
+  let b = req.body;
+  if (typeof b === 'string') {
+    try {
+      b = JSON.parse(b);
+    } catch {
+      return null;
+    }
+  }
+  if (!b || typeof b !== 'object') return null;
+  if (b.type === 'payment' && b.data?.id != null) return String(b.data.id);
+  if (b.topic === 'payment' && b.resource) {
+    const m = String(b.resource).match(/(\d+)\s*$/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+async function fetchMercadoPagoPayment(accessToken, paymentId) {
+  const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data?.message || data?.error || res.statusText || 'MP payment fetch error';
+    throw new Error(msg);
+  }
+  return data;
+}
+
+const AVATAR_FALLBACK_FUNCTIONS = '/assets/avatares/ava1.webp';
+
+/**
+ * Ativa/renova 30 dias de Premium após pagamento aprovado (idempotente por paymentId).
+ * @returns {{ applied: boolean, duplicate?: boolean, newUntil?: number }}
+ */
+async function aplicarPremiumAprovado(db, uid, paymentId) {
+  const procRef = db.ref(`financas/mp_processed/${paymentId}`);
+  const procSnap = await procRef.get();
+  if (procSnap.exists()) {
+    logger.info('Premium: pagamento ja processado', { paymentId });
+    return { applied: false, duplicate: true };
+  }
+
+  const now = Date.now();
+  const snap = await db.ref(`usuarios/${uid}`).get();
+  if (!snap.exists()) {
+    logger.error('Premium: usuario nao existe', { uid, paymentId });
+    return { applied: false, duplicate: false };
+  }
+  const profile = snap.val() || {};
+  const currentUntil = typeof profile.memberUntil === 'number' ? profile.memberUntil : 0;
+  const base = Math.max(now, currentUntil);
+  const newUntil = base + PREMIUM_D_MS;
+
+  const pubSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+  const pub = pubSnap.val() || {};
+  const userNamePub = pub.userName || profile.userName || 'Guerreiro';
+  let avatarPub = String(pub.userAvatar || profile.userAvatar || '').trim();
+  if (!avatarPub) avatarPub = AVATAR_FALLBACK_FUNCTIONS;
+
+  const patch = {};
+  patch[`usuarios/${uid}/accountType`] = 'premium';
+  patch[`usuarios/${uid}/membershipStatus`] = 'ativo';
+  patch[`usuarios/${uid}/memberUntil`] = newUntil;
+  patch[`usuarios/${uid}/lastPaymentAt`] = now;
+  patch[`usuarios/${uid}/currentPlanId`] = PREMIUM_PLAN_ID;
+  patch[`usuarios/${uid}/premium5dNotifiedForUntil`] = null;
+  patch[`usuarios_publicos/${uid}/uid`] = uid;
+  patch[`usuarios_publicos/${uid}/userName`] = userNamePub;
+  patch[`usuarios_publicos/${uid}/userAvatar`] = avatarPub;
+  patch[`usuarios_publicos/${uid}/accountType`] = 'premium';
+  patch[`usuarios_publicos/${uid}/updatedAt`] = now;
+  patch[`financas/mp_processed/${paymentId}`] = { uid, at: now };
+
+  await db.ref().update(patch);
+
+  try {
+    await db.ref('financas/eventos').push({
+      tipo: 'premium_aprovado',
+      uid,
+      paymentId: String(paymentId),
+      amount: PREMIUM_PRICE_BRL,
+      currency: 'BRL',
+      at: now,
+      memberUntil: newUntil,
+    });
+  } catch (err) {
+    logger.error('Premium: falha ao registrar evento', { uid, error: err?.message });
+  }
+
+  try {
+    const authUser = await getAuth().getUser(uid);
+    const to = authUser?.email;
+    if (to && !authUser.disabled) {
+      const transporter = getTransporter();
+      await transporter.sendMail({
+        from: getSmtpFrom(),
+        to,
+        subject: 'Shito — Assinatura Premium ativa',
+        text: `Sua assinatura Premium (30 dias) foi confirmada. Valida ate ${formatarDataBr(newUntil)}.\n\n${APP_BASE_URL.value()}/apoie`,
+        html: buildPremiumConfirmedHtml(newUntil),
+      });
+    }
+  } catch (err) {
+    logger.error('Premium: falha e-mail confirmacao', { uid, error: err?.message });
+  }
+
+  logger.info('Premium aplicado', { uid, paymentId, newUntil });
+  return { applied: true, newUntil };
+}
+
+async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
+  const pay = await fetchMercadoPagoPayment(accessToken, paymentId);
+  const status = String(pay?.status || '');
+  if (status !== 'approved') {
+    logger.info('MP: pagamento nao aprovado', { paymentId, status });
+    return;
+  }
+
+  const uid = parsePremiumExternalRef(pay.external_reference);
+  if (!uid) {
+    logger.info('MP: nao e checkout premium', { paymentId, ref: pay.external_reference });
+    return;
+  }
+
+  const amount = Number(pay.transaction_amount);
+  if (!Number.isFinite(amount) || Math.abs(amount - PREMIUM_PRICE_BRL) > 0.02) {
+    logger.error('MP: valor inesperado para premium', { paymentId, amount, uid });
+    return;
+  }
+
+  const db = getDatabase();
+  await aplicarPremiumAprovado(db, uid, paymentId);
 }
 
 // ── CLEANUP AGENDADO ───────────────────────────────────────────────────────
@@ -650,6 +869,212 @@ export const criarCheckoutApoio = onCall(
         errMsg.length > 220 ? `${errMsg.slice(0, 220)}…` : errMsg
       );
     }
+  }
+);
+
+const MS_DAY = 86400000;
+
+/** Webhook Mercado Pago — confirma pagamento Premium (nome em minúsculas = URL estável). */
+export const mercadopagowebhook = onRequest(
+  {
+    region: 'us-central1',
+    secrets: [
+      MP_ACCESS_TOKEN,
+      SMTP_HOST,
+      SMTP_PORT,
+      SMTP_USER,
+      SMTP_PASS,
+      SMTP_FROM,
+    ],
+    invoker: 'public',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST' && req.method !== 'GET') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+
+    let paymentId;
+    try {
+      paymentId = extractMercadoPagoPaymentId(req);
+    } catch (e) {
+      logger.error('mercadopagowebhook parse', { error: e?.message });
+      res.status(200).send('OK');
+      return;
+    }
+    if (!paymentId) {
+      res.status(200).send('OK');
+      return;
+    }
+
+    let token;
+    try {
+      token = String(MP_ACCESS_TOKEN.value()).trim();
+    } catch {
+      logger.error('mercadopagowebhook: MP_ACCESS_TOKEN ausente');
+      res.status(500).send('Config');
+      return;
+    }
+    if (!token) {
+      res.status(500).send('Config');
+      return;
+    }
+
+    try {
+      await tratarNotificacaoPagamentoPremium(token, paymentId);
+    } catch (err) {
+      logger.error('mercadopagowebhook', { paymentId, error: err?.message });
+      res.status(500).send('Error');
+      return;
+    }
+    res.status(200).send('OK');
+  }
+);
+
+export const criarCheckoutPremium = onCall(
+  {
+    region: 'us-central1',
+    secrets: [MP_ACCESS_TOKEN],
+    cors: true,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para assinar o Premium.');
+    }
+
+    let token;
+    try {
+      token = String(MP_ACCESS_TOKEN.value()).trim();
+    } catch {
+      throw new HttpsError(
+        'failed-precondition',
+        'Mercado Pago nao configurado (secret MP_ACCESS_TOKEN).'
+      );
+    }
+    if (!token) {
+      throw new HttpsError('failed-precondition', 'Token Mercado Pago vazio.');
+    }
+
+    const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
+    const notificationUrl = `${baseFn}/mercadopagowebhook`;
+
+    try {
+      const url = await criarPreferenciaPremium(
+        token,
+        request.auth.uid,
+        APP_BASE_URL.value(),
+        notificationUrl
+      );
+      return { ok: true, url };
+    } catch (err) {
+      const errMsg = err?.message || String(err);
+      logger.error('criarCheckoutPremium', { uid: request.auth.uid, error: errMsg });
+      throw new HttpsError(
+        'internal',
+        errMsg.length > 200 ? `${errMsg.slice(0, 200)}…` : errMsg
+      );
+    }
+  }
+);
+
+/** Lembrete e-mail ~5 dias antes do fim + downgrade automático ao vencer. */
+export const assinaturasPremiumDiario = onSchedule(
+  {
+    schedule: '0 9 * * *',
+    timeZone: 'America/Sao_Paulo',
+    memory: '256MiB',
+    timeoutSeconds: 300,
+    secrets: [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM],
+  },
+  async () => {
+    const db = getDatabase();
+    const snap = await db.ref('usuarios').get();
+    if (!snap.exists()) {
+      logger.info('assinaturasPremiumDiario: sem usuarios');
+      return;
+    }
+
+    const now = Date.now();
+    const users = snap.val() || {};
+    let lembretes = 0;
+    let expirados = 0;
+
+    const transporter = getTransporter();
+    const fromAddr = getSmtpFrom();
+
+    for (const [uid, profile] of Object.entries(users)) {
+      const statusMembro = profile?.membershipStatus;
+      const mu = profile?.memberUntil;
+      const tipoConta = String(profile?.accountType || 'comum').toLowerCase();
+      const appStatus = profile?.status;
+
+      if (appStatus !== 'ativo') continue;
+
+      if (
+        statusMembro === 'ativo' &&
+        typeof mu === 'number' &&
+        mu < now &&
+        tipoConta === 'premium'
+      ) {
+        try {
+          const pubSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+          const pub = pubSnap.val() || {};
+          let avatarPub = String(pub.userAvatar || profile.userAvatar || '').trim();
+          if (!avatarPub) avatarPub = AVATAR_FALLBACK_FUNCTIONS;
+          await db.ref(`usuarios/${uid}`).update({
+            membershipStatus: 'vencido',
+            accountType: 'comum',
+          });
+          await db.ref(`usuarios_publicos/${uid}`).update({
+            uid,
+            userName: pub.userName || profile.userName || 'Guerreiro',
+            userAvatar: avatarPub,
+            accountType: 'comum',
+            updatedAt: now,
+          });
+          expirados += 1;
+        } catch (err) {
+          logger.error('Premium expirar falhou', { uid, error: err?.message });
+        }
+        continue;
+      }
+
+      if (statusMembro !== 'ativo' || typeof mu !== 'number' || mu <= now) continue;
+      const remaining = mu - now;
+      if (remaining > 5 * MS_DAY || remaining <= 0) continue;
+      const notified = profile?.premium5dNotifiedForUntil;
+      if (notified === mu) continue;
+
+      try {
+        const authUser = await getAuth().getUser(uid);
+        const to = authUser?.email;
+        if (to && !authUser.disabled) {
+          await transporter.sendMail({
+            from: fromAddr,
+            to,
+            subject: 'Shito — sua assinatura Premium acaba em breve',
+            text: `Faltam cerca de 5 dias para o fim do seu Premium (ate ${formatarDataBr(mu)}). Renove em ${APP_BASE_URL.value().replace(/\/$/, '')}/apoie`,
+            html: buildPremiumExpiryWarningHtml(mu),
+          });
+          await db.ref(`usuarios/${uid}/premium5dNotifiedForUntil`).set(mu);
+          lembretes += 1;
+        }
+      } catch (err) {
+        logger.error('Premium lembrete falhou', { uid, error: err?.message });
+      }
+    }
+
+    logger.info('assinaturasPremiumDiario ok', {
+      lembretes,
+      expirados,
+      totalUsuarios: Object.keys(users).length,
+    });
   }
 );
 

@@ -1,22 +1,31 @@
 import { isAdminUser } from '../constants';
 
-/** Membro/premium com assinatura ativa e não expirada. */
+/**
+ * Assinatura Premium (Mercado Pago) ativa e dentro do prazo.
+ * Doações e conta “membro” manual não entram — só premium pago.
+ */
+export function assinaturaPremiumAtiva(perfil) {
+  if (!perfil) return false;
+  if (String(perfil.accountType ?? 'comum').toLowerCase() !== 'premium') return false;
+  if (perfil.membershipStatus !== 'ativo') return false;
+  const until = perfil.memberUntil;
+  if (typeof until === 'number' && until < Date.now()) return false;
+  return true;
+}
+
+/** Acesso antecipado a capítulos (agendados): só Premium ativo ou admin. */
 export function usuarioTemAcessoAntecipado(user, perfil) {
   if (!user) return false;
   if (isAdminUser(user)) return true;
   const tipo = String(perfil?.accountType ?? 'comum').toLowerCase();
   if (tipo === 'admin') return true;
-  if (tipo !== 'membro' && tipo !== 'premium') return false;
-  if (perfil?.membershipStatus !== 'ativo') return false;
-  const until = perfil?.memberUntil;
-  if (typeof until === 'number' && until < Date.now()) return false;
-  return true;
+  return assinaturaPremiumAtiva(perfil);
 }
 
 /**
  * Capítulo visível para leitura (lista / abrir leitor).
  * Sem publicReleaseAt → público como antes.
- * Com data futura: só membros com antecipadoMembros, ou admin.
+ * Com data futura: só Premium (assinatura) com antecipadoMembros, ou admin.
  */
 export function capituloLiberadoParaUsuario(cap, user, perfil) {
   if (!cap) return false;

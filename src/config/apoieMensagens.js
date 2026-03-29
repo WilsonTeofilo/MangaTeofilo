@@ -29,7 +29,11 @@ export function mensagemDoacaoLivre(valorNum) {
   return 'Você foi além! 🌩️ Um agradecimento enorme — esse nível de apoio marca a obra. Obrigado de verdade!';
 }
 
-export function montarTituloModalAgradecimento({ planId, valorCustom }) {
+export const MENSAGEM_PREMIUM_RETORNO =
+  'Se o pagamento foi aprovado, sua assinatura Premium de 30 dias será ativada em instantes (você também receberá um e-mail de confirmação). Se não vir o Premium no perfil em alguns minutos, fale conosco no Discord.';
+
+export function montarTituloModalAgradecimento({ planId, valorCustom, tipoPremium }) {
+  if (tipoPremium) return 'Bem-vindo ao Premium!';
   if (planId && MENSAGEM_POR_PLANO[planId]) return 'Tempestade agradece!';
   if (valorCustom != null) return 'Doação recebida!';
   return 'Obrigado!';

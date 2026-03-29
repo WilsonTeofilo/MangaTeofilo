@@ -8,10 +8,10 @@ import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
-const isContaPremium = (perfil) => {
-  const tipo = String(perfil?.accountType ?? 'comum').toLowerCase();
-  if (tipo === 'admin') return false;
-  return tipo === 'membro' || tipo === 'premium';
+/** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
+const isContaPremium = (perfilPublico) => {
+  const tipo = String(perfilPublico?.accountType ?? 'comum').toLowerCase();
+  return tipo === 'premium';
 };
 
 export default function Leitor({ user, perfil }) {
@@ -241,7 +241,7 @@ export default function Leitor({ user, perfil }) {
           </p>
           {capitulo.antecipadoMembros && (
             <p className="leitor-lancamento-hint">
-              Assinantes Shito (membro ativo) podem ler antes do horário público.
+              Quem tem <strong>assinatura Premium</strong> ativa pode ler antes do horário público.
             </p>
           )}
           <button

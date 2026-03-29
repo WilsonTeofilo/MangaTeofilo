@@ -2,30 +2,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { onValue, ref } from 'firebase/database';
-
-import { auth, db } from '../services/firebase';
+import { auth } from '../services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from '../constants'; // ✅ centralizado
+import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
 import './Header.css';
 
-export default function Header({ usuario }) {
+export default function Header({ usuario, perfil }) {
   const navigate = useNavigate();
   const [menuAberto, setMenuAberto] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [accountType, setAccountType] = useState('comum');
   const adminCloseTimer = useRef(null);
-
-  useEffect(() => {
-    if (!usuario?.uid) {
-      setAccountType('comum');
-      return undefined;
-    }
-    const unsub = onValue(ref(db, `usuarios/${usuario.uid}/accountType`), (snap) => {
-      const v = snap.val() ?? 'comum';
-      setAccountType(String(v).toLowerCase());
-    });
-    return () => unsub();
-  }, [usuario?.uid]);
 
   const handleLogout = async (e) => {
     e.stopPropagation();
@@ -68,9 +54,8 @@ export default function Header({ usuario }) {
   }, []);
 
   const isAdmin = isAdminUser(usuario);
-  /** Coroa só para plano membro/premium; admin do site não é "premium" visualmente. */
-  const isPremium =
-    !isAdmin && (accountType === 'membro' || accountType === 'premium');
+  /** Coroa só com assinatura Premium paga ativa (mesma regra do leitor). */
+  const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
 
   return (
     <nav className="reader-header">

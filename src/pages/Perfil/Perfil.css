@@ -276,6 +276,17 @@ select.perfil-input {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.perfil-premium-linha .perfil-premium-msg {
+  margin: 0;
+  color: #c9c9c9;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.perfil-premium-linha strong {
+  color: #ffcc00;
+}
+
 @media (max-width: 500px) {
   .perfil-card { padding: 30px 20px; }
   .avatar-options-grid { grid-template-columns: repeat(3, 1fr); }

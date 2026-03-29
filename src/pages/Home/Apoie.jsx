@@ -6,15 +6,32 @@ import { functions } from '../../services/firebase';
 import { APOIO_PLANOS_UI } from '../../config/apoioPlanos';
 import {
   MENSAGEM_POR_PLANO,
+  MENSAGEM_PREMIUM_RETORNO,
   mensagemDoacaoLivre,
   montarTituloModalAgradecimento,
 } from '../../config/apoieMensagens';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
+import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
+const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 
-export default function Apoie() {
+function formatarDataFimAssinatura(ms) {
+  if (typeof ms !== 'number') return '';
+  try {
+    return new Date(ms).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      timeZone: 'America/Sao_Paulo',
+    });
+  } catch {
+    return '';
+  }
+}
+
+export default function Apoie({ user, perfil }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const mpRetorno = searchParams.get('mp');
@@ -22,6 +39,7 @@ export default function Apoie() {
   const [valorLivre, setValorLivre] = useState('');
   const [erroValorLivre, setErroValorLivre] = useState('');
   const [erroCheckoutPlanos, setErroCheckoutPlanos] = useState('');
+  const [erroPremium, setErroPremium] = useState('');
   const [modalAgradecimento, setModalAgradecimento] = useState({
     aberto: false,
     titulo: '',
@@ -36,9 +54,12 @@ export default function Apoie() {
     const planId = searchParams.get('planId');
     const tipo = searchParams.get('tipo');
     const vRaw = searchParams.get('v');
+    const tipoPremium = tipo === 'premium';
 
     let texto;
-    if (planId && MENSAGEM_POR_PLANO[planId]) {
+    if (tipoPremium) {
+      texto = MENSAGEM_PREMIUM_RETORNO;
+    } else if (planId && MENSAGEM_POR_PLANO[planId]) {
       texto = MENSAGEM_POR_PLANO[planId];
     } else if (tipo === 'custom' && vRaw != null && vRaw !== '') {
       texto = mensagemDoacaoLivre(parseFloat(String(vRaw).replace(',', '.'), 10));
@@ -50,6 +71,7 @@ export default function Apoie() {
     const titulo = montarTituloModalAgradecimento({
       planId,
       valorCustom: tipo === 'custom' ? vRaw : null,
+      tipoPremium,
     });
 
     setModalAgradecimento({ aberto: true, titulo, texto });
@@ -110,6 +132,29 @@ export default function Apoie() {
     }
   };
 
+  const premiumAtivo = assinaturaPremiumAtiva(perfil);
+  const fimPremium = formatarDataFimAssinatura(perfil?.memberUntil);
+
+  const abrirAssinaturaPremium = async () => {
+    setErroPremium('');
+    if (!user?.uid) {
+      navigate('/login');
+      return;
+    }
+    setCarregandoId('premium');
+    try {
+      const { data } = await criarCheckoutPremium();
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      console.error('criarCheckoutPremium', err);
+      setErroPremium(mensagemErroCallable(err));
+    } finally {
+      setCarregandoId(null);
+    }
+  };
+
   return (
     <div className="apoie-page">
       <main className="apoie-main">
@@ -160,6 +205,62 @@ export default function Apoie() {
             <br />
             <strong>Obrigado por acreditar na história e na tempestade!</strong>
           </p>
+
+          <div className="apoie-premium-card">
+            <div className="apoie-premium-badge">MEMBRO SHITO</div>
+            <h2 className="apoie-premium-titulo">Assinatura Premium — R$ 23 / 30 dias</h2>
+            <p className="apoie-premium-desc">
+              Só quem assina desbloqueia as regalias abaixo. Doações (P / M / G ou valor livre) ajudam a obra,
+              mas <strong>não</strong> ativam Premium — combinado no Discord para créditos nos capítulos.
+            </p>
+            <ul className="apoie-premium-lista">
+              <li>
+                <i className="fa-solid fa-bolt" /> Acesso antecipado a capítulos novos (24h a 48h antes do
+                público geral), quando o lançamento estiver marcado com antecipação para membros.
+              </li>
+              <li>
+                <i className="fa-solid fa-crown" /> Distintivo dourado nos comentários e destaque de presença.
+              </li>
+              <li>
+                <i className="fa-solid fa-eye" /> Leitura sem anúncios (quando houver espaços de mídia no site).
+              </li>
+              <li>
+                <i className="fa-solid fa-user-pen" /> Perfil: avatares exclusivos e cor de nome (em evolução no
+                painel).
+              </li>
+            </ul>
+            {premiumAtivo && fimPremium && (
+              <p className="apoie-premium-status" role="status">
+                Sua assinatura está <strong>ativa</strong> até <strong>{fimPremium}</strong>. Você pode renovar
+                antes do fim para somar mais 30 dias a partir do último dia válido.
+              </p>
+            )}
+            {!user && (
+              <p className="apoie-premium-login-hint">
+                <button type="button" className="apoie-link-login" onClick={() => navigate('/login')}>
+                  Entre na sua conta
+                </button>{' '}
+                para assinar — precisamos saber quem é você para liberar o Premium.
+              </p>
+            )}
+            {erroPremium && (
+              <p className="apoie-premium-erro" role="alert">
+                {erroPremium}
+              </p>
+            )}
+            <button
+              type="button"
+              className="btn-apoie btn-apoie-premium"
+              disabled={carregandoId !== null || !user}
+              onClick={abrirAssinaturaPremium}
+            >
+              {carregandoId === 'premium'
+                ? 'Abrindo checkout…'
+                : premiumAtivo
+                  ? 'Renovar Premium (30 dias)'
+                  : 'Assinar Premium — R$ 23'}
+            </button>
+          </div>
 
           <div className="apoie-doacao-livre">
             <h2 className="apoie-doacao-livre-titulo">Doação livre (Pix / checkout)</h2>
@@ -226,17 +327,22 @@ export default function Apoie() {
           </div>
 
           <p className="apoie-nota">
-            <i className="fa-solid fa-shield-check" /> Checkout oficial do Mercado Pago. Mensagem de
-            agradecimento no site após pagamento aprovado (modal) — sem e-mail automático; mais simples e
-            imediato.
+            <i className="fa-solid fa-shield-check" /> Checkout oficial do Mercado Pago.{' '}
+            <strong>Premium:</strong> após o pagamento aprovado você recebe e-mail de confirmação e, perto do
+            fim dos 30 dias, um lembrete para renovar. <strong>Doações:</strong> agradecimento no site (modal),
+            sem e-mail automático.
           </p>
 
           <div className="apoie-recompensa">
             <h3>RECOMPENSAS</h3>
             <ul>
               <li>
-                <i className="fa-solid fa-crown" /> <strong>P / M / G:</strong> seu nome eternizado
-                nos créditos dos próximos capítulos.
+                <i className="fa-solid fa-crown" /> <strong>Assinatura Premium (R$ 23):</strong> regalias de
+                membro (lista acima), por 30 dias renováveis.
+              </li>
+              <li>
+                <i className="fa-solid fa-heart" /> <strong>P / M / G e doação livre:</strong> apoio à obra —
+                sem regalias automáticas no site; seu nome pode entrar nos créditos combinando no Discord.
               </li>
             </ul>
             <div className="discord-notice-box">

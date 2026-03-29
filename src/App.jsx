@@ -108,7 +108,10 @@ function AppRoutes() {
   return (
     <>
       <ScrollToTop />
-      <Header usuario={podeAcessarApp ? usuario : null} />
+      <Header
+        usuario={podeAcessarApp ? usuario : null}
+        perfil={podeAcessarApp ? perfilUsuario : null}
+      />
 
       <main className="shito-main-content">
         <Routes>
@@ -135,7 +138,15 @@ function AppRoutes() {
             }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
-          <Route path="/apoie" element={<Apoie />} />
+          <Route
+            path="/apoie"
+            element={
+              <Apoie
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
+          />
 
           <Route
             path="/login"

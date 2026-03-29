@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // ✅ centralizado
+import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
 import './Perfil.css';
 
 // ✅ Recebe `user` via prop (consistente com App.jsx)
@@ -22,11 +23,13 @@ export default function Perfil({ user }) {
   const [accountType, setAccountType] = useState('comum');
   const [loading, setLoading]                 = useState(false);
   const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
+  const [perfilDb, setPerfilDb]               = useState(null);
 
   useEffect(() => {
     const carregarPerfil = async () => {
       const snap = await get(ref(db, `usuarios/${user.uid}`));
       const perfil = snap.val() || {};
+      setPerfilDb(perfil);
       setNotifyNewChapter(Boolean(perfil.notifyNewChapter));
       setGender(perfil.gender || 'nao_informado');
       const rawTipo = String(perfil.accountType ?? 'comum').toLowerCase();
@@ -199,6 +202,24 @@ export default function Perfil({ user }) {
                   : 'Conta Comum'}
             </div>
           </div>
+
+          {assinaturaPremiumAtiva(perfilDb) && typeof perfilDb?.memberUntil === 'number' && (
+            <div className="input-group perfil-premium-linha">
+              <label>ASSINATURA PREMIUM</label>
+              <p className="perfil-premium-msg">
+                Ativa até{' '}
+                <strong>
+                  {new Date(perfilDb.memberUntil).toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                    timeZone: 'America/Sao_Paulo',
+                  })}
+                </strong>
+                . Renove em <strong>Apoie a Obra</strong> para somar mais 30 dias.
+              </p>
+            </div>
+          )}
 
           <div className="avatar-selection-section">
             <label>ESCOLHA SEU NOVO VISUAL</label>

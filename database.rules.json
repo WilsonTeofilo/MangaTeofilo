@@ -44,6 +44,11 @@
       ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
     },
 
+    "financas": {
+      ".read": "auth != null && root.child('usuarios').child(auth.uid).child('role').val() === 'admin'",
+      ".write": false
+    },
+
     "usuarios": {
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')",
@@ -75,7 +80,8 @@
         },
         "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" },
         "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" },
-        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" }
+        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" },
+        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" }
       }
     },
 

@@ -408,6 +408,106 @@
   color: var(--text-muted);
 }
 
+/* Assinatura Premium */
+.apoie-premium-card {
+  max-width: 720px;
+  margin: 0 auto 2.5rem;
+  padding: 2rem 1.75rem;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(30, 25, 10, 0.95), rgba(20, 18, 12, 0.98));
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  box-shadow: 0 0 40px var(--glow-gold);
+}
+
+.apoie-premium-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: #000;
+  background: linear-gradient(90deg, #d4a017, var(--naraa-gold));
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-bottom: 1rem;
+}
+
+.apoie-premium-titulo {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.35rem, 3.5vw, 1.75rem);
+  color: var(--naraa-gold);
+}
+
+.apoie-premium-desc {
+  margin: 0 0 1.25rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  font-size: 0.98rem;
+}
+
+.apoie-premium-lista {
+  margin: 0 0 1.25rem;
+  padding-left: 1.2rem;
+  color: #e8e8e8;
+  line-height: 1.65;
+  font-size: 0.95rem;
+}
+
+.apoie-premium-lista li {
+  margin-bottom: 0.65rem;
+}
+
+.apoie-premium-lista i {
+  color: var(--naraa-gold);
+  margin-right: 0.35rem;
+}
+
+.apoie-premium-status {
+  margin: 0 0 1rem;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(67, 226, 163, 0.1);
+  border: 1px solid rgba(67, 226, 163, 0.35);
+  color: #b8f5d9;
+  font-size: 0.95rem;
+}
+
+.apoie-premium-login-hint {
+  margin: 0 0 1rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.apoie-link-login {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--naraa-gold);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.apoie-premium-erro {
+  margin: 0 0 1rem;
+  color: #ffb4b4;
+  font-size: 0.9rem;
+}
+
+.btn-apoie-premium {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  display: block;
+  background: linear-gradient(90deg, #b8860b, var(--naraa-gold));
+  color: #000;
+  font-weight: 800;
+}
+
+.btn-apoie-premium:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* Responsividade */
 @media (max-width: 768px) {
   .apoie-main,

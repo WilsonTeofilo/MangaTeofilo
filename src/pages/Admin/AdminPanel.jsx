@@ -373,7 +373,7 @@ export default function AdminPanel() {
                 />
               </label>
               <p className="lancamento-help">
-                Vazio = já público. Com data futura, o capítulo fica &quot;em breve&quot; até o horário (membros podem ler antes se a opção abaixo estiver marcada).
+                Vazio = já público. Com data futura, o capítulo fica &quot;em breve&quot; até o horário (assinantes Premium podem ler antes se a opção abaixo estiver marcada).
               </p>
               <label className="lancamento-check">
                 <input

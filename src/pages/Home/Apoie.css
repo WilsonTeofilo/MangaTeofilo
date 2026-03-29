@@ -23,11 +23,196 @@
   overflow-x: hidden;
 }
 
-/* Conteúdo principal (com espaço pro header fixo) */
+/* Conteúdo principal (compensa header fixo — era .apoie-content sem uso no JSX) */
+.apoie-main {
+  padding: clamp(96px, 12vw, 140px) clamp(16px, 5%, 48px) 80px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
 .apoie-content {
   padding: 140px 5% 80px;
   max-width: 1400px;
   margin: 0 auto;
+}
+
+.apoie-flash {
+  max-width: 720px;
+  margin: 0 auto 1.5rem;
+  padding: 14px 18px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.apoie-flash--ok {
+  background: rgba(67, 226, 163, 0.12);
+  border: 1px solid rgba(67, 226, 163, 0.45);
+  color: #b8f5d9;
+}
+
+.apoie-flash--pending {
+  background: rgba(255, 204, 0, 0.1);
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  color: #ffe08a;
+}
+
+.apoie-flash--erro {
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid rgba(255, 77, 77, 0.35);
+  color: #ffb4b4;
+}
+
+/* Modal agradecimento */
+.apoie-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(6px);
+}
+
+.apoie-modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface-card);
+  border: 1px solid rgba(255, 204, 0, 0.4);
+  border-radius: 16px;
+  padding: 28px 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.apoie-modal-titulo {
+  font-size: 1.35rem;
+  font-weight: 900;
+  color: var(--naraa-gold);
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.apoie-modal-texto {
+  color: var(--text-muted);
+  line-height: 1.65;
+  font-size: 1.05rem;
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.apoie-modal-fechar {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--naraa-gold);
+  color: #000;
+  font-weight: 800;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.apoie-modal-fechar:hover {
+  filter: brightness(1.08);
+}
+
+/* Doação livre */
+.apoie-doacao-livre {
+  margin: 2.5rem auto 2rem;
+  max-width: 560px;
+  padding: 1.5rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 204, 0, 0.25);
+  background: rgba(255, 204, 0, 0.05);
+}
+
+.apoie-doacao-livre-titulo {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--naraa-gold);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.apoie-doacao-livre-desc {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.apoie-doacao-livre-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.apoie-doacao-prefix {
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: var(--text-pure);
+}
+
+.apoie-doacao-input {
+  width: min(160px, 40vw);
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #0b0f19;
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.apoie-doacao-input:focus {
+  outline: none;
+  border-color: var(--naraa-gold);
+}
+
+.btn-apoie-livre {
+  min-width: 160px;
+}
+
+.apoie-doacao-erro {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.88rem;
+  color: #ff9a9a;
+}
+
+.apoie-checkout-erro {
+  max-width: 900px;
+  margin: 0 auto 1.25rem;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid rgba(255, 77, 77, 0.35);
+  color: #ffc8c8;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.apoie-checkout-erro-hint {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: #aaa;
+  font-weight: 400;
+}
+
+.apoie-checkout-erro code {
+  font-size: 0.78rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #ffe08a;
 }
 
 /* Título principal */
@@ -209,8 +394,23 @@
   font-size: 1.4rem;
 }
 
+.discord-notice-box {
+  margin-top: 1.5rem;
+  padding: 1rem 1.2rem;
+  border-radius: 10px;
+  background: rgba(88, 101, 242, 0.12);
+  border: 1px solid rgba(88, 101, 242, 0.35);
+}
+
+.discord-notice-box p {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
 /* Responsividade */
 @media (max-width: 768px) {
+  .apoie-main,
   .apoie-content {
     padding: 120px 4% 60px;
   }

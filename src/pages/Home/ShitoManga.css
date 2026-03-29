@@ -244,6 +244,23 @@
   transition: var(--transition-smooth);
 }
 
+/* Monitores médios / grandes (23–27" típicos ~1920px): imagem ocupa mais largura útil */
+@media (min-width: 1200px) {
+  .lore-banner-image img {
+    width: min(94%, 100%);
+    max-width: min(96vw, 2100px);
+    mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+  }
+}
+
+@media (min-width: 1600px) {
+  .lore-banner-image img {
+    width: min(96%, 100%);
+    max-width: min(97vw, 2400px);
+    mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+  }
+}
+
 .lore-banner-image:hover img {
   filter: grayscale(0%) brightness(1.1);
   transform: scale(1.02);

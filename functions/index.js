@@ -8,6 +8,11 @@ import {
   USUARIOS_DEPRECATED_KEYS,
   USUARIOS_PUBLICOS_DEPRECATED_KEYS,
 } from './deprecatedUserFields.js';
+import {
+  APOIO_PLANOS_MP,
+  criarPreferenciaApoio,
+  criarPreferenciaApoioValorLivre,
+} from './mercadoPagoApoio.js';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
@@ -34,6 +39,8 @@ const SMTP_PORT = defineSecret('SMTP_PORT');
 const SMTP_USER = defineSecret('SMTP_USER');
 const SMTP_PASS = defineSecret('SMTP_PASS');
 const SMTP_FROM = defineSecret('SMTP_FROM');
+/** Opcional: Access Token Mercado Pago (produção ou teste) para Checkout via API */
+const MP_ACCESS_TOKEN = defineSecret('MP_ACCESS_TOKEN');
 
 // ── CORS ───────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -506,6 +513,143 @@ export const adminMigrateDeprecatedUserFields = onCall(
       usuariosComPatch,
       publicosComPatch,
     };
+  }
+);
+
+// ── Mercado Pago: preferência de checkout (apoio) ─────────────────────────
+const APOIO_CUSTOM_MIN = 1;
+const APOIO_CUSTOM_MAX = 5000;
+
+/** @returns {{ present: false } | { present: true, value: number } | { present: true, error: 'nan' | 'range' }} */
+function tryParseApoioCustomAmount(v) {
+  if (v === undefined || v === null || v === '') return { present: false };
+  const n =
+    typeof v === 'number' ? v : Number(String(v).trim().replace(',', '.'));
+  if (!Number.isFinite(n)) return { present: true, error: 'nan' };
+  const rounded = Math.round(n * 100) / 100;
+  if (rounded < APOIO_CUSTOM_MIN || rounded > APOIO_CUSTOM_MAX) {
+    return { present: true, error: 'range' };
+  }
+  return { present: true, value: rounded };
+}
+
+/** @returns {string | null} chave válida em APOIO_PLANOS_MP ou null */
+function normalizeApoioPlanId(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const s = typeof raw === 'string' ? raw.trim() : String(raw).trim();
+  if (!s) return null;
+  return APOIO_PLANOS_MP[s] ? s : null;
+}
+
+export const criarCheckoutApoio = onCall(
+  {
+    region: 'us-central1',
+    secrets: [MP_ACCESS_TOKEN],
+    // Callable precisa aceitar o origin do site (evita falha silenciosa com lista fixa)
+    cors: true,
+    invoker: 'public',
+  },
+  async (request) => {
+    const payload =
+      request.data && typeof request.data === 'object' ? request.data : {};
+    const planRaw = payload.planId;
+    const customTry = tryParseApoioCustomAmount(payload.customAmount);
+    const planNorm = normalizeApoioPlanId(planRaw);
+
+    const hasValidCustom = customTry.present && 'value' in customTry;
+    const hasValidPlan = Boolean(planNorm);
+
+    logger.info('criarCheckoutApoio entrada', {
+      planId: planRaw,
+      customAmount: payload.customAmount,
+      hasValidPlan,
+      hasValidCustom,
+    });
+
+    if (hasValidPlan && hasValidCustom) {
+      throw new HttpsError('invalid-argument', 'Use planId OU customAmount, nao os dois.');
+    }
+
+    if (!hasValidCustom && !hasValidPlan) {
+      if (customTry.present && customTry.error === 'nan') {
+        throw new HttpsError(
+          'invalid-argument',
+          'customAmount invalido. Informe um numero entre 1 e 5000.'
+        );
+      }
+      if (customTry.present && customTry.error === 'range') {
+        throw new HttpsError(
+          'invalid-argument',
+          `customAmount deve estar entre ${APOIO_CUSTOM_MIN} e ${APOIO_CUSTOM_MAX}.`
+        );
+      }
+      const planStr =
+        planRaw === undefined || planRaw === null || planRaw === ''
+          ? ''
+          : String(planRaw).trim();
+      if (planStr && !planNorm) {
+        throw new HttpsError(
+          'invalid-argument',
+          'Plano invalido. Use cafe, marmita ou lendario.'
+        );
+      }
+      throw new HttpsError(
+        'invalid-argument',
+        'Envie planId (cafe|marmita|lendario) ou customAmount (1 a 5000).'
+      );
+    }
+
+    let token;
+    try {
+      token = MP_ACCESS_TOKEN.value();
+    } catch {
+      throw new HttpsError(
+        'failed-precondition',
+        'Mercado Pago nao configurado (secret MP_ACCESS_TOKEN).'
+      );
+    }
+    token = String(token).trim();
+    if (!token) {
+      throw new HttpsError('failed-precondition', 'Token Mercado Pago vazio.');
+    }
+
+    try {
+      let url;
+      if (hasValidCustom) {
+        url = await criarPreferenciaApoioValorLivre(
+          token,
+          customTry.value,
+          APP_BASE_URL.value()
+        );
+      } else {
+        url = await criarPreferenciaApoio(token, planNorm, APP_BASE_URL.value());
+      }
+      return { ok: true, url };
+    } catch (err) {
+      const errMsg = err?.message || String(err);
+      logger.error('Mercado Pago preference', {
+        planId: planNorm,
+        customAmount: hasValidCustom ? customTry.value : payload.customAmount,
+        error: errMsg,
+      });
+      const lower = errMsg.toLowerCase();
+      if (lower.includes('invalid') && lower.includes('token')) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Mercado Pago recusou o Access Token (invalido, expirado ou ambiente errado). Gere um novo em Credenciais e rode: firebase functions:secrets:set MP_ACCESS_TOKEN'
+        );
+      }
+      if (lower.includes('unauthorized') || errMsg.includes('401')) {
+        throw new HttpsError(
+          'failed-precondition',
+          'Token rejeitado pelo Mercado Pago (401). Confira se colou o Access Token e nao a Public Key.'
+        );
+      }
+      throw new HttpsError(
+        'internal',
+        errMsg.length > 220 ? `${errMsg.slice(0, 220)}…` : errMsg
+      );
+    }
   }
 );
 

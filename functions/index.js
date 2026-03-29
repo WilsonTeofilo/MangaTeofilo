@@ -2,8 +2,12 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { onRequest } from 'firebase-functions/v2/https';
+import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onValueCreated } from 'firebase-functions/v2/database';
+import {
+  USUARIOS_DEPRECATED_KEYS,
+  USUARIOS_PUBLICOS_DEPRECATED_KEYS,
+} from './deprecatedUserFields.js';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
@@ -93,6 +97,19 @@ function parseBody(req) {
     try { return JSON.parse(req.body); } catch { return {}; }
   }
   return req.body || {};
+}
+
+function isShitoAdminAuth(auth) {
+  if (!auth?.uid) return false;
+  const uid = auth.uid;
+  const email = String(auth.token?.email || '').toLowerCase();
+  return (
+    uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' ||
+    uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' ||
+    uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' ||
+    email === 'wilsonteofilosouza@live.com' ||
+    email === 'drakenteofilo@gmail.com'
+  );
 }
 
 async function deleteUserEverywhere(uid) {
@@ -417,6 +434,78 @@ export const notifyNewChapter = onValueCreated(
       ignorados,
       falhas,
     });
+  }
+);
+
+// ── Migração: remove campos obsoletos de todos os usuários (admin) ─────────
+export const adminMigrateDeprecatedUserFields = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Faca login.');
+    }
+    if (!isShitoAdminAuth(request.auth)) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+
+    const hasPriv = USUARIOS_DEPRECATED_KEYS.length > 0;
+    const hasPub = USUARIOS_PUBLICOS_DEPRECATED_KEYS.length > 0;
+    if (!hasPriv && !hasPub) {
+      return {
+        ok: true,
+        message: 'Nenhuma chave obsoleta configurada em functions/deprecatedUserFields.js',
+        usuariosComPatch: 0,
+        publicosComPatch: 0,
+      };
+    }
+
+    const db = getDatabase();
+    let usuariosComPatch = 0;
+    let publicosComPatch = 0;
+
+    if (hasPriv) {
+      const snap = await db.ref('usuarios').get();
+      if (snap.exists()) {
+        const data = snap.val();
+        for (const uid of Object.keys(data)) {
+          const row = data[uid] || {};
+          const patch = {};
+          for (const key of USUARIOS_DEPRECATED_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(row, key)) patch[key] = null;
+          }
+          if (Object.keys(patch).length) {
+            await db.ref(`usuarios/${uid}`).update(patch);
+            usuariosComPatch += 1;
+          }
+        }
+      }
+    }
+
+    if (hasPub) {
+      const pubSnap = await db.ref('usuarios_publicos').get();
+      if (pubSnap.exists()) {
+        const pubData = pubSnap.val();
+        for (const uid of Object.keys(pubData)) {
+          const row = pubData[uid] || {};
+          const patch = {};
+          for (const key of USUARIOS_PUBLICOS_DEPRECATED_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(row, key)) patch[key] = null;
+          }
+          if (Object.keys(patch).length) {
+            await db.ref(`usuarios_publicos/${uid}`).update(patch);
+            publicosComPatch += 1;
+          }
+        }
+      }
+    }
+
+    logger.info('Migracao campos obsoletos.', { usuariosComPatch, publicosComPatch });
+
+    return {
+      ok: true,
+      usuariosComPatch,
+      publicosComPatch,
+    };
   }
 );
 

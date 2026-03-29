@@ -35,3 +35,47 @@
   font-weight: 800;
   cursor: pointer;
 }
+
+.financeiro-migracao {
+  margin: 22px 0;
+  padding: 16px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 204, 0, 0.15);
+}
+
+.financeiro-migracao h2 {
+  font-size: 1rem;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.financeiro-migracao-texto {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.financeiro-migracao-texto code {
+  font-size: 0.78rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffe08a;
+}
+
+.financeiro-btn-migrar {
+  margin-bottom: 10px;
+}
+
+.financeiro-btn-migrar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.financeiro-migracao-msg {
+  font-size: 0.82rem;
+  color: #9ec5ff;
+  margin: 0;
+  word-break: break-word;
+}

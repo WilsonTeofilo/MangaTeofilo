@@ -186,6 +186,28 @@
   color: #fff;
 }
 
+.shito-cap-row--bloqueado {
+  opacity: 0.88;
+  cursor: pointer;
+  border-style: dashed;
+}
+
+.shito-cap-row--bloqueado:hover {
+  border-color: rgba(255, 204, 0, 0.45);
+  transform: translateX(6px);
+}
+
+.cap-badge-em-breve {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--naraa-gold);
+  opacity: 0.95;
+}
+
 /* Loader customizado */
 .loading-container {
   height: 100vh;
@@ -287,5 +309,11 @@
 
   .shito-cap-title {
     font-size: 1.2rem;
+  }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .capitulos-page {
+    padding: 72px 14px 32px;
   }
 }

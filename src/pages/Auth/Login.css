@@ -586,6 +586,18 @@
   }
 }
 
+@media (max-height: 500px) and (orientation: landscape) {
+  .login-content {
+    padding: 12px 16px 24px;
+    align-items: flex-start;
+  }
+
+  .login-card {
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+}
+
 /* Resgate: sempre visível no fluxo principal */
 .btn-validar-conta-destaque {
   width: 100%;

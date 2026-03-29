@@ -4,6 +4,7 @@ import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update }
 
 import { db } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
+import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
@@ -13,7 +14,7 @@ const isContaPremium = (perfil) => {
   return tipo === 'membro' || tipo === 'premium';
 };
 
-export default function Leitor({ user }) {
+export default function Leitor({ user, perfil }) {
   const { id }   = useParams();
   const navigate = useNavigate();
 
@@ -72,11 +73,10 @@ export default function Leitor({ user }) {
   }, []);
 
   useEffect(() => {
-    if (!jaContouVisualizacao.current) {
-      runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
-      jaContouVisualizacao.current = true;
-    }
+    jaContouVisualizacao.current = false;
+  }, [id]);
 
+  useEffect(() => {
     const unsub = onValue(ref(db, `capitulos/${id}`), (snap) => {
       if (!snap.exists()) {
         setCapitulo(null);
@@ -105,6 +105,15 @@ export default function Leitor({ user }) {
       unsubPerfis.current = {};
     };
   }, [id, escutarPerfil]);
+
+  useEffect(() => {
+    if (!capitulo || !id) return;
+    const cap = { ...capitulo, id };
+    if (!capituloLiberadoParaUsuario(cap, user, perfil)) return;
+    if (jaContouVisualizacao.current) return;
+    jaContouVisualizacao.current = true;
+    runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
+  }, [capitulo, id, user, perfil]);
 
   // ✅ Sincroniza perfil público ANTES de comentar
   // Garante que todos os visitantes verão o avatar e nome atualizados
@@ -209,6 +218,46 @@ export default function Leitor({ user }) {
       <div className="leitor-container">
         <div className="leitor-not-found" role="alert">
           Capítulo não encontrado.
+        </div>
+      </div>
+    );
+  }
+
+  const capComId = { ...capitulo, id };
+  if (!capituloLiberadoParaUsuario(capComId, user, perfil)) {
+    const quando = formatarDataLancamento(capitulo.publicReleaseAt);
+    return (
+      <div className="leitor-container">
+        <div className="leitor-lancamento-bloqueado" role="status">
+          <h1 className="leitor-lancamento-titulo">{capitulo.titulo || 'Capítulo'}</h1>
+          <p className="leitor-lancamento-msg">
+            Este fragmento ainda não está liberado para leitura pública.
+            {quando ? (
+              <>
+                {' '}
+                Previsão: <strong>{quando}</strong>
+              </>
+            ) : null}
+          </p>
+          {capitulo.antecipadoMembros && (
+            <p className="leitor-lancamento-hint">
+              Assinantes Shito (membro ativo) podem ler antes do horário público.
+            </p>
+          )}
+          <button
+            type="button"
+            className="leitor-lancamento-voltar"
+            onClick={() => navigate('/capitulos')}
+          >
+            Voltar à biblioteca
+          </button>
+          <button
+            type="button"
+            className="leitor-lancamento-apoie"
+            onClick={() => navigate('/apoie')}
+          >
+            Apoiar a obra
+          </button>
         </div>
       </div>
     );

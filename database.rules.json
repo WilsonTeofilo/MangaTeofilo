@@ -12,6 +12,12 @@
       ".read": true,
       ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')",
       "$capId": {
+        "publicReleaseAt": {
+          ".validate": "!newData.exists() || newData.isNumber()"
+        },
+        "antecipadoMembros": {
+          ".validate": "!newData.exists() || newData.isBoolean()"
+        },
         "visualizacoes": {
           ".read": true,
           ".write": "auth != null && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"

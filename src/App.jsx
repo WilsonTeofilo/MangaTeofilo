@@ -12,6 +12,7 @@ import { onValue, ref } from 'firebase/database';
 
 import { auth, db } from './services/firebase';
 import { isAdminUser } from './constants';
+import { cleanupDeprecatedUsuarioFields } from './userProfileSync';
 
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
@@ -76,6 +77,11 @@ function AppRoutes() {
     return () => unsub();
   }, [usuario?.uid]);
 
+  useEffect(() => {
+    if (!usuario?.uid) return;
+    cleanupDeprecatedUsuarioFields(usuario.uid).catch(() => {});
+  }, [usuario?.uid]);
+
   if (carregando) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
@@ -112,11 +118,21 @@ function AppRoutes() {
           />
           <Route
             path="/capitulos"
-            element={<Capitulos user={podeAcessarApp ? usuario : null} />}
+            element={
+              <Capitulos
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
           />
           <Route
             path="/ler/:id"
-            element={<Leitor user={podeAcessarApp ? usuario : null} />}
+            element={
+              <Leitor
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
           <Route path="/apoie" element={<Apoie />} />

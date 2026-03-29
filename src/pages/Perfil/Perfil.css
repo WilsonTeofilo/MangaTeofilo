@@ -281,3 +281,16 @@ select.perfil-input {
   .avatar-options-grid { grid-template-columns: repeat(3, 1fr); }
   .perfil-title { font-size: 1.5rem; }
 }
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .perfil-page {
+    padding: 24px 16px;
+    align-items: flex-start;
+  }
+
+  .perfil-card {
+    padding: 28px 22px;
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+  }
+}

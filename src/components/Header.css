@@ -373,6 +373,20 @@
   }
 }
 
+@media (max-height: 480px) and (orientation: landscape) {
+  .reader-header {
+    height: 56px;
+  }
+
+  .nav-menu {
+    padding: 72px 18px 18px;
+  }
+
+  .nav-logo {
+    font-size: 1.45rem;
+  }
+}
+
 @media (min-width: 1440px) {
   .nav-container {
     max-width: 1440px;

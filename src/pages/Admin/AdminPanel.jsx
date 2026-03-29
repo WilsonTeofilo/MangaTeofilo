@@ -5,6 +5,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } 
 
 import { db, storage, auth } from '../../services/firebase'; 
 import { isAdminUser } from '../../constants';
+import { msParaDatetimeLocal } from '../../utils/capituloLancamento';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -159,6 +160,8 @@ export default function AdminPanel() {
   const [porcentagem, setPorcentagem] = useState(0);
   const [mostrarTodasAsFotos, setMostrarTodasAsFotos] = useState(false);
   const [erroModal, setErroModal] = useState('');
+  const [publicReleaseAtInput, setPublicReleaseAtInput] = useState('');
+  const [antecipadoMembros, setAntecipadoMembros] = useState(false);
 
   useEffect(() => {
     if (!isAdminUser(user)) {
@@ -284,11 +287,19 @@ export default function AdminPanel() {
         urlsPaginas = await handleUploadManga(arquivosPaginas, titulo);
       }
 
-      const dados = { 
-        titulo, 
-        numero: parseInt(numeroCapitulo), 
-        dataUpload: new Date().toISOString() 
+      const dados = {
+        titulo,
+        numero: parseInt(numeroCapitulo, 10),
+        dataUpload: new Date().toISOString(),
       };
+
+      let publicMs = null;
+      if (publicReleaseAtInput?.trim()) {
+        const t = new Date(publicReleaseAtInput).getTime();
+        if (!Number.isNaN(t)) publicMs = t;
+      }
+      dados.publicReleaseAt = publicMs;
+      dados.antecipadoMembros = Boolean(antecipadoMembros);
 
       if (urlCapa) dados.capaUrl = urlCapa;
       if (urlsPaginas.length > 0) dados.paginas = urlsPaginas;
@@ -302,8 +313,15 @@ export default function AdminPanel() {
         await set(push(dbRef(db, 'capitulos')), dados);
       }
 
-      setEditandoId(null); setTitulo(''); setNumeroCapitulo(''); setPaginasExistentes([]); 
-      setArquivosPaginas([]); setCapaCapitulo(null); setMostrarTodasAsFotos(false);
+      setEditandoId(null);
+      setTitulo('');
+      setNumeroCapitulo('');
+      setPaginasExistentes([]);
+      setArquivosPaginas([]);
+      setCapaCapitulo(null);
+      setMostrarTodasAsFotos(false);
+      setPublicReleaseAtInput('');
+      setAntecipadoMembros(false);
       e.target.reset();
       setProgressoMsg('FORJADO COM SUCESSO!');
     } catch (err) { 
@@ -320,6 +338,8 @@ export default function AdminPanel() {
     setNumeroCapitulo(cap.numero);
     setPaginasExistentes(cap.paginas || []);
     setMostrarTodasAsFotos(false);
+    setPublicReleaseAtInput(msParaDatetimeLocal(cap.publicReleaseAt));
+    setAntecipadoMembros(Boolean(cap.antecipadoMembros));
     window.scrollTo(0, 0);
   };
 
@@ -340,6 +360,29 @@ export default function AdminPanel() {
             <div className="input-row">
               <input type="number" placeholder="Nº" value={numeroCapitulo} onChange={(e) => setNumeroCapitulo(e.target.value)} required />
               <input type="text" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} required />
+            </div>
+
+            <div className="lancamento-block">
+              <label className="lancamento-label">
+                Lançamento público (opcional)
+                <input
+                  type="datetime-local"
+                  className="lancamento-datetime"
+                  value={publicReleaseAtInput}
+                  onChange={(e) => setPublicReleaseAtInput(e.target.value)}
+                />
+              </label>
+              <p className="lancamento-help">
+                Vazio = já público. Com data futura, o capítulo fica &quot;em breve&quot; até o horário (membros podem ler antes se a opção abaixo estiver marcada).
+              </p>
+              <label className="lancamento-check">
+                <input
+                  type="checkbox"
+                  checked={antecipadoMembros}
+                  onChange={(e) => setAntecipadoMembros(e.target.checked)}
+                />
+                Membros VIP (assinatura ativa) leem antes do horário público
+              </label>
             </div>
 
             {editandoId && paginasExistentes.length > 0 && (
@@ -392,7 +435,16 @@ export default function AdminPanel() {
                 {loading ? 'PROCESSANDO...' : editandoId ? 'SALVAR ALTERAÇÕES' : 'LANÇAR CAPÍTULO'}
               </button>
               {editandoId && (
-                <button type="button" className="btn-cancel" onClick={() => {setEditandoId(null); setPaginasExistentes([]);}}>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => {
+                    setEditandoId(null);
+                    setPaginasExistentes([]);
+                    setPublicReleaseAtInput('');
+                    setAntecipadoMembros(false);
+                  }}
+                >
                   CANCELAR EDIÇÃO
                 </button>
               )}
@@ -408,6 +460,9 @@ export default function AdminPanel() {
                 <div className="cap-info">
                   <span className="cap-number">#{cap.numero}</span>
                   <span className="cap-title">{cap.titulo}</span>
+                  {cap.publicReleaseAt && Number(cap.publicReleaseAt) > Date.now() && (
+                    <span className="cap-lancamento-pill">Agendado</span>
+                  )}
                 </div>
                 <div className="cap-actions">
                   <button className="btn-edit" onClick={() => prepararEdicao(cap)}>EDITAR</button>

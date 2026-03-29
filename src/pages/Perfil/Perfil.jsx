@@ -5,7 +5,7 @@ import { ref, update, get, onValue } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
-import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser } from '../../constants'; // ✅ centralizado
+import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // ✅ centralizado
 import './Perfil.css';
 
 // ✅ Recebe `user` via prop (consistente com App.jsx)
@@ -153,7 +153,7 @@ export default function Perfil({ user }) {
               className="perfil-input"
               value={novoNome}
               onChange={(e) => setNovoNome(e.target.value)}
-              maxLength={25}
+              maxLength={DISPLAY_NAME_MAX_LENGTH}
               placeholder="Ex: Guerreiro de Brajiru"
             />
           </div>

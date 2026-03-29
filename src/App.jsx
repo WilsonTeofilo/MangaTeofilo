@@ -6,7 +6,6 @@ import {
   Route,
   Navigate,
   useLocation,
-  useNavigate,
 } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
@@ -31,8 +30,6 @@ import FinanceiroAdmin from './pages/Admin/FinanceiroAdmin.jsx';
 
 import './index.css';
 
-const PENDING_METHOD_KEY = 'login_pending_method';
-
 function computePodeAcessarApp(usuario, perfilUsuario) {
   if (!usuario) return false;
   if (isAdminUser(usuario)) return true;
@@ -46,43 +43,11 @@ function computePodeAcessarApp(usuario, perfilUsuario) {
 
 function AppRoutes() {
   const location = useLocation();
-  const navigate = useNavigate();
   const [usuario, setUsuario] = useState(null);
   const [carregando, setCarregando] = useState(true);
 
-  const [temPending, setTemPending] = useState(
-    () => Boolean(sessionStorage.getItem(PENDING_METHOD_KEY))
-  );
-
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [perfilCarregando, setPerfilCarregando] = useState(false);
-
-  useEffect(() => {
-    const search = new URLSearchParams(location.search);
-    let mode = search.get('mode');
-    let oobCode = search.get('oobCode');
-    if (!oobCode && location.hash) {
-      const h = location.hash;
-      const q = h.indexOf('?');
-      const raw = q >= 0 ? h.slice(q + 1) : h.replace(/^#/, '');
-      const hp = new URLSearchParams(raw);
-      mode = mode || hp.get('mode');
-      oobCode = oobCode || hp.get('oobCode');
-    }
-    if (!oobCode || mode !== 'verifyEmail' || location.pathname === '/login') return;
-    navigate(
-      `/login?mode=${encodeURIComponent(mode)}&oobCode=${encodeURIComponent(oobCode)}`,
-      { replace: true }
-    );
-  }, [location.pathname, location.search, location.hash, navigate]);
-
-  useEffect(() => {
-    const handler = () => {
-      setTemPending(Boolean(sessionStorage.getItem(PENDING_METHOD_KEY)));
-    };
-    window.addEventListener('pendingVerificationChanged', handler);
-    return () => window.removeEventListener('pendingVerificationChanged', handler);
-  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -97,7 +62,7 @@ function AppRoutes() {
   }, []);
 
   useEffect(() => {
-    if (!usuario?.uid || temPending) {
+    if (!usuario?.uid) {
       setPerfilUsuario(null);
       setPerfilCarregando(false);
       return undefined;
@@ -109,24 +74,22 @@ function AppRoutes() {
       setPerfilCarregando(false);
     });
     return () => unsub();
-  }, [usuario?.uid, temPending]);
+  }, [usuario?.uid]);
 
   if (carregando) {
     return <div style={{ background: '#050505', height: '100vh' }} />;
   }
 
-  if (usuario && !temPending && perfilCarregando) {
+  if (usuario && perfilCarregando) {
     return <div style={{ background: '#050505', height: '100vh' }} />;
   }
 
   const podeAcessarApp =
     Boolean(usuario) &&
-    !temPending &&
     computePodeAcessarApp(usuario, perfilUsuario);
 
   const sessaoInvalida =
     Boolean(usuario) &&
-    !temPending &&
     !perfilCarregando &&
     !podeAcessarApp;
 
@@ -179,7 +142,7 @@ function AppRoutes() {
           <Route
             path="/admin"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <Navigate to="/admin/manga" replace />
               ) : (
                 <Navigate to="/" replace />
@@ -189,7 +152,7 @@ function AppRoutes() {
           <Route
             path="/admin/manga"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <AdminPanel user={usuario} />
               ) : (
                 <Navigate to="/" replace />
@@ -199,7 +162,7 @@ function AppRoutes() {
           <Route
             path="/admin/avatares"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <AvatarAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -209,7 +172,7 @@ function AppRoutes() {
           <Route
             path="/admin/dashboard"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <DashboardAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -219,7 +182,7 @@ function AppRoutes() {
           <Route
             path="/admin/financeiro"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <FinanceiroAdmin />
               ) : (
                 <Navigate to="/" replace />

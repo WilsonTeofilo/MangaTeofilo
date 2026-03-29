@@ -1,6 +1,6 @@
 /* Perfil.css - Refatorado para Perfeição Visual */
 :root {
-  --naraa-gold: #ffcc00;
+  /* --naraa-gold global em index.css */
   --naraa-gold-dark: #aa8800;
   --bg-card: #0f0f0f;
   --bg-input: #1a1a1a;
@@ -9,7 +9,7 @@
 
 .perfil-page {
   min-height: 92vh;
-  background: #050505;
+  background: var(--charcoal-dark);
   display: flex;
   justify-content: center;
   align-items: center;

@@ -1,5 +1,5 @@
 .shito-loading-overlay {
-  background-color: #0a0a0a; /* Preto Profundo */
+  background-color: var(--charcoal-dark, #0a0a0a);
   height: 100vh;
   width: 100vw;
   display: flex;
@@ -19,15 +19,14 @@
 
 /* --- EFEITO GLITCH NO LOGO --- */
 .loading-logo {
-  color: #d4af37; /* Naraa Gold */
+  color: var(--naraa-gold, #ffcc00);
   font-size: 4rem;
   font-weight: 900;
   letter-spacing: 12px;
   margin-bottom: 25px;
   position: relative;
   text-transform: uppercase;
-  /* Brilho suave constante */
-  text-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+  text-shadow: 0 0 15px rgba(255, 204, 0, 0.3);
 }
 
 .shito-glitch::before,
@@ -48,7 +47,7 @@
 }
 
 .shito-glitch::after {
-  color: #d4af37;
+  color: var(--naraa-gold, #ffcc00);
   z-index: -2;
   animation: shito-glitch-anim 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) reverse both infinite;
 }
@@ -57,7 +56,7 @@
 .loading-bar-container {
   width: 250px;
   height: 3px;
-  background: rgba(212, 175, 55, 0.05);
+  background: rgba(255, 204, 0, 0.05);
   margin: 0 auto;
   position: relative;
   overflow: hidden;
@@ -67,11 +66,18 @@
 .loading-bar-fill {
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, #d4af37, #fff, #d4af37, transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--naraa-gold, #ffcc00),
+    #fff,
+    var(--naraa-gold, #ffcc00),
+    transparent
+  );
   position: absolute;
   left: -100%;
   animation: loading-slide 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 10px #d4af37;
+  box-shadow: 0 0 10px var(--naraa-gold, #ffcc00);
 }
 
 /* --- TEXTO INFERIOR --- */

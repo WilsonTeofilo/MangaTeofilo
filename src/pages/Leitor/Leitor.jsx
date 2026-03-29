@@ -183,7 +183,15 @@ export default function Leitor({ user }) {
   );
 
   if (carregando) return <LoadingScreen />;
-  if (!capitulo)  return <div>Capítulo não encontrado</div>;
+  if (!capitulo) {
+    return (
+      <div className="leitor-container">
+        <div className="leitor-not-found" role="alert">
+          Capítulo não encontrado.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="leitor-container">

@@ -1,6 +1,6 @@
 /* Header.css - Polido AAA */
 :root {
-  --naraa-gold: #ffcc00;
+  /* --naraa-gold em index.css */
   --naraa-gold-hover: #ffe066;
   --header-height: 80px;
   --header-mobile-height: 70px;

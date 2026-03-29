@@ -5,10 +5,28 @@ CONTAINER GERAL
 .leitor-container{
 width:100%;
 min-height:100vh;
-background:#0d0d0d;
-color:#fff;
-font-family:'Inter',sans-serif;
+background:var(--charcoal-dark, #0d0d0d);
+color:var(--text-pure, #fff);
+font-family:'Poppins',sans-serif;
 padding-bottom:80px;
+}
+
+.leitor-not-found{
+min-height:40vh;
+display:flex;
+align-items:center;
+justify-content:center;
+padding:32px 24px;
+text-align:center;
+font-size:1.05rem;
+font-weight:600;
+letter-spacing:0.04em;
+color:var(--text-muted, #a0a0a0);
+border:1px solid rgba(255,204,0,0.25);
+border-radius:12px;
+max-width:480px;
+margin:48px auto 80px;
+background:var(--surface-card, #141414);
 }
 
 
@@ -109,7 +127,7 @@ margin:auto;
 padding-top:30px;
 }
 
-.paginas-lista img{
+.paginas-lista > img{
 max-width:100%;
 margin-bottom:25px;
 
@@ -306,6 +324,34 @@ margin-bottom:20px;
 font-size:20px;
 font-weight:600;
 
+}
+
+/* Formulário: avatar não pode herdar max-width:100% do body (fica largura da seção) */
+.form-comentario {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.input-comentario-wrapper {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.avatar-comentario {
+  width: 44px;
+  height: 44px;
+  max-width: 44px;
+  max-height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 204, 0, 0.35);
+  box-sizing: border-box;
 }
 
 

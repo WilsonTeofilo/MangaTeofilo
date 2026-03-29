@@ -77,11 +77,11 @@ function AppRoutes() {
   }, [usuario?.uid]);
 
   if (carregando) {
-    return <div style={{ background: '#050505', height: '100vh' }} />;
+    return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
   if (usuario && perfilCarregando) {
-    return <div style={{ background: '#050505', height: '100vh' }} />;
+    return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
   const podeAcessarApp =

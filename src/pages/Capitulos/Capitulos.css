@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap');
 
 :root {
-  --charcoal-dark: #050505;
+  /* --charcoal-dark vem de index.css */
   --surface-card: #0f0f0f;
   --text-pure: #ffffff;
   --text-muted: #777;

@@ -33,6 +33,7 @@ export default function Leitor({ user }) {
   );
   const [paginaAtual, setPaginaAtual]     = useState(0);
   const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [modalLoginComentario, setModalLoginComentario] = useState(false);
 
   const touchStartX          = useRef(0);
   const touchEndX            = useRef(0);
@@ -41,6 +42,19 @@ export default function Leitor({ user }) {
 
   useEffect(() => { localStorage.setItem('modoLeitura', modoLeitura); }, [modoLeitura]);
   useEffect(() => { localStorage.setItem('zoom', zoom); }, [zoom]);
+
+  useEffect(() => {
+    if (user) setModalLoginComentario(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (!modalLoginComentario) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setModalLoginComentario(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [modalLoginComentario]);
 
   // ✅ Lê de usuarios_publicos (.read = true nas rules)
   // Qualquer visitante, logado ou não, consegue ver nome e avatar
@@ -136,9 +150,16 @@ export default function Leitor({ user }) {
     if (dist < -50) irAnterior();
   };
 
+  const abrirModalComentarioDeslogado = () => {
+    if (!user) setModalLoginComentario(true);
+  };
+
   const handleEnviarComentario = async (e) => {
     e.preventDefault();
-    if (!user)                   { navigate('/login'); return; }
+    if (!user) {
+      setModalLoginComentario(true);
+      return;
+    }
     if (!comentarioTexto.trim()) return;
     if (enviando)                return;
 
@@ -252,13 +273,20 @@ export default function Leitor({ user }) {
               className="avatar-comentario"
               onError={(e) => { e.target.src = AVATAR_FALLBACK; }} />
           )}
-          <div className="input-comentario-wrapper">
+          <div
+            className={`input-comentario-wrapper${!user ? ' input-comentario-wrapper--convite' : ''}`}
+            onClick={!user ? abrirModalComentarioDeslogado : undefined}
+          >
             <textarea
-              value={comentarioTexto}
-              onChange={(e) => setComentario(e.target.value)}
+              value={user ? comentarioTexto : ''}
+              onChange={(e) => user && setComentario(e.target.value)}
               placeholder={user ? 'Escreva seu comentário...' : 'Faça login para comentar'}
-              disabled={!user || enviando}
-              maxLength={500}
+              readOnly={!user}
+              disabled={Boolean(user && enviando)}
+              maxLength={user ? 500 : undefined}
+              onClick={!user ? (e) => { e.stopPropagation(); abrirModalComentarioDeslogado(); } : undefined}
+              onFocus={!user ? abrirModalComentarioDeslogado : undefined}
+              className={!user ? 'textarea-convite-login' : undefined}
             />
             {user && (
               <button type="submit" disabled={!comentarioTexto.trim() || enviando}>
@@ -310,6 +338,56 @@ export default function Leitor({ user }) {
           })}
         </div>
       </section>
+
+      {modalLoginComentario && !user && (
+        <div
+          className="leitor-modal-backdrop"
+          onClick={() => setModalLoginComentario(false)}
+          role="presentation"
+        >
+          <div
+            className="leitor-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leitor-modal-login-titulo"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="leitor-modal-fechar"
+              onClick={() => setModalLoginComentario(false)}
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+            <h2 id="leitor-modal-login-titulo" className="leitor-modal-titulo">
+              Comentar na obra
+            </h2>
+            <p className="leitor-modal-texto">
+              Deseja fazer login para comentar?
+            </p>
+            <div className="leitor-modal-acoes">
+              <button
+                type="button"
+                className="leitor-modal-btn leitor-modal-btn--secundario"
+                onClick={() => setModalLoginComentario(false)}
+              >
+                Agora não
+              </button>
+              <button
+                type="button"
+                className="leitor-modal-btn leitor-modal-btn--primario"
+                onClick={() => {
+                  setModalLoginComentario(false);
+                  navigate('/login');
+                }}
+              >
+                Sim, entrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

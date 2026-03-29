@@ -1,31 +1,29 @@
-// src/pages/Leitor/Leitor.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ref, onValue, push, set, runTransaction, serverTimestamp } from 'firebase/database';
+import { ref, onValue, push, set, runTransaction, serverTimestamp, update } from 'firebase/database';
 
-import { db } from '../../services/firebase'; // ✅ db centralizado, não getDatabase() local
+import { db } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
+const isContaPremium = (perfil) => {
+  const tipo = perfil?.accountType;
+  return tipo === 'membro' || tipo === 'premium' || tipo === 'admin';
+};
+
 export default function Leitor({ user }) {
-  const { id }     = useParams();
-  const navigate   = useNavigate();
+  const { id }   = useParams();
+  const navigate = useNavigate();
 
-  /* ── Estados ── */
-  const [capitulo, setCapitulo]           = useState(null);
-  const [carregando, setCarregando]       = useState(true);
-  const [comentarioTexto, setComentario]  = useState('');
+  const [capitulo, setCapitulo]            = useState(null);
+  const [carregando, setCarregando]        = useState(true);
+  const [comentarioTexto, setComentario]   = useState('');
   const [listaComentarios, setComentarios] = useState([]);
-  const [perfisUsuarios, setPerfis]       = useState({});
-  const [filtro, setFiltro]               = useState('relevantes');
+  const [perfisUsuarios, setPerfis]        = useState({});
+  const [filtro, setFiltro]                = useState('relevantes');
+  const [enviando, setEnviando]            = useState(false);
 
-  const isContaPremium = (perfil) => {
-    const tipo = perfil?.accountType;
-    return tipo === 'membro' || tipo === 'premium' || tipo === 'admin';
-  };
-
-  /* ── Leitor ── */
   const [modoLeitura, setModoLeitura] = useState(
     () => localStorage.getItem('modoLeitura') || 'vertical'
   );
@@ -35,18 +33,16 @@ export default function Leitor({ user }) {
   const [paginaAtual, setPaginaAtual]     = useState(0);
   const [mostrarConfig, setMostrarConfig] = useState(false);
 
-  /* ── Refs ── */
-  const touchStartX    = useRef(0);
-  const touchEndX      = useRef(0);
-  const unsubPerfis    = useRef({});
-  // ✅ Controla visualização por sessão para não inflar o contador
+  const touchStartX          = useRef(0);
+  const touchEndX            = useRef(0);
+  const unsubPerfis          = useRef({});
   const jaContouVisualizacao = useRef(false);
 
-  /* ── Persistir config ── */
   useEffect(() => { localStorage.setItem('modoLeitura', modoLeitura); }, [modoLeitura]);
   useEffect(() => { localStorage.setItem('zoom', zoom); }, [zoom]);
 
-  /* ── Carregar perfil de comentarista ── */
+  // ✅ Lê de usuarios_publicos (.read = true nas rules)
+  // Qualquer visitante, logado ou não, consegue ver nome e avatar
   const escutarPerfil = useCallback((uid) => {
     if (!uid || unsubPerfis.current[uid]) return;
     const unsub = onValue(
@@ -55,17 +51,12 @@ export default function Leitor({ user }) {
         if (snap.exists()) {
           setPerfis((prev) => ({ ...prev, [uid]: snap.val() }));
         }
-      },
-      () => {
-        // Se a regra bloquear leitura de perfis, mantém fallback visual.
       }
     );
     unsubPerfis.current[uid] = unsub;
-  }, [user]);
+  }, []);
 
-  /* ── Carregar capítulo ── */
   useEffect(() => {
-    // ✅ Conta visualização apenas uma vez por sessão neste capítulo
     if (!jaContouVisualizacao.current) {
       runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
       jaContouVisualizacao.current = true;
@@ -77,7 +68,6 @@ export default function Leitor({ user }) {
         setCarregando(false);
         return;
       }
-
       const dados = snap.val();
       setCapitulo(dados);
 
@@ -91,7 +81,6 @@ export default function Leitor({ user }) {
       } else {
         setComentarios([]);
       }
-
       setCarregando(false);
     });
 
@@ -102,13 +91,27 @@ export default function Leitor({ user }) {
     };
   }, [id, escutarPerfil]);
 
-  /* ── Navegação entre páginas ── */
+  // ✅ Sincroniza perfil público ANTES de comentar
+  // Garante que todos os visitantes verão o avatar e nome atualizados
+  const sincronizarPerfilPublico = async (usuario) => {
+    if (!usuario) return;
+    try {
+      await update(ref(db, `usuarios_publicos/${usuario.uid}`), {
+        uid:         usuario.uid,
+        userName:    usuario.displayName || 'Guerreiro',
+        userAvatar:  usuario.photoURL    || AVATAR_FALLBACK,
+        accountType: 'comum',
+        updatedAt:   Date.now(),
+      });
+    } catch (err) {
+      console.warn('Aviso: não foi possível sincronizar perfil público.', err.message);
+    }
+  };
+
   const totalPaginas = capitulo?.paginas?.length || 0;
+  const irProxima  = () => setPaginaAtual((p) => Math.min(p + 1, totalPaginas - 1));
+  const irAnterior = () => setPaginaAtual((p) => Math.max(p - 1, 0));
 
-  const irProxima   = () => setPaginaAtual((p) => Math.min(p + 1, totalPaginas - 1));
-  const irAnterior  = () => setPaginaAtual((p) => Math.max(p - 1, 0));
-
-  /* ── Teclado ── */
   useEffect(() => {
     const handleKey = (e) => {
       if (modoLeitura !== 'horizontal') return;
@@ -119,7 +122,6 @@ export default function Leitor({ user }) {
     return () => window.removeEventListener('keydown', handleKey);
   }, [modoLeitura, totalPaginas]);
 
-  /* ── Swipe ── */
   const handleTouchStart = (e) => { touchStartX.current = e.changedTouches[0].screenX; };
   const handleTouchMove  = (e) => { touchEndX.current   = e.changedTouches[0].screenX; };
   const handleTouchEnd   = () => {
@@ -128,13 +130,15 @@ export default function Leitor({ user }) {
     if (dist < -50) irAnterior();
   };
 
-  /* ── Comentar ── */
   const handleEnviarComentario = async (e) => {
     e.preventDefault();
-    if (!user) { navigate('/login'); return; }
+    if (!user)                   { navigate('/login'); return; }
     if (!comentarioTexto.trim()) return;
+    if (enviando)                return;
 
+    setEnviando(true);
     try {
+      await sincronizarPerfilPublico(user); // atualiza avatar antes de gravar
       await set(push(ref(db, `capitulos/${id}/comentarios`)), {
         texto:  comentarioTexto.trim(),
         userId: user.uid,
@@ -144,17 +148,17 @@ export default function Leitor({ user }) {
       setComentario('');
     } catch (err) {
       console.error('Erro ao comentar:', err);
+    } finally {
+      setEnviando(false);
     }
   };
 
-  /* ── Like ── */
+  // ✅ Qualquer usuário logado pode curtir — sem restrição de status
   const handleLike = (comentId) => {
     if (!user) { navigate('/login'); return; }
-
     runTransaction(ref(db, `capitulos/${id}/comentarios/${comentId}`), (post) => {
       if (!post) return post;
       if (!post.usuariosQueCurtiram) post.usuariosQueCurtiram = {};
-
       if (post.usuariosQueCurtiram[user.uid]) {
         post.likes = Math.max(0, (post.likes || 1) - 1);
         delete post.usuariosQueCurtiram[user.uid];
@@ -166,18 +170,15 @@ export default function Leitor({ user }) {
     });
   };
 
-  /* ── Ordenar comentários ── */
   const comentariosOrdenados = [...listaComentarios].sort((a, b) =>
     filtro === 'relevantes'
       ? (b.likes || 0) - (a.likes || 0)
       : (b.data  || 0) - (a.data  || 0)
   );
 
-  /* ── Guards ── */
-  if (carregando)  return <LoadingScreen />;
-  if (!capitulo)   return <div>Capítulo não encontrado</div>;
+  if (carregando) return <LoadingScreen />;
+  if (!capitulo)  return <div>Capítulo não encontrado</div>;
 
-  /* ── Render ── */
   return (
     <div className="leitor-container">
 
@@ -188,8 +189,8 @@ export default function Leitor({ user }) {
 
       {mostrarConfig && (
         <div className="config-panel">
-          <button className={modoLeitura === 'vertical'    ? 'active' : ''} onClick={() => setModoLeitura('vertical')}>Vertical</button>
-          <button className={modoLeitura === 'horizontal'  ? 'active' : ''} onClick={() => setModoLeitura('horizontal')}>Horizontal</button>
+          <button className={modoLeitura === 'vertical'   ? 'active' : ''} onClick={() => setModoLeitura('vertical')}>Vertical</button>
+          <button className={modoLeitura === 'horizontal' ? 'active' : ''} onClick={() => setModoLeitura('horizontal')}>Horizontal</button>
           <div>
             <button onClick={() => setZoom((z) => Math.max(50,  z - 10))}>-</button>
             <span>{zoom}%</span>
@@ -201,34 +202,19 @@ export default function Leitor({ user }) {
       {modoLeitura === 'vertical' ? (
         <main className="paginas-lista">
           {capitulo.paginas?.map((url, index) => (
-            <img
-              key={index}
-              src={url}
-              alt={`página ${index + 1}`}
-              loading="lazy"
-              style={{ width: `${zoom}%`, display: 'block', margin: '0 auto' }}
-            />
+            <img key={index} src={url} alt={`página ${index + 1}`} loading="lazy"
+              style={{ width: `${zoom}%`, display: 'block', margin: '0 auto' }} />
           ))}
         </main>
       ) : (
-        <div
-          className="horizontal-reader"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="horizontal-reader"
+          onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
           <button type="button" className="seta esquerda" onClick={irAnterior} disabled={paginaAtual === 0}>‹</button>
-
           <div className="pagina-unica">
-            <img
-              src={capitulo.paginas?.[paginaAtual]}
-              alt={`página ${paginaAtual + 1}`}
-              style={{ width: `${zoom}%`, margin: '0 auto', display: 'block' }}
-            />
+            <img src={capitulo.paginas?.[paginaAtual]} alt={`página ${paginaAtual + 1}`}
+              style={{ width: `${zoom}%`, margin: '0 auto', display: 'block' }} />
           </div>
-
           <button type="button" className="seta direita" onClick={irProxima} disabled={paginaAtual >= totalPaginas - 1}>›</button>
-
           <div className="contador">{paginaAtual + 1} / {totalPaginas}</div>
         </div>
       )}
@@ -237,45 +223,71 @@ export default function Leitor({ user }) {
         <button onClick={() => navigate('/capitulos')}>Voltar ao mangá</button>
       </footer>
 
+      {/* ── COMENTÁRIOS ── */}
       <section className="comentarios-section">
-        <h3>Comentários</h3>
+        <h3>Comentários ({listaComentarios.length})</h3>
 
         <div className="filtro-comentarios">
-          <button className={filtro === 'relevantes' ? 'ativo' : ''} onClick={() => setFiltro('relevantes')}>Relevantes</button>
-          <button className={filtro === 'recentes'   ? 'ativo' : ''} onClick={() => setFiltro('recentes')}>Recentes</button>
+          <button className={filtro === 'relevantes' ? 'ativo' : ''} onClick={() => setFiltro('relevantes')}>🔥 Relevantes</button>
+          <button className={filtro === 'recentes'   ? 'ativo' : ''} onClick={() => setFiltro('recentes')}>🕒 Recentes</button>
         </div>
 
-        <form onSubmit={handleEnviarComentario}>
-          <textarea
-            value={comentarioTexto}
-            onChange={(e) => setComentario(e.target.value)}
-            placeholder={user ? 'Escreva algo...' : 'Faça login para comentar'}
-            disabled={!user}
-          />
-          <button type="submit" disabled={!user}>Enviar</button>
+        <form onSubmit={handleEnviarComentario} className="form-comentario">
+          {user && (
+            <img src={user.photoURL || AVATAR_FALLBACK} alt="Seu avatar"
+              className="avatar-comentario"
+              onError={(e) => { e.target.src = AVATAR_FALLBACK; }} />
+          )}
+          <div className="input-comentario-wrapper">
+            <textarea
+              value={comentarioTexto}
+              onChange={(e) => setComentario(e.target.value)}
+              placeholder={user ? 'Escreva seu comentário...' : 'Faça login para comentar'}
+              disabled={!user || enviando}
+              maxLength={500}
+            />
+            {user && (
+              <button type="submit" disabled={!comentarioTexto.trim() || enviando}>
+                {enviando ? 'Enviando...' : 'Comentar'}
+              </button>
+            )}
+          </div>
         </form>
 
-        <div>
+        <div className="lista-comentarios">
+          {comentariosOrdenados.length === 0 && (
+            <p className="sem-comentarios">Seja o primeiro a comentar! 👇</p>
+          )}
+
           {comentariosOrdenados.map((c) => {
-            const perfil = perfisUsuarios[c.userId];
-            const isLiked = c.usuariosQueCurtiram?.[user?.uid];
+            const perfil    = perfisUsuarios[c.userId];
+            const isLiked   = c.usuariosQueCurtiram?.[user?.uid];
+            const isPremium = isContaPremium(perfil);
 
             return (
               <div key={c.id} className="comentario">
+                {/* Avatar visível para TODOS */}
                 <img
                   src={perfil?.userAvatar || AVATAR_FALLBACK}
                   alt="avatar"
+                  className="avatar-comentario"
                   onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
                 />
-                <div>
-                  <strong className="comentario-author">
-                    {perfil?.userName || 'Usuário'}
-                    {isContaPremium(perfil) && (
-                      <span className="premium-crown" title="Conta premium">👑</span>
-                    )}
-                  </strong>
-                  <p>{c.texto}</p>
-                  <button type="button" onClick={() => handleLike(c.id)}>
+                <div className="comentario-corpo">
+                  <div className="comentario-header">
+                    <strong className="comentario-autor">
+                      {perfil?.userName || 'Carregando...'}
+                    </strong>
+                    {isPremium && <span className="badge-premium" title="Membro premium">👑</span>}
+                  </div>
+                  <p className="comentario-texto">{c.texto}</p>
+                  {/* Like disponível para qualquer usuário logado */}
+                  <button
+                    type="button"
+                    className={`btn-like ${isLiked ? 'liked' : ''}`}
+                    onClick={() => handleLike(c.id)}
+                    title={user ? (isLiked ? 'Remover curtida' : 'Curtir') : 'Faça login para curtir'}
+                  >
                     {isLiked ? '❤️' : '🤍'} {c.likes || 0}
                   </button>
                 </div>

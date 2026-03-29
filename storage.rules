@@ -1,10 +1,18 @@
 rules_version = '2';
 service firebase.storage {
+  function isShitoAdmin() {
+    return request.auth != null
+      && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3"
+          || request.auth.uid == "QayqN0MpBTQK6je44JwAXWapoQU2"
+          || request.auth.uid == "20kR47W8PfTGIvGxGOGRsB2JiFA3"
+          || request.auth.token.email == "wilsonteofilosouza@live.com"
+          || request.auth.token.email == "drakenteofilo@gmail.com");
+  }
+
   match /b/{bucket}/o {
     match /capas/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3" || request.auth.token.email == "wilsonteofilosouza@live.com")
+      allow write: if isShitoAdmin()
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
                    && fileName.matches('.*\\.(jpe?g|png|webp)$')));
@@ -12,8 +20,7 @@ service firebase.storage {
 
     match /manga/{obra}/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3" || request.auth.token.email == "wilsonteofilosouza@live.com")
+      allow write: if isShitoAdmin()
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
                    && fileName.matches('.*\\.(jpe?g|png|webp)$')));
@@ -21,8 +28,7 @@ service firebase.storage {
 
     match /avatares/{fileName} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3" || request.auth.token.email == "wilsonteofilosouza@live.com")
+      allow write: if isShitoAdmin()
                    && (request.resource == null || (request.resource.size < 1024 * 1024
                    && (request.resource.contentType == "image/webp" || fileName.matches('.*\\.webp$'))));
     }

@@ -155,6 +155,12 @@ select.perfil-input {
   color: var(--naraa-gold);
 }
 
+.account-type-badge.admin {
+  border-color: rgba(100, 180, 255, 0.55);
+  background: rgba(80, 140, 220, 0.15);
+  color: #9ecbff;
+}
+
 /* GRID DE SELEÇÃO */
 .avatar-selection-section {
   text-align: left;

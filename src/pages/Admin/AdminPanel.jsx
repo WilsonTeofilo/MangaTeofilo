@@ -17,6 +17,17 @@ function validarImagemUpload(file, label = 'arquivo') {
   return '';
 }
 
+/** Storage rules exigem extensão .jpg|.png|.webp no último segmento do path. */
+function extensaoImagemNoPath(file) {
+  const fromName = (file?.name || '').match(/\.(jpe?g|png|webp)$/i);
+  if (fromName) return fromName[0].toLowerCase().replace('jpeg', 'jpg');
+  const t = file?.type || '';
+  if (t === 'image/jpeg' || t === 'image/jpg') return '.jpg';
+  if (t === 'image/png') return '.png';
+  if (t === 'image/webp') return '.webp';
+  return '.jpg';
+}
+
 // --- COMPONENTE: MODAL DE ERRO ---
 function ModalErro({ mensagem, aoFechar }) {
   if (!mensagem) return null;
@@ -202,7 +213,7 @@ export default function AdminPanel() {
     setLoading(true);
     setProgressoMsg(`Trocando página ${index + 1}...`);
     try {
-      const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}`;
+      const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}${extensaoImagemNoPath(arquivoNovo)}`;
       const fileRef = storageRef(storage, pathStorage);
       await uploadBytes(fileRef, arquivoNovo);
       const urlNova = await getDownloadURL(fileRef);
@@ -227,7 +238,7 @@ export default function AdminPanel() {
       if (erroArquivo) {
         throw new Error(erroArquivo);
       }
-      const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}`;
+      const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}${extensaoImagemNoPath(arquivos[i])}`;
       const fileRef = storageRef(storage, pathStorage);
       const uploadTask = uploadBytesResumable(fileRef, arquivos[i]);
       

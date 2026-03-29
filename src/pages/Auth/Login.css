@@ -585,3 +585,30 @@
     gap: 12px;
   }
 }
+
+/* Resgate: sempre visível no fluxo principal */
+.btn-validar-conta-destaque {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-size: 0.88rem;
+  color: var(--naraa-gold);
+  background: transparent;
+  border: 2px solid var(--naraa-gold);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  box-shadow: 0 0 0 1px rgba(255, 204, 0, 0.15);
+}
+
+.btn-validar-conta-destaque:hover:not(:disabled) {
+  background: rgba(255, 204, 0, 0.12);
+  box-shadow: var(--shadow-glow-gold);
+}
+
+.btn-validar-conta-destaque:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

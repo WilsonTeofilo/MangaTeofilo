@@ -18,7 +18,6 @@ import './Login.css';
 // ── Chaves de sessionStorage ───────────────────────────────────────────────
 const FORGOT_KEY         = 'shito_forgot_until';
 const ATTEMPT_LIMITS_KEY = 'shito_attempt_limits';
-
 const ATTEMPT_RULES = {
   sendCode:         { max: 8, windowMs: 10 * 60 * 1000, blockMs: 10 * 60 * 1000 },
   verifyCode:       { max: 8, windowMs: 10 * 60 * 1000, blockMs: 10 * 60 * 1000 },
@@ -62,20 +61,16 @@ async function carregarStatusConta(uid) {
 // ── Componente ─────────────────────────────────────────────────────────────
 export default function Login() {
   const navigate = useNavigate();
-
   // step: 'email' | 'code' | 'new-user' | 'existing-password'
   const [step, setStep] = useState('email');
-
   const [email,           setEmail]           = useState('');
   const [code,            setCode]            = useState('');
   const [displayName,     setDisplayName]     = useState('');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
   const [error,           setError]           = useState('');
   const [info,            setInfo]            = useState('');
   const [loading,         setLoading]         = useState(false);
-
   const [forgotCooldown,  setForgotCooldown]  = useState(0);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [listaAvatares,   setListaAvatares]   = useState(LISTA_AVATARES);
@@ -123,8 +118,6 @@ export default function Login() {
   }, []);
 
   // ── LOGIN COM GOOGLE ───────────────────────────────────────────────────
-  // REGRA FINAL: Google → ativo direto. Sem email, sem link, sem modal.
-  // O OAuth do Google já garante que o e-mail é real.
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
@@ -134,7 +127,6 @@ export default function Login() {
       const googleUser = result.user;
 
       if (isAdminUser(googleUser)) {
-        // Admin: garante ficha e entra
         const av = listaAvatares[0] || AVATAR_FALLBACK;
         await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
         await ativarContaUsuario(googleUser.uid);
@@ -143,14 +135,12 @@ export default function Login() {
       }
 
       const statusAtual = await carregarStatusConta(googleUser.uid);
-
       if (statusAtual === 'banido') {
         await signOut(auth);
         setError('Sua conta foi bloqueada. Entre em contato com o suporte.');
         return;
       }
 
-      // Avatar do sistema — não usa foto do Google
       const av = listaAvatares[0] || AVATAR_FALLBACK;
       await updateProfile(googleUser, {
         photoURL:    av,
@@ -158,16 +148,10 @@ export default function Login() {
       });
       await refreshAuthUser(googleUser);
 
-      // ensureUsuarioRecord com 'ativo': se conta nova, cria pendente e já ativa em seguida
-      // Se conta já existe, não toca no status
       await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
-
-      // Garante ativação independente do que havia antes (pendente, inativo, null)
-      // Se já era ativo, ativarContaUsuario só atualiza lastLogin
       await ativarContaUsuario(googleUser.uid);
 
       navigate('/', { replace: true });
-
     } catch (err) {
       const msgs = {
         'auth/popup-closed-by-user':                     'Popup fechado. Tente novamente.',
@@ -178,8 +162,6 @@ export default function Login() {
       setLoading(false);
     }
   };
-
-  const apiBase = '/__/functions';
 
   // ── FLUXO: 1) ENVIAR CÓDIGO ─────────────────────────────────────────────
   const handleSendCode = async (e) => {
@@ -193,22 +175,25 @@ export default function Login() {
       return;
     }
 
-    if (!email.trim()) {
-      setError('Informe um e-mail válido.');
+    const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
+    if (!email.trim() || !emailRegex.test(email.trim())) {
+      setError('Informe um e-mail válido (ex: usuario@email.com).');
       return;
     }
 
     setLoading(true);
     try {
-      const resp = await fetch(`${apiBase}/sendLoginCode`, {
+      const resp = await fetch('https://sendlogincode-4oan3cdrua-uc.a.run.app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
       });
+
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
         throw new Error(data.error || 'Não foi possível enviar o código.');
       }
+
       registerAttemptResult('sendCode', true);
       setStep('code');
       setInfo('Código enviado! Confira seu e-mail (e spam) e digite abaixo.');
@@ -239,11 +224,12 @@ export default function Login() {
 
     setLoading(true);
     try {
-      const resp = await fetch(`${apiBase}/verifyLoginCode`, {
+      const resp = await fetch('https://verifylogincode-4oan3cdrua-uc.a.run.app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), code: code.trim() }),
       });
+
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
         throw new Error(data.error || 'Código inválido.');
@@ -288,13 +274,11 @@ export default function Login() {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-
       await updateProfile(cred.user, {
         displayName: displayName.trim(),
         photoURL:    selectedAvatar,
       });
 
-      // Conta já nasce ativa — o código de e-mail garantiu que o endereço existe.
       const perfil = await ensureUsuarioRecord(
         cred.user,
         displayName.trim(),
@@ -302,6 +286,7 @@ export default function Login() {
         listaAvatares,
         'ativo'
       );
+
       if (!perfil.status || perfil.status !== 'ativo') {
         await ativarContaUsuario(cred.user.uid);
       }
@@ -344,7 +329,6 @@ export default function Login() {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       await refreshAuthUser(cred.user);
 
-      // Admin: entra direto
       if (isAdminUser(cred.user)) {
         const av = listaAvatares[0] || AVATAR_FALLBACK;
         await ensureUsuarioRecord(
@@ -401,6 +385,7 @@ export default function Login() {
     setError(''); setInfo('');
     if (forgotCooldown > 0) { setError(`Aguarde ${forgotCooldown}s.`); return; }
     if (!email.trim())      { setError('Digite seu e-mail para recuperar a senha.'); return; }
+
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, email.trim());
@@ -444,7 +429,6 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
-
               <button type="submit" className="btn-submit-shito" disabled={loading}>
                 {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENVIAR CÓDIGO'}
               </button>
@@ -483,7 +467,6 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
-
               <div className="input-field">
                 <i className="fa-solid fa-hashtag" />
                 <input
@@ -495,7 +478,6 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
-
               <button type="submit" className="btn-submit-shito" disabled={loading}>
                 {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'VALIDAR CÓDIGO'}
               </button>
@@ -537,7 +519,6 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
-
               <div className="input-field">
                 <i className="fa-solid fa-envelope" />
                 <input
@@ -549,7 +530,6 @@ export default function Login() {
                   disabled
                 />
               </div>
-
               <div className="input-field">
                 <i className="fa-solid fa-lock" />
                 <input
@@ -561,7 +541,6 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
-
               <div className="input-field">
                 <i className="fa-solid fa-shield-halved" />
                 <input
@@ -591,9 +570,7 @@ export default function Login() {
               </div>
 
               <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading
-                  ? <i className="fa-solid fa-spinner fa-spin" />
-                  : 'CRIAR CONTA'}
+                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'CRIAR CONTA'}
               </button>
             </form>
 
@@ -623,7 +600,6 @@ export default function Login() {
                   disabled
                 />
               </div>
-
               <div className="input-field">
                 <i className="fa-solid fa-lock" />
                 <input
@@ -635,11 +611,8 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
-
               <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading
-                  ? <i className="fa-solid fa-spinner fa-spin" />
-                  : 'ENTRAR'}
+                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENTRAR'}
               </button>
             </form>
 
@@ -681,7 +654,6 @@ export default function Login() {
           </div>
         </div>
       )}
-
     </main>
   );
 }

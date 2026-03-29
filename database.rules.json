@@ -3,25 +3,26 @@
     ".read": false,
     ".write": false,
 
+    "loginCodes": {
+      ".read": false,
+      ".write": false
+    },
+
     "capitulos": {
       ".read": true,
       ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')",
       "$capId": {
-
         "visualizacoes": {
           ".read": true,
           ".write": "auth != null && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
         },
-
         "comentarios": {
           ".read": true,
           "$comentId": {
-            ".write": "auth != null && (auth.token.email_verified === true || auth.token.firebase.sign_in_provider === 'google.com') && ((!data.exists() && newData.hasChildren(['texto','userId','data','likes']) && newData.child('userId').val() === auth.uid && newData.child('texto').isString() && newData.child('texto').val().length > 0 && newData.child('texto').val().length <= 500 && newData.child('likes').isNumber() && newData.child('likes').val() === 0) || (data.exists() && ((auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com') || (newData.child('texto').val() === data.child('texto').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('data').val() === data.child('data').val() && newData.child('likes').isNumber() && newData.child('likes').val() >= 0))))",
-
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && ((!data.exists() && newData.hasChildren(['texto','userId','data','likes']) && newData.child('userId').val() === auth.uid && newData.child('texto').isString() && newData.child('texto').val().length > 0 && newData.child('texto').val().length <= 500 && newData.child('likes').isNumber() && newData.child('likes').val() === 0) || (data.exists() && ((auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com') || (newData.child('texto').val() === data.child('texto').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('data').val() === data.child('data').val() && newData.child('likes').isNumber() && newData.child('likes').val() >= 0))))",
             "likes": {
               ".write": "auth != null && data.isNumber() && newData.isNumber() && newData.val() >= 0 && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
             },
-
             "usuariosQueCurtiram": {
               "$userUid": {
                 ".write": "auth != null && auth.uid === $userUid"
@@ -41,7 +42,8 @@
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')",
         ".write": "auth != null && auth.uid === $uid",
-        "userName":          { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 25" },
+        "userName":          { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
+        "email":             { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
         "userAvatar":        { ".validate": "newData.isString()" },
         "uid":               { ".validate": "newData.val() === auth.uid" },
         "notifyNewChapter":  { ".validate": "newData.isBoolean()" },
@@ -60,7 +62,7 @@
           ".validate": "(newData.val() === 'user' || newData.val() === 'admin' || newData.val() === 'membro') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))"
         },
         "status": {
-          ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
+          ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
         },
         "membershipStatus": {
           ".validate": "(newData.val() === 'inativo' || newData.val() === 'ativo' || newData.val() === 'vencido' || newData.val() === 'cancelado') && ((!data.exists() && newData.val() === 'inativo') || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))"
@@ -76,7 +78,7 @@
         ".read": true,
         ".write": "auth != null && (auth.uid === $uid || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')",
         "uid":         { ".validate": "newData.val() === $uid" },
-        "userName":    { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 25" },
+        "userName":    { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userAvatar":  { ".validate": "newData.isString() && newData.val().length > 0" },
         "accountType": { ".validate": "newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin'" },
         "updatedAt":   { ".validate": "newData.isNumber()" }
@@ -91,3 +93,4 @@
     }
   }
 }
+

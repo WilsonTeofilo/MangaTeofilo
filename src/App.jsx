@@ -33,13 +33,12 @@ import './index.css';
 function computePodeAcessarApp(usuario, perfilUsuario) {
   if (!usuario) return false;
   if (isAdminUser(usuario)) return true;
-  const passwordProvider = usuario.providerData?.some((p) => p.providerId === 'password');
-  if (passwordProvider && !usuario.emailVerified) return false;
   if (!perfilUsuario) return false;
   if (perfilUsuario.status === 'banido') return false;
   if (perfilUsuario.status !== 'ativo') return false;
   return true;
 }
+
 
 function AppRoutes() {
   const location = useLocation();
@@ -63,9 +62,10 @@ function AppRoutes() {
 
   useEffect(() => {
     if (!usuario?.uid) {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       setPerfilUsuario(null);
       setPerfilCarregando(false);
-      return undefined;
+      return;
     }
     setPerfilCarregando(true);
     const r = ref(db, `usuarios/${usuario.uid}`);

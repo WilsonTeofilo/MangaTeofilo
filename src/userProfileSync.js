@@ -1,158 +1,133 @@
+// src/userProfileSync.js
 import { ref, get, set, update } from 'firebase/database';
 import { getIdToken, reload } from 'firebase/auth';
 import { db } from './services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from './constants';
 
-/** Atualiza claims/cache do Firebase Auth (e-mail verificado, etc.). */
 export async function refreshAuthUser(user) {
   await reload(user);
   await getIdToken(user, true);
 }
 
-/**
- * Ficha completa de usuarios/ (campos exigidos pelas rules + modelo do produto).
- * status/role/accountType podem ser sobrescritos por admin ou fluxo de ativação.
- */
-export function buildUsuarioRecord(uid, {
-  userName = 'Guerreiro',
-  userAvatar = AVATAR_FALLBACK,
-  status = 'pendente',
-  role = 'user',
-  accountType = 'comum',
-  agora = Date.now(),
-} = {}) {
-  return {
+async function sincronizarPublico(uid, userName, userAvatar, accountType) {
+  await set(ref(db, `usuarios_publicos/${uid}`), {
     uid,
-    userName,
-    userAvatar,
-    role,
-    accountType,
-    gender: 'nao_informado',
-    birthYear: null,
-    status,
-    notifyNewChapter: false,
-    marketingOptIn: false,
-    marketingOptInAt: null,
-    membershipStatus: 'inativo',
-    memberUntil: null,
-    currentPlanId: null,
-    lastPaymentAt: null,
-    sourceAcquisition: 'organico',
-    createdAt: agora,
-    lastLogin: agora,
-  };
-}
-
-/**
- * Só o que as regras RTDB permitem ao próprio usuário sem ser "admin" no banco.
- * Quem é administrador do site vem de constants (UID/e-mail), não de role/accountType aqui —
- * assim a ficha pode ter accountType comum/membro/premium e role user como todo mundo.
- */
-function adminOverrides(usuario) {
-  if (!isAdminUser(usuario)) return {};
-  return {
-    status: 'ativo',
-  };
-}
-
-/**
- * Garante nó usuarios/{uid} + usuarios_publicos com todos os campos.
- * Recria ficha se o nó sumiu (ex.: apagado no console).
- */
-/**
- * Coloca status em ativo respeitando as rules: primeira escrita em `status` só pode ser `pendente`;
- * só então `pendente` → `ativo`. Evita PERMISSION_DENIED e conta presa em pendente.
- */
-export async function ativarContaUsuario(uid) {
-  const userRef = ref(db, `usuarios/${uid}`);
-  const statusSnap = await get(ref(db, `usuarios/${uid}/status`));
-  const now = Date.now();
-
-  if (!statusSnap.exists()) {
-    await update(userRef, { status: 'pendente', lastLogin: now });
-    await update(userRef, { status: 'ativo', lastLogin: Date.now() });
-    return;
-  }
-
-  const s = statusSnap.val();
-  if (s === 'ativo') {
-    await update(userRef, { lastLogin: now });
-    return;
-  }
-  if (s === 'pendente') {
-    await update(userRef, { status: 'ativo', lastLogin: now });
-    return;
-  }
-  if (s === 'banido') {
-    throw new Error('Conta bloqueada.');
-  }
-  await update(userRef, { status: 'pendente', lastLogin: now });
-  await update(userRef, { status: 'ativo', lastLogin: Date.now() });
-}
-
-export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares) {
-  const userRef = ref(db, `usuarios/${usuario.uid}`);
-  const snapshot = await get(userRef);
-  const agora = Date.now();
-  const avatar = fotoUrl || (listaAvatares && listaAvatares[0]) || AVATAR_FALLBACK;
-  const adm = adminOverrides(usuario);
-
-  const base = buildUsuarioRecord(usuario.uid, {
-    userName: nome || 'Guerreiro',
-    userAvatar: avatar,
-    status: adm.status || 'pendente',
-    role: adm.role || 'user',
-    accountType: adm.accountType || 'comum',
-    agora,
+    userName:    userName    || 'Guerreiro',
+    userAvatar:  userAvatar  || AVATAR_FALLBACK,
+    accountType: accountType || 'comum',
+    updatedAt:   Date.now(),
   });
+}
+
+/**
+ * Garante nó usuarios/{uid} + usuarios_publicos.
+ *
+ * statusInicial:
+ *   'pendente' → email/senha (precisa clicar no link)
+ *   'ativo'    → Google OAuth (já prova email real) ou admin
+ *
+ * NUNCA sobrescreve status se o nó já existe com status definido.
+ * Use ativarContaUsuario() para mudar pendente → ativo.
+ */
+export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares, statusInicial = 'pendente') {
+  const userRef  = ref(db, `usuarios/${usuario.uid}`);
+  const snapshot = await get(userRef);
+  const agora    = Date.now();
+  const avatar   = fotoUrl || (listaAvatares && listaAvatares[0]) || AVATAR_FALLBACK;
+  const status   = isAdminUser(usuario) ? 'ativo' : statusInicial;
 
   if (!snapshot.exists()) {
-    const merged = { ...base, ...adm, lastLogin: agora };
-    await set(userRef, merged);
-    await set(ref(db, `usuarios_publicos/${usuario.uid}`), {
-      uid: usuario.uid,
-      userName: merged.userName,
-      userAvatar: merged.userAvatar,
-      accountType: merged.accountType,
-      updatedAt: agora,
-    });
-    return merged;
-  }
+    // Nó não existe — cria completo
+    // Para status 'ativo' direto (Google/admin): as rules permitem
+    // primeira escrita como 'pendente', então precisamos de dois passos
+    // se o status final for 'ativo'.
+    const record = {
+      uid:               usuario.uid,
+      userName:          nome || 'Guerreiro',
+      userAvatar:        avatar,
+      role:              'user',
+      accountType:       'comum',
+      gender:            'nao_informado',
+      birthYear:         null,
+      status:            'pendente', // sempre começa pendente (regra do RTDB)
+      notifyNewChapter:  false,
+      marketingOptIn:    false,
+      marketingOptInAt:  null,
+      membershipStatus:  'inativo',
+      memberUntil:       null,
+      currentPlanId:     null,
+      lastPaymentAt:     null,
+      sourceAcquisition: 'organico',
+      createdAt:         agora,
+      lastLogin:         agora,
+    };
+    await set(userRef, record);
+    await sincronizarPublico(usuario.uid, record.userName, record.userAvatar, record.accountType);
 
-  const atual = snapshot.val() || {};
-  const patch = { lastLogin: agora, ...adm };
-
-  if (nome?.trim()) patch.userName = nome.trim();
-  if (fotoUrl) patch.userAvatar = fotoUrl;
-
-  const keys = Object.keys(base);
-  for (const k of keys) {
-    if (k === 'userName' || k === 'userAvatar') continue;
-    if (atual[k] === undefined || atual[k] === null) {
-      if (k === 'createdAt' && atual.createdAt) continue;
-      patch[k] = base[k];
+    // Se o status final deve ser 'ativo' (Google/admin), faz a transição agora
+    if (status === 'ativo') {
+      await update(userRef, { status: 'ativo', lastLogin: agora });
     }
+    return { ...record, status };
   }
-  if (!atual.uid) patch.uid = usuario.uid;
-  if (!patch.userName && !atual.userName) patch.userName = base.userName;
-  if (!patch.userAvatar && !atual.userAvatar) patch.userAvatar = avatar;
-  if (typeof atual.notifyNewChapter !== 'boolean' && patch.notifyNewChapter === undefined) patch.notifyNewChapter = false;
-  if (typeof atual.marketingOptIn !== 'boolean' && patch.marketingOptIn === undefined) patch.marketingOptIn = false;
-  if (typeof atual.marketingOptInAt !== 'number' && atual.marketingOptInAt !== null && patch.marketingOptInAt === undefined) patch.marketingOptInAt = null;
-  if (!atual.sourceAcquisition && !patch.sourceAcquisition) patch.sourceAcquisition = 'organico';
+
+  // Nó já existe — patch só dos campos faltantes + lastLogin
+  // NUNCA sobrescreve status aqui
+  const atual = snapshot.val() || {};
+  const patch  = { lastLogin: agora };
+
+  if (nome?.trim())  patch.userName   = nome.trim();
+  if (fotoUrl)       patch.userAvatar = fotoUrl;
+
+  if (!atual.uid)                   patch.uid                = usuario.uid;
+  if (!atual.role)                  patch.role               = 'user';
+  if (!atual.accountType)           patch.accountType        = 'comum';
+  if (!atual.gender)                patch.gender             = 'nao_informado';
+  if (!atual.sourceAcquisition)     patch.sourceAcquisition  = 'organico';
+  if (!atual.membershipStatus)      patch.membershipStatus   = 'inativo';
+  if (!atual.createdAt)             patch.createdAt          = agora;
+  if (typeof atual.birthYear !== 'number' && atual.birthYear !== null) patch.birthYear = null;
+  if (typeof atual.notifyNewChapter !== 'boolean') patch.notifyNewChapter = false;
+  if (typeof atual.marketingOptIn   !== 'boolean') patch.marketingOptIn   = false;
+  if (typeof atual.marketingOptInAt !== 'number'  && atual.marketingOptInAt !== null) patch.marketingOptInAt = null;
+  if (typeof atual.memberUntil      !== 'number'  && atual.memberUntil      !== null) patch.memberUntil      = null;
+  if (typeof atual.currentPlanId    !== 'string'  && atual.currentPlanId    !== null) patch.currentPlanId    = null;
+  if (typeof atual.lastPaymentAt    !== 'number'  && atual.lastPaymentAt    !== null) patch.lastPaymentAt    = null;
 
   await update(userRef, patch);
 
-  const nomePub = patch.userName || atual.userName || base.userName;
-  const avatarPub = patch.userAvatar || atual.userAvatar || avatar;
-  const tipoPub = patch.accountType || atual.accountType || base.accountType;
-  await set(ref(db, `usuarios_publicos/${usuario.uid}`), {
-    uid: usuario.uid,
-    userName: nomePub,
-    userAvatar: avatarPub,
-    accountType: tipoPub,
-    updatedAt: agora,
-  });
+  const nomePub    = patch.userName    || atual.userName    || 'Guerreiro';
+  const avatarPub  = patch.userAvatar  || atual.userAvatar  || avatar;
+  const accountPub = patch.accountType || atual.accountType || 'comum';
+  await sincronizarPublico(usuario.uid, nomePub, avatarPub, accountPub);
 
   return { ...atual, ...patch };
+}
+
+/**
+ * Ativa conta: qualquer status → ativo.
+ * Respeita as rules do RTDB que só permitem pendente → ativo pelo próprio usuário.
+ * Se já for ativo, só atualiza lastLogin.
+ */
+export async function ativarContaUsuario(uid) {
+  const userRef   = ref(db, `usuarios/${uid}`);
+  const statusRef = ref(db, `usuarios/${uid}/status`);
+  const snap      = await get(statusRef);
+  const now       = Date.now();
+
+  if (!snap.exists()) {
+    // Sem nó de status: garante pendente primeiro, depois ativo
+    await update(userRef, { status: 'pendente', lastLogin: now });
+    await update(userRef, { status: 'ativo',    lastLogin: now });
+    return;
+  }
+
+  const s = snap.val();
+  if (s === 'ativo')    { await update(userRef, { lastLogin: now }); return; }
+  if (s === 'banido')   { throw new Error('Conta bloqueada.'); }
+  if (s === 'pendente') { await update(userRef, { status: 'ativo', lastLogin: now }); return; }
+
+  // inativo ou desconhecido: dois passos (rules exigem pendente antes de ativo)
+  await update(userRef, { status: 'pendente', lastLogin: now });
+  await update(userRef, { status: 'ativo',    lastLogin: now });
 }

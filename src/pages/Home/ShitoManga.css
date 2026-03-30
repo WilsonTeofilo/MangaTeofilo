@@ -42,6 +42,7 @@
   justify-content: center;
   background: #000;
   overflow: hidden;
+  perspective: 1200px;
 }
 
 @media (max-width: 1200px) {
@@ -88,6 +89,18 @@
   z-index: 3;
   text-align: center;
   padding: 0 5%;
+  transform-style: preserve-3d;
+  animation: hero-float-3d 7s ease-in-out infinite;
+}
+
+@keyframes hero-float-3d {
+  0%,
+  100% {
+    transform: translateY(0) rotateX(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotateX(2.2deg);
+  }
 }
 
 .game-logo {
@@ -114,6 +127,16 @@
   color: var(--text-pure);
   opacity: 0.6;
   text-transform: uppercase;
+  animation: sublogo-glow 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes sublogo-glow {
+  from {
+    text-shadow: 0 0 0 rgba(255, 204, 0, 0);
+  }
+  to {
+    text-shadow: 0 0 18px rgba(255, 204, 0, 0.4);
+  }
 }
 
 /* Convite para rolar — some ao sair do topo da página */
@@ -228,42 +251,43 @@
   position: relative;
   left: 50%;
   right: 50%;
-  margin: 100px -50vw;
+  margin: clamp(48px, 9vw, 110px) -50vw;
   background: #000;
   display: flex;
   justify-content: center;
+  align-items: center;
+  padding-inline: clamp(10px, 2.6vw, 40px);
   box-shadow: 0 0 100px rgba(0,0,0,0.8);
 }
 
 .lore-banner-image img {
-  width: 85%;
-  max-width: 1600px;
+  width: min(96vw, 2200px);
+  max-width: none;
   height: auto;
   filter: grayscale(20%) brightness(0.9) contrast(1.1);
-  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
   transition: var(--transition-smooth);
+  transform-origin: center;
 }
 
 /* Monitores médios / grandes (23–27" típicos ~1920px): imagem ocupa mais largura útil */
 @media (min-width: 1200px) {
   .lore-banner-image img {
-    width: min(94%, 100%);
-    max-width: min(96vw, 2100px);
-    mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+    width: min(97vw, 2350px);
+    mask-image: linear-gradient(to right, transparent, black 2.2%, black 97.8%, transparent);
   }
 }
 
 @media (min-width: 1600px) {
   .lore-banner-image img {
-    width: min(96%, 100%);
-    max-width: min(97vw, 2400px);
-    mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+    width: min(98vw, 2500px);
+    mask-image: linear-gradient(to right, transparent, black 1.5%, black 98.5%, transparent);
   }
 }
 
 .lore-banner-image:hover img {
   filter: grayscale(0%) brightness(1.1);
-  transform: scale(1.02);
+  transform: scale(1.02) rotateX(2deg) rotateY(-1.8deg);
 }
 
 /* ==========================================================================
@@ -283,6 +307,65 @@
   letter-spacing: clamp(4px, 1.5vw, 10px);
   color: transparent;
   -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+  cursor: default;
+  transition: text-shadow 0.3s ease;
+}
+
+.section-title:hover {
+  animation:
+    elenco-led-blink 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) 0s 1 both,
+    elenco-led-neon 1.45s ease-in-out 2s infinite alternate;
+}
+
+@keyframes elenco-led-blink {
+  0% {
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+    text-shadow: 0 0 0 rgba(255,255,255,0);
+  }
+  12% {
+    color: #ffffff;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.95);
+    text-shadow: 0 0 12px rgba(255,255,255,0.85), 0 0 24px rgba(255,255,255,0.65);
+  }
+  24% {
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+    text-shadow: none;
+  }
+  42% {
+    color: #ffffff;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.98);
+    text-shadow: 0 0 14px rgba(255,255,255,0.92), 0 0 28px rgba(255,255,255,0.72);
+  }
+  56% {
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+    text-shadow: none;
+  }
+  100% {
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+    text-shadow: none;
+  }
+}
+
+@keyframes elenco-led-neon {
+  0% {
+    color: rgba(255, 233, 159, 0.14);
+    -webkit-text-stroke: 1.2px rgba(255, 204, 0, 0.72);
+    text-shadow:
+      0 0 12px rgba(255, 204, 0, 0.5),
+      0 0 22px rgba(255, 204, 0, 0.34);
+  }
+  100% {
+    color: rgba(255, 244, 202, 0.2);
+    -webkit-text-stroke: 1.4px rgba(255, 204, 0, 0.95);
+    text-shadow:
+      0 0 14px rgba(255, 204, 0, 0.74),
+      0 0 28px rgba(255, 204, 0, 0.52),
+      0 0 42px rgba(255, 204, 0, 0.28);
+  }
 }
 
 .character-grid {
@@ -300,6 +383,7 @@
   overflow: hidden;
   position: relative;
   transition: var(--transition-smooth);
+  transform-style: preserve-3d;
 }
 
 .gif-box {
@@ -334,7 +418,7 @@
 }
 
 .char-card:hover {
-  transform: translateY(-20px) scale(1.02);
+  transform: translateY(-20px) scale(1.02) rotateX(4deg) rotateY(-3deg);
   border-color: rgba(255,255,255,0.2);
   z-index: 10;
 }
@@ -470,7 +554,7 @@
   }
 
   .lore-banner-image {
-    max-width: 2200px;
+    max-width: 2400px;
     margin: clamp(48px, 10vw, 100px) auto;
     left: auto;
     right: auto;
@@ -519,7 +603,7 @@
 
   .lore-banner-image img {
     width: 100%;
-    mask-image: none;
+    mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
   }
 
   .stats-row {
@@ -576,6 +660,10 @@
 }
 
 @media (max-width: 480px) {
+  .lore-banner-image {
+    padding-inline: 0;
+  }
+
   .lore-date {
     letter-spacing: 3px;
     font-size: 0.78rem;
@@ -595,5 +683,22 @@
 
   .game-logo {
     animation: none;
+  }
+
+  .game-sublogo,
+  .banner-content {
+    animation: none;
+  }
+
+  .lore-banner-image:hover img,
+  .char-card:hover {
+    transform: none;
+  }
+
+  .section-title:hover {
+    animation: none;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+    text-shadow: none;
   }
 }

@@ -4,12 +4,45 @@ import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../../services/firebase';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
-import { labelPrecoPremium } from '../../config/premiumAssinatura';
+import { labelPrecoPremium, PREMIUM_PRECO_BRL } from '../../config/premiumAssinatura';
 import './FinanceiroAdmin.css';
 
 const migrateDeprecatedFields = httpsCallable(functions, 'adminMigrateDeprecatedUserFields');
 const adminObterPromocaoPremium = httpsCallable(functions, 'adminObterPromocaoPremium');
 const adminSalvarPromocaoPremium = httpsCallable(functions, 'adminSalvarPromocaoPremium');
+const PRECO_BASE = Number(PREMIUM_PRECO_BRL || 23);
+const PROMO_TEMPLATES = [
+  {
+    id: 'flash24',
+    nome: 'Flash 24h',
+    mensagem: 'Oferta relâmpago para virar Membro Shito nas próximas 24h.',
+    dias: 0,
+    horas: 24,
+    minutos: 0,
+    segundos: 0,
+    descontoPct: 13,
+  },
+  {
+    id: 'fimSemana',
+    nome: 'Fim de semana da Tempestade',
+    mensagem: 'Promo de fim de semana para reforçar a base premium.',
+    dias: 2,
+    horas: 0,
+    minutos: 0,
+    segundos: 0,
+    descontoPct: 18,
+  },
+  {
+    id: 'retomada7d',
+    nome: 'Retomada da Guilda (7 dias)',
+    mensagem: 'Campanha de retomada para acelerar assinaturas no início do mês.',
+    dias: 7,
+    horas: 0,
+    minutos: 0,
+    segundos: 0,
+    descontoPct: 10,
+  },
+];
 
 function toDatetimeLocal(ms) {
   const d = new Date(ms);
@@ -43,6 +76,10 @@ export default function FinanceiroAdmin() {
   const [loadingPromo, setLoadingPromo] = useState(false);
   const [msgPromo, setMsgPromo] = useState('');
   const [promoAtual, setPromoAtual] = useState(null);
+  const [promoHistory, setPromoHistory] = useState([]);
+  const [lastCampaign, setLastCampaign] = useState(null);
+  const [currentPerformance, setCurrentPerformance] = useState(null);
+  const [templateAtivo, setTemplateAtivo] = useState('');
 
   const [promoNome, setPromoNome] = useState('Promoção Membro Shito');
   const [promoMensagem, setPromoMensagem] = useState('');
@@ -72,6 +109,11 @@ export default function FinanceiroAdmin() {
     );
   }, [durDias, durHoras, durMin, durSeg]);
 
+  const precoNumerico = useMemo(
+    () => Number(String(promoPreco || '').replace(',', '.')),
+    [promoPreco]
+  );
+
   const rodarMigracaoCampos = async () => {
     setMsgMigracao('');
     setMigrando(true);
@@ -95,6 +137,9 @@ export default function FinanceiroAdmin() {
       const { data } = await adminObterPromocaoPremium();
       const promo = data?.parsedPromo || null;
       setPromoAtual(promo);
+      setPromoHistory(Array.isArray(data?.promoHistory) ? data.promoHistory : []);
+      setLastCampaign(data?.lastCampaign || null);
+      setCurrentPerformance(data?.currentPerformance || null);
       if (promo) {
         setPromoNome(promo.name || 'Promoção Membro Shito');
         setPromoMensagem(promo.message || '');
@@ -129,6 +174,11 @@ export default function FinanceiroAdmin() {
       }
       const fim = inicio + duracaoMs;
       const preco = Number(String(promoPreco).replace(',', '.'));
+      if (!Number.isFinite(preco) || preco <= 0) {
+        setMsgPromo('Preço promocional inválido.');
+        setLoadingPromo(false);
+        return;
+      }
       const { data } = await adminSalvarPromocaoPremium({
         enabled: true,
         name: promoNome,
@@ -152,6 +202,7 @@ export default function FinanceiroAdmin() {
   };
 
   const encerrarPromo = async () => {
+    if (!window.confirm('Deseja encerrar esta promoção agora?')) return;
     setLoadingPromo(true);
     setMsgPromo('');
     try {
@@ -175,6 +226,89 @@ export default function FinanceiroAdmin() {
   const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
   const ss = String(totalSec % 60).padStart(2, '0');
   const timerFormatado = `${dd}:${hh}:${mm}:${ss}`;
+  const simulador = useMemo(() => {
+    const preco = Number.isFinite(precoNumerico) ? precoNumerico : 0;
+    const descontoPct = PRECO_BASE > 0 ? ((PRECO_BASE - preco) / PRECO_BASE) * 100 : 0;
+    const baselineAssinaturas = Math.max(
+      10,
+      Number(lastCampaign?.performance?.payments || currentPerformance?.payments || 10)
+    );
+    const receitaBase = PRECO_BASE * baselineAssinaturas;
+    const cenarios = [
+      { id: 'conservador', nome: 'Conservador', lift: 1.1 },
+      { id: 'medio', nome: 'Médio', lift: 1.35 },
+      { id: 'agressivo', nome: 'Agressivo', lift: 1.6 },
+    ].map((c) => {
+      const assinaturas = Math.round(baselineAssinaturas * c.lift);
+      const receita = assinaturas * preco;
+      const delta = receita - receitaBase;
+      return {
+        ...c,
+        assinaturas,
+        receita,
+        delta,
+      };
+    });
+    const breakEvenAssinaturas = preco > 0 ? Math.ceil(receitaBase / preco) : 0;
+    return {
+      descontoPct: Math.round(descontoPct * 10) / 10,
+      baselineAssinaturas,
+      receitaBase,
+      breakEvenAssinaturas,
+      cenarios,
+    };
+  }, [precoNumerico, lastCampaign, currentPerformance]);
+
+  const warningsConfig = useMemo(() => {
+    const arr = [];
+    if (Number.isFinite(precoNumerico) && precoNumerico < PRECO_BASE * 0.6) {
+      arr.push('Preço muito baixo: pode reduzir receita se o volume não subir bastante.');
+    }
+    if (duracaoMs > 30 * 24 * 60 * 60 * 1000) {
+      arr.push('Duração acima de 30 dias: pode banalizar o valor percebido da assinatura.');
+    }
+    if (duracaoMs <= 0) {
+      arr.push('Defina uma duração maior que zero para evitar promoção inválida.');
+    }
+    return arr;
+  }, [precoNumerico, duracaoMs]);
+
+  const aplicarTemplate = (tpl) => {
+    const precoCalc = PRECO_BASE * (1 - tpl.descontoPct / 100);
+    setTemplateAtivo(tpl.id);
+    setPromoNome(tpl.nome);
+    setPromoMensagem(tpl.mensagem);
+    setPromoPreco(String(Math.round(precoCalc * 100) / 100));
+    setDurDias(String(tpl.dias));
+    setDurHoras(String(tpl.horas));
+    setDurMin(String(tpl.minutos));
+    setDurSeg(String(tpl.segundos));
+    setPromoInicio(toDatetimeLocal(Date.now()));
+    setAba('config');
+  };
+
+  const duplicarCampanha = (campanha) => {
+    if (!campanha) return;
+    const spanMs = Math.max(
+      3600000,
+      Number(campanha.endsAt || 0) - Number(campanha.startsAt || 0)
+    );
+    const totalSecCopy = Math.floor(spanMs / 1000);
+    const diasCopy = Math.floor(totalSecCopy / 86400);
+    const horasCopy = Math.floor((totalSecCopy % 86400) / 3600);
+    const minCopy = Math.floor((totalSecCopy % 3600) / 60);
+    const secCopy = totalSecCopy % 60;
+    setPromoNome(`${campanha.name || 'Promoção'} (Cópia)`);
+    setPromoMensagem(campanha.message || '');
+    setPromoPreco(String(campanha.priceBRL || PRECO_BASE));
+    setPromoInicio(toDatetimeLocal(Date.now()));
+    setDurDias(String(diasCopy));
+    setDurHoras(String(horasCopy));
+    setDurMin(String(minCopy));
+    setDurSeg(String(secCopy));
+    setTemplateAtivo('');
+    setAba('config');
+  };
 
   return (
     <main className="admin-empty-page">
@@ -261,12 +395,114 @@ export default function FinanceiroAdmin() {
               </button>
             </div>
             {msgPromo && <p className="financeiro-migracao-msg">{msgPromo}</p>}
+
+            <section className="financeiro-resultados">
+              <h3>Resultado da última campanha</h3>
+              {lastCampaign ? (
+                <>
+                  <div className="financeiro-resultados-head">
+                    <p>
+                      <strong>{lastCampaign.name}</strong> · {labelPrecoPremium(lastCampaign.priceBRL)} ·{' '}
+                      {formatDateBr(lastCampaign.startsAt)} até {formatDateBr(lastCampaign.endsAt)}
+                    </p>
+                    <button type="button" onClick={() => duplicarCampanha(lastCampaign)}>
+                      Duplicar campanha
+                    </button>
+                  </div>
+                  <div className="financeiro-resultados-kpis">
+                    <article>
+                      <small>Emails enviados</small>
+                      <strong>{lastCampaign?.performance?.sentEmails || 0}</strong>
+                    </article>
+                    <article>
+                      <small>Cliques</small>
+                      <strong>{lastCampaign?.performance?.clicks || 0}</strong>
+                    </article>
+                    <article>
+                      <small>Checkouts</small>
+                      <strong>{lastCampaign?.performance?.checkouts || 0}</strong>
+                    </article>
+                    <article>
+                      <small>Pagamentos</small>
+                      <strong>{lastCampaign?.performance?.payments || 0}</strong>
+                    </article>
+                    <article>
+                      <small>Receita</small>
+                      <strong>{labelPrecoPremium(lastCampaign?.performance?.revenue || 0)}</strong>
+                    </article>
+                  </div>
+                  <div className="financeiro-mini-funil">
+                    {[
+                      { id: 'env', label: 'Enviado', value: lastCampaign?.performance?.sentEmails || 0, base: lastCampaign?.performance?.sentEmails || 0 },
+                      { id: 'clk', label: 'Clique', value: lastCampaign?.performance?.clicks || 0, base: lastCampaign?.performance?.sentEmails || 0 },
+                      { id: 'chk', label: 'Checkout', value: lastCampaign?.performance?.checkouts || 0, base: lastCampaign?.performance?.sentEmails || 0 },
+                      { id: 'pay', label: 'Pago', value: lastCampaign?.performance?.payments || 0, base: lastCampaign?.performance?.sentEmails || 0 },
+                    ].map((step) => {
+                      const pct = step.base > 0 ? Math.max(5, Math.round((step.value / step.base) * 100)) : 5;
+                      return (
+                        <div key={step.id} className="financeiro-mini-step">
+                          <div className="financeiro-mini-step-head">
+                            <span>{step.label}</span>
+                            <strong>{step.value}</strong>
+                          </div>
+                          <div className="financeiro-mini-bar">
+                            <i style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="promo-timer">Ainda não há campanha concluída com dados de performance.</p>
+              )}
+            </section>
+
+            <section className="financeiro-historico">
+              <div className="financeiro-historico-head">
+                <h3>Histórico de campanhas</h3>
+                <small>Últimas campanhas salvas para reutilizar e comparar.</small>
+              </div>
+              <div className="financeiro-historico-list">
+                {promoHistory.map((camp) => (
+                  <article key={camp.promoId} className="financeiro-historico-item">
+                    <div>
+                      <h4>{camp.name}</h4>
+                      <p>{labelPrecoPremium(camp.priceBRL)} · {formatDateBr(camp.startsAt)} até {formatDateBr(camp.endsAt)}</p>
+                      <small>Status: {camp.status || 'registrada'} · Receita: {labelPrecoPremium(camp?.performance?.revenue || 0)}</small>
+                    </div>
+                    <div className="financeiro-historico-acoes">
+                      <button type="button" onClick={() => duplicarCampanha(camp)}>Duplicar</button>
+                      <span className="financeiro-history-score">
+                        {Number(camp?.performance?.paidFromSentPct || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% pago/enviado
+                      </span>
+                    </div>
+                  </article>
+                ))}
+                {!promoHistory.length && <p className="promo-timer">Sem campanhas anteriores registradas.</p>}
+              </div>
+            </section>
           </div>
         )}
 
         {aba === 'config' && (
           <div className="financeiro-promocao">
             <h2>Configuração de promoção Premium</h2>
+            <div className="financeiro-form-section">
+              <h3>Templates rápidos</h3>
+              <div className="financeiro-template-list">
+                {PROMO_TEMPLATES.map((tpl) => (
+                  <button
+                    type="button"
+                    key={tpl.id}
+                    className={`financeiro-template-chip ${templateAtivo === tpl.id ? 'active' : ''}`}
+                    onClick={() => aplicarTemplate(tpl)}
+                  >
+                    {tpl.nome}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="financeiro-form-section">
               <h3>Dados da campanha</h3>
@@ -306,6 +542,47 @@ export default function FinanceiroAdmin() {
                   <input type="number" min="0" value={durSeg} onChange={(e) => setDurSeg(e.target.value)} />
                 </label>
               </div>
+            </div>
+
+            <div className="financeiro-form-section">
+              <h3>Simulador de impacto</h3>
+              <div className="financeiro-simulador-kpis">
+                <article>
+                  <small>Desconto aplicado</small>
+                  <strong>{simulador.descontoPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong>
+                </article>
+                <article>
+                  <small>Base de referência</small>
+                  <strong>{simulador.baselineAssinaturas} assinaturas</strong>
+                </article>
+                <article>
+                  <small>Break-even</small>
+                  <strong>{simulador.breakEvenAssinaturas} assinaturas</strong>
+                </article>
+                <article>
+                  <small>Receita base</small>
+                  <strong>{labelPrecoPremium(simulador.receitaBase)}</strong>
+                </article>
+              </div>
+              <div className="financeiro-simulador-cenarios">
+                {simulador.cenarios.map((c) => (
+                  <article key={c.id}>
+                    <h4>{c.nome}</h4>
+                    <p>{c.assinaturas} assinaturas estimadas</p>
+                    <strong>{labelPrecoPremium(c.receita)}</strong>
+                    <small className={c.delta >= 0 ? 'ok' : 'bad'}>
+                      {c.delta >= 0 ? '+' : ''}{labelPrecoPremium(Math.abs(c.delta))} vs base
+                    </small>
+                  </article>
+                ))}
+              </div>
+              {!!warningsConfig.length && (
+                <ul className="financeiro-alertas">
+                  {warningsConfig.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="financeiro-form-section">

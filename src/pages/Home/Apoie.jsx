@@ -13,11 +13,17 @@ import {
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
 import { labelPrecoPremium } from '../../config/premiumAssinatura';
+import {
+  getAttribution,
+  parseAttributionFromSearch,
+  persistAttribution,
+} from '../../utils/trafficAttribution';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
 const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
+const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
 function formatarDataFimAssinatura(ms) {
   if (typeof ms !== 'number') return '';
@@ -101,6 +107,20 @@ export default function Apoie({ user, perfil }) {
       clearInterval(tickId);
     };
   }, []);
+
+  useEffect(() => {
+    const fromUrl = parseAttributionFromSearch(searchParams);
+    if (!fromUrl) return;
+    persistAttribution(fromUrl);
+    if (fromUrl.source === 'promo_email') {
+      registrarAttributionEvento({
+        eventType: 'promo_landing',
+        source: fromUrl.source,
+        campaignId: fromUrl.campaignId || null,
+        clickId: fromUrl.clickId || null,
+      }).catch(() => {});
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (mpRetorno !== 'ok' || jaMostrouAgradecimento.current) return;
@@ -276,9 +296,18 @@ export default function Apoie({ user, perfil }) {
       return;
     }
     const baselineUntil = typeof perfil?.memberUntil === 'number' ? perfil.memberUntil : 0;
+    const attribution = getAttribution();
     setCarregandoId('premium');
     try {
-      const { data } = await criarCheckoutPremium();
+      const { data } = await criarCheckoutPremium({
+        attribution: attribution
+          ? {
+              source: attribution.source,
+              campaignId: attribution.campaignId || null,
+              clickId: attribution.clickId || null,
+            }
+          : null,
+      });
       if (data?.url) {
         setAcompanhamentoPremium({
           ativo: true,

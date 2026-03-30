@@ -21,6 +21,35 @@
   min-height: 100vh;
   font-family: 'Poppins', sans-serif;
   overflow-x: hidden;
+  position: relative;
+  isolation: isolate;
+}
+
+.apoie-page::before,
+.apoie-page::after {
+  content: '';
+  position: fixed;
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: -1;
+  filter: blur(28px);
+  opacity: 0.26;
+}
+
+.apoie-page::before {
+  width: clamp(180px, 28vw, 380px);
+  height: clamp(180px, 28vw, 380px);
+  right: -80px;
+  top: 12vh;
+  background: radial-gradient(circle, rgba(255, 204, 0, 0.45), transparent 70%);
+}
+
+.apoie-page::after {
+  width: clamp(140px, 22vw, 320px);
+  height: clamp(140px, 22vw, 320px);
+  left: -80px;
+  bottom: 8vh;
+  background: radial-gradient(circle, rgba(88, 101, 242, 0.4), transparent 72%);
 }
 
 /* Conteúdo principal (compensa header fixo — era .apoie-content sem uso no JSX) */
@@ -308,6 +337,8 @@
   transition: var(--transition-smooth);
   position: relative;
   overflow: hidden;
+  transform-style: preserve-3d;
+  perspective: 1000px;
 }
 
 .apoie-card::before {
@@ -325,7 +356,7 @@
 }
 
 .apoie-card:hover {
-  transform: translateY(-12px);
+  transform: translateY(-12px) rotateX(5deg) rotateY(-4deg);
   box-shadow: 0 25px 60px rgba(0,0,0,0.6), 0 0 40px var(--glow-gold);
   border-color: var(--naraa-gold);
 }
@@ -369,12 +400,27 @@
   transition: var(--transition-smooth);
   box-shadow: 0 8px 25px rgba(255, 204, 0, 0.3);
   letter-spacing: 1px;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-apoie::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.38) 44%, transparent 70%);
+  transform: translateX(-130%);
+  transition: transform 0.55s ease;
 }
 
 .btn-apoie:hover {
   background: #ffdd44;
   transform: translateY(-4px) scale(1.05);
   box-shadow: 0 15px 40px rgba(255, 204, 0, 0.5);
+}
+
+.btn-apoie:hover::after {
+  transform: translateX(130%);
 }
 
 .btn-apoie:active {
@@ -466,6 +512,13 @@
   background: linear-gradient(145deg, rgba(30, 25, 10, 0.95), rgba(20, 18, 12, 0.98));
   border: 1px solid rgba(255, 204, 0, 0.35);
   box-shadow: 0 0 40px var(--glow-gold);
+  transform-style: preserve-3d;
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
+}
+
+.apoie-premium-card:hover {
+  transform: translateY(-6px) rotateX(2.8deg);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45), 0 0 45px rgba(255, 204, 0, 0.32);
 }
 
 .apoie-premium-badge {
@@ -499,6 +552,7 @@
   border-radius: 10px;
   border: 1px solid rgba(255, 204, 0, 0.45);
   background: rgba(255, 204, 0, 0.11);
+  backdrop-filter: blur(8px);
 }
 
 .apoie-premium-oferta p {
@@ -680,6 +734,11 @@
   .btn-apoie {
     width: 100%;
     padding: 1.2rem;
+  }
+
+  .apoie-card:hover,
+  .apoie-premium-card:hover {
+    transform: translateY(-6px);
   }
 }
 

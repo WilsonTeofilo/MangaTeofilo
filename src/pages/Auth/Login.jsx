@@ -8,6 +8,7 @@ import {
   signInWithPopup,
   sendPasswordResetEmail,
   signOut,
+  fetchSignInMethodsForEmail,
 } from 'firebase/auth';
 import { ref, get, onValue } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
@@ -61,8 +62,10 @@ async function carregarStatusConta(uid) {
 // ── Componente ─────────────────────────────────────────────────────────────
 export default function Login() {
   const navigate = useNavigate();
-  // step: 'email' | 'code' | 'new-user' | 'existing-password'
+  // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');
+  /** Após código: usuário tem senha no site e também Google — mostrar alternativa */
+  const [mostrarGoogleComoAlternativa, setMostrarGoogleComoAlternativa] = useState(false);
   const [email,           setEmail]           = useState('');
   const [code,            setCode]            = useState('');
   const [displayName,     setDisplayName]     = useState('');
@@ -72,6 +75,7 @@ export default function Login() {
   const [info,            setInfo]            = useState('');
   const [loading,         setLoading]         = useState(false);
   const [forgotCooldown,  setForgotCooldown]  = useState(0);
+  const [resendCooldown,  setResendCooldown]  = useState(0);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [listaAvatares,   setListaAvatares]   = useState(LISTA_AVATARES);
   const [selectedAvatar,  setSelectedAvatar]  = useState(LISTA_AVATARES[0] || AVATAR_FALLBACK);
@@ -96,6 +100,12 @@ export default function Login() {
   }, [forgotCooldown]);
 
   useEffect(() => { if (forgotCooldown === 0) sessionStorage.removeItem(FORGOT_KEY); }, [forgotCooldown]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => setResendCooldown((p) => Math.max(0, p - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
 
   // ── Avatares dinâmicos ─────────────────────────────────────────────────
   useEffect(() => {
@@ -163,25 +173,22 @@ export default function Login() {
     }
   };
 
-  // ── FLUXO: 1) ENVIAR CÓDIGO ─────────────────────────────────────────────
-  const handleSendCode = async (e) => {
-    e.preventDefault();
-    setError('');
-    setInfo('');
-
+  /** Envia código por e-mail (primeira vez ou reenvio). Retorna true se ok. */
+  const enviarCodigoLogin = async () => {
     const attempt = getAttemptState('sendCode');
     if (attempt.blocked) {
       setError(`Muitas tentativas. Tente novamente em ${attempt.retryInSec}s.`);
-      return;
+      return false;
     }
 
     const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
     if (!email.trim() || !emailRegex.test(email.trim())) {
       setError('Informe um e-mail válido (ex: usuario@email.com).');
-      return;
+      return false;
     }
 
     setLoading(true);
+    setError('');
     try {
       const resp = await fetch('https://sendlogincode-4oan3cdrua-uc.a.run.app', {
         method: 'POST',
@@ -195,14 +202,29 @@ export default function Login() {
       }
 
       registerAttemptResult('sendCode', true);
-      setStep('code');
       setInfo('Código enviado! Confira seu e-mail (e spam) e digite abaixo.');
+      setResendCooldown(45);
+      return true;
     } catch (err) {
       registerAttemptResult('sendCode', false);
       setError(err.message || 'Falha ao enviar código. Tente novamente.');
+      return false;
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSendCode = async (e) => {
+    e.preventDefault();
+    setInfo('');
+    const ok = await enviarCodigoLogin();
+    if (ok) setStep('code');
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || loading) return;
+    setError('');
+    await enviarCodigoLogin();
   };
 
   // ── FLUXO: 2) VALIDAR CÓDIGO ────────────────────────────────────────────
@@ -236,14 +258,48 @@ export default function Login() {
       }
 
       registerAttemptResult('verifyCode', true);
+      setMostrarGoogleComoAlternativa(false);
 
       if (data.isNewUser) {
         setStep('new-user');
         setInfo('Nova alma detectada. Configure seu nome, avatar e senha.');
-      } else {
-        setStep('existing-password');
-        setInfo('Bem-vindo de volta! Digite sua senha para entrar.');
+        return;
       }
+
+      let methods = [];
+      try {
+        methods = await fetchSignInMethodsForEmail(auth, email.trim());
+      } catch {
+        methods = [];
+      }
+
+      const temSenhaSite = methods.includes('password');
+      const temGoogle = methods.includes('google.com');
+
+      if (temSenhaSite) {
+        setStep('existing-password');
+        setPassword('');
+        setMostrarGoogleComoAlternativa(temGoogle);
+        setInfo(
+          temGoogle
+            ? 'Digite a senha que você cadastrou neste site. Ela não é a mesma da conta Google — ou use Conectar com Google abaixo.'
+            : 'Bem-vindo de volta! Digite a senha que você cadastrou no site.'
+        );
+        return;
+      }
+
+      if (temGoogle) {
+        setStep('existing-google');
+        setInfo('');
+        return;
+      }
+
+      setStep('existing-password');
+      setPassword('');
+      setMostrarGoogleComoAlternativa(false);
+      setInfo(
+        'Digite a senha cadastrada neste site, se você criou uma. Se entra só com Google, use o botão Conectar com Google na primeira tela — a senha do Gmail não é usada aqui.'
+      );
     } catch (err) {
       registerAttemptResult('verifyCode', false);
       setError(err.message || 'Falha ao validar código. Tente novamente.');
@@ -368,13 +424,18 @@ export default function Login() {
       navigate('/', { replace: true });
     } catch (err) {
       registerAttemptResult('loginPassword', false);
-      const msgs = {
+      const base = {
         'auth/invalid-email':      'E-mail inválido.',
         'auth/user-not-found':     'E-mail ou senha incorretos.',
         'auth/wrong-password':     'E-mail ou senha incorretos.',
         'auth/invalid-credential': 'E-mail ou senha incorretos.',
       };
-      setError(msgs[err.code] || `Erro ao entrar: ${err.code || err.message}`);
+      let msg = base[err.code] || `Erro ao entrar: ${err.code || err.message}`;
+      if (['auth/wrong-password', 'auth/invalid-credential', 'auth/user-not-found'].includes(err.code)) {
+        msg +=
+          ' Se você criou a conta com Google, a senha do Gmail não funciona aqui — volte e use Conectar com Google.';
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -412,6 +473,7 @@ export default function Login() {
           {step === 'code' && 'INSIRA O CÓDIGO ENVIADO'}
           {step === 'new-user' && 'DESPERTAR NOVA ALMA'}
           {step === 'existing-password' && 'DIGITE SUA SENHA'}
+          {step === 'existing-google' && 'ENTRE COM GOOGLE'}
         </p>
 
         {/* STEP 1: E-MAIL */}
@@ -440,6 +502,11 @@ export default function Login() {
               <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
               CONECTAR COM GOOGLE
             </button>
+
+            <p className="login-google-hint">
+              Conta criada com Google? Use o botão acima. A senha do Gmail <strong>não</strong> é usada neste
+              site — só o login oficial do Google.
+            </p>
 
             <button
               type="button"
@@ -483,14 +550,30 @@ export default function Login() {
               </button>
             </form>
 
-            <button
-              type="button"
-              className="btn-text-action"
-              onClick={() => { setStep('email'); setCode(''); setError(''); setInfo(''); }}
-              disabled={loading}
-            >
-              Trocar e-mail
-            </button>
+            <div className="login-code-actions">
+              <button
+                type="button"
+                className="btn-text-action"
+                onClick={handleResendCode}
+                disabled={loading || resendCooldown > 0}
+              >
+                {resendCooldown > 0 ? `Reenviar código (${resendCooldown}s)` : 'Reenviar código'}
+              </button>
+              <button
+                type="button"
+                className="btn-text-action"
+                onClick={() => {
+                  setStep('email');
+                  setCode('');
+                  setError('');
+                  setInfo('');
+                  setResendCooldown(0);
+                }}
+                disabled={loading}
+              >
+                Trocar e-mail
+              </button>
+            </div>
           </>
         )}
 
@@ -577,10 +660,44 @@ export default function Login() {
             <button
               type="button"
               className="btn-text-action"
-              onClick={() => { setStep('code'); setPassword(''); setConfirmPassword(''); setError(''); setInfo(''); }}
+              onClick={() => {
+                setStep('code');
+                setPassword('');
+                setConfirmPassword('');
+                setError('');
+                setInfo('');
+              }}
               disabled={loading}
             >
               Já tenho conta
+            </button>
+          </>
+        )}
+
+        {/* Conta existente só com Google (sem senha no Firebase) */}
+        {step === 'existing-google' && (
+          <>
+            <p className="login-google-hint login-google-hint--block">
+              Este e-mail foi cadastrado com <strong>Conectar com Google</strong>. O site não guarda a senha da
+              sua conta Google — por isso digitar o e-mail e a senha do Gmail aqui não funciona.
+            </p>
+            <button type="button" className="btn-google-shito" onClick={handleGoogleSignIn} disabled={loading}>
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
+              CONECTAR COM GOOGLE
+            </button>
+            <button
+              type="button"
+              className="btn-text-action"
+              onClick={() => {
+                setStep('email');
+                setCode('');
+                setError('');
+                setInfo('');
+                setResendCooldown(0);
+              }}
+              disabled={loading}
+            >
+              Usar outro e-mail
             </button>
           </>
         )}
@@ -616,10 +733,26 @@ export default function Login() {
               </button>
             </form>
 
+            {mostrarGoogleComoAlternativa && (
+              <>
+                <div className="social-divider"><span>OU</span></div>
+                <button type="button" className="btn-google-shito" onClick={handleGoogleSignIn} disabled={loading}>
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
+                  CONECTAR COM GOOGLE
+                </button>
+              </>
+            )}
+
             <button
               type="button"
               className="btn-text-action"
-              onClick={() => { setStep('code'); setPassword(''); setError(''); setInfo(''); }}
+              onClick={() => {
+                setStep('code');
+                setPassword('');
+                setError('');
+                setInfo('');
+                setMostrarGoogleComoAlternativa(false);
+              }}
               disabled={loading}
             >
               Voltar para código

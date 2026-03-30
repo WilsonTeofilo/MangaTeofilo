@@ -12,6 +12,7 @@ import {
 } from '../../config/apoieMensagens';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
+import { labelPrecoPremium } from '../../config/premiumAssinatura';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
@@ -208,7 +209,9 @@ export default function Apoie({ user, perfil }) {
 
           <div className="apoie-premium-card">
             <div className="apoie-premium-badge">MEMBRO SHITO</div>
-            <h2 className="apoie-premium-titulo">Assinatura Premium — R$ 23 / 30 dias</h2>
+            <h2 className="apoie-premium-titulo">
+              Assinatura Premium — {labelPrecoPremium()} / 30 dias
+            </h2>
             <p className="apoie-premium-desc">
               Só quem assina desbloqueia as regalias abaixo. Doações (P / M / G ou valor livre) ajudam a obra,
               mas <strong>não</strong> ativam Premium — combinado no Discord para créditos nos capítulos.
@@ -258,7 +261,7 @@ export default function Apoie({ user, perfil }) {
                 ? 'Abrindo checkout…'
                 : premiumAtivo
                   ? 'Renovar Premium (30 dias)'
-                  : 'Assinar Premium — R$ 23'}
+                  : `Assinar Premium — ${labelPrecoPremium()}`}
             </button>
           </div>
 
@@ -337,7 +340,8 @@ export default function Apoie({ user, perfil }) {
             <h3>RECOMPENSAS</h3>
             <ul>
               <li>
-                <i className="fa-solid fa-crown" /> <strong>Assinatura Premium (R$ 23):</strong> regalias de
+                <i className="fa-solid fa-crown" /> <strong>Assinatura Premium ({labelPrecoPremium()}):</strong>{' '}
+                regalias de
                 membro (lista acima), por 30 dias renováveis.
               </li>
               <li>

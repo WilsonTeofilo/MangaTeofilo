@@ -4,16 +4,17 @@ import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update }
 
 import { db } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
+import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
-const isContaPremium = (perfil) => {
-  const tipo = String(perfil?.accountType ?? 'comum').toLowerCase();
-  if (tipo === 'admin') return false;
-  return tipo === 'membro' || tipo === 'premium';
+/** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
+const isContaPremium = (perfilPublico) => {
+  const tipo = String(perfilPublico?.accountType ?? 'comum').toLowerCase();
+  return tipo === 'premium';
 };
 
-export default function Leitor({ user }) {
+export default function Leitor({ user, perfil }) {
   const { id }   = useParams();
   const navigate = useNavigate();
 
@@ -33,6 +34,7 @@ export default function Leitor({ user }) {
   );
   const [paginaAtual, setPaginaAtual]     = useState(0);
   const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [modalLoginComentario, setModalLoginComentario] = useState(false);
 
   const touchStartX          = useRef(0);
   const touchEndX            = useRef(0);
@@ -41,6 +43,19 @@ export default function Leitor({ user }) {
 
   useEffect(() => { localStorage.setItem('modoLeitura', modoLeitura); }, [modoLeitura]);
   useEffect(() => { localStorage.setItem('zoom', zoom); }, [zoom]);
+
+  useEffect(() => {
+    if (user) setModalLoginComentario(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (!modalLoginComentario) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setModalLoginComentario(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [modalLoginComentario]);
 
   // ✅ Lê de usuarios_publicos (.read = true nas rules)
   // Qualquer visitante, logado ou não, consegue ver nome e avatar
@@ -58,11 +73,10 @@ export default function Leitor({ user }) {
   }, []);
 
   useEffect(() => {
-    if (!jaContouVisualizacao.current) {
-      runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
-      jaContouVisualizacao.current = true;
-    }
+    jaContouVisualizacao.current = false;
+  }, [id]);
 
+  useEffect(() => {
     const unsub = onValue(ref(db, `capitulos/${id}`), (snap) => {
       if (!snap.exists()) {
         setCapitulo(null);
@@ -91,6 +105,15 @@ export default function Leitor({ user }) {
       unsubPerfis.current = {};
     };
   }, [id, escutarPerfil]);
+
+  useEffect(() => {
+    if (!capitulo || !id) return;
+    const cap = { ...capitulo, id };
+    if (!capituloLiberadoParaUsuario(cap, user, perfil)) return;
+    if (jaContouVisualizacao.current) return;
+    jaContouVisualizacao.current = true;
+    runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
+  }, [capitulo, id, user, perfil]);
 
   // ✅ Sincroniza perfil público ANTES de comentar
   // Garante que todos os visitantes verão o avatar e nome atualizados
@@ -136,9 +159,16 @@ export default function Leitor({ user }) {
     if (dist < -50) irAnterior();
   };
 
+  const abrirModalComentarioDeslogado = () => {
+    if (!user) setModalLoginComentario(true);
+  };
+
   const handleEnviarComentario = async (e) => {
     e.preventDefault();
-    if (!user)                   { navigate('/login'); return; }
+    if (!user) {
+      setModalLoginComentario(true);
+      return;
+    }
     if (!comentarioTexto.trim()) return;
     if (enviando)                return;
 
@@ -183,7 +213,55 @@ export default function Leitor({ user }) {
   );
 
   if (carregando) return <LoadingScreen />;
-  if (!capitulo)  return <div>Capítulo não encontrado</div>;
+  if (!capitulo) {
+    return (
+      <div className="leitor-container">
+        <div className="leitor-not-found" role="alert">
+          Capítulo não encontrado.
+        </div>
+      </div>
+    );
+  }
+
+  const capComId = { ...capitulo, id };
+  if (!capituloLiberadoParaUsuario(capComId, user, perfil)) {
+    const quando = formatarDataLancamento(capitulo.publicReleaseAt);
+    return (
+      <div className="leitor-container">
+        <div className="leitor-lancamento-bloqueado" role="status">
+          <h1 className="leitor-lancamento-titulo">{capitulo.titulo || 'Capítulo'}</h1>
+          <p className="leitor-lancamento-msg">
+            Este fragmento ainda não está liberado para leitura pública.
+            {quando ? (
+              <>
+                {' '}
+                Previsão: <strong>{quando}</strong>
+              </>
+            ) : null}
+          </p>
+          {capitulo.antecipadoMembros && (
+            <p className="leitor-lancamento-hint">
+              Quem tem <strong>assinatura Premium</strong> ativa pode ler antes do horário público.
+            </p>
+          )}
+          <button
+            type="button"
+            className="leitor-lancamento-voltar"
+            onClick={() => navigate('/capitulos')}
+          >
+            Voltar à biblioteca
+          </button>
+          <button
+            type="button"
+            className="leitor-lancamento-apoie"
+            onClick={() => navigate('/apoie')}
+          >
+            Apoiar a obra
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="leitor-container">
@@ -244,13 +322,20 @@ export default function Leitor({ user }) {
               className="avatar-comentario"
               onError={(e) => { e.target.src = AVATAR_FALLBACK; }} />
           )}
-          <div className="input-comentario-wrapper">
+          <div
+            className={`input-comentario-wrapper${!user ? ' input-comentario-wrapper--convite' : ''}`}
+            onClick={!user ? abrirModalComentarioDeslogado : undefined}
+          >
             <textarea
-              value={comentarioTexto}
-              onChange={(e) => setComentario(e.target.value)}
+              value={user ? comentarioTexto : ''}
+              onChange={(e) => user && setComentario(e.target.value)}
               placeholder={user ? 'Escreva seu comentário...' : 'Faça login para comentar'}
-              disabled={!user || enviando}
-              maxLength={500}
+              readOnly={!user}
+              disabled={Boolean(user && enviando)}
+              maxLength={user ? 500 : undefined}
+              onClick={!user ? (e) => { e.stopPropagation(); abrirModalComentarioDeslogado(); } : undefined}
+              onFocus={!user ? abrirModalComentarioDeslogado : undefined}
+              className={!user ? 'textarea-convite-login' : undefined}
             />
             {user && (
               <button type="submit" disabled={!comentarioTexto.trim() || enviando}>
@@ -302,6 +387,56 @@ export default function Leitor({ user }) {
           })}
         </div>
       </section>
+
+      {modalLoginComentario && !user && (
+        <div
+          className="leitor-modal-backdrop"
+          onClick={() => setModalLoginComentario(false)}
+          role="presentation"
+        >
+          <div
+            className="leitor-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leitor-modal-login-titulo"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="leitor-modal-fechar"
+              onClick={() => setModalLoginComentario(false)}
+              aria-label="Fechar"
+            >
+              ×
+            </button>
+            <h2 id="leitor-modal-login-titulo" className="leitor-modal-titulo">
+              Comentar na obra
+            </h2>
+            <p className="leitor-modal-texto">
+              Deseja fazer login para comentar?
+            </p>
+            <div className="leitor-modal-acoes">
+              <button
+                type="button"
+                className="leitor-modal-btn leitor-modal-btn--secundario"
+                onClick={() => setModalLoginComentario(false)}
+              >
+                Agora não
+              </button>
+              <button
+                type="button"
+                className="leitor-modal-btn leitor-modal-btn--primario"
+                onClick={() => {
+                  setModalLoginComentario(false);
+                  navigate('/login');
+                }}
+              >
+                Sim, entrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

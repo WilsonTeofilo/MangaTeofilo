@@ -1,50 +1,70 @@
-  import React, { useState, useEffect, useRef } from 'react';
-  import { ref, onValue, increment, update } from "firebase/database";
-  import { onAuthStateChanged } from 'firebase/auth';
-  import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ref, onValue, increment, update } from 'firebase/database';
+import { useNavigate } from 'react-router-dom';
 
-  // 1. IMPORTAÇÃO DO SERVICE CENTRAL (Subindo dois níveis: Home -> Pages -> Src)
-  import { auth, db } from '../../services/firebase';
+import { db } from '../../services/firebase';
 
-  // 2. CSS COM NOME ATUALIZADO
-  import './ShitoManga.css';
+import './ShitoManga.css';
 
-  export default function ShitoManga() {
-    const [visitas, setVisitas] = useState(0);
-    const hasIncremented = useRef(false);
-    const navigate = useNavigate();
+export default function ShitoManga() {
+  const [visitas, setVisitas] = useState(0);
+  const [mostrarSetaScroll, setMostrarSetaScroll] = useState(() => {
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const limiar = Math.max(48, Math.min(vh * 0.06, 100));
+    return window.scrollY <= limiar;
+  });
+  const hasIncremented = useRef(false);
+  const navigate = useNavigate();
 
-    useEffect(() => {
-      // 1. CONTADOR DE VISUALIZAÇÕES (somente usuário autenticado/ativo pelas regras)
-      const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
-        if (!currentUser || hasIncremented.current) return;
-        const statsRef = ref(db, 'stats');
-        update(statsRef, { contador: increment(1) })
-          .catch(err => console.error("Erro ao atualizar stats:", err));
-        hasIncremented.current = true;
-      });
+  const atualizarVisibilidadeSeta = useCallback(() => {
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const limiar = Math.max(48, Math.min(vh * 0.06, 100));
+    setMostrarSetaScroll(window.scrollY <= limiar);
+  }, []);
 
-      // 2. ESCUTA AS VISITAS EM TEMPO REAL
-      const contadorRef = ref(db, 'stats/contador');
-      const unsubVisitas = onValue(contadorRef, (snapshot) => {
-        setVisitas(snapshot.val() || 0);
-      });
+  useEffect(() => {
+    if (!hasIncremented.current) {
+      const statsRef = ref(db, 'stats');
+      update(statsRef, { contador: increment(1) })
+        .catch((err) => console.error('Erro ao atualizar stats:', err));
+      hasIncremented.current = true;
+    }
 
-      return () => {
-        unsubAuth();
-        unsubVisitas();
-      };
-    }, []);
+    const contadorRef = ref(db, 'stats/contador');
+    const unsubVisitas = onValue(contadorRef, (snapshot) => {
+      setVisitas(snapshot.val() || 0);
+    });
 
-    return (
+    return () => {
+      unsubVisitas();
+    };
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('scroll', atualizarVisibilidadeSeta, { passive: true });
+    window.visualViewport?.addEventListener('resize', atualizarVisibilidadeSeta);
+    window.addEventListener('resize', atualizarVisibilidadeSeta);
+    return () => {
+      window.removeEventListener('scroll', atualizarVisibilidadeSeta);
+      window.visualViewport?.removeEventListener('resize', atualizarVisibilidadeSeta);
+      window.removeEventListener('resize', atualizarVisibilidadeSeta);
+    };
+  }, [atualizarVisibilidadeSeta]);
+
+  return (
       <div className="shito-page">
-        {/* O Header é injetado pelo App.jsx, mantendo o topo limpo aqui */}
-
-        {/* BANNER PRINCIPAL */}
+        {/* BANNER PRINCIPAL — ocupa a viewport; seta convida a rolar */}
         <header className="main-banner">
           <div className="banner-content">
             <h1 className="game-logo shito-glitch">SHITO</h1>
             <h2 className="game-sublogo">FRAGMENTOS DA TEMPESTADE</h2>
+          </div>
+          <div
+            className={`hero-scroll-cue ${mostrarSetaScroll ? '' : 'hero-scroll-cue--hidden'}`}
+            aria-hidden="true"
+          >
+            <span className="hero-scroll-cue__text">Role para continuar</span>
+            <span className="hero-scroll-cue__arrow" />
           </div>
         </header>
 
@@ -121,6 +141,6 @@
           </div>
           <p className="copyright">© 2026 Shito: Fragmentos da Tempestade - Todos os direitos reservados para Wilson Teofilo.</p>
         </footer>
-      </div>
-    );
-  }
+  </div>
+  );
+}

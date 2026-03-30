@@ -1,6 +1,6 @@
 /* Header.css - Polido AAA */
 :root {
-  --naraa-gold: #ffcc00;
+  /* --naraa-gold em index.css */
   --naraa-gold-hover: #ffe066;
   --header-height: 80px;
   --header-mobile-height: 70px;
@@ -370,6 +370,20 @@
     color: #ff6a6a !important;
     font-weight: 900 !important;
     border-bottom: none !important;
+  }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .reader-header {
+    height: 56px;
+  }
+
+  .nav-menu {
+    padding: 72px 18px 18px;
+  }
+
+  .nav-logo {
+    font-size: 1.45rem;
   }
 }
 

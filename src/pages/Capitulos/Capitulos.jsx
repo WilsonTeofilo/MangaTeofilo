@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ref, onValue, runTransaction } from "firebase/database";
+import { ref, onValue } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 // 1. IMPORTAÇÃO CENTRALIZADA (Usa o db do seu service)
-import { db } from '../../services/firebase'; 
+import { db } from '../../services/firebase';
+import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 
-// 2. CSS LOCAL NA PASTA Capitulos
 import './Capitulos.css';
 
-export default function Capitulos() {
+export default function Capitulos({ user, perfil }) {
   const [listaCapitulos, setListaCapitulos] = useState([]);
   const [buscandoDados, setBuscandoDados] = useState(true);
   const navigate = useNavigate();
@@ -43,15 +43,8 @@ export default function Capitulos() {
     return () => unsubscribe();
   }, []);
 
-  const handleAbrirCapitulo = (capId) => {
-    const viewRef = ref(db, `capitulos/${capId}/visualizacoes`);
-    
-    // Incremento atômico para não bugar se muita gente clicar ao mesmo tempo
-    runTransaction(viewRef, (currentViews) => {
-      return (currentViews || 0) + 1;
-    });
-
-    navigate(`/ler/${capId}`);
+  const handleAbrirCapitulo = (cap) => {
+    navigate(`/ler/${cap.id}`);
   };
 
   // Se o App.jsx já passou pelo LoadingScreen, mas ainda estamos buscando os capítulos...
@@ -74,14 +67,17 @@ export default function Capitulos() {
 
         <main className="shueisha-capitulos-list">
           {listaCapitulos.length > 0 ? (
-            listaCapitulos.map((cap) => (
+            listaCapitulos.map((cap) => {
+              const liberado = capituloLiberadoParaUsuario(cap, user, perfil);
+              const previa = formatarDataLancamento(cap.publicReleaseAt);
+              return (
               <article 
                 key={cap.id} 
-                className="shito-cap-row"
-                onClick={() => handleAbrirCapitulo(cap.id)}
+                className={`shito-cap-row${liberado ? '' : ' shito-cap-row--bloqueado'}`}
+                onClick={() => handleAbrirCapitulo(cap)}
                 role="button"
-                tabIndex="0"
-                onKeyDown={(e) => e.key === 'Enter' && handleAbrirCapitulo(cap.id)}
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && handleAbrirCapitulo(cap)}
               >
                 {/* LADO ESQUERDO: Número e Imagem */}
                 <div className="cap-left-info">
@@ -103,7 +99,11 @@ export default function Capitulos() {
                     
                     <div className="cap-text-details">
                       <h3 className="shito-cap-title">{cap.titulo || "Capítulo sem título"}</h3>
-                      
+                      {!liberado && (
+                        <span className="cap-badge-em-breve">
+                          Em breve{previa ? ` · ${previa}` : ''}
+                        </span>
+                      )}
                       <div className="cap-stats-row">
                         <span className="stat-item">
                           <i className="fa-regular fa-eye"></i> {cap.visualizacoes || 0}
@@ -129,7 +129,8 @@ export default function Capitulos() {
                   <i className="fa-solid fa-chevron-right arrow-mobile"></i>
                 </div>
               </article>
-            ))
+            );
+            })
           ) : (
             <div className="no-chapters">
               <i className="fa-solid fa-ghost"></i>

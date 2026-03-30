@@ -32,13 +32,34 @@
 
 .main-banner {
   position: relative;
-  height: 100vh;
-  min-height: 800px;
+  /* Uma tela útil = viewport menos o header fixo (senão a seta cai “embaixo” e some) */
+  --hero-header-offset: var(--header-height-desktop, 80px);
+  min-height: calc(100vh - var(--hero-header-offset));
+  min-height: calc(100dvh - var(--hero-header-offset));
+  min-height: calc(100svh - var(--hero-header-offset));
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
   overflow: hidden;
+}
+
+@media (max-width: 1200px) {
+  .main-banner {
+    --hero-header-offset: var(--header-height-tablet, 76px);
+  }
+}
+
+@media (max-width: 900px) {
+  .main-banner {
+    --hero-header-offset: var(--header-height-mobile, 70px);
+  }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .main-banner {
+    --hero-header-offset: 56px;
+  }
 }
 
 /* Camada de Granulado Estilo Mangá */
@@ -95,12 +116,69 @@
   text-transform: uppercase;
 }
 
+/* Convite para rolar — some ao sair do topo da página */
+.hero-scroll-cue {
+  position: absolute;
+  left: 50%;
+  /* Dentro da área visível da hero (não colada no limite inferior do documento) */
+  bottom: clamp(16px, 5vh, 48px);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition:
+    opacity 0.45s ease,
+    visibility 0.45s ease,
+    transform 0.45s ease;
+}
+
+.hero-scroll-cue--hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(12px);
+}
+
+.hero-scroll-cue__text {
+  font-size: clamp(0.62rem, 2.4vw, 0.8rem);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(255, 204, 0, 0.9);
+  text-shadow: 0 0 18px rgba(255, 204, 0, 0.25);
+}
+
+.hero-scroll-cue__arrow {
+  display: block;
+  width: clamp(18px, 4.5vw, 26px);
+  height: clamp(18px, 4.5vw, 26px);
+  border-right: 3px solid var(--naraa-gold);
+  border-bottom: 3px solid var(--naraa-gold);
+  transform: rotate(45deg);
+  margin-top: -6px;
+  opacity: 0.95;
+  animation: hero-cue-bounce 1.75s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 204, 0, 0.35));
+}
+
+@keyframes hero-cue-bounce {
+  0%,
+  100% {
+    transform: rotate(45deg) translate(0, 0);
+  }
+  50% {
+    transform: rotate(45deg) translate(0, 12px);
+  }
+}
+
 /* ==========================================================================
    SEÇÃO LORE
    ========================================================================== */
 
 .lore-summary {
-  padding: 150px 5% 100px;
+  padding: clamp(72px, 14vw, 150px) clamp(16px, 5%, 48px) clamp(64px, 10vw, 100px);
   text-align: center;
   max-width: 1000px;
   margin: 0 auto;
@@ -129,19 +207,19 @@
 
 .lore-summary p {
   color: var(--text-muted);
-  font-size: 1.2rem;
-  line-height: 1.8;
+  font-size: clamp(1rem, 2.8vw, 1.2rem);
+  line-height: 1.75;
   margin-bottom: 2rem;
 }
 
 .lore-highlight {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Poppins', sans-serif;
   font-style: italic;
   color: #ccc;
-  font-size: 1.4rem;
+  font-size: clamp(1.05rem, 3vw, 1.4rem);
   max-width: 800px;
   margin: 3rem auto 0;
-  padding-left: 20px;
+  padding-left: clamp(12px, 3vw, 20px);
   border-left: 3px solid var(--naraa-gold);
 }
 
@@ -166,6 +244,23 @@
   transition: var(--transition-smooth);
 }
 
+/* Monitores médios / grandes (23–27" típicos ~1920px): imagem ocupa mais largura útil */
+@media (min-width: 1200px) {
+  .lore-banner-image img {
+    width: min(94%, 100%);
+    max-width: min(96vw, 2100px);
+    mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+  }
+}
+
+@media (min-width: 1600px) {
+  .lore-banner-image img {
+    width: min(96%, 100%);
+    max-width: min(97vw, 2400px);
+    mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+  }
+}
+
 .lore-banner-image:hover img {
   filter: grayscale(0%) brightness(1.1);
   transform: scale(1.02);
@@ -176,7 +271,7 @@
    ========================================================================== */
 
 .characters-section {
-  padding: 100px 5% 150px;
+  padding: clamp(56px, 10vw, 100px) clamp(16px, 5%, 48px) clamp(72px, 12vw, 150px);
   background: linear-gradient(to bottom, var(--charcoal-dark), #000);
 }
 
@@ -184,16 +279,16 @@
   text-align: center;
   font-size: clamp(2.5rem, 5vw, 4rem);
   font-weight: 900;
-  margin-bottom: 100px;
-  letter-spacing: 10px;
+  margin-bottom: clamp(40px, 10vw, 100px);
+  letter-spacing: clamp(4px, 1.5vw, 10px);
   color: transparent;
   -webkit-text-stroke: 1px rgba(255,255,255,0.3);
 }
 
 .character-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 3rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: clamp(1.5rem, 4vw, 3rem);
   max-width: 1400px;
   margin: 0 auto;
 }
@@ -209,9 +304,9 @@
 
 .gif-box {
   width: 100%;
-  height: 450px;
+  height: clamp(220px, 55vw, 450px);
   overflow: hidden;
-  background: #050505;
+  background: var(--charcoal-dark);
   position: relative;
 }
 
@@ -278,8 +373,8 @@
    ========================================================================== */
 
 .site-footer {
-  padding: 120px 5% 80px;
-  background: #050505;
+  padding: clamp(64px, 12vw, 120px) clamp(16px, 5%, 48px) max(48px, env(safe-area-inset-bottom, 0px));
+  background: var(--charcoal-dark);
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -290,22 +385,23 @@
 }
 
 .footer-stats h3 {
-  font-size: 2.2rem;
+  font-size: clamp(1.35rem, 4.5vw, 2.2rem);
   font-weight: 800;
-  margin-bottom: 3rem;
-  letter-spacing: 3px;
+  margin-bottom: clamp(1.5rem, 5vw, 3rem);
+  letter-spacing: clamp(2px, 0.6vw, 3px);
   text-transform: uppercase;
 }
 
 .stats-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 6rem;
-  margin-bottom: 4rem;
+  gap: clamp(2rem, 8vw, 6rem);
+  margin-bottom: clamp(2rem, 6vw, 4rem);
 }
 
 .stats-row p {
-  font-size: 1.4rem;
+  font-size: clamp(1rem, 3vw, 1.4rem);
   color: var(--text-muted);
   font-weight: 500;
 }
@@ -319,13 +415,13 @@
 }
 
 .btn-read-now {
-  padding: 1.5rem 4rem;
+  padding: clamp(1rem, 3vw, 1.5rem) clamp(1.5rem, 6vw, 4rem);
   background: var(--naraa-gold);
   color: #000;
-  font-size: 1.4rem;
+  font-size: clamp(0.95rem, 3.2vw, 1.4rem);
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 4px;
+  letter-spacing: clamp(2px, 0.6vw, 4px);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -363,20 +459,141 @@
 }
 
 /* ==========================================================================
-   RESPONSIVIDADE (Ajustes de Precisão)
+   RESPONSIVIDADE — notebooks, tablets, phones, landscape, TVs
    ========================================================================== */
 
+/* Televisor / ultrawide: conteúdo não “estica” infinito */
+@media (min-width: 1920px) {
+  .shito-page {
+    margin: 0 auto;
+    max-width: 2200px;
+  }
+
+  .lore-banner-image {
+    max-width: 2200px;
+    margin: clamp(48px, 10vw, 100px) auto;
+    left: auto;
+    right: auto;
+    width: 100%;
+  }
+
+  .character-grid {
+    max-width: 1600px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .shito-page {
+    max-width: 2400px;
+  }
+
+  .game-logo {
+    font-size: clamp(8rem, 12vw, 14rem);
+  }
+}
+
+@media (max-width: 1200px) {
+  .lore-banner-image {
+    margin: clamp(48px, 10vw, 100px) 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 @media (max-width: 1024px) {
-  .stats-row { gap: 3rem; }
-  .gif-box { height: 400px; }
+  .char-desc {
+    padding: 1.75rem 1.25rem;
+  }
+
+  .char-desc h4 {
+    font-size: clamp(1.35rem, 5vw, 2rem);
+  }
 }
 
 @media (max-width: 768px) {
-  .main-banner { min-height: 600px; }
-  .game-logo { -webkit-text-stroke: 1px rgba(255, 255, 255, 0.6); }
+  .game-logo {
+    -webkit-text-stroke: 1px rgba(255, 255, 255, 0.6);
+  }
 
-  .lore-banner-image img { width: 100%; mask-image: none; }
-  
-  .stats-row { flex-direction: column; gap: 3rem; }
-  .stats-row span { font-size: 2.5rem; }
+  .lore-banner-image img {
+    width: 100%;
+    mask-image: none;
+  }
+
+  .stats-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .stats-row span {
+    font-size: clamp(2rem, 8vw, 2.5rem);
+  }
+
+  /* Cards: hover pesado vira só em aparelhos com hover fino */
+  @media (hover: hover) {
+    .char-card:hover {
+      transform: translateY(-12px) scale(1.02);
+    }
+  }
+}
+
+/* Celular deitado / altura baixa */
+@media (max-height: 520px) and (orientation: landscape) {
+  .main-banner {
+    min-height: calc(100svh - var(--hero-header-offset, 56px));
+    padding-bottom: 4px;
+  }
+
+  .game-logo {
+    font-size: clamp(2.5rem, 18vh, 4rem);
+  }
+
+  .game-sublogo {
+    font-size: clamp(0.75rem, 4vh, 1rem);
+    letter-spacing: 0.35em;
+    margin-top: -0.5rem;
+  }
+
+  .hero-scroll-cue {
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    gap: 4px;
+  }
+
+  .hero-scroll-cue__text {
+    font-size: 0.55rem;
+    letter-spacing: 0.2em;
+  }
+
+  .hero-scroll-cue__arrow {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+    margin-top: -4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .lore-date {
+    letter-spacing: 3px;
+    font-size: 0.78rem;
+  }
+
+  .copyright {
+    padding: 0 12px;
+    line-height: 1.5;
+  }
+}
+
+/* Reduz motion se o user prefere */
+@media (prefers-reduced-motion: reduce) {
+  .hero-scroll-cue__arrow {
+    animation: none;
+  }
+
+  .game-logo {
+    animation: none;
+  }
 }

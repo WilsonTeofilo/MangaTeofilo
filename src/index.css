@@ -21,15 +21,20 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   background-color: var(--charcoal-dark);
   color: var(--text-pure);
   font-family: 'Poppins', sans-serif;
   overflow-x: hidden;
   line-height: 1.6;
-
-  /* ✅ Corrigido: era 70px mas o header desktop tem 80px */
   padding-top: var(--header-height-desktop);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 img,
@@ -39,6 +44,13 @@ video {
 }
 
 main.shito-main-content {
+  width: 100%;
+}
+
+/* Tela cheia enquanto auth/perfil carregam — mesma base do site */
+.shito-app-splash {
+  background: var(--charcoal-dark);
+  min-height: 100vh;
   width: 100%;
 }
 
@@ -53,6 +65,13 @@ main.shito-main-content {
 @media (max-width: 900px) {
   body {
     padding-top: var(--header-height-mobile);
+  }
+}
+
+/* Celular deitado / barra de endereço: menos padding sob o header */
+@media (max-height: 480px) and (orientation: landscape) {
+  body {
+    padding-top: 56px;
   }
 }
 

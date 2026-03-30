@@ -6,13 +6,14 @@ import {
   Route,
   Navigate,
   useLocation,
-  useNavigate,
 } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 
 import { auth, db } from './services/firebase';
 import { isAdminUser } from './constants';
+import { emptyAdminAccess, resolveAdminAccess } from './auth/adminAccess';
+import { cleanupDeprecatedUsuarioFields } from './userProfileSync';
 
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
@@ -31,58 +32,24 @@ import FinanceiroAdmin from './pages/Admin/FinanceiroAdmin.jsx';
 
 import './index.css';
 
-const PENDING_METHOD_KEY = 'login_pending_method';
-
 function computePodeAcessarApp(usuario, perfilUsuario) {
   if (!usuario) return false;
   if (isAdminUser(usuario)) return true;
-  const passwordProvider = usuario.providerData?.some((p) => p.providerId === 'password');
-  if (passwordProvider && !usuario.emailVerified) return false;
   if (!perfilUsuario) return false;
   if (perfilUsuario.status === 'banido') return false;
   if (perfilUsuario.status !== 'ativo') return false;
   return true;
 }
 
+
 function AppRoutes() {
   const location = useLocation();
-  const navigate = useNavigate();
   const [usuario, setUsuario] = useState(null);
   const [carregando, setCarregando] = useState(true);
 
-  const [temPending, setTemPending] = useState(
-    () => Boolean(sessionStorage.getItem(PENDING_METHOD_KEY))
-  );
-
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [perfilCarregando, setPerfilCarregando] = useState(false);
-
-  useEffect(() => {
-    const search = new URLSearchParams(location.search);
-    let mode = search.get('mode');
-    let oobCode = search.get('oobCode');
-    if (!oobCode && location.hash) {
-      const h = location.hash;
-      const q = h.indexOf('?');
-      const raw = q >= 0 ? h.slice(q + 1) : h.replace(/^#/, '');
-      const hp = new URLSearchParams(raw);
-      mode = mode || hp.get('mode');
-      oobCode = oobCode || hp.get('oobCode');
-    }
-    if (!oobCode || mode !== 'verifyEmail' || location.pathname === '/login') return;
-    navigate(
-      `/login?mode=${encodeURIComponent(mode)}&oobCode=${encodeURIComponent(oobCode)}`,
-      { replace: true }
-    );
-  }, [location.pathname, location.search, location.hash, navigate]);
-
-  useEffect(() => {
-    const handler = () => {
-      setTemPending(Boolean(sessionStorage.getItem(PENDING_METHOD_KEY)));
-    };
-    window.addEventListener('pendingVerificationChanged', handler);
-    return () => window.removeEventListener('pendingVerificationChanged', handler);
-  }, []);
+  const [adminAccess, setAdminAccess] = useState(emptyAdminAccess());
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -97,10 +64,12 @@ function AppRoutes() {
   }, []);
 
   useEffect(() => {
-    if (!usuario?.uid || temPending) {
+    if (!usuario?.uid) {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       setPerfilUsuario(null);
       setPerfilCarregando(false);
-      return undefined;
+      setAdminAccess(emptyAdminAccess());
+      return;
     }
     setPerfilCarregando(true);
     const r = ref(db, `usuarios/${usuario.uid}`);
@@ -109,24 +78,52 @@ function AppRoutes() {
       setPerfilCarregando(false);
     });
     return () => unsub();
-  }, [usuario?.uid, temPending]);
+  }, [usuario?.uid]);
+
+  useEffect(() => {
+    if (!usuario?.uid) return;
+    cleanupDeprecatedUsuarioFields(usuario.uid).catch(() => {});
+  }, [usuario?.uid]);
+
+  useEffect(() => {
+    let ativo = true;
+    if (!usuario) {
+      setAdminAccess(emptyAdminAccess());
+      return () => {};
+    }
+    resolveAdminAccess(usuario)
+      .then((result) => {
+        if (!ativo) return;
+        setAdminAccess(result);
+      })
+      .catch(() => {
+        if (!ativo) return;
+        setAdminAccess({
+          byClaim: false,
+          byAllowlist: isAdminUser(usuario),
+          canAccessAdmin: isAdminUser(usuario),
+          claimChecked: false,
+        });
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [usuario]);
 
   if (carregando) {
-    return <div style={{ background: '#050505', height: '100vh' }} />;
+    return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
-  if (usuario && !temPending && perfilCarregando) {
-    return <div style={{ background: '#050505', height: '100vh' }} />;
+  if (usuario && perfilCarregando) {
+    return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
   const podeAcessarApp =
     Boolean(usuario) &&
-    !temPending &&
     computePodeAcessarApp(usuario, perfilUsuario);
 
   const sessaoInvalida =
     Boolean(usuario) &&
-    !temPending &&
     !perfilCarregando &&
     !podeAcessarApp;
 
@@ -134,12 +131,16 @@ function AppRoutes() {
     return <Navigate to="/login" replace />;
   }
 
-  const isAdmin = isAdminUser(usuario);
+  const isAdmin = adminAccess.canAccessAdmin;
 
   return (
     <>
       <ScrollToTop />
-      <Header usuario={podeAcessarApp ? usuario : null} />
+      <Header
+        usuario={podeAcessarApp ? usuario : null}
+        perfil={podeAcessarApp ? perfilUsuario : null}
+        adminAccess={adminAccess}
+      />
 
       <main className="shito-main-content">
         <Routes>
@@ -149,14 +150,32 @@ function AppRoutes() {
           />
           <Route
             path="/capitulos"
-            element={<Capitulos user={podeAcessarApp ? usuario : null} />}
+            element={
+              <Capitulos
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
           />
           <Route
             path="/ler/:id"
-            element={<Leitor user={podeAcessarApp ? usuario : null} />}
+            element={
+              <Leitor
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
-          <Route path="/apoie" element={<Apoie />} />
+          <Route
+            path="/apoie"
+            element={
+              <Apoie
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
+          />
 
           <Route
             path="/login"
@@ -179,7 +198,7 @@ function AppRoutes() {
           <Route
             path="/admin"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <Navigate to="/admin/manga" replace />
               ) : (
                 <Navigate to="/" replace />
@@ -189,7 +208,7 @@ function AppRoutes() {
           <Route
             path="/admin/manga"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <AdminPanel user={usuario} />
               ) : (
                 <Navigate to="/" replace />
@@ -199,7 +218,7 @@ function AppRoutes() {
           <Route
             path="/admin/avatares"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <AvatarAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -209,7 +228,7 @@ function AppRoutes() {
           <Route
             path="/admin/dashboard"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <DashboardAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -219,7 +238,7 @@ function AppRoutes() {
           <Route
             path="/admin/financeiro"
             element={
-              isAdmin && !temPending ? (
+              isAdmin ? (
                 <FinanceiroAdmin />
               ) : (
                 <Navigate to="/" replace />

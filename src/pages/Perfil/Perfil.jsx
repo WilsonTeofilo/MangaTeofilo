@@ -5,7 +5,8 @@ import { ref, update, get, onValue } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
-import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser } from '../../constants'; // ✅ centralizado
+import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // ✅ centralizado
+import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
 import './Perfil.css';
 
 // ✅ Recebe `user` via prop (consistente com App.jsx)
@@ -16,18 +17,37 @@ export default function Perfil({ user }) {
   const [novoNome, setNovoNome]               = useState('');
   const [avatarSelecionado, setAvatarSelecionado] = useState('');
   const [notifyNewChapter, setNotifyNewChapter] = useState(false);
-  const [listaAvatares, setListaAvatares] = useState(LISTA_AVATARES);
+  const [notifyPromotions, setNotifyPromotions] = useState(false);
+  const [listaAvatares, setListaAvatares] = useState(
+    LISTA_AVATARES.map((url, index) => ({
+      id: `legacy-${index}`,
+      url,
+      access: 'publico',
+    }))
+  );
   const [gender, setGender] = useState('nao_informado');
   const [birthYear, setBirthYear] = useState('');
   const [accountType, setAccountType] = useState('comum');
   const [loading, setLoading]                 = useState(false);
   const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
+  const [perfilDb, setPerfilDb]               = useState(null);
+
+  const normalizarAcessoAvatar = (item) => {
+    const raw = item?.access;
+    if (raw == null || String(raw).trim() === '') return 'publico';
+    const v = String(raw).toLowerCase().trim();
+    if (v === 'premium' || v === 'vip' || v === 'exclusivo_vip') return 'premium';
+    if (v === 'publico' || v === 'public' || v === 'comum' || v === 'free') return 'publico';
+    return 'premium';
+  };
 
   useEffect(() => {
     const carregarPerfil = async () => {
       const snap = await get(ref(db, `usuarios/${user.uid}`));
       const perfil = snap.val() || {};
+      setPerfilDb(perfil);
       setNotifyNewChapter(Boolean(perfil.notifyNewChapter));
+      setNotifyPromotions(Boolean(perfil.notifyPromotions));
       setGender(perfil.gender || 'nao_informado');
       const rawTipo = String(perfil.accountType ?? 'comum').toLowerCase();
       const tipoValido = ['comum', 'membro', 'premium', 'admin'].includes(rawTipo) ? rawTipo : 'comum';
@@ -48,14 +68,15 @@ export default function Perfil({ user }) {
       return;
     }
     setNovoNome(user.displayName || '');
-    setAvatarSelecionado(user.photoURL || LISTA_AVATARES[0]);
+    setAvatarSelecionado(user.photoURL || LISTA_AVATARES[0] || AVATAR_FALLBACK);
     carregarPerfil().catch(() => setNotifyNewChapter(false));
   }, [user, navigate]);
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'avatares'), (snap) => {
       if (!snap.exists()) return;
-      const data = Object.values(snap.val() || {})
+      const data = Object.entries(snap.val() || {})
+        .map(([id, item]) => ({ id, ...item }))
         .filter((item) => item?.active !== false && typeof item?.url === 'string')
         .sort((a, b) => {
           const aOrder = typeof a?.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
@@ -63,14 +84,38 @@ export default function Perfil({ user }) {
           if (aOrder !== bOrder) return aOrder - bOrder;
           return (b?.createdAt || 0) - (a?.createdAt || 0);
         })
-        .map((item) => item.url);
+        .map((item) => ({
+          id: item.id,
+          url: item.url,
+          access: normalizarAcessoAvatar(item),
+        }));
       if (data.length > 0) {
         setListaAvatares(data);
-        setAvatarSelecionado((prev) => (data.includes(prev) ? prev : data[0]));
+        const urls = data.map((item) => item.url);
+        setAvatarSelecionado((prev) => (urls.includes(prev) ? prev : data[0].url));
       }
     });
     return () => unsub();
   }, []);
+
+  const premiumAtivo = assinaturaPremiumAtiva(perfilDb);
+  const podeUsarAvatarPremium = premiumAtivo || isAdminUser(user) || accountType === 'admin';
+  const avataresLiberados = listaAvatares.filter((item) => {
+    if (normalizarAcessoAvatar(item) === 'publico') return true;
+    return podeUsarAvatarPremium;
+  });
+
+  useEffect(() => {
+    if (!listaAvatares.length) return;
+    const selecionado = listaAvatares.find((item) => item.url === avatarSelecionado);
+    if (!selecionado) return;
+    const bloqueado = normalizarAcessoAvatar(selecionado) === 'premium' && !podeUsarAvatarPremium;
+    if (!bloqueado) return;
+    const fallbackPublico = listaAvatares.find((item) => normalizarAcessoAvatar(item) === 'publico');
+    if (fallbackPublico) {
+      setAvatarSelecionado(fallbackPublico.url);
+    }
+  }, [avatarSelecionado, listaAvatares, podeUsarAvatarPremium]);
 
   const handleSalvar = async (e) => {
     e.preventDefault();
@@ -91,6 +136,18 @@ export default function Perfil({ user }) {
     setMensagem({ texto: '', tipo: '' });
 
     try {
+      const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
+      if (!avatarEscolhido) {
+        setMensagem({ texto: 'Escolha um avatar valido da lista.', tipo: 'erro' });
+        setLoading(false);
+        return;
+      }
+      if (normalizarAcessoAvatar(avatarEscolhido) === 'premium' && !podeUsarAvatarPremium) {
+        setMensagem({ texto: 'Avatar Premium exclusivo para conta Premium ativa.', tipo: 'erro' });
+        setLoading(false);
+        return;
+      }
+
       // 1. Atualiza no Firebase Auth
       await updateProfile(user, {
         displayName: novoNome.trim(),
@@ -103,6 +160,7 @@ export default function Perfil({ user }) {
         userAvatar: avatarSelecionado,
         uid:        user.uid,
         notifyNewChapter,
+        notifyPromotions,
         gender,
         birthYear: birthYear ? ano : null,
         lastLogin: Date.now(),
@@ -153,7 +211,7 @@ export default function Perfil({ user }) {
               className="perfil-input"
               value={novoNome}
               onChange={(e) => setNovoNome(e.target.value)}
-              maxLength={25}
+              maxLength={DISPLAY_NAME_MAX_LENGTH}
               placeholder="Ex: Guerreiro de Brajiru"
             />
           </div>
@@ -200,23 +258,61 @@ export default function Perfil({ user }) {
             </div>
           </div>
 
+          {assinaturaPremiumAtiva(perfilDb) && typeof perfilDb?.memberUntil === 'number' && (
+            <div className="input-group perfil-premium-linha">
+              <label>ASSINATURA PREMIUM</label>
+              <p className="perfil-premium-msg">
+                Ativa até{' '}
+                <strong>
+                  {new Date(perfilDb.memberUntil).toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                    timeZone: 'America/Sao_Paulo',
+                  })}
+                </strong>
+                . Renove em <strong>Apoie a Obra</strong> para somar mais 30 dias.
+              </p>
+            </div>
+          )}
+
           <div className="avatar-selection-section">
             <label>ESCOLHA SEU NOVO VISUAL</label>
+            {!podeUsarAvatarPremium && (
+              <p className="avatar-premium-hint">
+                Avatares com selo <strong>Premium</strong> aparecem para você visualizar, mas só podem ser usados
+                por assinantes ativos.
+              </p>
+            )}
             <div className="avatar-options-grid">
-              {listaAvatares.map((url, i) => (
+              {listaAvatares.map((item, i) => {
+                const bloqueado = normalizarAcessoAvatar(item) === 'premium' && !podeUsarAvatarPremium;
+                const ativo = avatarSelecionado === item.url;
+                return (
                 <div
-                  key={i}
-                  className={`avatar-option-card ${avatarSelecionado === url ? 'active' : ''}`}
-                  onClick={() => setAvatarSelecionado(url)}
+                  key={item.id || i}
+                  className={`avatar-option-card ${ativo ? 'active' : ''} ${bloqueado ? 'locked' : ''}`}
+                  onClick={() => !bloqueado && setAvatarSelecionado(item.url)}
+                  title={bloqueado ? 'Disponivel apenas para conta Premium ativa' : 'Selecionar avatar'}
                 >
                   <img
-                    src={url}
+                    src={item.url}
                     alt={`Opção ${i + 1}`}
                     onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
                   />
+                  {normalizarAcessoAvatar(item) === 'premium' && (
+                    <span className="avatar-tier-tag">Premium</span>
+                  )}
+                  {bloqueado && <span className="avatar-lock">🔒</span>}
                 </div>
-              ))}
+              );
+              })}
             </div>
+            <p className="avatar-selection-summary">
+              {podeUsarAvatarPremium
+                ? `Voce pode usar todos os ${listaAvatares.length} avatares disponiveis.`
+                : `Disponiveis para sua conta: ${avataresLiberados.length} de ${listaAvatares.length}.`}
+            </p>
           </div>
 
           <div className="input-group notify-group">
@@ -227,6 +323,14 @@ export default function Perfil({ user }) {
                 onChange={(e) => setNotifyNewChapter(e.target.checked)}
               />
               Receber notificacoes por e-mail quando novo capitulo for lancado
+            </label>
+            <label className="notify-label">
+              <input
+                type="checkbox"
+                checked={notifyPromotions}
+                onChange={(e) => setNotifyPromotions(e.target.checked)}
+              />
+              Receber notificacoes por e-mail quando houver promocao de assinatura
             </label>
           </div>
 

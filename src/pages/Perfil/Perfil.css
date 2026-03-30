@@ -1,6 +1,6 @@
 /* Perfil.css - Refatorado para Perfeição Visual */
 :root {
-  --naraa-gold: #ffcc00;
+  /* --naraa-gold global em index.css */
   --naraa-gold-dark: #aa8800;
   --bg-card: #0f0f0f;
   --bg-input: #1a1a1a;
@@ -9,7 +9,7 @@
 
 .perfil-page {
   min-height: 92vh;
-  background: #050505;
+  background: var(--charcoal-dark);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -183,9 +183,17 @@ select.perfil-input {
 .avatar-options-grid::-webkit-scrollbar { width: 4px; }
 .avatar-options-grid::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
 
+.avatar-premium-hint {
+  margin: -2px 0 12px;
+  color: #b8b8b8;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .avatar-option-card {
   aspect-ratio: 1/1;
   cursor: pointer;
+  position: relative;
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid transparent;
@@ -217,6 +225,46 @@ select.perfil-input {
 .avatar-option-card.active img { 
   opacity: 1; 
   filter: grayscale(0%);
+}
+
+.avatar-option-card.locked {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.avatar-option-card.locked img {
+  opacity: 0.28;
+  filter: grayscale(100%);
+}
+
+.avatar-tier-tag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #281900;
+  background: #ffcc00;
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.avatar-lock {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  font-size: 0.88rem;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 999px;
+  padding: 2px 5px;
+}
+
+.avatar-selection-summary {
+  margin-top: 10px;
+  color: #adadad;
+  font-size: 0.76rem;
 }
 
 /* AÇÕES */
@@ -276,8 +324,32 @@ select.perfil-input {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.perfil-premium-linha .perfil-premium-msg {
+  margin: 0;
+  color: #c9c9c9;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.perfil-premium-linha strong {
+  color: #ffcc00;
+}
+
 @media (max-width: 500px) {
   .perfil-card { padding: 30px 20px; }
   .avatar-options-grid { grid-template-columns: repeat(3, 1fr); }
   .perfil-title { font-size: 1.5rem; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .perfil-page {
+    padding: 24px 16px;
+    align-items: flex-start;
+  }
+
+  .perfil-card {
+    padding: 28px 22px;
+    max-height: calc(100dvh - 80px);
+    overflow-y: auto;
+  }
 }

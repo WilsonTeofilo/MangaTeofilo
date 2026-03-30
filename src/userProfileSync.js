@@ -3,10 +3,52 @@ import { ref, get, set, update } from 'firebase/database';
 import { getIdToken, reload } from 'firebase/auth';
 import { db } from './services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from './constants';
+import {
+  USUARIOS_DEPRECATED_KEYS,
+  USUARIOS_PUBLICOS_DEPRECATED_KEYS,
+} from './config/userDeprecatedFields';
 
 export async function refreshAuthUser(user) {
   await reload(user);
   await getIdToken(user, true);
+}
+
+/**
+ * Remove chaves obsoletas do nó do usuário (e do público, se listado).
+ * Chamado após login; seguro se os arrays estiverem vazios (no-op).
+ */
+export async function cleanupDeprecatedUsuarioFields(uid) {
+  const hasPriv =
+    USUARIOS_DEPRECATED_KEYS.length > 0;
+  const hasPub =
+    USUARIOS_PUBLICOS_DEPRECATED_KEYS.length > 0;
+  if (!uid || (!hasPriv && !hasPub)) return;
+
+  if (hasPriv) {
+    const userRef = ref(db, `usuarios/${uid}`);
+    const snap = await get(userRef);
+    if (snap.exists()) {
+      const data = snap.val() || {};
+      const patch = {};
+      for (const key of USUARIOS_DEPRECATED_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) patch[key] = null;
+      }
+      if (Object.keys(patch).length) await update(userRef, patch);
+    }
+  }
+
+  if (hasPub) {
+    const pubRef = ref(db, `usuarios_publicos/${uid}`);
+    const pubSnap = await get(pubRef);
+    if (pubSnap.exists()) {
+      const pubData = pubSnap.val() || {};
+      const pubPatch = {};
+      for (const key of USUARIOS_PUBLICOS_DEPRECATED_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(pubData, key)) pubPatch[key] = null;
+      }
+      if (Object.keys(pubPatch).length) await update(pubRef, pubPatch);
+    }
+  }
 }
 
 async function sincronizarPublico(uid, userName, userAvatar, accountType) {
@@ -51,6 +93,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
       birthYear:         null,
       status:            'pendente', // sempre começa pendente (regra do RTDB)
       notifyNewChapter:  false,
+      notifyPromotions:  false,
       marketingOptIn:    false,
       marketingOptInAt:  null,
       membershipStatus:  'inativo',
@@ -88,6 +131,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   if (!atual.createdAt)             patch.createdAt          = agora;
   if (typeof atual.birthYear !== 'number' && atual.birthYear !== null) patch.birthYear = null;
   if (typeof atual.notifyNewChapter !== 'boolean') patch.notifyNewChapter = false;
+  if (typeof atual.notifyPromotions !== 'boolean') patch.notifyPromotions = false;
   if (typeof atual.marketingOptIn   !== 'boolean') patch.marketingOptIn   = false;
   if (typeof atual.marketingOptInAt !== 'number'  && atual.marketingOptInAt !== null) patch.marketingOptInAt = null;
   if (typeof atual.memberUntil      !== 'number'  && atual.memberUntil      !== null) patch.memberUntil      = null;

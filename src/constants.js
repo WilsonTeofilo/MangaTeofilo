@@ -29,3 +29,6 @@ export const LISTA_AVATARES = Array.from(
 
 export const AVATAR_FALLBACK = "/assets/avatares/ava1.webp";
 
+/** Nome de exibição (cadastro / perfil). */
+export const DISPLAY_NAME_MAX_LENGTH = 60;
+

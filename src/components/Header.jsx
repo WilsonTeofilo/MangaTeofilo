@@ -1,6 +1,6 @@
 // src/components/Header.jsx
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from '../constants'; // ✅ centralizado
@@ -8,7 +8,9 @@ import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
 import './Header.css';
 
 export default function Header({ usuario, perfil, adminAccess }) {
+  const MOBILE_BREAKPOINT = 1360;
   const navigate = useNavigate();
+  const location = useLocation();
   const [menuAberto, setMenuAberto] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const adminCloseTimer = useRef(null);
@@ -53,33 +55,65 @@ export default function Header({ usuario, perfil, adminAccess }) {
     };
   }, []);
 
+  useEffect(() => {
+    const syncMenuState = () => {
+      if (window.innerWidth > MOBILE_BREAKPOINT) {
+        setMenuAberto(false);
+      }
+      if (window.innerWidth <= MOBILE_BREAKPOINT) {
+        setAdminMenuOpen(false);
+      }
+    };
+    syncMenuState();
+    window.addEventListener('resize', syncMenuState);
+    return () => window.removeEventListener('resize', syncMenuState);
+  }, []);
+
   const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
   /** Coroa só com assinatura Premium paga ativa (mesma regra do leitor). */
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
+  const navItems = [
+    { label: 'Início', path: '/' },
+    { label: 'Capítulos', path: '/capitulos' },
+    { label: 'Sobre o Autor', path: '/sobre-autor' },
+    { label: 'Apoie a Obra', path: '/apoie' },
+  ];
+  const isActivePath = (path) =>
+    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   return (
     <nav className="reader-header">
       <div className="nav-container">
 
-        <div className="nav-logo" onClick={() => pushRoute('/')}>
+        <button type="button" className="nav-logo" onClick={() => pushRoute('/')}>
           SHITO
-        </div>
+        </button>
 
-        <div
+        <button
+          type="button"
           className={`mobile-menu-icon ${menuAberto ? 'active' : ''}`}
           onClick={() => setMenuAberto(!menuAberto)}
           aria-label="Menu"
+          aria-expanded={menuAberto}
         >
           <span className="bar" />
           <span className="bar" />
           <span className="bar" />
-        </div>
+        </button>
 
         <ul className={`nav-menu ${menuAberto ? 'active' : ''}`}>
-          <li onClick={() => pushRoute('/')}>Início</li>
-          <li onClick={() => pushRoute('/capitulos')}>Capítulos</li>
-          <li onClick={() => pushRoute('/sobre-autor')}>Sobre o Autor</li>
-          <li onClick={() => pushRoute('/apoie')}>Apoie a Obra</li>
+          {navItems.map((item) => (
+            <li key={item.path} className={isActivePath(item.path) ? 'is-active' : ''}>
+              <button
+                type="button"
+                className="nav-link-btn"
+                onClick={() => pushRoute(item.path)}
+                aria-current={isActivePath(item.path) ? 'page' : undefined}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
 
           {isAdmin && (
             <li
@@ -105,8 +139,10 @@ export default function Header({ usuario, perfil, adminAccess }) {
           )}
 
           {usuario && menuAberto && (
-            <li className="mobile-only-logout" onClick={handleLogout}>
-              Sair da Conta
+            <li className="mobile-only-logout">
+              <button type="button" className="nav-link-btn" onClick={handleLogout}>
+                Sair da Conta
+              </button>
             </li>
           )}
         </ul>

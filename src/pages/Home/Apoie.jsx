@@ -75,6 +75,9 @@ export default function Apoie({ user, perfil }) {
     pendingReveal: false,
   });
   const jaMostrouAgradecimento = useRef(false);
+  const modalAgradecimentoRef = useRef(null);
+  const modalFecharBtnRef = useRef(null);
+  const modalLastFocusedRef = useRef(null);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -96,6 +99,7 @@ export default function Apoie({ user, perfil }) {
   useEffect(() => {
     let mounted = true;
     const fetchOffer = async () => {
+      if (document.visibilityState !== 'visible') return;
       try {
         const { data } = await obterOfertaPremiumPublica();
         if (!mounted) return;
@@ -115,12 +119,12 @@ export default function Apoie({ user, perfil }) {
     fetchOffer();
     const refreshId = setInterval(fetchOffer, 30000);
     const tickId = setInterval(() => {
-      if (!mounted) return;
+      if (!mounted || document.visibilityState !== 'visible') return;
       setOfertaPremium((prev) => {
         if (!prev?.isPromoActive || !prev?.promo?.endsAt) return prev;
         return { ...prev, now: Date.now() };
       });
-    }, 10000);
+    }, 1000);
     return () => {
       mounted = false;
       clearInterval(refreshId);
@@ -157,7 +161,7 @@ export default function Apoie({ user, perfil }) {
     } else if (planId && MENSAGEM_POR_PLANO[planId]) {
       texto = MENSAGEM_POR_PLANO[planId];
     } else if (tipo === 'custom' && vRaw != null && vRaw !== '') {
-      texto = mensagemDoacaoLivre(parseFloat(String(vRaw).replace(',', '.'), 10));
+      texto = mensagemDoacaoLivre(parseFloat(String(vRaw).replace(',', '.')));
     } else {
       texto =
         'Pagamento recebido ou aprovado. Obrigado por apoiar a tempestade!';
@@ -177,6 +181,51 @@ export default function Apoie({ user, perfil }) {
     navigate('/apoie', { replace: true });
     jaMostrouAgradecimento.current = false;
   };
+
+  useEffect(() => {
+    if (!modalAgradecimento.aberto) return undefined;
+    modalLastFocusedRef.current = document.activeElement;
+    const focusables = () =>
+      modalAgradecimentoRef.current?.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      ) || [];
+    const focusInitial = () => {
+      if (modalFecharBtnRef.current) {
+        modalFecharBtnRef.current.focus();
+        return;
+      }
+      const els = focusables();
+      if (els.length) els[0].focus();
+    };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        fecharModalELimparUrl();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const els = Array.from(focusables()).filter((el) => !el.disabled);
+      if (!els.length) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    focusInitial();
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (modalLastFocusedRef.current && typeof modalLastFocusedRef.current.focus === 'function') {
+        modalLastFocusedRef.current.focus();
+      }
+    };
+  }, [modalAgradecimento.aberto]);
 
   useEffect(() => {
     if (!acompanhamentoPremium.ativo || acompanhamentoPremium.confirmado) return;
@@ -212,7 +261,12 @@ export default function Apoie({ user, perfil }) {
       show: tabVisivel,
       pendingReveal: !tabVisivel,
     });
-  }, [acompanhamentoPremium, perfil]);
+  }, [
+    acompanhamentoPremium.ativo,
+    acompanhamentoPremium.confirmado,
+    acompanhamentoPremium.baselineUntil,
+    perfil,
+  ]);
 
   useEffect(() => {
     if (!celebracaoPremium.pendingReveal) return;
@@ -271,7 +325,7 @@ export default function Apoie({ user, perfil }) {
     }
     setErroValorLivre('');
     const normalizado = String(valorLivre).trim().replace(',', '.');
-    const n = parseFloat(normalizado, 10);
+    const n = parseFloat(normalizado);
     if (!Number.isFinite(n) || n < 1) {
       setErroValorLivre('Informe um valor mínimo de R$ 1,00.');
       return;
@@ -389,6 +443,7 @@ export default function Apoie({ user, perfil }) {
             >
               <div
                 className="apoie-modal"
+                ref={modalAgradecimentoRef}
                 onClick={(e) => e.stopPropagation()}
               >
                 <h2 id="apoie-modal-titulo" className="apoie-modal-titulo">
@@ -398,6 +453,7 @@ export default function Apoie({ user, perfil }) {
                 <button
                   type="button"
                   className="apoie-modal-fechar"
+                  ref={modalFecharBtnRef}
                   onClick={fecharModalELimparUrl}
                 >
                   Fechar
@@ -426,23 +482,33 @@ export default function Apoie({ user, perfil }) {
 
           <div className="apoie-premium-card">
             <div className="apoie-premium-badge">MEMBRO SHITO</div>
-            <h2 className="apoie-premium-titulo">
-              Assinatura Premium — {labelPrecoPremium(precoAtual)} / 30 dias
-            </h2>
-            {ofertaPremium.isPromoActive && (
-              <div className="apoie-premium-oferta">
-                <p>
-                  Promo ativa: <strong>{ofertaPremium?.promo?.name || 'Oferta limitada'}</strong>
-                </p>
-                {precoBase != null && precoAtual != null && precoBase > precoAtual && (
-                  <p>
-                    De <span>{labelPrecoPremium(precoBase)}</span> por <strong>{labelPrecoPremium(precoAtual)}</strong>
-                  </p>
-                )}
-                <p className="apoie-premium-timer">
-                  Termina em: <strong>{hh}:{mm}:{ss}</strong>
-                </p>
+            {ofertaPremium.loading ? (
+              <div className="apoie-premium-skeleton" aria-hidden="true">
+                <div className="apoie-skeleton-line lg" />
+                <div className="apoie-skeleton-line md" />
+                <div className="apoie-skeleton-line sm" />
               </div>
+            ) : (
+              <>
+                <h2 className="apoie-premium-titulo">
+                  Assinatura Premium — {labelPrecoPremium(precoAtual)} / 30 dias
+                </h2>
+                {ofertaPremium.isPromoActive && (
+                  <div className="apoie-premium-oferta">
+                    <p>
+                      Promo ativa: <strong>{ofertaPremium?.promo?.name || 'Oferta limitada'}</strong>
+                    </p>
+                    {precoBase != null && precoAtual != null && precoBase > precoAtual && (
+                      <p>
+                        De <span>{labelPrecoPremium(precoBase)}</span> por <strong>{labelPrecoPremium(precoAtual)}</strong>
+                      </p>
+                    )}
+                    <p className="apoie-premium-timer">
+                      Termina em: <strong>{hh}:{mm}:{ss}</strong>
+                    </p>
+                  </div>
+                )}
+              </>
             )}
             <p className="apoie-premium-desc">
               Só quem assina desbloqueia as regalias abaixo. Doações (P / M / G ou valor livre) ajudam a obra,

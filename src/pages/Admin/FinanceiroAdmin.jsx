@@ -92,9 +92,16 @@ export default function FinanceiroAdmin() {
   const [notifyUsers, setNotifyUsers] = useState(true);
 
   useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    const temPromoComTempo = Boolean(promoAtual?.startsAt) && Boolean(promoAtual?.endsAt);
+    if (aba !== 'visao' || !temPromoComTempo) return undefined;
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      setNowMs(Date.now());
+    };
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [aba, promoAtual?.startsAt, promoAtual?.endsAt]);
 
   const duracaoMs = useMemo(() => {
     const d = Number(durDias || 0);

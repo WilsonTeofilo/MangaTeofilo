@@ -145,6 +145,20 @@ transition:0.2s;
 color:#fff;
 }
 
+.btn-config:focus-visible,
+.config-panel button:focus-visible,
+.seta:focus-visible,
+.filtro-comentarios button:focus-visible,
+.comentarios-section form button:focus-visible,
+.btn-like:focus-visible,
+.leitor-footer button:focus-visible,
+.leitor-modal-fechar:focus-visible,
+.leitor-modal-btn:focus-visible {
+outline:2px solid #ffe08a;
+outline-offset:2px;
+box-shadow:0 0 0 4px rgba(255,204,0,0.22);
+}
+
 
 /* =========================
 CONFIG PANEL

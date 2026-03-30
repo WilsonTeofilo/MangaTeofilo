@@ -670,6 +670,81 @@
   margin-top: 8px;
 }
 
+.avatar-tier-fieldset {
+  border: 1px solid rgba(255, 204, 0, 0.2);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 7px;
+  background: rgba(255, 204, 0, 0.04);
+}
+
+.avatar-tier-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #efd27b;
+  text-transform: uppercase;
+}
+
+.avatar-tier-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #d2dbef;
+  border: 1px solid #33415f;
+  border-radius: 8px;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.avatar-tier-chip.active {
+  border-color: rgba(255, 204, 0, 0.55);
+  background: rgba(255, 204, 0, 0.14);
+  color: #ffe494;
+}
+
+.avatar-tier-chip input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.avatar-admin-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 14px;
+}
+
+.avatar-admin-toolbar p {
+  color: #bfcae2;
+  font-size: 0.82rem;
+}
+
+.avatar-filter-chips {
+  display: flex;
+  gap: 8px;
+}
+
+.avatar-filter-chip {
+  border: 1px solid #32415f;
+  background: #121d33;
+  color: #dce6fb;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.73rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.avatar-filter-chip.active {
+  border-color: rgba(255, 204, 0, 0.6);
+  background: rgba(255, 204, 0, 0.2);
+  color: #ffe8a0;
+}
+
 .avatar-admin-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
@@ -691,6 +766,45 @@
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.avatar-access-badge {
+  display: inline-block;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.avatar-access-badge.publico {
+  color: #92d4ff;
+  border: 1px solid rgba(146, 212, 255, 0.5);
+  background: rgba(42, 95, 128, 0.25);
+}
+
+.avatar-access-badge.premium {
+  color: #ffd86f;
+  border: 1px solid rgba(255, 216, 111, 0.55);
+  background: rgba(135, 101, 18, 0.28);
+}
+
+.avatar-access-select {
+  display: grid;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #c2d0e8;
+}
+
+.avatar-access-select select {
+  border: 1px solid #2e3d5f;
+  border-radius: 8px;
+  background: #0d1526;
+  color: #e8efff;
+  padding: 6px 8px;
+  font-size: 0.78rem;
 }
 
 ::-webkit-scrollbar {

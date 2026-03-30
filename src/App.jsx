@@ -12,6 +12,7 @@ import { onValue, ref } from 'firebase/database';
 
 import { auth, db } from './services/firebase';
 import { isAdminUser } from './constants';
+import { emptyAdminAccess, resolveAdminAccess } from './auth/adminAccess';
 import { cleanupDeprecatedUsuarioFields } from './userProfileSync';
 
 import Header from './components/Header.jsx';
@@ -48,6 +49,7 @@ function AppRoutes() {
 
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [perfilCarregando, setPerfilCarregando] = useState(false);
+  const [adminAccess, setAdminAccess] = useState(emptyAdminAccess());
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -66,6 +68,7 @@ function AppRoutes() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
       setPerfilUsuario(null);
       setPerfilCarregando(false);
+      setAdminAccess(emptyAdminAccess());
       return;
     }
     setPerfilCarregando(true);
@@ -81,6 +84,31 @@ function AppRoutes() {
     if (!usuario?.uid) return;
     cleanupDeprecatedUsuarioFields(usuario.uid).catch(() => {});
   }, [usuario?.uid]);
+
+  useEffect(() => {
+    let ativo = true;
+    if (!usuario) {
+      setAdminAccess(emptyAdminAccess());
+      return () => {};
+    }
+    resolveAdminAccess(usuario)
+      .then((result) => {
+        if (!ativo) return;
+        setAdminAccess(result);
+      })
+      .catch(() => {
+        if (!ativo) return;
+        setAdminAccess({
+          byClaim: false,
+          byAllowlist: isAdminUser(usuario),
+          canAccessAdmin: isAdminUser(usuario),
+          claimChecked: false,
+        });
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [usuario]);
 
   if (carregando) {
     return <div className="shito-app-splash" aria-hidden="true" />;
@@ -103,7 +131,7 @@ function AppRoutes() {
     return <Navigate to="/login" replace />;
   }
 
-  const isAdmin = isAdminUser(usuario);
+  const isAdmin = adminAccess.canAccessAdmin;
 
   return (
     <>
@@ -111,6 +139,7 @@ function AppRoutes() {
       <Header
         usuario={podeAcessarApp ? usuario : null}
         perfil={podeAcessarApp ? perfilUsuario : null}
+        adminAccess={adminAccess}
       />
 
       <main className="shito-main-content">

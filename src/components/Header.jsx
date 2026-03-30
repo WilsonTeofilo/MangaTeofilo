@@ -7,7 +7,7 @@ import { AVATAR_FALLBACK, isAdminUser } from '../constants'; // ✅ centralizado
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
 import './Header.css';
 
-export default function Header({ usuario, perfil }) {
+export default function Header({ usuario, perfil, adminAccess }) {
   const navigate = useNavigate();
   const [menuAberto, setMenuAberto] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
@@ -53,7 +53,7 @@ export default function Header({ usuario, perfil }) {
     };
   }, []);
 
-  const isAdmin = isAdminUser(usuario);
+  const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
   /** Coroa só com assinatura Premium paga ativa (mesma regra do leitor). */
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
 
@@ -99,7 +99,7 @@ export default function Header({ usuario, perfil }) {
                 <button type="button" onClick={() => pushRoute('/admin/manga')}>Lançar Mangá</button>
                 <button type="button" onClick={() => pushRoute('/admin/avatares')}>CRUD de Avatares</button>
                 <button type="button" onClick={() => pushRoute('/admin/dashboard')}>Dashboard</button>
-                <button type="button" onClick={() => pushRoute('/admin/financeiro')}>Financeiro</button>
+                <button type="button" onClick={() => pushRoute('/admin/financeiro')}>Financeiro & Promos</button>
               </div>
             </li>
           )}

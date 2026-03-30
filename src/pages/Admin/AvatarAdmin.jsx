@@ -35,6 +35,8 @@ export default function AvatarAdmin() {
   const [uploadResultados, setUploadResultados] = useState([]);
   const [erroModal, setErroModal] = useState('');
   const [draggingAvatarId, setDraggingAvatarId] = useState(null);
+  const [uploadAcesso, setUploadAcesso] = useState('publico');
+  const [filtroAcesso, setFiltroAcesso] = useState('todos');
   const activeTasksRef = useRef([]);
 
   useEffect(() => {
@@ -88,6 +90,15 @@ export default function AvatarAdmin() {
     if (file.type !== 'image/webp') return 'Apenas arquivos WebP sao permitidos para avatar.';
     if (file.size > 1024 * 1024) return 'Avatar muito grande. Limite: 1MB.';
     return '';
+  };
+
+  const normalizarAcessoAvatar = (item) => {
+    const raw = item?.access;
+    if (raw == null || String(raw).trim() === '') return 'publico';
+    const v = String(raw).toLowerCase().trim();
+    if (v === 'premium' || v === 'vip' || v === 'exclusivo_vip') return 'premium';
+    if (v === 'publico' || v === 'public' || v === 'comum' || v === 'free') return 'publico';
+    return 'premium';
   };
 
   const handleSelecionarArquivos = (e) => {
@@ -202,6 +213,7 @@ export default function AvatarAdmin() {
             createdAt: Date.now(),
             active: true,
             order: maxOrderAtual + i + 1,
+            access: uploadAcesso,
           });
 
           concluidos += 1;
@@ -253,7 +265,7 @@ export default function AvatarAdmin() {
     activeTasksRef.current.forEach((task) => {
       try {
         task.cancel();
-      } catch (_) {
+      } catch {
         // no-op
       }
     });
@@ -310,6 +322,24 @@ export default function AvatarAdmin() {
     }
   };
 
+  const handleAlterarAcessoAvatar = async (avatarId, nextAccess) => {
+    const acesso = nextAccess === 'premium' ? 'premium' : 'publico';
+    try {
+      await update(dbRef(db, `avatares/${avatarId}`), { access: acesso });
+      setProgressoMsg(`Avatar marcado como ${acesso === 'premium' ? 'Premium' : 'Público'}.`);
+      setTimeout(() => setProgressoMsg(''), 1800);
+    } catch (err) {
+      setErroModal(`Nao foi possivel atualizar acesso do avatar: ${err.message}`);
+    }
+  };
+
+  const avataresPublicos = avatares.filter((item) => normalizarAcessoAvatar(item) === 'publico');
+  const avataresPremium = avatares.filter((item) => normalizarAcessoAvatar(item) === 'premium');
+  const avataresFiltrados = avatares.filter((item) => {
+    if (filtroAcesso === 'todos') return true;
+    return normalizarAcessoAvatar(item) === filtroAcesso;
+  });
+
   return (
     <div className="admin-panel">
       <ModalErro mensagem={erroModal} aoFechar={() => setErroModal('')} />
@@ -331,6 +361,29 @@ export default function AvatarAdmin() {
                 onChange={handleSelecionarArquivos}
               />
             </label>
+            <div className="avatar-tier-fieldset" role="group" aria-label="Tipo do avatar enviado">
+              <span className="avatar-tier-title">Destino do lote</span>
+              <label className={`avatar-tier-chip ${uploadAcesso === 'publico' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="uploadAcesso"
+                  value="publico"
+                  checked={uploadAcesso === 'publico'}
+                  onChange={() => setUploadAcesso('publico')}
+                />
+                Publico (todos usam)
+              </label>
+              <label className={`avatar-tier-chip ${uploadAcesso === 'premium' ? 'active' : ''}`}>
+                <input
+                  type="radio"
+                  name="uploadAcesso"
+                  value="premium"
+                  checked={uploadAcesso === 'premium'}
+                  onChange={() => setUploadAcesso('premium')}
+                />
+                Premium exclusivo
+              </label>
+            </div>
             <div className="avatar-upload-actions">
               <button type="submit" className="btn-save" disabled={loading}>
                 {loading ? 'UPLOAD...' : 'SUBIR ARQUIVOS'}
@@ -346,6 +399,37 @@ export default function AvatarAdmin() {
               )}
             </div>
           </form>
+
+          <div className="avatar-admin-toolbar">
+            <p>
+              Totais: <strong>{avatares.length}</strong> avatares | Publicos:{' '}
+              <strong>{avataresPublicos.length}</strong> | Premium:{' '}
+              <strong>{avataresPremium.length}</strong>
+            </p>
+            <div className="avatar-filter-chips" role="group" aria-label="Filtro por acesso">
+              <button
+                type="button"
+                className={`avatar-filter-chip ${filtroAcesso === 'todos' ? 'active' : ''}`}
+                onClick={() => setFiltroAcesso('todos')}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                className={`avatar-filter-chip ${filtroAcesso === 'publico' ? 'active' : ''}`}
+                onClick={() => setFiltroAcesso('publico')}
+              >
+                Publicos
+              </button>
+              <button
+                type="button"
+                className={`avatar-filter-chip ${filtroAcesso === 'premium' ? 'active' : ''}`}
+                onClick={() => setFiltroAcesso('premium')}
+              >
+                Premium
+              </button>
+            </div>
+          </div>
 
           {loading && (
             <div className="progress-container">
@@ -387,7 +471,9 @@ export default function AvatarAdmin() {
           )}
 
           <div className="avatar-admin-grid">
-            {avatares.map((item) => (
+            {avataresFiltrados.map((item) => {
+              const acessoAtual = normalizarAcessoAvatar(item);
+              return (
               <div
                 key={item.id}
                 className={`avatar-admin-card ${draggingAvatarId === item.id ? 'dragging' : ''}`}
@@ -399,7 +485,20 @@ export default function AvatarAdmin() {
                 style={{ cursor: 'grab' }}
               >
                 <img src={item.url} alt="Avatar" />
+                <small className={`avatar-access-badge ${acessoAtual}`}>
+                  {acessoAtual === 'premium' ? 'PREMIUM' : 'PUBLICO'}
+                </small>
                 <small>Posicao: {typeof item.order === 'number' ? item.order + 1 : '-'}</small>
+                <label className="avatar-access-select">
+                  Acesso:
+                  <select
+                    value={acessoAtual}
+                    onChange={(e) => handleAlterarAcessoAvatar(item.id, e.target.value)}
+                  >
+                    <option value="publico">Publico</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </label>
                 <button
                   type="button"
                   className="btn-delete"
@@ -408,7 +507,8 @@ export default function AvatarAdmin() {
                   REMOVER
                 </button>
               </div>
-            ))}
+            );
+            })}
           </div>
         </section>
       </main>

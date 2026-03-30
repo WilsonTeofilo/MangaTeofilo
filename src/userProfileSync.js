@@ -93,6 +93,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
       birthYear:         null,
       status:            'pendente', // sempre começa pendente (regra do RTDB)
       notifyNewChapter:  false,
+      notifyPromotions:  false,
       marketingOptIn:    false,
       marketingOptInAt:  null,
       membershipStatus:  'inativo',
@@ -130,6 +131,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   if (!atual.createdAt)             patch.createdAt          = agora;
   if (typeof atual.birthYear !== 'number' && atual.birthYear !== null) patch.birthYear = null;
   if (typeof atual.notifyNewChapter !== 'boolean') patch.notifyNewChapter = false;
+  if (typeof atual.notifyPromotions !== 'boolean') patch.notifyPromotions = false;
   if (typeof atual.marketingOptIn   !== 'boolean') patch.marketingOptIn   = false;
   if (typeof atual.marketingOptInAt !== 'number'  && atual.marketingOptInAt !== null) patch.marketingOptInAt = null;
   if (typeof atual.memberUntil      !== 'number'  && atual.memberUntil      !== null) patch.memberUntil      = null;

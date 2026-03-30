@@ -85,6 +85,24 @@ export default function Login() {
   const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
   const hasLength  = password.length >= 8;
 
+  const normalizeLoginEmail = (raw) => String(raw || '').trim().toLowerCase();
+
+  const validarEmailComDica = (rawEmail) => {
+    const norm = normalizeLoginEmail(rawEmail);
+    if (!norm) return { ok: false, message: 'Informe um e-mail válido.' };
+    if (norm.includes('@gmail') && !norm.endsWith('@gmail.com')) {
+      return {
+        ok: false,
+        message: 'Parece Gmail incompleto. Use o formato correto: seuemail@gmail.com',
+      };
+    }
+    const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(norm)) {
+      return { ok: false, message: 'Informe um e-mail válido (ex: usuario@email.com).' };
+    }
+    return { ok: true, email: norm };
+  };
+
   // ── Cooldowns ──────────────────────────────────────────────────────────
   useEffect(() => {
     const now = Date.now();
@@ -181,10 +199,36 @@ export default function Login() {
       return false;
     }
 
-    const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
-    if (!email.trim() || !emailRegex.test(email.trim())) {
-      setError('Informe um e-mail válido (ex: usuario@email.com).');
+    const validacao = validarEmailComDica(email);
+    if (!validacao.ok) {
+      setError(validacao.message);
       return false;
+    }
+    const emailNorm = validacao.email;
+    setEmail(emailNorm);
+
+    if (emailNorm.endsWith('@gmail.com')) {
+      try {
+        const methods = await fetchSignInMethodsForEmail(auth, emailNorm);
+        const temGoogle = methods.includes('google.com');
+        const temSenhaSite = methods.includes('password');
+
+        if (temGoogle && !temSenhaSite) {
+          setStep('existing-google');
+          setInfo(
+            'Detectamos que este Gmail usa login com Google. Clique em Conectar com Google para entrar.'
+          );
+          return false;
+        }
+
+        if (methods.length === 0) {
+          setInfo('Este Gmail ainda não tem conta. Envie o código para cadastrar.');
+        } else if (temGoogle && temSenhaSite) {
+          setInfo('Este Gmail tem Google e senha no site. Você pode usar qualquer um dos dois.');
+        }
+      } catch {
+        // Se a checagem falhar, seguimos com o fluxo padrão de código.
+      }
     }
 
     setLoading(true);
@@ -193,7 +237,7 @@ export default function Login() {
       const resp = await fetch('https://sendlogincode-4oan3cdrua-uc.a.run.app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: emailNorm }),
       });
 
       const data = await resp.json();

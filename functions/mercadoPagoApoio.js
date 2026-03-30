@@ -20,13 +20,33 @@ export const APOIO_PLANOS_MP = {
   },
 };
 
+/** Prefixo em external_reference para vincular doacao a um UID logado. */
+export const APOIO_EXTERNAL_PREFIX = 'SHITO_APOIO|';
+
+export function buildApoioExternalRef(uid) {
+  return `${APOIO_EXTERNAL_PREFIX}${uid}`;
+}
+
+export function parseApoioExternalRef(ref) {
+  if (ref == null || typeof ref !== 'string') return null;
+  if (!ref.startsWith(APOIO_EXTERNAL_PREFIX)) return null;
+  const uid = ref.slice(APOIO_EXTERNAL_PREFIX.length).trim();
+  return uid || null;
+}
+
 /**
  * Cria preferência de checkout e retorna init_point (URL de pagamento).
  * @param {string} accessToken - Access Token de produção ou teste (Mercado Pago)
  * @param {string} planId - chave de APOIO_PLANOS_MP
  * @param {string} appBaseUrl - origem do site (back_urls)
  */
-export async function criarPreferenciaApoio(accessToken, planId, appBaseUrl) {
+export async function criarPreferenciaApoio(
+  accessToken,
+  planId,
+  appBaseUrl,
+  uid,
+  notificationUrl
+) {
   const plan = APOIO_PLANOS_MP[planId];
   if (!plan) throw new Error(`Plano desconhecido: ${planId}`);
 
@@ -48,6 +68,18 @@ export async function criarPreferenciaApoio(accessToken, planId, appBaseUrl) {
     auto_return: 'approved',
     statement_descriptor: 'SHITO APOIO',
   };
+
+  if (uid) {
+    body.external_reference = buildApoioExternalRef(uid);
+    body.metadata = {
+      uid: String(uid),
+      tipo: 'apoio',
+      planId: String(planId),
+    };
+  }
+  if (notificationUrl) {
+    body.notification_url = notificationUrl;
+  }
 
   const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
     method: 'POST',
@@ -77,7 +109,13 @@ function arredondarBrl(n) {
 /**
  * Checkout com valor livre (mín. R$ 1). Retorna init_point.
  */
-export async function criarPreferenciaApoioValorLivre(accessToken, valorBruto, appBaseUrl) {
+export async function criarPreferenciaApoioValorLivre(
+  accessToken,
+  valorBruto,
+  appBaseUrl,
+  uid,
+  notificationUrl
+) {
   const v = arredondarBrl(Number(valorBruto));
   if (!Number.isFinite(v) || v < VALOR_MIN || v > VALOR_MAX) {
     throw new Error(`Valor deve ser entre ${VALOR_MIN} e ${VALOR_MAX} BRL`);
@@ -103,6 +141,18 @@ export async function criarPreferenciaApoioValorLivre(accessToken, valorBruto, a
     auto_return: 'approved',
     statement_descriptor: 'SHITO APOIO',
   };
+
+  if (uid) {
+    body.external_reference = buildApoioExternalRef(uid);
+    body.metadata = {
+      uid: String(uid),
+      tipo: 'apoio_custom',
+      customAmount: v,
+    };
+  }
+  if (notificationUrl) {
+    body.notification_url = notificationUrl;
+  }
 
   const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
     method: 'POST',

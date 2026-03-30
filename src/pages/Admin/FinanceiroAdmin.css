@@ -1,62 +1,303 @@
 .admin-empty-page {
-  min-height: 88vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: #070a12;
+  min-height: 100vh;
+  padding: 28px;
+  background: radial-gradient(1200px 600px at 80% -120px, rgba(88, 130, 255, 0.2), transparent 60%),
+    linear-gradient(180deg, #0b1220, #0a0f1a);
 }
 
 .admin-empty-card {
-  width: min(900px, 95vw);
-  background: #12192a;
+  width: min(1280px, 95vw);
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-left: 4px solid #ffcc00;
-  border-radius: 14px;
-  padding: 26px 22px;
+  border-radius: 18px;
+  padding: 28px 24px;
   color: #f2f5ff;
 }
 
-.admin-empty-card h1 {
-  font-size: 1.25rem;
+.admin-empty-card button {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #d8e6ff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-empty-card button:hover {
+  transform: translateY(-1px) scale(1.01);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.24);
+}
+
+.financeiro-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.financeiro-header h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 2vw, 2.2rem);
+  line-height: 1.12;
+  letter-spacing: 0.01em;
+}
+
+.financeiro-header p {
+  margin: 8px 0 0;
+  color: #b8c3db;
+  max-width: 680px;
+}
+
+.financeiro-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.financeiro-btn-primary {
+  border-color: rgba(110, 157, 255, 0.9) !important;
+  background: linear-gradient(180deg, rgba(96, 143, 248, 0.95), rgba(71, 121, 237, 0.95)) !important;
+  color: #f2f7ff !important;
+}
+
+.financeiro-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.financeiro-tabs button.active {
+  border-color: rgba(95, 152, 255, 0.65);
+  background: rgba(95, 152, 255, 0.22);
+  color: #dfeaff;
+}
+
+.financeiro-promocao,
+.financeiro-migracao {
+  margin: 22px 0;
+  padding: 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.financeiro-promocao h2,
+.financeiro-migracao h2 {
+  font-size: 1.02rem;
+  margin: 0 0 12px;
+  color: #fff;
+}
+
+.promo-banner {
+  border-radius: 16px;
+  padding: 18px;
+  background: rgba(82, 145, 255, 0.12);
+  border: 1px solid rgba(82, 145, 255, 0.28);
+  margin-bottom: 12px;
+}
+
+.promo-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
-.admin-empty-card p {
-  color: #b8c3db;
-  margin-bottom: 16px;
+.promo-banner h3 {
+  margin: 0;
+  color: #eef4ff;
+  font-size: 1.08rem;
 }
 
-.admin-empty-card button {
-  border: 1px solid rgba(255, 204, 0, 0.65);
-  background: rgba(255, 204, 0, 0.1);
-  color: #ffcc00;
-  border-radius: 10px;
-  padding: 10px 14px;
+.promo-banner--active {
+  background: linear-gradient(180deg, rgba(255, 192, 83, 0.16), rgba(255, 158, 59, 0.1));
+  border-color: rgba(255, 186, 76, 0.42);
+}
+
+.promo-banner--inactive {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.12);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 24px 20px;
+}
+
+.promo-status-chip {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
   font-weight: 800;
-  cursor: pointer;
+  letter-spacing: 0.08em;
 }
 
-.financeiro-migracao {
-  margin: 22px 0;
-  padding: 16px;
+.promo-status-chip.active {
+  background: rgba(255, 192, 83, 0.23);
+  color: #ffd98d;
+  border: 1px solid rgba(255, 192, 83, 0.4);
+}
+
+.promo-status-chip.scheduled {
+  background: rgba(91, 156, 255, 0.24);
+  color: #cde0ff;
+  border: 1px solid rgba(91, 156, 255, 0.42);
+}
+
+.promo-campaign-name {
+  margin: 0 0 6px;
+  color: #f5f8ff;
+  font-weight: 700;
+}
+
+.promo-price-line {
+  margin: 0 0 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.promo-price-line strong {
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+  line-height: 1;
+  color: #fff4dc;
+}
+
+.promo-price-line span {
+  color: #e2d6bc;
+  opacity: 0.9;
+}
+
+.promo-dates-line {
+  margin: 0 0 12px;
+  color: #ecdfca;
+}
+
+.promo-countdown-block {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(255, 232, 192, 0.25);
+}
+
+.promo-countdown-block small {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #ffdca1;
+}
+
+.promo-countdown-block strong {
+  font-size: clamp(1.25rem, 2.4vw, 2rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: #ffcc78;
+}
+
+.promo-timer {
+  margin: 0;
+  color: #cfd9ef;
+}
+
+.promo-empty-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 1.4rem;
+}
+
+.financeiro-form-section {
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 16, 30, 0.5);
+  margin-bottom: 12px;
+}
+
+.financeiro-form-section h3 {
+  margin: 0 0 12px;
+  font-size: 0.94rem;
+  letter-spacing: 0.02em;
+}
+
+.financeiro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.financeiro-grid label {
+  display: grid;
+  gap: 7px;
+  font-size: 0.76rem;
+  color: #b9c9ea;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.financeiro-grid input,
+.financeiro-grid textarea {
+  background: #0f1728;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 204, 0, 0.15);
+  color: #ecf2ff;
+  padding: 11px;
 }
 
-.financeiro-migracao h2 {
-  font-size: 1rem;
-  margin-bottom: 8px;
-  color: #fff;
+.financeiro-grid-full {
+  grid-column: 1 / -1;
+}
+
+.financeiro-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: #d7e6ff;
+  margin-top: 10px;
+}
+
+.financeiro-check input {
+  accent-color: #ffcc00;
+}
+
+.financeiro-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.financeiro-btn-encerrar {
+  border-color: rgba(255, 95, 95, 0.6) !important;
+  background: rgba(255, 95, 95, 0.15) !important;
+  color: #ffb4b4 !important;
 }
 
 .financeiro-migracao-texto {
   font-size: 0.85rem;
-  line-height: 1.5;
-  margin-bottom: 12px;
+  line-height: 1.55;
+  margin-bottom: 10px;
+  color: #c9d5ec !important;
 }
 
-.financeiro-migracao-texto code {
+.financeiro-migracao-texto code,
+.financeiro-migracao-list code {
   font-size: 0.78rem;
   padding: 2px 6px;
   border-radius: 4px;
@@ -64,8 +305,22 @@
   color: #ffe08a;
 }
 
+.financeiro-migracao-list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.financeiro-migracao-list li {
+  color: #d7e3fb;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .financeiro-btn-migrar {
   margin-bottom: 10px;
+  min-height: 40px;
 }
 
 .financeiro-btn-migrar:disabled {
@@ -78,4 +333,28 @@
   color: #9ec5ff;
   margin: 0;
   word-break: break-word;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(73, 130, 255, 0.12);
+  border: 1px solid rgba(73, 130, 255, 0.28);
+}
+
+@media (max-width: 800px) {
+  .admin-empty-card {
+    padding: 18px 14px;
+  }
+
+  .financeiro-header {
+    flex-direction: column;
+  }
+
+  .financeiro-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .financeiro-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
 }

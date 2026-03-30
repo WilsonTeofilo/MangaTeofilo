@@ -77,6 +77,55 @@
   backdrop-filter: blur(6px);
 }
 
+.apoie-celebracao-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5200;
+  background: rgba(0, 0, 0, 0.72);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  backdrop-filter: blur(7px);
+}
+
+.apoie-celebracao-card {
+  width: 100%;
+  max-width: 520px;
+  background: radial-gradient(circle at top, rgba(255, 204, 0, 0.2), rgba(22, 22, 22, 0.98) 65%);
+  border: 1px solid rgba(255, 204, 0, 0.5);
+  border-radius: 18px;
+  padding: 28px 24px;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 30px rgba(255, 204, 0, 0.35);
+  animation: apoieCelebracaoPop 0.45s cubic-bezier(.17,.89,.32,1.27);
+}
+
+.apoie-celebracao-icone {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 12px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 1.8rem;
+  background: rgba(255, 204, 0, 0.18);
+  border: 1px solid rgba(255, 204, 0, 0.45);
+  box-shadow: 0 0 0 0 rgba(255, 204, 0, 0.6);
+  animation: apoiePulse 1.1s infinite;
+}
+
+.apoie-celebracao-card h2 {
+  margin: 0 0 10px;
+  color: #ffe08a;
+  font-size: clamp(1.25rem, 3.2vw, 1.6rem);
+}
+
+.apoie-celebracao-card p {
+  margin: 0 0 18px;
+  color: #ececec;
+  line-height: 1.55;
+}
+
 .apoie-modal {
   width: 100%;
   max-width: 440px;
@@ -444,6 +493,35 @@
   font-size: 0.98rem;
 }
 
+.apoie-premium-oferta {
+  margin: 0 0 1rem;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 204, 0, 0.45);
+  background: rgba(255, 204, 0, 0.11);
+}
+
+.apoie-premium-oferta p {
+  margin: 0 0 4px;
+  color: #f6e3a8;
+  font-size: 0.9rem;
+}
+
+.apoie-premium-oferta p:last-child {
+  margin-bottom: 0;
+}
+
+.apoie-premium-oferta span {
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.apoie-premium-timer strong {
+  color: #ffcc00;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+}
+
 .apoie-premium-lista {
   margin: 0 0 1.25rem;
   padding-left: 1.2rem;
@@ -491,6 +569,78 @@
   margin: 0 0 1rem;
   color: #ffb4b4;
   font-size: 0.9rem;
+}
+
+.apoie-premium-tracker {
+  margin: 0 0 1rem;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 204, 0, 0.4);
+  background: rgba(255, 204, 0, 0.08);
+}
+
+.apoie-premium-tracker h3 {
+  margin: 0 0 8px;
+  color: #ffe08a;
+  font-size: 0.92rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.apoie-premium-tracker p {
+  margin: 0;
+  color: #e2e2e2;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.apoie-premium-tracker.confirmado {
+  border-color: rgba(67, 226, 163, 0.45);
+  background: rgba(67, 226, 163, 0.12);
+}
+
+.apoie-premium-tracker.confirmado h3 {
+  color: #b8f5d9;
+}
+
+.apoie-premium-tracker-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ffcc00;
+  margin: 10px 0 0;
+  animation: apoiePulse 1.1s infinite;
+  box-shadow: 0 0 0 0 rgba(255, 204, 0, 0.65);
+}
+
+.apoie-premium-tracker-actions {
+  margin-top: 10px;
+}
+
+@keyframes apoiePulse {
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(255, 204, 0, 0.65);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(255, 204, 0, 0);
+  }
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(255, 204, 0, 0);
+  }
+}
+
+@keyframes apoieCelebracaoPop {
+  from {
+    opacity: 0;
+    transform: scale(0.86) translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .btn-apoie-premium {

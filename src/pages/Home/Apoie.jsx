@@ -17,6 +17,7 @@ import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
 const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
+const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
 
 function formatarDataFimAssinatura(ms) {
   if (typeof ms !== 'number') return '';
@@ -41,12 +42,65 @@ export default function Apoie({ user, perfil }) {
   const [erroValorLivre, setErroValorLivre] = useState('');
   const [erroCheckoutPlanos, setErroCheckoutPlanos] = useState('');
   const [erroPremium, setErroPremium] = useState('');
+  const [ofertaPremium, setOfertaPremium] = useState({
+    loading: true,
+    currentPriceBRL: null,
+    basePriceBRL: null,
+    isPromoActive: false,
+    promo: null,
+    now: Date.now(),
+  });
   const [modalAgradecimento, setModalAgradecimento] = useState({
     aberto: false,
     titulo: '',
     texto: '',
   });
+  const [acompanhamentoPremium, setAcompanhamentoPremium] = useState({
+    ativo: false,
+    baselineUntil: 0,
+    confirmado: false,
+    confirmadoAt: 0,
+    tipoConfirmacao: '',
+    novoUntil: 0,
+    diasGanho: 0,
+  });
+  const [celebracaoPremium, setCelebracaoPremium] = useState({
+    show: false,
+    pendingReveal: false,
+  });
   const jaMostrouAgradecimento = useRef(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchOffer = async () => {
+      try {
+        const { data } = await obterOfertaPremiumPublica();
+        if (!mounted) return;
+        setOfertaPremium({
+          loading: false,
+          currentPriceBRL: Number(data?.currentPriceBRL),
+          basePriceBRL: Number(data?.basePriceBRL),
+          isPromoActive: data?.isPromoActive === true,
+          promo: data?.promo || null,
+          now: Number(data?.now || Date.now()),
+        });
+      } catch {
+        if (!mounted) return;
+        setOfertaPremium((prev) => ({ ...prev, loading: false, now: Date.now() }));
+      }
+    };
+    fetchOffer();
+    const refreshId = setInterval(fetchOffer, 30000);
+    const tickId = setInterval(() => {
+      if (!mounted) return;
+      setOfertaPremium((prev) => ({ ...prev, now: Date.now() }));
+    }, 1000);
+    return () => {
+      mounted = false;
+      clearInterval(refreshId);
+      clearInterval(tickId);
+    };
+  }, []);
 
   useEffect(() => {
     if (mpRetorno !== 'ok' || jaMostrouAgradecimento.current) return;
@@ -84,7 +138,72 @@ export default function Apoie({ user, perfil }) {
     jaMostrouAgradecimento.current = false;
   };
 
+  useEffect(() => {
+    if (!acompanhamentoPremium.ativo || acompanhamentoPremium.confirmado) return;
+    const premiumAgoraAtivo = assinaturaPremiumAtiva(perfil);
+    const currentUntil = typeof perfil?.memberUntil === 'number' ? perfil.memberUntil : 0;
+    if (!premiumAgoraAtivo || currentUntil <= 0) return;
+
+    const renovou =
+      acompanhamentoPremium.baselineUntil > 0 &&
+      currentUntil > acompanhamentoPremium.baselineUntil + 1000;
+    const primeiraAtivacao =
+      acompanhamentoPremium.baselineUntil <= 0 && currentUntil > Date.now();
+    if (!renovou && !primeiraAtivacao) return;
+
+    const tabVisivel = typeof document !== 'undefined' && document.visibilityState === 'visible';
+    const baselineValido = Math.max(acompanhamentoPremium.baselineUntil || 0, Date.now());
+    const diasGanho = Math.max(
+      0,
+      Math.round((currentUntil - baselineValido) / (24 * 60 * 60 * 1000))
+    );
+    const tipoConfirmacao =
+      acompanhamentoPremium.baselineUntil > Date.now() + 1000 ? 'renovacao' : 'novo';
+
+    setAcompanhamentoPremium((prev) => ({
+      ...prev,
+      confirmado: true,
+      confirmadoAt: Date.now(),
+      tipoConfirmacao,
+      novoUntil: currentUntil,
+      diasGanho,
+    }));
+    setCelebracaoPremium({
+      show: tabVisivel,
+      pendingReveal: !tabVisivel,
+    });
+  }, [acompanhamentoPremium, perfil]);
+
+  useEffect(() => {
+    if (!celebracaoPremium.pendingReveal) return;
+    const tentarRevelar = () => {
+      if (document.visibilityState !== 'visible') return;
+      setCelebracaoPremium({
+        show: true,
+        pendingReveal: false,
+      });
+    };
+    document.addEventListener('visibilitychange', tentarRevelar);
+    window.addEventListener('focus', tentarRevelar);
+    return () => {
+      document.removeEventListener('visibilitychange', tentarRevelar);
+      window.removeEventListener('focus', tentarRevelar);
+    };
+  }, [celebracaoPremium.pendingReveal]);
+
+  useEffect(() => {
+    if (!celebracaoPremium.show) return;
+    const t = setTimeout(() => {
+      setCelebracaoPremium((prev) => ({ ...prev, show: false }));
+    }, 5500);
+    return () => clearTimeout(t);
+  }, [celebracaoPremium.show]);
+
   const abrirPagamento = async (plano) => {
+    if (!user?.uid) {
+      navigate('/login');
+      return;
+    }
     setErroCheckoutPlanos('');
     setCarregandoId(plano.id);
     let abriuPelaApi = false;
@@ -106,6 +225,10 @@ export default function Apoie({ user, perfil }) {
   };
 
   const abrirDoacaoLivre = async () => {
+    if (!user?.uid) {
+      navigate('/login');
+      return;
+    }
     setErroValorLivre('');
     const normalizado = String(valorLivre).trim().replace(',', '.');
     const n = parseFloat(normalizado, 10);
@@ -135,6 +258,16 @@ export default function Apoie({ user, perfil }) {
 
   const premiumAtivo = assinaturaPremiumAtiva(perfil);
   const fimPremium = formatarDataFimAssinatura(perfil?.memberUntil);
+  const precoBase = Number.isFinite(ofertaPremium.basePriceBRL) ? ofertaPremium.basePriceBRL : null;
+  const precoAtual = Number.isFinite(ofertaPremium.currentPriceBRL) ? ofertaPremium.currentPriceBRL : null;
+  const promoEndsAt = Number(ofertaPremium?.promo?.endsAt || 0);
+  const segundosRestantes =
+    ofertaPremium.isPromoActive && promoEndsAt > ofertaPremium.now
+      ? Math.floor((promoEndsAt - ofertaPremium.now) / 1000)
+      : 0;
+  const hh = String(Math.floor((segundosRestantes % 86400) / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((segundosRestantes % 3600) / 60)).padStart(2, '0');
+  const ss = String(segundosRestantes % 60).padStart(2, '0');
 
   const abrirAssinaturaPremium = async () => {
     setErroPremium('');
@@ -142,10 +275,20 @@ export default function Apoie({ user, perfil }) {
       navigate('/login');
       return;
     }
+    const baselineUntil = typeof perfil?.memberUntil === 'number' ? perfil.memberUntil : 0;
     setCarregandoId('premium');
     try {
       const { data } = await criarCheckoutPremium();
       if (data?.url) {
+        setAcompanhamentoPremium({
+          ativo: true,
+          baselineUntil,
+          confirmado: false,
+          confirmadoAt: 0,
+          tipoConfirmacao: '',
+          novoUntil: 0,
+          diasGanho: 0,
+        });
         window.open(data.url, '_blank', 'noopener,noreferrer');
       }
     } catch (err) {
@@ -161,6 +304,31 @@ export default function Apoie({ user, perfil }) {
       <main className="apoie-main">
         <section className="apoie-section">
           <h1 className="shito-glitch">Apoie Shito: Fragmentos da Tempestade</h1>
+
+          {celebracaoPremium.show && (
+            <div className="apoie-celebracao-backdrop" role="status" aria-live="polite">
+              <div className="apoie-celebracao-card">
+                <div className="apoie-celebracao-icone" aria-hidden="true">⚡</div>
+                <h2>
+                  {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
+                    ? 'Assinatura renovada com sucesso'
+                    : 'Pagamento confirmado'}
+                </h2>
+                <p>
+                  {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
+                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai até ${formatarDataFimAssinatura(acompanhamentoPremium.novoUntil)}.`
+                    : 'Seus poderes Premium foram liberados. Bem-vindo à Elite da Tempestade.'}
+                </p>
+                <button
+                  type="button"
+                  className="apoie-modal-fechar"
+                  onClick={() => setCelebracaoPremium((prev) => ({ ...prev, show: false }))}
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          )}
 
           {modalAgradecimento.aberto && (
             <div
@@ -210,8 +378,23 @@ export default function Apoie({ user, perfil }) {
           <div className="apoie-premium-card">
             <div className="apoie-premium-badge">MEMBRO SHITO</div>
             <h2 className="apoie-premium-titulo">
-              Assinatura Premium — {labelPrecoPremium()} / 30 dias
+              Assinatura Premium — {labelPrecoPremium(precoAtual)} / 30 dias
             </h2>
+            {ofertaPremium.isPromoActive && (
+              <div className="apoie-premium-oferta">
+                <p>
+                  Promo ativa: <strong>{ofertaPremium?.promo?.name || 'Oferta limitada'}</strong>
+                </p>
+                {precoBase != null && precoAtual != null && precoBase > precoAtual && (
+                  <p>
+                    De <span>{labelPrecoPremium(precoBase)}</span> por <strong>{labelPrecoPremium(precoAtual)}</strong>
+                  </p>
+                )}
+                <p className="apoie-premium-timer">
+                  Termina em: <strong>{hh}:{mm}:{ss}</strong>
+                </p>
+              </div>
+            )}
             <p className="apoie-premium-desc">
               Só quem assina desbloqueia as regalias abaixo. Doações (P / M / G ou valor livre) ajudam a obra,
               mas <strong>não</strong> ativam Premium — combinado no Discord para créditos nos capítulos.
@@ -251,6 +434,70 @@ export default function Apoie({ user, perfil }) {
                 {erroPremium}
               </p>
             )}
+            {acompanhamentoPremium.ativo && (
+              <div
+                className={`apoie-premium-tracker${acompanhamentoPremium.confirmado ? ' confirmado' : ''}`}
+                role="status"
+                aria-live="polite"
+              >
+                <h3>
+                  {acompanhamentoPremium.confirmado
+                    ? 'Pagamento confirmado na tempestade'
+                    : 'Aguardando confirmação do pagamento'}
+                </h3>
+                {!acompanhamentoPremium.confirmado ? (
+                  <>
+                    <p>
+                      QR/Pix aberto no Mercado Pago. Assim que o webhook confirmar, esta tela atualiza
+                      automaticamente sem precisar refresh.
+                    </p>
+                    <div className="apoie-premium-tracker-pulse" aria-hidden="true" />
+                  </>
+                ) : (
+                  <p>
+                    {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
+                      ? `Renovacao confirmada (+${acompanhamentoPremium.diasGanho || 30} dias). Novo prazo: ${formatarDataFimAssinatura(acompanhamentoPremium.novoUntil)}.`
+                      : (
+                        <>
+                          Assinatura detectada com sucesso em{' '}
+                          <strong>
+                            {new Date(acompanhamentoPremium.confirmadoAt).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </strong>
+                          . Pode fechar com segurança.
+                        </>
+                      )}
+                  </p>
+                )}
+                <div className="apoie-premium-tracker-actions">
+                  <button
+                    type="button"
+                    className="apoie-link-login"
+                    onClick={() =>
+                      {
+                        setAcompanhamentoPremium({
+                          ativo: false,
+                          baselineUntil: 0,
+                          confirmado: false,
+                          confirmadoAt: 0,
+                          tipoConfirmacao: '',
+                          novoUntil: 0,
+                          diasGanho: 0,
+                        });
+                        setCelebracaoPremium({
+                          show: false,
+                          pendingReveal: false,
+                        });
+                      }
+                    }
+                  >
+                    {acompanhamentoPremium.confirmado ? 'Fechar confirmação' : 'Parar acompanhamento'}
+                  </button>
+                </div>
+              </div>
+            )}
             <button
               type="button"
               className="btn-apoie btn-apoie-premium"
@@ -261,7 +508,7 @@ export default function Apoie({ user, perfil }) {
                 ? 'Abrindo checkout…'
                 : premiumAtivo
                   ? 'Renovar Premium (30 dias)'
-                  : `Assinar Premium — ${labelPrecoPremium()}`}
+                  : `Assinar Premium — ${labelPrecoPremium(precoAtual)}`}
             </button>
           </div>
 
@@ -270,6 +517,14 @@ export default function Apoie({ user, perfil }) {
             <p className="apoie-doacao-livre-desc">
               Escolha o valor (mínimo <strong>R$ 1,00</strong>). Abre o mesmo checkout seguro do Mercado Pago.
             </p>
+            {!user && (
+              <p className="apoie-premium-login-hint">
+                <button type="button" className="apoie-link-login" onClick={() => navigate('/login')}>
+                  Entre na sua conta
+                </button>{' '}
+                para doar. Assim o sistema registra quem ajudou no ranking e no dashboard.
+              </p>
+            )}
             <div className="apoie-doacao-livre-row">
               <span className="apoie-doacao-prefix">R$</span>
               <input
@@ -279,13 +534,13 @@ export default function Apoie({ user, perfil }) {
                 placeholder="1,00"
                 value={valorLivre}
                 onChange={(e) => setValorLivre(e.target.value)}
-                disabled={carregandoId !== null}
+                disabled={carregandoId !== null || !user}
                 aria-label="Valor da doação em reais"
               />
               <button
                 type="button"
                 className="btn-apoie btn-apoie-livre"
-                disabled={carregandoId !== null}
+                disabled={carregandoId !== null || !user}
                 onClick={abrirDoacaoLivre}
               >
                 {carregandoId === 'livre' ? 'Abrindo…' : 'Doar este valor'}
@@ -320,7 +575,7 @@ export default function Apoie({ user, perfil }) {
                 <button
                   type="button"
                   className={`btn-apoie ${plano.id === 'cafe' ? 'pequeno' : plano.id === 'marmita' ? 'medio' : 'grande'}`}
-                  disabled={carregandoId !== null}
+                  disabled={carregandoId !== null || !user}
                   onClick={() => abrirPagamento(plano)}
                 >
                   {carregandoId === plano.id ? 'Abrindo…' : `APOIAR ${plano.precoLabel}`}

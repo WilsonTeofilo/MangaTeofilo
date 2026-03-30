@@ -45,7 +45,7 @@
     },
 
     "financas": {
-      ".read": "auth != null && root.child('usuarios').child(auth.uid).child('role').val() === 'admin'",
+      ".read": "auth != null && auth.token.admin === true",
       ".write": false
     },
 
@@ -58,6 +58,7 @@
         "userAvatar":        { ".validate": "newData.isString()" },
         "uid":               { ".validate": "newData.val() === auth.uid" },
         "notifyNewChapter":  { ".validate": "newData.isBoolean()" },
+        "notifyPromotions":  { ".validate": "newData.isBoolean()" },
         "gender":            { ".validate": "newData.val() === 'masculino' || newData.val() === 'feminino' || newData.val() === 'outro' || newData.val() === 'nao_informado'" },
         "birthYear":         { ".validate": "newData.val() === null || (newData.isNumber() && newData.val() >= 1900 && newData.val() <= now / 31557600000 + 1970)" },
         "marketingOptIn":    { ".validate": "newData.isBoolean()" },
@@ -78,10 +79,10 @@
         "membershipStatus": {
           ".validate": "(newData.val() === 'inativo' || newData.val() === 'ativo' || newData.val() === 'vencido' || newData.val() === 'cancelado') && ((!data.exists() && newData.val() === 'inativo') || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))"
         },
-        "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" },
-        "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" },
-        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" },
-        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && (!data.exists() || newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')" }
+        "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" },
+        "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" },
+        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" },
+        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" }
       }
     },
 
@@ -100,7 +101,7 @@
     "stats": {
       ".read": true,
       "contador": {
-        ".write": "auth != null && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+        ".write": "newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
       }
     }
   }

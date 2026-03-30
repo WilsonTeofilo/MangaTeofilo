@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ref, onValue, increment, update } from 'firebase/database';
-import { onAuthStateChanged } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 
-import { auth, db } from '../../services/firebase';
+import { db } from '../../services/firebase';
 
 import './ShitoManga.css';
 
 export default function ShitoManga() {
   const [visitas, setVisitas] = useState(0);
-  const [mostrarSetaScroll, setMostrarSetaScroll] = useState(true);
+  const [mostrarSetaScroll, setMostrarSetaScroll] = useState(() => {
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const limiar = Math.max(48, Math.min(vh * 0.06, 100));
+    return window.scrollY <= limiar;
+  });
   const hasIncremented = useRef(false);
   const navigate = useNavigate();
 
@@ -20,13 +23,12 @@ export default function ShitoManga() {
   }, []);
 
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser || hasIncremented.current) return;
+    if (!hasIncremented.current) {
       const statsRef = ref(db, 'stats');
       update(statsRef, { contador: increment(1) })
         .catch((err) => console.error('Erro ao atualizar stats:', err));
       hasIncremented.current = true;
-    });
+    }
 
     const contadorRef = ref(db, 'stats/contador');
     const unsubVisitas = onValue(contadorRef, (snapshot) => {
@@ -34,13 +36,11 @@ export default function ShitoManga() {
     });
 
     return () => {
-      unsubAuth();
       unsubVisitas();
     };
   }, []);
 
   useEffect(() => {
-    atualizarVisibilidadeSeta();
     window.addEventListener('scroll', atualizarVisibilidadeSeta, { passive: true });
     window.visualViewport?.addEventListener('resize', atualizarVisibilidadeSeta);
     window.addEventListener('resize', atualizarVisibilidadeSeta);

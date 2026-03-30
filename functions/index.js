@@ -10,6 +10,7 @@ import {
 } from './deprecatedUserFields.js';
 import {
   APOIO_PLANOS_MP,
+  parseApoioExternalRef,
   criarPreferenciaApoio,
   criarPreferenciaApoioValorLivre,
 } from './mercadoPagoApoio.js';
@@ -92,6 +93,107 @@ function getTransporter() {
 
 function getSmtpFrom() {
   try { return SMTP_FROM.value(); } catch { return 'Shito <drakenteofilo@gmail.com>'; }
+}
+
+const PREMIUM_PROMO_PATH = 'financas/promocoes/premiumAtual';
+
+function validPromoPrice(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function parsePromoConfig(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const enabled = raw.enabled === true;
+  const priceBRL = validPromoPrice(raw.priceBRL);
+  const startsAt = Number(raw.startsAt || 0);
+  const endsAt = Number(raw.endsAt || 0);
+  if (!enabled || priceBRL == null || !Number.isFinite(startsAt) || !Number.isFinite(endsAt)) {
+    return null;
+  }
+  if (startsAt <= 0 || endsAt <= startsAt) return null;
+  return {
+    promoId: String(raw.promoId || `promo_${startsAt}`),
+    name: String(raw.name || 'Promocao Premium').trim() || 'Promocao Premium',
+    message: String(raw.message || '').trim(),
+    enabled,
+    priceBRL,
+    startsAt,
+    endsAt,
+    updatedAt: Number(raw.updatedAt || Date.now()),
+  };
+}
+
+async function getPremiumOfferAt(db, now = Date.now()) {
+  const snap = await db.ref(PREMIUM_PROMO_PATH).get();
+  const promo = parsePromoConfig(snap.val());
+  if (!promo) {
+    return {
+      currentPriceBRL: PREMIUM_PRICE_BRL,
+      basePriceBRL: PREMIUM_PRICE_BRL,
+      isPromoActive: false,
+      promo: null,
+    };
+  }
+  const active = now >= promo.startsAt && now <= promo.endsAt;
+  return {
+    currentPriceBRL: active ? promo.priceBRL : PREMIUM_PRICE_BRL,
+    basePriceBRL: PREMIUM_PRICE_BRL,
+    isPromoActive: active,
+    promo,
+  };
+}
+
+async function enviarEmailPromocaoPremium(db, promo) {
+  const usersSnap = await db.ref('usuarios').get();
+  if (!usersSnap.exists()) return { sent: 0, skipped: 0, failed: 0 };
+  const users = usersSnap.val() || {};
+  const transporter = getTransporter();
+  const from = getSmtpFrom();
+  const base = APP_BASE_URL.value().replace(/\/$/, '');
+  let sent = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const [uid, profile] of Object.entries(users)) {
+    const appStatus = profile?.status;
+    const optIn = profile?.notifyPromotions === true;
+    if (appStatus !== 'ativo' || !optIn) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const authUser = await getAuth().getUser(uid);
+      const to = authUser?.email;
+      if (!to || authUser.disabled) {
+        skipped += 1;
+        continue;
+      }
+      await transporter.sendMail({
+        from,
+        to,
+        subject: `Shito — promocao Premium ativa por tempo limitado`,
+        text: `${promo.name}\n\nValor promocional: R$ ${promo.priceBRL.toFixed(2)}\nValida ate: ${formatarDataBr(promo.endsAt)}\n\nAssine em: ${base}/apoie`,
+        html: `
+          <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#f2f2f2;padding:28px;border-radius:10px;">
+            <h2 style="margin:0 0 10px;color:#ffcc00;">${promo.name}</h2>
+            <p style="margin:0 0 12px;color:#d0d0d0;">${promo.message || 'A promoção Premium está ativa por tempo limitado.'}</p>
+            <p style="margin:0 0 8px;">Valor promocional: <strong style="color:#ffcc00;">R$ ${promo.priceBRL.toFixed(2)}</strong></p>
+            <p style="margin:0 0 18px;">Validade: <strong>${formatarDataBr(promo.endsAt)}</strong></p>
+            <a href="${base}/apoie" style="display:inline-block;background:#ffcc00;color:#000;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">
+              Quero virar Membro Shito
+            </a>
+          </div>
+        `,
+      });
+      sent += 1;
+    } catch (err) {
+      failed += 1;
+      logger.error('Promo premium: erro ao enviar email', { uid, error: err?.message });
+    }
+  }
+  return { sent, skipped, failed };
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
@@ -292,7 +394,15 @@ const AVATAR_FALLBACK_FUNCTIONS = '/assets/avatares/ava1.webp';
  * Ativa/renova 30 dias de Premium após pagamento aprovado (idempotente por paymentId).
  * @returns {{ applied: boolean, duplicate?: boolean, newUntil?: number }}
  */
-async function aplicarPremiumAprovado(db, uid, paymentId) {
+async function aplicarPremiumAprovado(
+  db,
+  uid,
+  paymentId,
+  paymentAmount,
+  paymentCurrency,
+  promoId,
+  promoName
+) {
   const procRef = db.ref(`financas/mp_processed/${paymentId}`);
   const procSnap = await procRef.get();
   if (procSnap.exists()) {
@@ -338,8 +448,11 @@ async function aplicarPremiumAprovado(db, uid, paymentId) {
       tipo: 'premium_aprovado',
       uid,
       paymentId: String(paymentId),
-      amount: PREMIUM_PRICE_BRL,
-      currency: 'BRL',
+      amount: Number.isFinite(paymentAmount) ? paymentAmount : PREMIUM_PRICE_BRL,
+      currency: String(paymentCurrency || 'BRL'),
+      origem: PREMIUM_PLAN_ID,
+      promoId: promoId || null,
+      promoName: promoName || null,
       at: now,
       memberUntil: newUntil,
     });
@@ -376,20 +489,82 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     return;
   }
 
-  const uid = parsePremiumExternalRef(pay.external_reference);
-  if (!uid) {
-    logger.info('MP: nao e checkout premium', { paymentId, ref: pay.external_reference });
-    return;
-  }
-
-  const amount = Number(pay.transaction_amount);
-  if (!Number.isFinite(amount) || Math.abs(amount - PREMIUM_PRICE_BRL) > 0.02) {
-    logger.error('MP: valor inesperado para premium', { paymentId, amount, uid });
-    return;
-  }
-
   const db = getDatabase();
-  await aplicarPremiumAprovado(db, uid, paymentId);
+  const premiumUid = parsePremiumExternalRef(pay.external_reference);
+  if (premiumUid) {
+    const amount = Number(pay.transaction_amount);
+    const metadata = pay.metadata && typeof pay.metadata === 'object' ? pay.metadata : {};
+    const expectedAmount = validPromoPrice(metadata.expectedAmount) || PREMIUM_PRICE_BRL;
+    if (!Number.isFinite(amount) || Math.abs(amount - expectedAmount) > 0.02) {
+      logger.error('MP: valor inesperado para premium', { paymentId, amount, uid: premiumUid });
+      return;
+    }
+    await aplicarPremiumAprovado(
+      db,
+      premiumUid,
+      paymentId,
+      amount,
+      String(pay.currency_id || 'BRL'),
+      metadata.promoId ? String(metadata.promoId) : null,
+      metadata.promoName ? String(metadata.promoName) : null
+    );
+    return;
+  }
+
+  const metadata = pay.metadata && typeof pay.metadata === 'object' ? pay.metadata : {};
+  const metadataUidRaw = metadata.uid;
+  const metadataUid =
+    metadataUidRaw == null ? '' : String(metadataUidRaw).trim();
+  const apoioUid = parseApoioExternalRef(pay.external_reference) || metadataUid;
+  if (!apoioUid) {
+    logger.info('MP: pagamento sem external_reference de premium/apoio', {
+      paymentId,
+      ref: pay.external_reference,
+    });
+    return;
+  }
+
+  const procRef = db.ref(`financas/mp_processed/${paymentId}`);
+  const procSnap = await procRef.get();
+  if (procSnap.exists()) {
+    logger.info('Apoio: pagamento ja processado', { paymentId });
+    return;
+  }
+
+  const now = Date.now();
+  const amount = Number(pay.transaction_amount);
+  const currency = String(pay.currency_id || 'BRL');
+  const description = String(pay.description || '').toLowerCase();
+  let origem = 'doacao_livre';
+  if (String(metadata.planId || '').trim()) {
+    origem = String(metadata.planId).trim();
+  } else if (description.includes('cafe')) {
+    origem = 'cafe';
+  } else if (description.includes('marmita')) {
+    origem = 'marmita';
+  } else if (description.includes('lendario')) {
+    origem = 'lendario';
+  }
+
+  await db.ref().update({
+    [`financas/mp_processed/${paymentId}`]: {
+      uid: apoioUid,
+      at: now,
+      tipo: 'apoio_aprovado',
+    },
+  });
+
+  await db.ref('financas/eventos').push({
+    tipo: 'apoio_aprovado',
+    uid: apoioUid,
+    paymentId: String(paymentId),
+    amount: Number.isFinite(amount) ? amount : null,
+    currency,
+    origem,
+    at: now,
+  });
+
+  logger.info('Apoio registrado', { uid: apoioUid, paymentId, amount, origem });
 }
 
 // ── CLEANUP AGENDADO ───────────────────────────────────────────────────────
@@ -769,6 +944,10 @@ export const criarCheckoutApoio = onCall(
     invoker: 'public',
   },
   async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para apoiar a obra.');
+    }
+
     const payload =
       request.data && typeof request.data === 'object' ? request.data : {};
     const planRaw = payload.planId;
@@ -832,16 +1011,27 @@ export const criarCheckoutApoio = onCall(
       throw new HttpsError('failed-precondition', 'Token Mercado Pago vazio.');
     }
 
+    const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
+    const notificationUrl = `${baseFn}/mercadopagowebhook`;
+
     try {
       let url;
       if (hasValidCustom) {
         url = await criarPreferenciaApoioValorLivre(
           token,
           customTry.value,
-          APP_BASE_URL.value()
+          APP_BASE_URL.value(),
+          request.auth.uid,
+          notificationUrl
         );
       } else {
-        url = await criarPreferenciaApoio(token, planNorm, APP_BASE_URL.value());
+        url = await criarPreferenciaApoio(
+          token,
+          planNorm,
+          APP_BASE_URL.value(),
+          request.auth.uid,
+          notificationUrl
+        );
       }
       return { ok: true, url };
     } catch (err) {
@@ -963,13 +1153,19 @@ export const criarCheckoutPremium = onCall(
 
     const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
     const notificationUrl = `${baseFn}/mercadopagowebhook`;
+    const db = getDatabase();
+    const offer = await getPremiumOfferAt(db, Date.now());
 
     try {
       const url = await criarPreferenciaPremium(
         token,
         request.auth.uid,
         APP_BASE_URL.value(),
-        notificationUrl
+        notificationUrl,
+        offer.currentPriceBRL,
+        offer.isPromoActive
+          ? { promoId: offer.promo?.promoId, promoName: offer.promo?.name }
+          : null
       );
       return { ok: true, url };
     } catch (err) {
@@ -980,6 +1176,114 @@ export const criarCheckoutPremium = onCall(
         errMsg.length > 200 ? `${errMsg.slice(0, 200)}…` : errMsg
       );
     }
+  }
+);
+
+export const obterOfertaPremiumPublica = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    invoker: 'public',
+  },
+  async () => {
+    const db = getDatabase();
+    const now = Date.now();
+    const offer = await getPremiumOfferAt(db, now);
+    return {
+      ok: true,
+      now,
+      currentPriceBRL: offer.currentPriceBRL,
+      basePriceBRL: offer.basePriceBRL,
+      isPromoActive: offer.isPromoActive,
+      promo: offer.isPromoActive
+        ? {
+            promoId: offer.promo?.promoId || null,
+            name: offer.promo?.name || null,
+            message: offer.promo?.message || '',
+            startsAt: offer.promo?.startsAt || null,
+            endsAt: offer.promo?.endsAt || null,
+          }
+        : null,
+    };
+  }
+);
+
+export const adminObterPromocaoPremium = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+    const db = getDatabase();
+    const snap = await db.ref(PREMIUM_PROMO_PATH).get();
+    const raw = snap.val() || null;
+    const parsed = parsePromoConfig(raw);
+    return {
+      ok: true,
+      promo: raw,
+      parsedPromo: parsed,
+    };
+  }
+);
+
+export const adminSalvarPromocaoPremium = onCall(
+  {
+    region: 'us-central1',
+    secrets: [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM],
+  },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    const enabled = body.enabled === true;
+    const now = Date.now();
+
+    const db = getDatabase();
+
+    if (!enabled) {
+      await db.ref(PREMIUM_PROMO_PATH).set({
+        enabled: false,
+        updatedAt: now,
+        updatedBy: request.auth.uid,
+      });
+      return { ok: true, disabled: true };
+    }
+
+    const priceBRL = validPromoPrice(body.priceBRL);
+    const startsAt = Number(body.startsAt || now);
+    const endsAt = Number(body.endsAt || 0);
+    if (priceBRL == null) {
+      throw new HttpsError('invalid-argument', 'Preco promocional invalido.');
+    }
+    if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || startsAt <= 0 || endsAt <= startsAt) {
+      throw new HttpsError('invalid-argument', 'Janela de tempo invalida para promocao.');
+    }
+    const promo = {
+      enabled: true,
+      promoId: String(body.promoId || `promo_${startsAt}`),
+      name: String(body.name || 'Promocao Membro Shito').trim() || 'Promocao Membro Shito',
+      message: String(body.message || '').trim(),
+      priceBRL,
+      startsAt,
+      endsAt,
+      updatedAt: now,
+      updatedBy: request.auth.uid,
+    };
+    await db.ref(PREMIUM_PROMO_PATH).set(promo);
+
+    let emailStats = { sent: 0, skipped: 0, failed: 0 };
+    if (body.notifyUsers === true) {
+      emailStats = await enviarEmailPromocaoPremium(db, promo);
+    }
+    return {
+      ok: true,
+      promo,
+      notifyUsers: body.notifyUsers === true,
+      emailStats,
+    };
   }
 );
 
@@ -1075,6 +1379,639 @@ export const assinaturasPremiumDiario = onSchedule(
       expirados,
       totalUsuarios: Object.keys(users).length,
     });
+  }
+);
+
+function toNum(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeGender(g) {
+  const s = String(g || '').toLowerCase().trim();
+  if (s === 'masculino' || s === 'feminino' || s === 'outro') return s;
+  return 'nao_informado';
+}
+
+function monthKeyFromMs(ms) {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function ensurePeriod(input, now) {
+  const endAt = toNum(input?.endAt, now);
+  const startAt = toNum(input?.startAt, endAt - 30 * MS_DAY);
+  if (endAt <= startAt) {
+    return {
+      startAt: endAt - 30 * MS_DAY,
+      endAt,
+    };
+  }
+  const maxSpan = 5 * 365 * MS_DAY;
+  const span = endAt - startAt;
+  if (span > maxSpan) {
+    return {
+      startAt: endAt - maxSpan,
+      endAt,
+    };
+  }
+  return { startAt, endAt };
+}
+
+function defaultComparePeriod(period) {
+  const span = period.endAt - period.startAt;
+  return {
+    startAt: period.startAt - span,
+    endAt: period.startAt,
+  };
+}
+
+function round2(v) {
+  return Math.round(toNum(v, 0) * 100) / 100;
+}
+
+function buildUserLabel(uid, usuarios, usuariosPublicos) {
+  const pub = usuariosPublicos[uid] || {};
+  const priv = usuarios[uid] || {};
+  return {
+    uid,
+    userName: pub.userName || priv.userName || 'Guerreiro',
+    userAvatar: pub.userAvatar || priv.userAvatar || '',
+    gender: normalizeGender(priv.gender),
+  };
+}
+
+function buildAdvancedAnalytics(events, usuarios, usuariosPublicos, period, nowMs) {
+  const filtered = events.filter((e) => {
+    const at = toNum(e?.at, 0);
+    if (at < period.startAt || at >= period.endAt) return false;
+    const tipo = String(e?.tipo || '');
+    return tipo === 'premium_aprovado' || tipo === 'apoio_aprovado';
+  });
+
+  const subByUid = new Map();
+  const doaByUid = new Map();
+  const historyByUid = {};
+  const daysPerSubscription = Math.round(PREMIUM_D_MS / MS_DAY);
+
+  const ensureHistory = (uid) => {
+    if (!historyByUid[uid]) {
+      historyByUid[uid] = {
+        subscriptions: [],
+        donations: [],
+      };
+    }
+    return historyByUid[uid];
+  };
+
+  for (const ev of filtered) {
+    const uid = String(ev?.uid || '').trim();
+    if (!uid) continue;
+
+    const at = toNum(ev?.at, 0);
+    const amount = toNum(ev?.amount, 0);
+    const tipo = String(ev?.tipo || '');
+    const userBase = buildUserLabel(uid, usuarios, usuariosPublicos);
+    const profile = usuarios[uid] || {};
+    const memberUntil = toNum(profile?.memberUntil, 0);
+    const isActive = memberUntil > nowMs;
+
+    if (tipo === 'premium_aprovado') {
+      const curr = subByUid.get(uid) || {
+        ...userBase,
+        totalSpent: 0,
+        count: 0,
+        totalDays: 0,
+        lastAt: 0,
+        memberUntil: memberUntil || null,
+        status: isActive ? 'ativo' : 'expirado',
+      };
+      curr.totalSpent += amount;
+      curr.count += 1;
+      curr.totalDays += daysPerSubscription;
+      curr.lastAt = Math.max(curr.lastAt, at);
+      curr.memberUntil = memberUntil || null;
+      curr.status = isActive ? 'ativo' : 'expirado';
+      subByUid.set(uid, curr);
+
+      const h = ensureHistory(uid);
+      h.subscriptions.push({
+        at,
+        amount: round2(amount),
+        promoId: ev?.promoId ? String(ev.promoId) : null,
+        promoName: ev?.promoName ? String(ev.promoName) : null,
+        isPromotion: Boolean(ev?.promoId || ev?.promoName),
+      });
+      continue;
+    }
+
+    const curr = doaByUid.get(uid) || {
+      ...userBase,
+      totalSpent: 0,
+      count: 0,
+      lastAt: 0,
+    };
+    curr.totalSpent += amount;
+    curr.count += 1;
+    curr.lastAt = Math.max(curr.lastAt, at);
+    doaByUid.set(uid, curr);
+
+    const h = ensureHistory(uid);
+    h.donations.push({
+      at,
+      amount: round2(amount),
+      origem: ev?.origem ? String(ev.origem) : null,
+    });
+  }
+
+  for (const uid of Object.keys(historyByUid)) {
+    historyByUid[uid].subscriptions.sort((a, b) => b.at - a.at);
+    historyByUid[uid].donations.sort((a, b) => b.at - a.at);
+  }
+
+  const subscriptionStats = [...subByUid.values()]
+    .map((u) => ({
+      ...u,
+      totalSpent: round2(u.totalSpent),
+      averagePrice: u.count > 0 ? round2(u.totalSpent / u.count) : 0,
+      totalMonths: Math.round((u.totalDays / 30) * 10) / 10,
+    }))
+    .sort((a, b) => {
+      if (b.totalSpent !== a.totalSpent) return b.totalSpent - a.totalSpent;
+      if (b.count !== a.count) return b.count - a.count;
+      return b.lastAt - a.lastAt;
+    })
+    .map((u, idx) => ({ ...u, rank: idx + 1 }));
+
+  const donationStats = [...doaByUid.values()]
+    .map((u) => ({
+      ...u,
+      totalSpent: round2(u.totalSpent),
+      averageDonation: u.count > 0 ? round2(u.totalSpent / u.count) : 0,
+    }))
+    .sort((a, b) => {
+      if (b.totalSpent !== a.totalSpent) return b.totalSpent - a.totalSpent;
+      if (b.count !== a.count) return b.count - a.count;
+      return b.lastAt - a.lastAt;
+    })
+    .map((u, idx) => ({ ...u, rank: idx + 1 }));
+
+  return {
+    rankings: {
+      subscriptions: subscriptionStats,
+      donations: donationStats,
+    },
+    subscriptionStats,
+    donationStats,
+    userHistoryByUid: historyByUid,
+  };
+}
+
+function aggregatePeriod(events, usuarios, usuariosPublicos, period) {
+  const filtered = events.filter((e) => {
+    const at = toNum(e?.at, 0);
+    return at >= period.startAt && at < period.endAt;
+  });
+
+  const totals = {
+    totalAmount: 0,
+    premiumAmount: 0,
+    apoioAmount: 0,
+    premiumCount: 0,
+    apoioCount: 0,
+    eventsCount: filtered.length,
+  };
+
+  const monthlyMap = new Map();
+  const doadoresMap = new Map();
+  const doacaoSexo = {
+    masculino: { amount: 0, count: 0 },
+    feminino: { amount: 0, count: 0 },
+    outro: { amount: 0, count: 0 },
+    nao_informado: { amount: 0, count: 0 },
+  };
+  const assinaturaSexo = {
+    masculino: { amount: 0, count: 0 },
+    feminino: { amount: 0, count: 0 },
+    outro: { amount: 0, count: 0 },
+    nao_informado: { amount: 0, count: 0 },
+  };
+  const assinaturaIdades = [];
+  const doacaoIdades = [];
+  const assinantesNoPeriodo = new Set();
+  const doadoresNoPeriodo = new Set();
+
+  for (const ev of filtered) {
+    const tipo = String(ev?.tipo || '');
+    const uid = String(ev?.uid || '').trim();
+    const at = toNum(ev?.at, 0);
+    const amount = toNum(ev?.amount, 0);
+
+    const mk = monthKeyFromMs(at);
+    if (!monthlyMap.has(mk)) {
+      monthlyMap.set(mk, {
+        key: mk,
+        totalAmount: 0,
+        premiumAmount: 0,
+        apoioAmount: 0,
+        premiumCount: 0,
+        apoioCount: 0,
+      });
+    }
+    const monthRow = monthlyMap.get(mk);
+    monthRow.totalAmount += amount;
+    totals.totalAmount += amount;
+
+    const perfil = uid ? usuarios[uid] || null : null;
+    const sexo = normalizeGender(perfil?.gender);
+    const birthYear = toNum(perfil?.birthYear, 0);
+    const age =
+      birthYear >= 1900 && birthYear <= new Date().getUTCFullYear()
+        ? new Date().getUTCFullYear() - birthYear
+        : null;
+
+    if (tipo === 'premium_aprovado') {
+      totals.premiumAmount += amount;
+      totals.premiumCount += 1;
+      monthRow.premiumAmount += amount;
+      monthRow.premiumCount += 1;
+      assinaturaSexo[sexo].amount += amount;
+      assinaturaSexo[sexo].count += 1;
+      if (uid && !assinantesNoPeriodo.has(uid) && age != null) {
+        assinaturaIdades.push(age);
+      }
+      if (uid) assinantesNoPeriodo.add(uid);
+    } else if (tipo === 'apoio_aprovado') {
+      totals.apoioAmount += amount;
+      totals.apoioCount += 1;
+      monthRow.apoioAmount += amount;
+      monthRow.apoioCount += 1;
+      doacaoSexo[sexo].amount += amount;
+      doacaoSexo[sexo].count += 1;
+      if (uid && !doadoresNoPeriodo.has(uid) && age != null) {
+        doacaoIdades.push(age);
+      }
+      if (uid) doadoresNoPeriodo.add(uid);
+      if (uid) {
+        const curr = doadoresMap.get(uid) || 0;
+        doadoresMap.set(uid, curr + amount);
+      }
+    }
+  }
+
+  const monthlySeries = [...monthlyMap.values()].sort((a, b) =>
+    a.key.localeCompare(b.key)
+  );
+
+  const topDoadores = [...doadoresMap.entries()]
+    .map(([uid, amount]) => {
+      const pub = usuariosPublicos[uid] || {};
+      const priv = usuarios[uid] || {};
+      return {
+        uid,
+        amount: Math.round(amount * 100) / 100,
+        userName: pub.userName || priv.userName || 'Guerreiro',
+        userAvatar: pub.userAvatar || priv.userAvatar || '',
+        gender: normalizeGender(priv.gender),
+      };
+    })
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 10);
+
+  const avg = (arr) =>
+    arr.length === 0
+      ? null
+      : Math.round((arr.reduce((s, n) => s + n, 0) / arr.length) * 10) / 10;
+
+  return {
+    totals: {
+      ...totals,
+      totalAmount: Math.round(totals.totalAmount * 100) / 100,
+      premiumAmount: Math.round(totals.premiumAmount * 100) / 100,
+      apoioAmount: Math.round(totals.apoioAmount * 100) / 100,
+    },
+    monthlySeries,
+    topDoadores,
+    assinaturaVsDoacao: {
+      assinatura: Math.round(totals.premiumAmount * 100) / 100,
+      doacao: Math.round(totals.apoioAmount * 100) / 100,
+    },
+    demografia: {
+      doacaoPorSexo: doacaoSexo,
+      assinaturaPorSexo: assinaturaSexo,
+      mediaIdadeAssinantes: avg(assinaturaIdades),
+      mediaIdadeDoadores: avg(doacaoIdades),
+    },
+  };
+}
+
+function buildCrescimentoPremium(events, period) {
+  const firstPremiumAtByUid = new Map();
+  for (const ev of events) {
+    if (String(ev?.tipo || '') !== 'premium_aprovado') continue;
+    const uid = String(ev?.uid || '').trim();
+    const at = toNum(ev?.at, 0);
+    if (!uid || !at) continue;
+    const prev = firstPremiumAtByUid.get(uid);
+    if (!prev || at < prev) firstPremiumAtByUid.set(uid, at);
+  }
+
+  const monthMap = new Map();
+  for (const [, at] of firstPremiumAtByUid.entries()) {
+    if (at < period.startAt || at >= period.endAt) continue;
+    const mk = monthKeyFromMs(at);
+    monthMap.set(mk, (monthMap.get(mk) || 0) + 1);
+  }
+
+  return [...monthMap.entries()]
+    .map(([month, novosVip]) => ({ month, novosVip }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
+function buildIntegrityReport(events) {
+  const seenPaymentIds = new Set();
+  const duplicates = [];
+  let withoutUid = 0;
+  let withoutAmount = 0;
+  let invalidType = 0;
+
+  for (const ev of events) {
+    const tipo = String(ev?.tipo || '');
+    if (tipo !== 'premium_aprovado' && tipo !== 'apoio_aprovado') {
+      invalidType += 1;
+    }
+    const uid = String(ev?.uid || '').trim();
+    if (!uid) withoutUid += 1;
+    const amount = toNum(ev?.amount, NaN);
+    if (!Number.isFinite(amount) || amount <= 0) withoutAmount += 1;
+    const pid = String(ev?.paymentId || '').trim();
+    if (pid) {
+      if (seenPaymentIds.has(pid)) duplicates.push(pid);
+      seenPaymentIds.add(pid);
+    }
+  }
+
+  return {
+    totalEvents: events.length,
+    invalidType,
+    withoutUid,
+    withoutAmount,
+    duplicatePaymentIds: [...new Set(duplicates)].slice(0, 100),
+    duplicatePaymentIdsCount: [...new Set(duplicates)].length,
+  };
+}
+
+export const adminDashboardResumo = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Faca login.');
+    }
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+
+    const now = Date.now();
+    const period = ensurePeriod(request.data || {}, now);
+    const compareInput =
+      request.data && typeof request.data === 'object'
+        ? {
+            startAt: request.data.compareStartAt,
+            endAt: request.data.compareEndAt,
+          }
+        : {};
+    const comparePeriod =
+      compareInput.startAt && compareInput.endAt
+        ? ensurePeriod(compareInput, now)
+        : defaultComparePeriod(period);
+
+    const db = getDatabase();
+    const [eventsSnap, usuariosSnap, pubSnap] = await Promise.all([
+      db.ref('financas/eventos').get(),
+      db.ref('usuarios').get(),
+      db.ref('usuarios_publicos').get(),
+    ]);
+
+    const rawEvents = eventsSnap.exists()
+      ? Object.values(eventsSnap.val() || {})
+      : [];
+    const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
+    const usuariosPublicos = pubSnap.exists() ? pubSnap.val() || {} : {};
+
+    const current = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, period);
+    const compare = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, comparePeriod);
+    const crescimentoPremium = buildCrescimentoPremium(rawEvents, period);
+    const integrity = buildIntegrityReport(rawEvents);
+    const analytics = buildAdvancedAnalytics(rawEvents, usuarios, usuariosPublicos, period, now);
+
+    const deltaAmount =
+      current.totals.totalAmount - compare.totals.totalAmount;
+    const deltaPct =
+      compare.totals.totalAmount > 0
+        ? (deltaAmount / compare.totals.totalAmount) * 100
+        : null;
+
+    return {
+      ok: true,
+      period,
+      comparePeriod,
+      current,
+      compare,
+      crescimentoPremium,
+      comparativo: {
+        deltaAmount: Math.round(deltaAmount * 100) / 100,
+        deltaPercent:
+          deltaPct == null ? null : Math.round(deltaPct * 10) / 10,
+      },
+      analytics,
+      integrity,
+      generatedAt: now,
+    };
+  }
+);
+
+export const adminDashboardIntegridade = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Faca login.');
+    }
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+    const db = getDatabase();
+    const eventsSnap = await db.ref('financas/eventos').get();
+    const rawEvents = eventsSnap.exists()
+      ? Object.values(eventsSnap.val() || {})
+      : [];
+    return {
+      ok: true,
+      integrity: buildIntegrityReport(rawEvents),
+      generatedAt: Date.now(),
+    };
+  }
+);
+
+export const adminBackfillEventosLegados = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Faca login.');
+    }
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+
+    const db = getDatabase();
+    const [processedSnap, eventsSnap] = await Promise.all([
+      db.ref('financas/mp_processed').get(),
+      db.ref('financas/eventos').get(),
+    ]);
+
+    const processed = processedSnap.exists() ? processedSnap.val() || {} : {};
+    const events = eventsSnap.exists() ? eventsSnap.val() || {} : {};
+    const existingPaymentIds = new Set();
+
+    for (const ev of Object.values(events)) {
+      const pid = String(ev?.paymentId || '').trim();
+      if (pid) existingPaymentIds.add(pid);
+    }
+
+    let created = 0;
+    let createdPremium = 0;
+    let createdApoio = 0;
+    let createdWithZeroAmount = 0;
+    const updates = {};
+
+    for (const [paymentId, row] of Object.entries(processed)) {
+      const pid = String(paymentId || '').trim();
+      if (!pid || existingPaymentIds.has(pid)) continue;
+
+      const uid = String(row?.uid || '').trim();
+      if (!uid) continue;
+
+      const at = toNum(row?.at, 0) || Date.now();
+      const rawTipo = String(row?.tipo || '').toLowerCase();
+      const tipo =
+        rawTipo === 'apoio_aprovado' || rawTipo === 'apoio'
+          ? 'apoio_aprovado'
+          : 'premium_aprovado';
+
+      let amount = toNum(row?.amount, NaN);
+      if (!Number.isFinite(amount) || amount < 0) {
+        amount = 0;
+        createdWithZeroAmount += 1;
+      }
+
+      const eventKey = db.ref('financas/eventos').push().key;
+      if (!eventKey) continue;
+
+      updates[`financas/eventos/${eventKey}`] = {
+        tipo,
+        uid,
+        paymentId: pid,
+        amount,
+        currency: String(row?.currency || 'BRL'),
+        origem: String(row?.origem || (tipo === 'premium_aprovado' ? PREMIUM_PLAN_ID : 'doacao_legado')),
+        at,
+        backfill: true,
+      };
+      created += 1;
+      if (tipo === 'premium_aprovado') createdPremium += 1;
+      else createdApoio += 1;
+    }
+
+    if (created > 0) {
+      await db.ref().update(updates);
+    }
+
+    return {
+      ok: true,
+      created,
+      createdPremium,
+      createdApoio,
+      createdWithZeroAmount,
+      totalProcessedRows: Object.keys(processed).length,
+    };
+  }
+);
+
+async function gerarRollupMensalFinancas() {
+  const db = getDatabase();
+  const eventsSnap = await db.ref('financas/eventos').get();
+  const rawEvents = eventsSnap.exists()
+    ? Object.values(eventsSnap.val() || {})
+    : [];
+  const monthly = new Map();
+  for (const ev of rawEvents) {
+    const tipo = String(ev?.tipo || '');
+    if (tipo !== 'premium_aprovado' && tipo !== 'apoio_aprovado') continue;
+    const at = toNum(ev?.at, 0);
+    if (!at) continue;
+    const mk = monthKeyFromMs(at);
+    if (!monthly.has(mk)) {
+      monthly.set(mk, {
+        totalAmount: 0,
+        premiumAmount: 0,
+        apoioAmount: 0,
+        premiumCount: 0,
+        apoioCount: 0,
+      });
+    }
+    const row = monthly.get(mk);
+    const amount = toNum(ev?.amount, 0);
+    row.totalAmount += amount;
+    if (tipo === 'premium_aprovado') {
+      row.premiumAmount += amount;
+      row.premiumCount += 1;
+    } else {
+      row.apoioAmount += amount;
+      row.apoioCount += 1;
+    }
+  }
+
+  const updates = {};
+  for (const [month, row] of monthly.entries()) {
+    updates[`financas/aggregates/monthly/${month}`] = {
+      ...row,
+      totalAmount: Math.round(row.totalAmount * 100) / 100,
+      premiumAmount: Math.round(row.premiumAmount * 100) / 100,
+      apoioAmount: Math.round(row.apoioAmount * 100) / 100,
+      updatedAt: Date.now(),
+    };
+  }
+  if (Object.keys(updates).length) {
+    await db.ref().update(updates);
+  }
+  return Object.keys(updates).length;
+}
+
+export const adminDashboardRebuildRollup = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Faca login.');
+    }
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+    const months = await gerarRollupMensalFinancas();
+    return { ok: true, months };
+  }
+);
+
+export const dashboardRollupMensal = onSchedule(
+  {
+    schedule: '15 3 * * *',
+    timeZone: 'America/Sao_Paulo',
+    memory: '256MiB',
+    timeoutSeconds: 300,
+  },
+  async () => {
+    const months = await gerarRollupMensalFinancas();
+    logger.info('dashboardRollupMensal ok', { months });
   }
 );
 

@@ -183,9 +183,17 @@ select.perfil-input {
 .avatar-options-grid::-webkit-scrollbar { width: 4px; }
 .avatar-options-grid::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
 
+.avatar-premium-hint {
+  margin: -2px 0 12px;
+  color: #b8b8b8;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .avatar-option-card {
   aspect-ratio: 1/1;
   cursor: pointer;
+  position: relative;
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid transparent;
@@ -217,6 +225,46 @@ select.perfil-input {
 .avatar-option-card.active img { 
   opacity: 1; 
   filter: grayscale(0%);
+}
+
+.avatar-option-card.locked {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.avatar-option-card.locked img {
+  opacity: 0.28;
+  filter: grayscale(100%);
+}
+
+.avatar-tier-tag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #281900;
+  background: #ffcc00;
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.avatar-lock {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  font-size: 0.88rem;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 999px;
+  padding: 2px 5px;
+}
+
+.avatar-selection-summary {
+  margin-top: 10px;
+  color: #adadad;
+  font-size: 0.76rem;
 }
 
 /* AÇÕES */

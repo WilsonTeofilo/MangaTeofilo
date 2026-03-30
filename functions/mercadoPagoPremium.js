@@ -2,8 +2,8 @@
  * Checkout Pro — assinatura premium (30 dias corridos), Mercado Pago.
  */
 
-/** Mesmo valor que PREMIUM_PRECO_BRL em src/config/premiumAssinatura.js — produção: 23; teste: 0.1 */
-export const PREMIUM_PRICE_BRL = 0.1;
+/** Mesmo valor que PREMIUM_PRECO_BRL em src/config/premiumAssinatura.js — produção: 23; teste: 0.05 */
+export const PREMIUM_PRICE_BRL = 0.05;
 export const PREMIUM_D_MS = 30 * 24 * 60 * 60 * 1000;
 export const PREMIUM_PLAN_ID = 'premium_mensal_23';
 
@@ -29,9 +29,15 @@ export async function criarPreferenciaPremium(
   accessToken,
   uid,
   appBaseUrl,
-  notificationUrl
+  notificationUrl,
+  unitPrice = PREMIUM_PRICE_BRL,
+  promoMeta = null
 ) {
   const base = String(appBaseUrl || '').replace(/\/$/, '');
+  const price = Number(unitPrice);
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error('Preco premium invalido para checkout.');
+  }
   const body = {
     items: [
       {
@@ -39,13 +45,16 @@ export async function criarPreferenciaPremium(
         description: 'Acesso antecipado a capítulos, sem anúncios e regalias no site.',
         quantity: 1,
         currency_id: 'BRL',
-        unit_price: PREMIUM_PRICE_BRL,
+        unit_price: price,
       },
     ],
     external_reference: buildPremiumExternalRef(uid),
     metadata: {
       uid: String(uid),
       product: 'premium_30d',
+      expectedAmount: price,
+      promoId: promoMeta?.promoId ? String(promoMeta.promoId) : null,
+      promoName: promoMeta?.promoName ? String(promoMeta.promoName) : null,
     },
     back_urls: {
       success: `${base}/apoie?mp=ok&tipo=premium`,

@@ -57,7 +57,7 @@
           ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/)"
         },
         "status": {
-          ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'ongoing' || newData.val() === 'hiatus' || newData.val() === 'completed'))"
+          ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'ongoing' || newData.val() === 'hiatus' || newData.val() === 'completed' || newData.val() === 'draft'))"
         },
         "isPublished": {
           ".validate": "!newData.exists() || newData.isBoolean()"
@@ -74,6 +74,29 @@
     "avatares": {
       ".read": true,
       ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+    },
+
+    "loja": {
+      "config": {
+        ".read": true,
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+      },
+      "produtos": {
+        ".read": true,
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+      },
+      "carrinhos": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      },
+      "pedidos": {
+        "$pedidoId": {
+          ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')",
+          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+        }
+      }
     },
 
     "financas": {

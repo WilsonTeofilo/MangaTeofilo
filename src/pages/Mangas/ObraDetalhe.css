@@ -1,0 +1,349 @@
+.obra-page {
+  min-height: calc(100vh - var(--header-height-desktop, 80px));
+  padding-bottom: 30px;
+}
+
+.obra-hero {
+  margin: 14px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-position: center;
+  background-size: cover;
+}
+
+.obra-hero-content {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+  padding: clamp(14px, 3.2vw, 30px);
+  align-items: end;
+}
+
+.obra-cover {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.obra-info h1 {
+  font-size: clamp(1.4rem, 4vw, 2.3rem);
+}
+
+.obra-sinopse {
+  margin-top: 8px;
+  color: #d6deec;
+  max-width: 900px;
+}
+
+.obra-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.obra-meta span {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.74rem;
+  color: #c1cee5;
+  background: rgba(8, 12, 20, 0.5);
+}
+
+.obra-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-obra-cta,
+.btn-obra-fav-page {
+  border-radius: 8px;
+  border: 1px solid #3a4866;
+  background: #16223a;
+  color: #dce6f8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.btn-obra-cta {
+  border-color: rgba(255, 204, 0, 0.5);
+  background: rgba(255, 204, 0, 0.14);
+  color: #ffe692;
+}
+
+.btn-obra-fav-page.is-fav {
+  border-color: rgba(255, 204, 0, 0.62);
+  background: rgba(255, 204, 0, 0.24);
+  color: #ffe37d;
+}
+
+.obra-capitulos-section {
+  margin: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: #0d0d0d;
+  padding: 16px;
+}
+
+.obra-capitulos-head {
+  margin-bottom: 22px;
+  text-align: center;
+}
+
+.obra-capitulos-title {
+  font-size: clamp(1.2rem, 3vw, 1.9rem);
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  color: #ffcc00;
+  text-transform: uppercase;
+  display: inline-block;
+  position: relative;
+}
+
+.obra-capitulos-title::after {
+  content: '';
+  position: absolute;
+  left: 20%;
+  bottom: -8px;
+  width: 60%;
+  height: 2px;
+  background: #ffcc00;
+  box-shadow: 0 0 12px rgba(255, 204, 0, 0.4);
+}
+
+.obra-capitulos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obra-cap-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: #121212;
+  overflow: hidden;
+  cursor: pointer;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 12px 18px;
+}
+
+.obra-cap-item:hover {
+  border-color: #ffcc00;
+  transform: translateX(7px);
+  box-shadow: -5px 0 18px rgba(255, 204, 0, 0.14);
+}
+
+.cap-left-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1;
+}
+
+.shito-cap-number {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #292929;
+  min-width: 74px;
+  transition: 0.3s ease;
+}
+
+.obra-cap-item:hover .shito-cap-number {
+  color: #ffcc00;
+}
+
+.cap-main-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+
+.shito-cap-miniature-wrapper {
+  width: 150px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #1e1e1e;
+  background: #000;
+  flex-shrink: 0;
+}
+
+.shito-cap-miniature {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.84;
+  transition: 0.3s ease;
+}
+
+.obra-cap-item:hover .shito-cap-miniature {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.cap-text-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.shito-cap-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f1f1;
+  text-transform: uppercase;
+}
+
+.obra-cap-access {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cap-stats-row {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-item {
+  font-size: 0.74rem;
+  color: #969696;
+  font-weight: 600;
+}
+
+.cap-right-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shito-cap-date {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #808080;
+}
+
+.arrow-mobile {
+  color: #ffcc00;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.shito-cap-row--bloqueado {
+  opacity: 0.9;
+  border-style: dashed;
+}
+
+.shito-cap-row--bloqueado:hover {
+  transform: translateX(4px);
+}
+
+.cap-badge-em-breve {
+  display: inline-block;
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #ffcc00;
+}
+
+.pill {
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 900;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+}
+
+.pill.publico {
+  color: #9ff2cd;
+  background: rgba(67, 226, 163, 0.17);
+  border-color: rgba(67, 226, 163, 0.45);
+}
+
+.pill.premium {
+  color: #ffecac;
+  background: rgba(255, 204, 0, 0.16);
+  border-color: rgba(255, 204, 0, 0.42);
+}
+
+.pill.agendado {
+  color: #d4d4d4;
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.obra-capitulos-empty {
+  color: #9f9f9f;
+  font-size: 0.82rem;
+}
+
+.obra-not-found {
+  margin: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(10, 13, 22, 0.9);
+  padding: 20px;
+  text-align: center;
+}
+
+.obra-not-found p {
+  color: #a8b7d5;
+  margin: 6px 0 12px;
+}
+
+.obra-not-found button {
+  border: 1px solid rgba(255, 204, 0, 0.5);
+  background: rgba(255, 204, 0, 0.14);
+  color: #ffe692;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .obra-hero-content {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .obra-cover {
+    width: min(260px, 100%);
+  }
+
+  .obra-cap-item {
+    padding: 12px;
+  }
+
+  .shito-cap-number {
+    display: none;
+  }
+
+  .shito-cap-miniature-wrapper {
+    width: 92px;
+  }
+
+  .shito-cap-title {
+    font-size: 0.9rem;
+  }
+
+  .cap-right-info {
+    gap: 8px;
+  }
+}
+

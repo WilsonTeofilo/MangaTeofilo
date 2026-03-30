@@ -1,0 +1,200 @@
+.lista-mangas-page {
+  min-height: calc(100vh - var(--header-height-desktop, 80px));
+  padding: 18px clamp(12px, 3vw, 28px) 34px;
+  background: #0a0a0a;
+}
+
+.lista-mangas-header {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: linear-gradient(155deg, rgba(18, 18, 18, 0.96), rgba(10, 10, 10, 0.96));
+  padding: 14px clamp(12px, 2.3vw, 20px);
+  margin-bottom: 14px;
+}
+
+.lista-mangas-header h1 {
+  font-size: clamp(1.2rem, 3.5vw, 2rem);
+}
+
+.lista-mangas-header p {
+  margin-top: 4px;
+  color: #a7a7a7;
+}
+
+.lista-mangas-empty {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(14, 14, 14, 0.92);
+  padding: 22px;
+  text-align: center;
+}
+
+.lista-mangas-empty p {
+  color: #a4a4a4;
+}
+
+.lista-mangas-empty code {
+  color: var(--naraa-gold);
+}
+
+.lista-mangas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.manga-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #141414, #0f0f0f);
+  display: grid;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: mangaCardIn 0.45s ease forwards;
+  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+  cursor: pointer;
+}
+
+.manga-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 204, 0, 0.46);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.35);
+}
+
+.manga-card:focus-visible {
+  outline: 2px solid rgba(255, 204, 0, 0.8);
+  outline-offset: 2px;
+}
+
+.manga-card-cover-wrap {
+  position: relative;
+}
+
+.manga-card-cover {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  transition: transform 0.32s ease, filter 0.32s ease;
+}
+
+.manga-card:hover .manga-card-cover {
+  transform: scale(1.03);
+  filter: saturate(1.04);
+}
+
+.manga-card-badges {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+}
+
+.badge.novo {
+  color: #112210;
+  background: #8ef77f;
+  border-color: #5fe357;
+}
+
+.badge.completo {
+  color: #d8f0ff;
+  background: rgba(43, 116, 163, 0.85);
+  border-color: rgba(141, 213, 255, 0.75);
+}
+
+.badge.hiato {
+  color: #ffe3a9;
+  background: rgba(151, 106, 30, 0.85);
+  border-color: rgba(255, 203, 120, 0.75);
+}
+
+.badge.ongoing {
+  color: #fff2b8;
+  background: rgba(139, 112, 24, 0.86);
+  border-color: rgba(255, 204, 0, 0.7);
+}
+
+.manga-card-body {
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.manga-card-body h3 {
+  font-size: 0.95rem;
+}
+
+.manga-update {
+  color: #adadad;
+  font-size: 0.78rem;
+}
+
+.manga-meta {
+  color: #878787;
+  font-size: 0.74rem;
+}
+
+.manga-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+.btn-obra-abrir,
+.btn-obra-fav {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #161616;
+  color: #e7e7e7;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 8px 7px;
+  cursor: pointer;
+}
+
+.btn-obra-abrir:hover {
+  border-color: rgba(255, 204, 0, 0.55);
+  background: #1c1c1c;
+  color: #fff0bf;
+}
+
+.btn-obra-fav {
+  border-color: rgba(255, 204, 0, 0.5);
+  color: #ffe8a3;
+  background: rgba(255, 204, 0, 0.1);
+}
+
+.btn-obra-fav.is-fav {
+  border-color: rgba(255, 204, 0, 0.62);
+  background: rgba(255, 204, 0, 0.24);
+  color: #ffe37d;
+}
+
+@keyframes mangaCardIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.manga-card:nth-child(1) { animation-delay: 0.02s; }
+.manga-card:nth-child(2) { animation-delay: 0.04s; }
+.manga-card:nth-child(3) { animation-delay: 0.06s; }
+.manga-card:nth-child(4) { animation-delay: 0.08s; }
+.manga-card:nth-child(5) { animation-delay: 0.1s; }
+.manga-card:nth-child(6) { animation-delay: 0.12s; }
+.manga-card:nth-child(7) { animation-delay: 0.14s; }
+.manga-card:nth-child(8) { animation-delay: 0.16s; }
+

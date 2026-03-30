@@ -1,0 +1,209 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { onValue, ref, remove, set } from 'firebase/database';
+import { useNavigate } from 'react-router-dom';
+
+import { db } from '../../services/firebase';
+import {
+  OBRA_PADRAO_ID,
+  OBRA_SHITO_DEFAULT,
+  ensureLegacyShitoObra,
+  obterObraIdCapitulo,
+} from '../../config/obras';
+import './ListaMangas.css';
+
+function toList(snapshotVal) {
+  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
+  return Object.entries(snapshotVal).map(([id, data]) => ({ id, ...(data || {}) }));
+}
+
+function msUltimaAtualizacao(cap) {
+  const release = Number(cap?.publicReleaseAt);
+  if (Number.isFinite(release) && release > 0) return release;
+  const uploadMs = Date.parse(cap?.dataUpload || '');
+  if (Number.isFinite(uploadMs) && uploadMs > 0) return uploadMs;
+  return 0;
+}
+
+function formatarAtualizacaoRelativa(ts) {
+  if (!Number.isFinite(Number(ts)) || Number(ts) <= 0) return 'Sem atualização';
+  const dias = Math.max(0, Math.floor((Date.now() - Number(ts)) / (1000 * 60 * 60 * 24)));
+  if (dias <= 0) return 'Atualizado hoje';
+  if (dias === 1) return 'Atualizado há 1 dia';
+  return `Atualizado há ${dias} dias`;
+}
+
+export default function ListaMangas({ user }) {
+  const navigate = useNavigate();
+  const [loadingObras, setLoadingObras] = useState(true);
+  const [loadingCaps, setLoadingCaps] = useState(true);
+  const [obras, setObras] = useState([]);
+  const [capitulos, setCapitulos] = useState([]);
+  const [favoritosMap, setFavoritosMap] = useState({});
+
+  useEffect(() => {
+    const obrasRef = ref(db, 'obras');
+    const unsub = onValue(obrasRef, (snapshot) => {
+      if (!snapshot.exists()) {
+        setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        setLoadingObras(false);
+        return;
+      }
+      const lista = ensureLegacyShitoObra(toList(snapshot.val()))
+        .filter((obra) => obra?.isPublished !== false)
+        .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
+      setObras(lista);
+      setLoadingObras(false);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const capsRef = ref(db, 'capitulos');
+    const unsub = onValue(capsRef, (snapshot) => {
+      const lista = snapshot.exists() ? toList(snapshot.val()) : [];
+      setCapitulos(lista);
+      setLoadingCaps(false);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setFavoritosMap({});
+      return () => {};
+    }
+    const favRef = ref(db, `usuarios/${user.uid}/favoritosObras`);
+    const unsub = onValue(favRef, (snapshot) => {
+      setFavoritosMap(snapshot.exists() ? snapshot.val() || {} : {});
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  const obrasCards = useMemo(() => {
+    const agrupado = new Map();
+    capitulos.forEach((cap) => {
+      const obraId = obterObraIdCapitulo(cap);
+      const atual = agrupado.get(obraId) || { total: 0, lastUpdateTs: 0 };
+      const ts = msUltimaAtualizacao(cap);
+      agrupado.set(obraId, {
+        total: atual.total + 1,
+        lastUpdateTs: Math.max(atual.lastUpdateTs, ts),
+      });
+    });
+
+    return obras.map((obra) => {
+      const obraId = String(obra?.id || '').toLowerCase();
+      const stats = agrupado.get(obraId) || { total: 0, lastUpdateTs: Number(obra?.updatedAt || 0) };
+      const dias = Math.floor((Date.now() - Number(stats.lastUpdateTs || 0)) / (1000 * 60 * 60 * 24));
+      const badgeNovo = Number.isFinite(dias) && dias >= 0 && dias <= 7;
+      const status = String(obra?.status || 'ongoing').toLowerCase();
+      return {
+        ...obra,
+        obraId,
+        totalCapitulos: stats.total,
+        lastUpdateTs: stats.lastUpdateTs,
+        updatedLabel: formatarAtualizacaoRelativa(stats.lastUpdateTs),
+        isFavorito: Boolean(favoritosMap?.[obraId]),
+        badgeNovo,
+        status,
+      };
+    });
+  }, [obras, capitulos, favoritosMap]);
+
+  const toggleFavorito = async (obra) => {
+    if (!user?.uid) {
+      navigate('/login');
+      return;
+    }
+    const favPath = `usuarios/${user.uid}/favoritosObras/${obra.obraId}`;
+    if (obra.isFavorito) {
+      await remove(ref(db, favPath));
+      return;
+    }
+    await set(ref(db, favPath), {
+      obraId: obra.obraId,
+      titulo: obra.titulo || obra.obraId,
+      savedAt: Date.now(),
+    });
+  };
+
+  if (loadingObras || loadingCaps) {
+    return <div className="shito-app-splash" aria-hidden="true" />;
+  }
+
+  return (
+    <main className="lista-mangas-page">
+      <header className="lista-mangas-header">
+        <h1>Lista de Mangás</h1>
+        <p>Descubra as obras publicadas e acompanhe as atualizações.</p>
+      </header>
+
+      {obrasCards.length === 0 ? (
+        <section className="lista-mangas-empty">
+          <h2>Nenhuma obra publicada</h2>
+          <p>Quando uma obra estiver com <code>isPublished=true</code>, ela aparecerá aqui.</p>
+        </section>
+      ) : (
+        <section className="lista-mangas-grid">
+          {obrasCards.map((obra) => (
+            <article
+              key={obra.obraId}
+              className="manga-card"
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate(`/obra/${encodeURIComponent(obra.obraId)}`)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  navigate(`/obra/${encodeURIComponent(obra.obraId)}`);
+                }
+              }}
+            >
+              <div className="manga-card-cover-wrap">
+                <img
+                  src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                  alt={obra.titulo || obra.obraId}
+                  className="manga-card-cover"
+                />
+                <div className="manga-card-badges">
+                  {obra.badgeNovo && <span className="badge novo">Novo</span>}
+                  {obra.status === 'completed' && <span className="badge completo">Completo</span>}
+                  {obra.status === 'hiatus' && <span className="badge hiato">Hiato</span>}
+                  {obra.status === 'ongoing' && <span className="badge ongoing">Em lançamento</span>}
+                </div>
+              </div>
+              <div className="manga-card-body">
+                <h3>{obra.titulo || obra.obraId}</h3>
+                <p className="manga-update">{obra.updatedLabel}</p>
+                <p className="manga-meta">{obra.totalCapitulos} capítulos</p>
+                <div className="manga-card-actions">
+                  <button
+                    type="button"
+                    className="btn-obra-abrir"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/obra/${encodeURIComponent(obra.obraId)}`);
+                    }}
+                  >
+                    Ver obra
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-obra-fav ${obra.isFavorito ? 'is-fav' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorito(obra);
+                    }}
+                  >
+                    {obra.isFavorito ? '★ Favoritado' : '☆ Favoritar'}
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+    </main>
+  );
+}
+

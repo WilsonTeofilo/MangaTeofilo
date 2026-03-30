@@ -1,0 +1,134 @@
+.loja-admin-page {
+  width: min(1250px, 95%);
+  margin: 26px auto 80px;
+  color: #ececec;
+}
+
+.loja-admin-head h1 {
+  margin: 0 0 6px;
+}
+
+.loja-admin-head p {
+  margin: 0;
+  color: #9fe28e;
+}
+
+.loja-admin-kpis {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.loja-admin-kpis article {
+  border: 1px solid #2f2f2f;
+  border-radius: 12px;
+  background: #141414;
+  padding: 12px;
+}
+
+.loja-admin-kpis span {
+  color: #bdbdbd;
+  font-size: 0.86rem;
+}
+
+.loja-admin-kpis strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.2rem;
+}
+
+.loja-admin-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.loja-admin-card {
+  margin-top: 12px;
+  border: 1px solid #2f2f2f;
+  border-radius: 14px;
+  background: #131313;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loja-admin-card h2 {
+  margin: 0;
+}
+
+.loja-admin-card input,
+.loja-admin-card textarea {
+  width: 100%;
+  border: 1px solid #363636;
+  border-radius: 10px;
+  background: #0f0f0f;
+  color: #fff;
+  padding: 9px 10px;
+}
+
+.loja-admin-card textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.loja-admin-card label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #d6d6d6;
+}
+
+.loja-admin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.loja-admin-actions button,
+.loja-admin-list button {
+  border: 1px solid #444;
+  background: #191919;
+  color: #fff;
+  border-radius: 9px;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+
+.loja-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.loja-admin-list article {
+  border: 1px solid #292929;
+  border-radius: 10px;
+  background: #111;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.loja-admin-list article div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loja-admin-list article div:last-child {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .loja-admin-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

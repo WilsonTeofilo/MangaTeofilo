@@ -20,6 +20,23 @@ export function normalizarObraId(raw) {
   return v.replace(/[^a-z0-9_-]/g, '').slice(0, 40) || OBRA_PADRAO_ID;
 }
 
+export function ensureLegacyShitoObra(list) {
+  const obras = Array.isArray(list) ? list : [];
+  const temShito = obras.some((obra) => normalizarObraId(obra?.id) === OBRA_PADRAO_ID);
+  if (temShito) return obras;
+  return [
+    ...obras,
+    {
+      ...OBRA_SHITO_DEFAULT,
+      id: OBRA_PADRAO_ID,
+      slug: OBRA_PADRAO_ID,
+      createdAt: 0,
+      updatedAt: 0,
+      isPublished: true,
+    },
+  ];
+}
+
 export function obterObraIdCapitulo(capitulo) {
   return normalizarObraId(capitulo?.obraId);
 }

@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 
 import { db, storage, auth } from '../../services/firebase'; 
 import { isAdminUser } from '../../constants';
-import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, obterObraIdCapitulo } from '../../config/obras';
+import {
+  OBRA_PADRAO_ID,
+  OBRA_SHITO_DEFAULT,
+  ensureLegacyShitoObra,
+  normalizarObraId,
+  obterObraIdCapitulo,
+} from '../../config/obras';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -184,7 +190,7 @@ function desenharCapaNoCanvas(ctx, img, targetW, targetH, ajuste = { zoom: 1, x:
   const cropX = (frameW - targetW) / 2;
   const cropY = (frameH - targetH) / 2;
 
-  const baseScale = Math.min(frameW / img.width, frameH / img.height);
+  const baseScale = Math.max(frameW / img.width, frameH / img.height);
   const scale = baseScale * zoom;
   const drawW = img.width * scale;
   const drawH = img.height * scale;
@@ -206,6 +212,51 @@ function desenharCapaNoCanvas(ctx, img, targetW, targetH, ajuste = { zoom: 1, x:
   ctx.drawImage(img, ((frameW - bgW) / 2) - cropX, ((frameH - bgH) / 2) - cropY, bgW, bgH);
   ctx.globalAlpha = 1;
   ctx.drawImage(img, drawX - cropX, drawY - cropY, drawW, drawH);
+}
+
+function capaEditorLayout() {
+  const left = ((1 - CAPA_EDITOR_CROP_WIDTH_RATIO) / 2) * 100;
+  const cropHRatio =
+    CAPA_EDITOR_CROP_WIDTH_RATIO *
+    (CAPA_ASPECT_H / CAPA_ASPECT_W) *
+    (CAPA_EDITOR_ASPECT_W / CAPA_EDITOR_ASPECT_H);
+  const top = ((1 - cropHRatio) / 2) * 100;
+  return {
+    leftPct: left,
+    topPct: top,
+    widthPct: CAPA_EDITOR_CROP_WIDTH_RATIO * 100,
+    heightPct: cropHRatio * 100,
+  };
+}
+
+function estiloEditorCapa(dim, ajuste = { zoom: 1, x: 0, y: 0 }) {
+  const w = Number(dim?.w || 0);
+  const h = Number(dim?.h || 0);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return {};
+
+  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
+  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
+  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
+
+  const frameW = CAPA_EDITOR_ASPECT_W;
+  const frameH = CAPA_EDITOR_ASPECT_H;
+  const baseScale = Math.max(frameW / w, frameH / h);
+  const scale = baseScale * zoom;
+  const drawW = w * scale;
+  const drawH = h * scale;
+  const limiteX = Math.abs((frameW - drawW) / 2);
+  const limiteY = Math.abs((frameH - drawH) / 2);
+  const shiftX = (eixoX / 100) * limiteX;
+  const shiftY = (eixoY / 100) * limiteY;
+  const drawX = (frameW - drawW) / 2 + shiftX;
+  const drawY = (frameH - drawH) / 2 + shiftY;
+
+  return {
+    width: `${(drawW / frameW) * 100}%`,
+    height: `${(drawH / frameH) * 100}%`,
+    left: `${(drawX / frameW) * 100}%`,
+    top: `${(drawY / frameH) * 100}%`,
+  };
 }
 
 function maskBrDateTime(raw) {
@@ -511,12 +562,16 @@ function ModalPreviewPagina({ aberto, itens, indiceInicial = 0, aoFechar }) {
 // --- COMPONENTE PRINCIPAL ---
 export default function AdminPanel() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const user = auth.currentUser;
+  const obraIdSelecionada = normalizarObraId(searchParams.get('obra') || OBRA_PADRAO_ID);
+  const capituloEditQueryId = String(searchParams.get('edit') || '').trim();
 
   const [titulo, setTitulo] = useState('');
   const [numeroCapitulo, setNumeroCapitulo] = useState('');
   const [capaCapitulo, setCapaCapitulo] = useState(null);
   const [capaAjuste, setCapaAjuste] = useState({ zoom: 1, x: 0, y: 0 });
+  const [capaDimensoes, setCapaDimensoes] = useState(null);
   const [capaPreviewFinalUrl, setCapaPreviewFinalUrl] = useState('');
   const capaEditorRef = useRef(null);
   const dragCapaRef = useRef(null);
@@ -524,6 +579,7 @@ export default function AdminPanel() {
   const [paginasExistentes, setPaginasExistentes] = useState([]);
 
   const [capitulos, setCapitulos] = useState([]);
+  const [obras, setObras] = useState([]);
   const [editandoId, setEditandoId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progressoMsg, setProgressoMsg] = useState('');
@@ -552,9 +608,20 @@ export default function AdminPanel() {
         setCapitulos([]);
       }
     });
+    const unsubObras = onValue(dbRef(db, 'obras'), (snapshot) => {
+      if (!snapshot.exists()) {
+        setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        return;
+      }
+      const lista = ensureLegacyShitoObra(
+        Object.entries(snapshot.val() || {}).map(([id, valores]) => ({ id, ...(valores || {}) }))
+      );
+      setObras(lista);
+    });
 
     return () => {
       unsubscribe();
+      unsubObras();
     };
   }, [user, navigate]);
 
@@ -576,7 +643,23 @@ export default function AdminPanel() {
     () => capitulos.find((c) => c.id === editandoId) || null,
     [capitulos, editandoId]
   );
+  const obraSelecionada = useMemo(() => {
+    const obra = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
+    return obra || { ...OBRA_SHITO_DEFAULT, id: obraIdSelecionada, slug: obraIdSelecionada };
+  }, [obras, obraIdSelecionada]);
+  const capitulosDaObra = useMemo(
+    () =>
+      capitulos
+        .filter((cap) => obterObraIdCapitulo(cap) === obraIdSelecionada)
+        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0)),
+    [capitulos, obraIdSelecionada]
+  );
   const capaVisualSrc = capaPreviewUrl || capituloEditando?.capaUrl || '/assets/fotos/shito.jpg';
+  const capaEditorImageStyle = useMemo(
+    () => estiloEditorCapa(capaDimensoes, capaAjuste),
+    [capaDimensoes, capaAjuste]
+  );
+  const capaCrop = useMemo(() => capaEditorLayout(), []);
   const itensPreviewNovas = useMemo(
     () => previewsPaginasSelecionadas.map((p, idx) => ({ url: p.url, nome: `Nova página ${idx + 1}` })),
     [previewsPaginasSelecionadas]
@@ -590,6 +673,20 @@ export default function AdminPanel() {
   const statusRevisao = publicReleaseAtInput?.trim()
     ? 'Agendado'
     : (totalPaginasAtual > 0 ? 'Publicado ao salvar' : 'Rascunho');
+  const checklistPublicacao = useMemo(() => {
+    const etapa1 = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
+    const etapa2 = totalPaginasAtual > 0;
+    const etapa3 = Boolean(capaCapitulo || capituloEditando?.capaUrl);
+    const etapa4 = Boolean(String(titulo || '').trim() && Number(numeroCapitulo) > 0);
+    const etapa5 = etapa1 && etapa2 && etapa3 && etapa4;
+    return [
+      { id: 1, label: 'Upload (capa e páginas)', ok: etapa1 },
+      { id: 2, label: 'Organizar páginas', ok: etapa2 },
+      { id: 3, label: 'Ajustar capa', ok: etapa3 },
+      { id: 4, label: 'Revisar metadados', ok: etapa4 },
+      { id: 5, label: 'Publicar', ok: etapa5 },
+    ];
+  }, [capaCapitulo, capituloEditando?.capaUrl, numeroCapitulo, titulo, totalPaginasAtual]);
 
   useEffect(() => {
     return () => {
@@ -600,6 +697,26 @@ export default function AdminPanel() {
   useEffect(() => {
     return () => {
       if (capaPreviewUrl) URL.revokeObjectURL(capaPreviewUrl);
+    };
+  }, [capaPreviewUrl]);
+
+  useEffect(() => {
+    let ativo = true;
+    if (!capaPreviewUrl) {
+      setCapaDimensoes(null);
+      return () => {};
+    }
+    const img = new Image();
+    img.onload = () => {
+      if (!ativo) return;
+      setCapaDimensoes({
+        w: Number(img.naturalWidth || img.width || 0),
+        h: Number(img.naturalHeight || img.height || 0),
+      });
+    };
+    img.src = capaPreviewUrl;
+    return () => {
+      ativo = false;
     };
   }, [capaPreviewUrl]);
 
@@ -633,6 +750,22 @@ export default function AdminPanel() {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [capaPreviewUrl, capaAjuste]);
+
+  useEffect(() => {
+    if (!capituloEditQueryId) return;
+    const cap = capitulosDaObra.find((item) => item.id === capituloEditQueryId);
+    if (!cap) return;
+    if (editandoId === cap.id) return;
+    setEditandoId(cap.id);
+    setTitulo(cap.titulo || '');
+    setNumeroCapitulo(cap.numero || '');
+    setPaginasExistentes(cap.paginas || []);
+    setCapaCapitulo(null);
+    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    setEtapaAtiva(2);
+    setPublicReleaseAtInput(msParaBrDateTime(cap.publicReleaseAt));
+    setAntecipadoMembros(Boolean(cap.antecipadoMembros));
+  }, [capituloEditQueryId, capitulosDaObra, editandoId]);
 
   const handleReordenarPagina = async (indexAntigo, indexNovo) => {
     if (indexNovo < 0 || indexNovo >= paginasExistentes.length) return;
@@ -740,10 +873,12 @@ export default function AdminPanel() {
   const iniciarArrasteCapa = (event) => {
     if (!capaPreviewUrl || !capaEditorRef.current) return;
     event.preventDefault();
+    const clientX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
+    const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
     const box = capaEditorRef.current.getBoundingClientRect();
     dragCapaRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
+      startX: clientX,
+      startY: clientY,
       eixoX: capaAjuste.x,
       eixoY: capaAjuste.y,
       largura: Math.max(1, box.width),
@@ -755,9 +890,12 @@ export default function AdminPanel() {
   useEffect(() => {
     const onMove = (event) => {
       if (!dragCapaRef.current) return;
+      if (event.cancelable) event.preventDefault();
       const drag = dragCapaRef.current;
-      const deltaX = event.clientX - drag.startX;
-      const deltaY = event.clientY - drag.startY;
+      const clientX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
+      const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
+      const deltaX = clientX - drag.startX;
+      const deltaY = clientY - drag.startY;
       const novoX = drag.eixoX + (deltaX / (drag.largura * 0.5)) * 100;
       const novoY = drag.eixoY + (deltaY / (drag.altura * 0.5)) * 100;
       setCapaAjuste((prev) => ({
@@ -775,9 +913,13 @@ export default function AdminPanel() {
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
       document.body.style.userSelect = '';
     };
   }, []);
@@ -814,10 +956,10 @@ export default function AdminPanel() {
       const jaExisteMesmoNumeroNaObra = capitulos.some((cap) => (
         cap.id !== editandoId &&
         Number(cap.numero) === numeroNormalizado &&
-        obterObraIdCapitulo(cap) === OBRA_PADRAO_ID
+        obterObraIdCapitulo(cap) === obraIdSelecionada
       ));
       if (jaExisteMesmoNumeroNaObra) {
-        throw new Error(`Já existe capítulo #${numeroNormalizado} na obra SHITO.`);
+        throw new Error(`Já existe capítulo #${numeroNormalizado} nessa obra.`);
       }
 
       let urlCapa = null;
@@ -846,8 +988,8 @@ export default function AdminPanel() {
       const dados = {
         titulo,
         numero: numeroNormalizado,
-        obraId: OBRA_PADRAO_ID,
-        obraTitulo: OBRA_SHITO_DEFAULT.tituloCurto,
+        obraId: obraIdSelecionada,
+        obraTitulo: String(obraSelecionada?.tituloCurto || obraSelecionada?.titulo || obraIdSelecionada),
         dataUpload: new Date().toISOString(),
       };
 
@@ -921,13 +1063,18 @@ export default function AdminPanel() {
       )}
 
       <header className="admin-header">
-        <h1>SHITO - FORJA DO AUTOR</h1>
-        <button className="btn-voltar" onClick={() => navigate('/')}>Sair</button>
+        <h1>{(obraSelecionada?.tituloCurto || 'Obra').toUpperCase()} - FORJA DO AUTOR</h1>
+        <button className="btn-voltar" onClick={() => navigate('/admin/capitulos')}>Voltar capítulos</button>
       </header>
 
       <main className="admin-container">
+        <section className="admin-obra-context">
+          <p>Obra selecionada</p>
+          <strong>{obraSelecionada?.titulo || obraIdSelecionada}</strong>
+          <span>Slug: {obraSelecionada?.slug || obraIdSelecionada}</span>
+        </section>
         <section className="form-section">
-          <h2>{editandoId ? '🔧 Cirurgia de Fragmento' : '✨ Novo Capítulo'}</h2>
+          <h2>{editandoId ? `🔧 Editar capítulo — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}` : `✨ Criar capítulo — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}</h2>
           
           <form onSubmit={handleSubmit} className="admin-form">
             <div className="input-row">
@@ -1092,20 +1239,31 @@ export default function AdminPanel() {
                       ref={capaEditorRef}
                       className={`capa-preview-mask capa-preview-mask--editor${capaPreviewUrl ? ' is-editable' : ''}`}
                       onMouseDown={iniciarArrasteCapa}
+                    onTouchStart={iniciarArrasteCapa}
                       title={capaPreviewUrl ? 'Clique e arraste para mover o enquadramento' : 'Selecione uma capa para editar'}
                     >
                       <img
                         src={capaVisualSrc}
                         alt={capaPreviewUrl ? 'Prévia da capa ajustada' : 'Prévia da capa atual'}
                         className={`capa-preview-img${capaPreviewUrl ? '' : ' capa-preview-img--faded'}`}
-                        style={
-                          capaPreviewUrl
-                            ? { transform: `translate(${capaAjuste.x}%, ${capaAjuste.y}%) scale(${capaAjuste.zoom})` }
-                            : undefined
-                        }
+                        style={capaPreviewUrl ? capaEditorImageStyle : undefined}
                       />
-                      <div className="capa-editor-outside-mask" aria-hidden="true"></div>
-                      <div className="capa-editor-crop-box" aria-hidden="true"></div>
+                      <div className="capa-editor-outside-mask" aria-hidden="true">
+                        <i style={{ left: 0, top: 0, width: '100%', height: `${capaCrop.topPct}%` }} />
+                        <i style={{ left: 0, top: `${capaCrop.topPct + capaCrop.heightPct}%`, width: '100%', height: `${capaCrop.topPct}%` }} />
+                        <i style={{ left: 0, top: `${capaCrop.topPct}%`, width: `${capaCrop.leftPct}%`, height: `${capaCrop.heightPct}%` }} />
+                        <i style={{ left: `${capaCrop.leftPct + capaCrop.widthPct}%`, top: `${capaCrop.topPct}%`, width: `${capaCrop.leftPct}%`, height: `${capaCrop.heightPct}%` }} />
+                      </div>
+                      <div
+                        className="capa-editor-crop-box"
+                        aria-hidden="true"
+                        style={{
+                          left: `${capaCrop.leftPct}%`,
+                          top: `${capaCrop.topPct}%`,
+                          width: `${capaCrop.widthPct}%`,
+                          height: `${capaCrop.heightPct}%`,
+                        }}
+                      />
                       <span className="capa-preview-tag">1) Área dentro do quadro = o que vai para a capa</span>
                     </div>
 
@@ -1181,6 +1339,14 @@ export default function AdminPanel() {
             {etapaAtiva === 4 && (
               <div className="editor-step-panel review-panel">
                 <h3>Revisão final</h3>
+                <div className="review-checklist">
+                  {checklistPublicacao.map((item) => (
+                    <div key={item.id} className={`review-check-item ${item.ok ? 'ok' : 'pendente'}`}>
+                      <span>{item.ok ? '✓' : '•'}</span>
+                      <p>Etapa {item.id}: {item.label}</p>
+                    </div>
+                  ))}
+                </div>
                 <div className="review-kpis">
                   <span><strong>Status:</strong> {statusRevisao}</span>
                   <span><strong>Páginas:</strong> {totalPaginasAtual}</span>
@@ -1194,6 +1360,22 @@ export default function AdminPanel() {
                     className="capa-preview-img capa-preview-img--resultado-main"
                   />
                   <span className="capa-preview-tag">Prévia final pronta para publicar</span>
+                </div>
+                <div className="review-mobile-preview">
+                  <div className="mobile-frame">
+                    <header>
+                      <strong>{titulo || 'Título do capítulo'}</strong>
+                      <span>#{String(numeroCapitulo || 0).padStart(2, '0')}</span>
+                    </header>
+                    <img
+                      src={capaPreviewFinalUrl || capaVisualSrc}
+                      alt="Prévia mobile da capa"
+                    />
+                    <footer>
+                      <span>{statusRevisao}</span>
+                      <button type="button" disabled>Ler agora</button>
+                    </footer>
+                  </div>
                 </div>
               </div>
             )}
@@ -1259,9 +1441,11 @@ export default function AdminPanel() {
         </section>
 
         <section className="list-section">
-          <h2>Capítulos publicados</h2>
+          <h2>Capítulos da obra</h2>
           <div className="capitulos-grid">
-            {capitulos.map((cap) => {
+            {capitulosDaObra.length === 0 ? (
+              <p className="editor-empty">Nenhum capítulo cadastrado para esta obra.</p>
+            ) : capitulosDaObra.map((cap) => {
               const ehAgendado = cap.publicReleaseAt && Number(cap.publicReleaseAt) > Date.now();
               const ehRascunho = !cap.capaUrl || !Array.isArray(cap.paginas) || cap.paginas.length === 0;
               const status = ehRascunho ? 'Rascunho' : (ehAgendado ? 'Agendado' : 'Publicado');

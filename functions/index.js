@@ -22,6 +22,10 @@ import {
   criarPreferenciaPremium,
 } from './mercadoPagoPremium.js';
 import {
+  parseStoreExternalRef,
+  criarPreferenciaLoja,
+} from './mercadoPagoStore.js';
+import {
   sanitizeTrackingValue,
   normalizeTrackingSource,
   normalizeTrackingEventType,
@@ -524,6 +528,73 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       metadata.trafficCampaign ? String(metadata.trafficCampaign) : null,
       metadata.trafficClickId ? String(metadata.trafficClickId) : null
     );
+    return;
+  }
+
+  const storeRef = parseStoreExternalRef(pay.external_reference);
+  if (storeRef) {
+    const procRef = db.ref(`financas/mp_processed/${paymentId}`);
+    const procTx = await procRef.transaction((curr) => {
+      if (curr) return;
+      return {
+        uid: storeRef.uid,
+        orderId: storeRef.orderId,
+        at: Date.now(),
+        tipo: 'loja_pedido_pago',
+      };
+    });
+    if (!procTx.committed) {
+      logger.info('Loja: pagamento ja processado', { paymentId, orderId: storeRef.orderId });
+      return;
+    }
+
+    const orderSnap = await db.ref(`loja/pedidos/${storeRef.orderId}`).get();
+    if (!orderSnap.exists()) {
+      logger.error('Loja: pedido nao encontrado para pagamento aprovado', {
+        paymentId,
+        orderId: storeRef.orderId,
+      });
+      return;
+    }
+    const order = orderSnap.val() || {};
+    const now = Date.now();
+    await db.ref(`loja/pedidos/${storeRef.orderId}`).update({
+      status: 'paid',
+      paidAt: now,
+      paymentId: String(paymentId),
+      paymentStatus: String(pay?.status || 'approved'),
+      paymentAmount: Number(pay?.transaction_amount || 0),
+      updatedAt: now,
+    });
+
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    for (const item of orderItems) {
+      const productId = String(item?.productId || '').trim();
+      const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
+      if (!productId) continue;
+      await db.ref(`loja/produtos/${productId}/stock`).transaction((curr) => {
+        const stock = Math.max(0, Number(curr || 0));
+        return Math.max(0, stock - quantity);
+      });
+    }
+
+    await db.ref('financas/eventos').push({
+      tipo: 'loja_pedido_pago',
+      uid: storeRef.uid,
+      orderId: storeRef.orderId,
+      paymentId: String(paymentId),
+      amount: Number.isFinite(Number(pay?.transaction_amount))
+        ? Number(pay.transaction_amount)
+        : Number(order.total || 0),
+      currency: String(pay?.currency_id || 'BRL'),
+      origem: 'loja_fisica',
+      at: now,
+    });
+    logger.info('Loja: pedido marcado como pago', {
+      paymentId,
+      orderId: storeRef.orderId,
+      uid: storeRef.uid,
+    });
     return;
   }
 
@@ -1097,6 +1168,126 @@ export const criarCheckoutApoio = onCall(
         errMsg.length > 220 ? `${errMsg.slice(0, 220)}…` : errMsg
       );
     }
+  }
+);
+
+export const criarCheckoutLoja = onCall(
+  {
+    region: 'us-central1',
+    secrets: [MP_ACCESS_TOKEN],
+    cors: true,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para finalizar a compra.');
+    }
+    const payload = request.data && typeof request.data === 'object' ? request.data : {};
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    if (!rawItems.length) throw new HttpsError('invalid-argument', 'Carrinho vazio.');
+    if (rawItems.length > 20) throw new HttpsError('invalid-argument', 'Limite de 20 itens por checkout.');
+
+    let token;
+    try {
+      token = String(MP_ACCESS_TOKEN.value()).trim();
+    } catch {
+      throw new HttpsError(
+        'failed-precondition',
+        'Mercado Pago nao configurado (secret MP_ACCESS_TOKEN).'
+      );
+    }
+    if (!token) throw new HttpsError('failed-precondition', 'Token Mercado Pago vazio.');
+
+    const db = getDatabase();
+    const [cfgSnap, productsSnap, userSnap] = await Promise.all([
+      db.ref('loja/config').get(),
+      db.ref('loja/produtos').get(),
+      db.ref(`usuarios/${request.auth.uid}`).get(),
+    ]);
+    const config = cfgSnap.exists() ? cfgSnap.val() || {} : {};
+    if (config.storeEnabled !== true || config.acceptingOrders !== true) {
+      throw new HttpsError('failed-precondition', 'Loja nao esta aceitando pedidos agora.');
+    }
+
+    const profile = userSnap.exists() ? userSnap.val() || {} : {};
+    const now = Date.now();
+    const vip =
+      profile?.accountType === 'premium' ||
+      (Number(profile?.memberUntil || 0) > now && profile?.membershipStatus === 'ativo');
+    const vipDiscountPct = Math.max(0, Math.min(60, Number(config.vipDiscountPct || 10)));
+
+    const products = productsSnap.exists() ? productsSnap.val() || {} : {};
+    const orderItems = [];
+    let total = 0;
+    for (const item of rawItems) {
+      const productId = String(item?.productId || '').trim();
+      const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
+      if (!productId) throw new HttpsError('invalid-argument', 'Item invalido (productId ausente).');
+      const product = products[productId];
+      if (!product) throw new HttpsError('not-found', `Produto ${productId} nao encontrado.`);
+      if (product.isActive === false) throw new HttpsError('failed-precondition', `Produto ${productId} indisponivel.`);
+      const stock = Math.max(0, Number(product.stock || 0));
+      if (quantity > stock) throw new HttpsError('failed-precondition', `Estoque insuficiente para ${product.title || productId}.`);
+
+      const basePrice = Number(
+        product.isOnSale === true && Number(product.promoPrice) > 0
+          ? product.promoPrice
+          : product.price
+      );
+      if (!Number.isFinite(basePrice) || basePrice <= 0) {
+        throw new HttpsError('failed-precondition', `Preco invalido para ${product.title || productId}.`);
+      }
+      let unitPrice = round2(basePrice);
+      if (vip && product.isVIPDiscountEnabled === true) {
+        unitPrice = round2(basePrice * (1 - vipDiscountPct / 100));
+      }
+      const lineTotal = round2(unitPrice * quantity);
+      total += lineTotal;
+      orderItems.push({
+        productId,
+        title: String(product.title || productId),
+        description: String(product.description || ''),
+        quantity,
+        unitPrice,
+        lineTotal,
+      });
+    }
+
+    total = round2(total);
+    if (total <= 0) throw new HttpsError('failed-precondition', 'Total invalido para checkout.');
+
+    const orderRef = db.ref('loja/pedidos').push();
+    const orderId = String(orderRef.key || '').trim();
+    if (!orderId) throw new HttpsError('internal', 'Falha ao gerar pedido.');
+
+    const order = {
+      uid: request.auth.uid,
+      status: 'pending',
+      items: orderItems,
+      total,
+      currency: 'BRL',
+      vipApplied: vip,
+      vipDiscountPct: vip ? vipDiscountPct : 0,
+      createdAt: now,
+      updatedAt: now,
+      source: 'checkout_store',
+    };
+    await orderRef.set(order);
+
+    const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
+    const notificationUrl = `${baseFn}/mercadopagowebhook`;
+    const url = await criarPreferenciaLoja(
+      token,
+      { ...order, orderId, uid: request.auth.uid },
+      APP_BASE_URL.value(),
+      notificationUrl
+    );
+    await orderRef.update({
+      checkoutUrl: url,
+      checkoutStartedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return { ok: true, orderId, url };
   }
 );
 

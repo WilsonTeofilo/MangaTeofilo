@@ -77,6 +77,23 @@ export default function Apoie({ user, perfil }) {
   const jaMostrouAgradecimento = useRef(false);
 
   useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    html.classList.add('apoie-scroll-safe');
+    body.classList.add('apoie-scroll-safe');
+    body.style.overflowY = 'auto';
+    body.style.overscrollBehaviorY = 'auto';
+    html.style.overflowY = 'auto';
+    return () => {
+      html.classList.remove('apoie-scroll-safe');
+      body.classList.remove('apoie-scroll-safe');
+      body.style.overflowY = '';
+      body.style.overscrollBehaviorY = '';
+      html.style.overflowY = '';
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     const fetchOffer = async () => {
       try {
@@ -99,8 +116,11 @@ export default function Apoie({ user, perfil }) {
     const refreshId = setInterval(fetchOffer, 30000);
     const tickId = setInterval(() => {
       if (!mounted) return;
-      setOfertaPremium((prev) => ({ ...prev, now: Date.now() }));
-    }, 1000);
+      setOfertaPremium((prev) => {
+        if (!prev?.isPromoActive || !prev?.promo?.endsAt) return prev;
+        return { ...prev, now: Date.now() };
+      });
+    }, 10000);
     return () => {
       mounted = false;
       clearInterval(refreshId);
@@ -332,7 +352,7 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="shito-glitch">Apoie Shito: Fragmentos da Tempestade</h1>
+          <h1 className="apoie-title-discord">Apoie Shito: Fragmentos da Tempestade</h1>
 
           {celebracaoPremium.show && (
             <div className="apoie-celebracao-backdrop" role="status" aria-live="polite">

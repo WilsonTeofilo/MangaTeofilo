@@ -96,6 +96,7 @@ function getSmtpFrom() {
 }
 
 const PREMIUM_PROMO_PATH = 'financas/promocoes/premiumAtual';
+const PREMIUM_PROMO_HISTORY_PATH = 'financas/promocoes/premiumHistorico';
 
 function validPromoPrice(v) {
   const n = Number(v);
@@ -122,6 +123,39 @@ function parsePromoConfig(raw) {
     startsAt,
     endsAt,
     updatedAt: Number(raw.updatedAt || Date.now()),
+  };
+}
+
+function normalizePromoHistoryItem(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const promoId = String(raw.promoId || '').trim();
+  if (!promoId) return null;
+  const startsAt = Number(raw.startsAt || 0);
+  const endsAt = Number(raw.endsAt || 0);
+  const priceBRL = validPromoPrice(raw.priceBRL);
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || startsAt <= 0 || endsAt <= startsAt || priceBRL == null) {
+    return null;
+  }
+  return {
+    promoId,
+    name: String(raw.name || 'Promocao Premium').trim() || 'Promocao Premium',
+    message: String(raw.message || '').trim(),
+    priceBRL,
+    startsAt,
+    endsAt,
+    createdAt: Number(raw.createdAt || raw.updatedAt || Date.now()),
+    updatedAt: Number(raw.updatedAt || Date.now()),
+    createdBy: raw.createdBy ? String(raw.createdBy) : null,
+    updatedBy: raw.updatedBy ? String(raw.updatedBy) : null,
+    status: String(raw.status || 'scheduled'),
+    disabledAt: Number(raw.disabledAt || 0) || null,
+    emailStats: raw.emailStats && typeof raw.emailStats === 'object'
+      ? {
+          sent: toNum(raw.emailStats.sent, 0),
+          skipped: toNum(raw.emailStats.skipped, 0),
+          failed: toNum(raw.emailStats.failed, 0),
+        }
+      : { sent: 0, skipped: 0, failed: 0 },
   };
 }
 
@@ -170,22 +204,33 @@ async function enviarEmailPromocaoPremium(db, promo) {
         skipped += 1;
         continue;
       }
+      const clickId = buildTrackingClickId('promo', uid);
+      const trackedUrl = `${base}/apoie?src=promo_email&camp=${encodeURIComponent(
+        String(promo?.promoId || '')
+      )}&cid=${encodeURIComponent(clickId)}`;
       await transporter.sendMail({
         from,
         to,
         subject: `Shito — promocao Premium ativa por tempo limitado`,
-        text: `${promo.name}\n\nValor promocional: R$ ${promo.priceBRL.toFixed(2)}\nValida ate: ${formatarDataBr(promo.endsAt)}\n\nAssine em: ${base}/apoie`,
+        text: `${promo.name}\n\nValor promocional: R$ ${promo.priceBRL.toFixed(2)}\nValida ate: ${formatarDataBr(promo.endsAt)}\n\nAssine em: ${trackedUrl}`,
         html: `
           <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#f2f2f2;padding:28px;border-radius:10px;">
             <h2 style="margin:0 0 10px;color:#ffcc00;">${promo.name}</h2>
             <p style="margin:0 0 12px;color:#d0d0d0;">${promo.message || 'A promoção Premium está ativa por tempo limitado.'}</p>
             <p style="margin:0 0 8px;">Valor promocional: <strong style="color:#ffcc00;">R$ ${promo.priceBRL.toFixed(2)}</strong></p>
             <p style="margin:0 0 18px;">Validade: <strong>${formatarDataBr(promo.endsAt)}</strong></p>
-            <a href="${base}/apoie" style="display:inline-block;background:#ffcc00;color:#000;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">
+            <a href="${trackedUrl}" style="display:inline-block;background:#ffcc00;color:#000;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">
               Quero virar Membro Shito
             </a>
           </div>
         `,
+      });
+      await pushMarketingEvent(db, {
+        eventType: 'promo_email_sent',
+        source: 'promo_email',
+        campaignId: promo?.promoId || null,
+        clickId,
+        uid,
       });
       sent += 1;
     } catch (err) {
@@ -217,6 +262,76 @@ function parseBody(req) {
     try { return JSON.parse(req.body); } catch { return {}; }
   }
   return req.body || {};
+}
+
+function sanitizeTrackingValue(v, maxLen = 120) {
+  const s = String(v || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_\-:]/g, '');
+  if (!s) return null;
+  return s.slice(0, maxLen);
+}
+
+function normalizeTrackingSource(v) {
+  const s = sanitizeTrackingValue(v, 40);
+  if (!s) return null;
+  const allowed = new Set([
+    'promo_email',
+    'chapter_email',
+    'normal',
+    'direct',
+    'unknown',
+  ]);
+  return allowed.has(s) ? s : 'unknown';
+}
+
+function normalizeTrackingEventType(v) {
+  const s = sanitizeTrackingValue(v, 60);
+  if (!s) return null;
+  const allowed = new Set([
+    'promo_email_sent',
+    'promo_landing',
+    'chapter_email_sent',
+    'chapter_landing',
+    'chapter_read',
+    'premium_checkout_started',
+  ]);
+  return allowed.has(s) ? s : null;
+}
+
+function trackingDedupKey(eventType, clickId) {
+  const evt = sanitizeTrackingValue(eventType, 60);
+  const cid = sanitizeTrackingValue(clickId, 100);
+  if (!evt || !cid) return null;
+  return `${evt}|${cid}`;
+}
+
+function buildTrackingClickId(prefix, uid, at = Date.now()) {
+  const p = sanitizeTrackingValue(prefix, 24) || 'track';
+  const u = sanitizeTrackingValue(uid, 48) || 'anon';
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${p}_${u}_${at}_${rand}`;
+}
+
+async function pushMarketingEvent(db, event) {
+  try {
+    const eventType = normalizeTrackingEventType(event?.eventType);
+    if (!eventType) return;
+    const source = normalizeTrackingSource(event?.source) || 'unknown';
+    const payload = {
+      eventType,
+      source,
+      campaignId: sanitizeTrackingValue(event?.campaignId, 100),
+      clickId: sanitizeTrackingValue(event?.clickId, 120),
+      uid: sanitizeTrackingValue(event?.uid, 64),
+      chapterId: sanitizeTrackingValue(event?.chapterId, 64),
+      at: toNum(event?.at, Date.now()),
+    };
+    await db.ref('marketing/eventos').push(payload);
+  } catch (err) {
+    logger.error('pushMarketingEvent falhou', { error: err?.message });
+  }
 }
 
 function isShitoAdminAuth(auth) {
@@ -401,7 +516,10 @@ async function aplicarPremiumAprovado(
   paymentAmount,
   paymentCurrency,
   promoId,
-  promoName
+  promoName,
+  trafficSource,
+  trafficCampaign,
+  trafficClickId
 ) {
   const procRef = db.ref(`financas/mp_processed/${paymentId}`);
   const procSnap = await procRef.get();
@@ -453,6 +571,9 @@ async function aplicarPremiumAprovado(
       origem: PREMIUM_PLAN_ID,
       promoId: promoId || null,
       promoName: promoName || null,
+      trafficSource: normalizeTrackingSource(trafficSource),
+      trafficCampaign: sanitizeTrackingValue(trafficCampaign, 100),
+      trafficClickId: sanitizeTrackingValue(trafficClickId, 120),
       at: now,
       memberUntil: newUntil,
     });
@@ -506,7 +627,10 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       amount,
       String(pay.currency_id || 'BRL'),
       metadata.promoId ? String(metadata.promoId) : null,
-      metadata.promoName ? String(metadata.promoName) : null
+      metadata.promoName ? String(metadata.promoName) : null,
+      metadata.trafficSource ? String(metadata.trafficSource) : null,
+      metadata.trafficCampaign ? String(metadata.trafficCampaign) : null,
+      metadata.trafficClickId ? String(metadata.trafficClickId) : null
     );
     return;
   }
@@ -771,6 +895,7 @@ export const notifyNewChapter = onValueCreated(
     const capitulo = event.data?.val() || {};
     const titulo   = capitulo?.titulo || `Capitulo ${capitulo?.numero || ''}`.trim();
     const url      = `${APP_BASE_URL.value()}/ler/${capId}`;
+    const chapterCampaignId = `chapter_${capId}`;
 
     const db           = getDatabase();
     const usuariosSnap = await db.ref('usuarios').get();
@@ -803,22 +928,34 @@ export const notifyNewChapter = onValueCreated(
           ignorados += 1;
           continue;
         }
+        const clickId = buildTrackingClickId('chapter', uid);
+        const trackedUrl = `${url}?src=chapter_email&camp=${encodeURIComponent(
+          chapterCampaignId
+        )}&cid=${encodeURIComponent(clickId)}`;
 
         await transporter.sendMail({
           from,
           to:      userEmail,
           subject: `Novo capitulo em Shito: ${titulo}`,
-          text:    `Novo capitulo lancado!\n\nTitulo: ${titulo}\nLink: ${url}\n\nPara parar, desative em Perfil > Notificacoes.`,
+          text:    `Novo capitulo lancado!\n\nTitulo: ${titulo}\nLink: ${trackedUrl}\n\nPara parar, desative em Perfil > Notificacoes.`,
           html:    `
             <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#fff;padding:32px;border-radius:8px;">
               <h2 style="color:#ffcc00;margin:0 0 16px;">Novo capitulo em Shito</h2>
               <p style="color:#ccc;margin:0 0 24px;"><strong style="color:#fff">${titulo}</strong></p>
-              <a href="${url}" style="background:#ffcc00;color:#000;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">
+              <a href="${trackedUrl}" style="background:#ffcc00;color:#000;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">
                 Ler agora
               </a>
               <p style="font-size:11px;color:#444;margin-top:32px;">Para parar de receber, desative em Perfil &gt; Notificacoes.</p>
             </div>
           `,
+        });
+        await pushMarketingEvent(db, {
+          eventType: 'chapter_email_sent',
+          source: 'chapter_email',
+          campaignId: chapterCampaignId,
+          chapterId: capId,
+          clickId,
+          uid,
         });
         enviados += 1;
 
@@ -1155,6 +1292,17 @@ export const criarCheckoutPremium = onCall(
     const notificationUrl = `${baseFn}/mercadopagowebhook`;
     const db = getDatabase();
     const offer = await getPremiumOfferAt(db, Date.now());
+    const payload =
+      request.data && typeof request.data === 'object' ? request.data : {};
+    const attributionRaw =
+      payload.attribution && typeof payload.attribution === 'object'
+        ? payload.attribution
+        : {};
+    const attribution = {
+      source: normalizeTrackingSource(attributionRaw.source) || 'direct',
+      campaignId: sanitizeTrackingValue(attributionRaw.campaignId, 100),
+      clickId: sanitizeTrackingValue(attributionRaw.clickId, 120),
+    };
 
     try {
       const url = await criarPreferenciaPremium(
@@ -1165,8 +1313,16 @@ export const criarCheckoutPremium = onCall(
         offer.currentPriceBRL,
         offer.isPromoActive
           ? { promoId: offer.promo?.promoId, promoName: offer.promo?.name }
-          : null
+          : null,
+        attribution
       );
+      await pushMarketingEvent(db, {
+        eventType: 'premium_checkout_started',
+        source: attribution.source,
+        campaignId: attribution.campaignId,
+        clickId: attribution.clickId,
+        uid: request.auth.uid,
+      });
       return { ok: true, url };
     } catch (err) {
       const errMsg = err?.message || String(err);
@@ -1208,6 +1364,52 @@ export const obterOfertaPremiumPublica = onCall(
   }
 );
 
+export const registrarAttributionEvento = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    invoker: 'public',
+  },
+  async (request) => {
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    const eventType = normalizeTrackingEventType(body.eventType);
+    if (!eventType) {
+      throw new HttpsError('invalid-argument', 'eventType invalido.');
+    }
+
+    const source = normalizeTrackingSource(body.source) || 'unknown';
+    const campaignId = sanitizeTrackingValue(body.campaignId, 100);
+    const clickId = sanitizeTrackingValue(body.clickId, 120);
+    const chapterId = sanitizeTrackingValue(body.chapterId, 64);
+    const uid = request.auth?.uid ? String(request.auth.uid) : null;
+    const now = Date.now();
+    const db = getDatabase();
+
+    const dedupeKey = trackingDedupKey(eventType, clickId);
+    if (dedupeKey && (eventType === 'promo_landing' || eventType === 'chapter_landing')) {
+      const dedupeRef = db.ref(`marketing/dedup/${dedupeKey}`);
+      const trx = await dedupeRef.transaction((curr) => {
+        if (curr) return;
+        return { at: now };
+      });
+      if (!trx.committed) {
+        return { ok: true, deduped: true };
+      }
+    }
+
+    await pushMarketingEvent(db, {
+      eventType,
+      source,
+      campaignId,
+      clickId,
+      chapterId,
+      uid,
+      at: now,
+    });
+    return { ok: true };
+  }
+);
+
 export const adminObterPromocaoPremium = onCall(
   { region: 'us-central1' },
   async (request) => {
@@ -1216,13 +1418,56 @@ export const adminObterPromocaoPremium = onCall(
       throw new HttpsError('permission-denied', 'Apenas administradores.');
     }
     const db = getDatabase();
-    const snap = await db.ref(PREMIUM_PROMO_PATH).get();
+    const [snap, historySnap, financeSnap, marketingSnap] = await Promise.all([
+      db.ref(PREMIUM_PROMO_PATH).get(),
+      db.ref(PREMIUM_PROMO_HISTORY_PATH).get(),
+      db.ref('financas/eventos').get(),
+      db.ref('marketing/eventos').get(),
+    ]);
     const raw = snap.val() || null;
     const parsed = parsePromoConfig(raw);
+    const historyRaw = historySnap.exists() ? historySnap.val() || {} : {};
+    const history = Object.values(historyRaw)
+      .map((row) => normalizePromoHistoryItem(row))
+      .filter(Boolean)
+      .sort((a, b) => Number(b.startsAt || 0) - Number(a.startsAt || 0))
+      .slice(0, 60);
+
+    const financeEvents = financeSnap.exists() ? Object.values(financeSnap.val() || {}) : [];
+    const marketingEvents = marketingSnap.exists() ? Object.values(marketingSnap.val() || {}) : [];
+    const campaignIds = new Set(history.map((h) => h.promoId));
+    if (parsed?.promoId) campaignIds.add(parsed.promoId);
+    const performanceByCampaign = buildPromoPerformanceByCampaign(
+      financeEvents,
+      marketingEvents,
+      [...campaignIds]
+    );
+    const historyWithPerformance = history.map((row) => ({
+      ...row,
+      performance: performanceByCampaign[row.promoId] || {
+        sentEmails: 0,
+        clicks: 0,
+        checkouts: 0,
+        payments: 0,
+        revenue: 0,
+        ctrPct: 0,
+        clickToCheckoutPct: 0,
+        checkoutToPaidPct: 0,
+        paidFromSentPct: 0,
+      },
+    }));
+    const lastCampaign = historyWithPerformance[0] || null;
+
     return {
       ok: true,
       promo: raw,
       parsedPromo: parsed,
+      promoHistory: historyWithPerformance,
+      currentPerformance:
+        parsed?.promoId && performanceByCampaign[parsed.promoId]
+          ? performanceByCampaign[parsed.promoId]
+          : null,
+      lastCampaign,
     };
   }
 );
@@ -1242,8 +1487,19 @@ export const adminSalvarPromocaoPremium = onCall(
     const now = Date.now();
 
     const db = getDatabase();
+    const atualSnap = await db.ref(PREMIUM_PROMO_PATH).get();
+    const promoAtualRaw = atualSnap.val() || null;
+    const promoAtualParsed = parsePromoConfig(promoAtualRaw);
 
     if (!enabled) {
+      if (promoAtualParsed?.promoId) {
+        await db.ref(`${PREMIUM_PROMO_HISTORY_PATH}/${promoAtualParsed.promoId}`).update({
+          status: 'encerrada_manual',
+          disabledAt: now,
+          updatedAt: now,
+          updatedBy: request.auth.uid,
+        });
+      }
       await db.ref(PREMIUM_PROMO_PATH).set({
         enabled: false,
         updatedAt: now,
@@ -1272,12 +1528,40 @@ export const adminSalvarPromocaoPremium = onCall(
       updatedAt: now,
       updatedBy: request.auth.uid,
     };
+    if (promoAtualParsed?.promoId && promoAtualParsed.promoId !== promo.promoId) {
+      await db.ref(`${PREMIUM_PROMO_HISTORY_PATH}/${promoAtualParsed.promoId}`).update({
+        status: 'substituida',
+        disabledAt: now,
+        updatedAt: now,
+        updatedBy: request.auth.uid,
+      });
+    }
     await db.ref(PREMIUM_PROMO_PATH).set(promo);
 
     let emailStats = { sent: 0, skipped: 0, failed: 0 };
     if (body.notifyUsers === true) {
       emailStats = await enviarEmailPromocaoPremium(db, promo);
     }
+    const historicoRef = db.ref(`${PREMIUM_PROMO_HISTORY_PATH}/${promo.promoId}`);
+    const historicoSnap = await historicoRef.get();
+    const createdAt = historicoSnap.exists()
+      ? Number(historicoSnap.val()?.createdAt || startsAt || now)
+      : now;
+    await historicoRef.update({
+      promoId: promo.promoId,
+      name: promo.name,
+      message: promo.message,
+      priceBRL: promo.priceBRL,
+      startsAt: promo.startsAt,
+      endsAt: promo.endsAt,
+      createdAt,
+      createdBy: historicoSnap.exists() ? historicoSnap.val()?.createdBy || request.auth.uid : request.auth.uid,
+      updatedAt: now,
+      updatedBy: request.auth.uid,
+      status: startsAt > now ? 'agendada' : (endsAt >= now ? 'ativa' : 'encerrada'),
+      emailStats,
+    });
+
     return {
       ok: true,
       promo,
@@ -1569,6 +1853,169 @@ function buildAdvancedAnalytics(events, usuarios, usuariosPublicos, period, nowM
   };
 }
 
+function buildAcquisitionAnalytics(financeEvents, marketingEvents, period) {
+  const inPeriodFinance = financeEvents.filter((ev) => {
+    const at = toNum(ev?.at, 0);
+    return at >= period.startAt && at < period.endAt;
+  });
+  const inPeriodMarketing = marketingEvents.filter((ev) => {
+    const at = toNum(ev?.at, 0);
+    return at >= period.startAt && at < period.endAt;
+  });
+
+  const countBy = (pred) => inPeriodMarketing.filter(pred).length;
+  const uniqueClickSet = new Set();
+  for (const ev of inPeriodMarketing) {
+    if (ev?.eventType === 'promo_landing' && ev?.source === 'promo_email' && ev?.clickId) {
+      uniqueClickSet.add(String(ev.clickId));
+    }
+  }
+
+  const premiumFinance = inPeriodFinance.filter((ev) => String(ev?.tipo || '') === 'premium_aprovado');
+  const premiumBySource = {
+    promoEmailCount: 0,
+    promoEmailAmount: 0,
+    chapterEmailCount: 0,
+    chapterEmailAmount: 0,
+  };
+  const promoCampaignMap = new Map();
+
+  for (const ev of premiumFinance) {
+    const amount = toNum(ev?.amount, 0);
+    const source = normalizeTrackingSource(ev?.trafficSource) || 'unknown';
+    const promoId = sanitizeTrackingValue(ev?.promoId, 100);
+    const promoName = ev?.promoName ? String(ev.promoName) : null;
+    const campaignId = sanitizeTrackingValue(ev?.trafficCampaign, 100);
+
+    if (source === 'promo_email') {
+      premiumBySource.promoEmailCount += 1;
+      premiumBySource.promoEmailAmount += amount;
+    } else if (source === 'chapter_email') {
+      premiumBySource.chapterEmailCount += 1;
+      premiumBySource.chapterEmailAmount += amount;
+    }
+
+    const key = promoId || campaignId || 'sem_promocao';
+    if (!promoCampaignMap.has(key)) {
+      promoCampaignMap.set(key, {
+        campaignId: key,
+        promoId: promoId || null,
+        promoName: promoName || null,
+        payments: 0,
+        revenue: 0,
+        fromPromoEmailPayments: 0,
+      });
+    }
+    const row = promoCampaignMap.get(key);
+    row.payments += 1;
+    row.revenue += amount;
+    if (source === 'promo_email') row.fromPromoEmailPayments += 1;
+  }
+
+  const chapterReadsEmail = countBy(
+    (ev) => ev?.eventType === 'chapter_read' && ev?.source === 'chapter_email'
+  );
+  const chapterReadsNormal = countBy(
+    (ev) => ev?.eventType === 'chapter_read' && ev?.source !== 'chapter_email'
+  );
+  const chapterReadsTotal = chapterReadsEmail + chapterReadsNormal;
+
+  return {
+    promo: {
+      sentEmails: countBy((ev) => ev?.eventType === 'promo_email_sent'),
+      promoLandingClicks: countBy(
+        (ev) => ev?.eventType === 'promo_landing' && ev?.source === 'promo_email'
+      ),
+      promoLandingUniqueClicks: uniqueClickSet.size,
+      premiumCheckoutsFromPromoEmail: countBy(
+        (ev) => ev?.eventType === 'premium_checkout_started' && ev?.source === 'promo_email'
+      ),
+      premiumPaymentsFromPromoEmail: premiumBySource.promoEmailCount,
+      premiumRevenueFromPromoEmail: round2(premiumBySource.promoEmailAmount),
+      campaigns: [...promoCampaignMap.values()]
+        .map((row) => ({ ...row, revenue: round2(row.revenue) }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 20),
+    },
+    chapter: {
+      sentEmails: countBy((ev) => ev?.eventType === 'chapter_email_sent'),
+      chapterLandingClicks: countBy(
+        (ev) => ev?.eventType === 'chapter_landing' && ev?.source === 'chapter_email'
+      ),
+      chapterReadsFromEmail: chapterReadsEmail,
+      chapterReadsNormal: chapterReadsNormal,
+      chapterReadsTotal,
+      chapterReadsFromEmailPct:
+        chapterReadsTotal > 0
+          ? Math.round((chapterReadsEmail / chapterReadsTotal) * 1000) / 10
+          : 0,
+      premiumPaymentsFromChapterEmail: premiumBySource.chapterEmailCount,
+      premiumRevenueFromChapterEmail: round2(premiumBySource.chapterEmailAmount),
+    },
+  };
+}
+
+function buildPromoPerformanceByCampaign(financeEvents, marketingEvents, campaignIds = []) {
+  const idSet = new Set(
+    (campaignIds || [])
+      .map((v) => sanitizeTrackingValue(v, 100))
+      .filter(Boolean)
+  );
+  if (idSet.size === 0) return {};
+
+  const base = {};
+  for (const id of idSet) {
+    base[id] = {
+      sentEmails: 0,
+      clicks: 0,
+      checkouts: 0,
+      payments: 0,
+      revenue: 0,
+    };
+  }
+
+  for (const ev of marketingEvents) {
+    const cid = sanitizeTrackingValue(ev?.campaignId, 100);
+    if (!cid || !idSet.has(cid)) continue;
+    const eventType = String(ev?.eventType || '');
+    if (eventType === 'promo_email_sent') base[cid].sentEmails += 1;
+    if (eventType === 'promo_landing') base[cid].clicks += 1;
+    if (eventType === 'premium_checkout_started' && normalizeTrackingSource(ev?.source) === 'promo_email') {
+      base[cid].checkouts += 1;
+    }
+  }
+
+  for (const ev of financeEvents) {
+    if (String(ev?.tipo || '') !== 'premium_aprovado') continue;
+    const promoId = sanitizeTrackingValue(ev?.promoId, 100);
+    const trafficCid = sanitizeTrackingValue(ev?.trafficCampaign, 100);
+    const cid = promoId || trafficCid;
+    if (!cid || !idSet.has(cid)) continue;
+    base[cid].payments += 1;
+    base[cid].revenue += toNum(ev?.amount, 0);
+  }
+
+  const out = {};
+  for (const [cid, row] of Object.entries(base)) {
+    const clicks = row.clicks;
+    const sent = row.sentEmails;
+    const checkouts = row.checkouts;
+    const payments = row.payments;
+    out[cid] = {
+      sentEmails: sent,
+      clicks,
+      checkouts,
+      payments,
+      revenue: round2(row.revenue),
+      ctrPct: sent > 0 ? Math.round((clicks / sent) * 1000) / 10 : 0,
+      clickToCheckoutPct: clicks > 0 ? Math.round((checkouts / clicks) * 1000) / 10 : 0,
+      checkoutToPaidPct: checkouts > 0 ? Math.round((payments / checkouts) * 1000) / 10 : 0,
+      paidFromSentPct: sent > 0 ? Math.round((payments / sent) * 1000) / 10 : 0,
+    };
+  }
+  return out;
+}
+
 function aggregatePeriod(events, usuarios, usuariosPublicos, period) {
   const filtered = events.filter((e) => {
     const at = toNum(e?.at, 0);
@@ -1788,14 +2235,18 @@ export const adminDashboardResumo = onCall(
         : defaultComparePeriod(period);
 
     const db = getDatabase();
-    const [eventsSnap, usuariosSnap, pubSnap] = await Promise.all([
+    const [eventsSnap, usuariosSnap, pubSnap, marketingSnap] = await Promise.all([
       db.ref('financas/eventos').get(),
       db.ref('usuarios').get(),
       db.ref('usuarios_publicos').get(),
+      db.ref('marketing/eventos').get(),
     ]);
 
     const rawEvents = eventsSnap.exists()
       ? Object.values(eventsSnap.val() || {})
+      : [];
+    const rawMarketingEvents = marketingSnap.exists()
+      ? Object.values(marketingSnap.val() || {})
       : [];
     const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
     const usuariosPublicos = pubSnap.exists() ? pubSnap.val() || {} : {};
@@ -1804,7 +2255,12 @@ export const adminDashboardResumo = onCall(
     const compare = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, comparePeriod);
     const crescimentoPremium = buildCrescimentoPremium(rawEvents, period);
     const integrity = buildIntegrityReport(rawEvents);
-    const analytics = buildAdvancedAnalytics(rawEvents, usuarios, usuariosPublicos, period, now);
+    const analyticsBase = buildAdvancedAnalytics(rawEvents, usuarios, usuariosPublicos, period, now);
+    const acquisition = buildAcquisitionAnalytics(rawEvents, rawMarketingEvents, period);
+    const analytics = {
+      ...analyticsBase,
+      acquisition,
+    };
 
     const deltaAmount =
       current.totals.totalAmount - compare.totals.totalAmount;

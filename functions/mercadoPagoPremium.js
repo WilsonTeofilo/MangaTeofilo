@@ -31,7 +31,8 @@ export async function criarPreferenciaPremium(
   appBaseUrl,
   notificationUrl,
   unitPrice = PREMIUM_PRICE_BRL,
-  promoMeta = null
+  promoMeta = null,
+  attributionMeta = null
 ) {
   const base = String(appBaseUrl || '').replace(/\/$/, '');
   const price = Number(unitPrice);
@@ -55,6 +56,9 @@ export async function criarPreferenciaPremium(
       expectedAmount: price,
       promoId: promoMeta?.promoId ? String(promoMeta.promoId) : null,
       promoName: promoMeta?.promoName ? String(promoMeta.promoName) : null,
+      trafficSource: attributionMeta?.source ? String(attributionMeta.source) : null,
+      trafficCampaign: attributionMeta?.campaignId ? String(attributionMeta.campaignId) : null,
+      trafficClickId: attributionMeta?.clickId ? String(attributionMeta.clickId) : null,
     },
     back_urls: {
       success: `${base}/apoie?mp=ok&tipo=premium`,

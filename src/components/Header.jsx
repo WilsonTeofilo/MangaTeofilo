@@ -114,7 +114,8 @@ export default function Header({ usuario, perfil, adminAccess }) {
         <div className="nav-auth">
           {!usuario ? (
             <button className="btn-login-header" onClick={() => pushRoute('/login')}>
-              ENTRAR / CADASTRAR
+              <span className="btn-login-long">ENTRAR / CADASTRAR</span>
+              <span className="btn-login-short">ENTRAR</span>
             </button>
           ) : (
             <div className="user-info-header" title="Acessar Perfil">

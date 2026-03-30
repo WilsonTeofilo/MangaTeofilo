@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
 
-import { db } from '../../services/firebase';
+import { db, functions } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
+import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
+
+const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
 /** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
 const isContaPremium = (perfilPublico) => {
@@ -17,6 +21,7 @@ const isContaPremium = (perfilPublico) => {
 export default function Leitor({ user, perfil }) {
   const { id }   = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [capitulo, setCapitulo]            = useState(null);
   const [carregando, setCarregando]        = useState(true);
@@ -40,6 +45,7 @@ export default function Leitor({ user, perfil }) {
   const touchEndX            = useRef(0);
   const unsubPerfis          = useRef({});
   const jaContouVisualizacao = useRef(false);
+  const leituraAttributionRef = useRef({ source: 'normal', campaignId: null, clickId: null });
 
   useEffect(() => { localStorage.setItem('modoLeitura', modoLeitura); }, [modoLeitura]);
   useEffect(() => { localStorage.setItem('zoom', zoom); }, [zoom]);
@@ -75,6 +81,38 @@ export default function Leitor({ user, perfil }) {
   useEffect(() => {
     jaContouVisualizacao.current = false;
   }, [id]);
+
+  useEffect(() => {
+    const fromUrl = parseAttributionFromSearch(searchParams);
+    if (fromUrl) {
+      persistAttribution(fromUrl);
+      leituraAttributionRef.current = {
+        source: fromUrl.source || 'normal',
+        campaignId: fromUrl.campaignId || null,
+        clickId: fromUrl.clickId || null,
+      };
+      if (fromUrl.source === 'chapter_email') {
+        registrarAttributionEvento({
+          eventType: 'chapter_landing',
+          source: fromUrl.source,
+          campaignId: fromUrl.campaignId || `chapter_${id}`,
+          clickId: fromUrl.clickId || null,
+          chapterId: id,
+        }).catch(() => {});
+      }
+      return;
+    }
+    const cached = getAttribution(2 * 24 * 60 * 60 * 1000);
+    const chapterCampaignId = `chapter_${id}`;
+    const isSameChapterCampaign =
+      cached?.source === 'chapter_email' &&
+      (!cached?.campaignId || cached.campaignId === chapterCampaignId);
+    leituraAttributionRef.current = {
+      source: isSameChapterCampaign ? 'chapter_email' : 'normal',
+      campaignId: isSameChapterCampaign ? cached?.campaignId || chapterCampaignId : null,
+      clickId: isSameChapterCampaign ? cached?.clickId || null : null,
+    };
+  }, [searchParams, id]);
 
   useEffect(() => {
     const unsub = onValue(ref(db, `capitulos/${id}`), (snap) => {
@@ -113,6 +151,14 @@ export default function Leitor({ user, perfil }) {
     if (jaContouVisualizacao.current) return;
     jaContouVisualizacao.current = true;
     runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
+    const attrib = leituraAttributionRef.current || { source: 'normal' };
+    registrarAttributionEvento({
+      eventType: 'chapter_read',
+      source: attrib.source || 'normal',
+      campaignId: attrib.campaignId || (attrib.source === 'chapter_email' ? `chapter_${id}` : null),
+      clickId: attrib.clickId || null,
+      chapterId: id,
+    }).catch(() => {});
   }, [capitulo, id, user, perfil]);
 
   // ✅ Sincroniza perfil público ANTES de comentar

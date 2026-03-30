@@ -120,7 +120,7 @@ function linePath(values, width, height, pad) {
     .join(' ');
 }
 
-const DASHBOARD_TABS = ['visao-geral', 'rankings', 'assinaturas', 'doacoes'];
+const DASHBOARD_TABS = ['visao-geral', 'rankings', 'assinaturas', 'doacoes', 'aquisicao'];
 const PAGE_SIZE = 10;
 
 function parseTab(value) {
@@ -152,6 +152,22 @@ function rankBadge(rank) {
   if (rank === 2) return '🥈';
   if (rank === 3) return '🥉';
   return `${rank}.`;
+}
+
+function percentOf(part, total) {
+  const p = Number(part || 0);
+  const t = Number(total || 0);
+  if (!t || t <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((p / t) * 1000) / 10));
+}
+
+function scoreFromPercent(percent) {
+  const p = Number(percent || 0);
+  if (p >= 8) return { grade: 'A', label: 'Excelente', tone: 'a' };
+  if (p >= 4) return { grade: 'B', label: 'Muito bom', tone: 'b' };
+  if (p >= 2) return { grade: 'C', label: 'Bom', tone: 'c' };
+  if (p >= 1) return { grade: 'D', label: 'Baixo', tone: 'd' };
+  return { grade: 'E', label: 'Muito baixo', tone: 'e' };
 }
 
 export default function DashboardAdmin() {
@@ -306,6 +322,7 @@ export default function DashboardAdmin() {
   }, [dados]);
 
   const analytics = dados?.analytics || {};
+  const acquisition = analytics.acquisition || { promo: {}, chapter: {} };
   const subscriptionStats = analytics.subscriptionStats || [];
   const donationStats = analytics.donationStats || [];
   const historyByUid = analytics.userHistoryByUid || {};
@@ -359,6 +376,54 @@ export default function DashboardAdmin() {
   const selectedHistory = selectedUid ? historyByUid[selectedUid] || null : null;
   const selectedUser =
     (selectedUid && (subsByUid[selectedUid] || donationStats.find((d) => d.uid === selectedUid))) || null;
+
+  const promoFunnel = useMemo(() => {
+    const sent = Number(acquisition.promo?.sentEmails || 0);
+    const clicked = Number(acquisition.promo?.promoLandingClicks || 0);
+    const checkout = Number(acquisition.promo?.premiumCheckoutsFromPromoEmail || 0);
+    const paid = Number(acquisition.promo?.premiumPaymentsFromPromoEmail || 0);
+    return {
+      sent,
+      clicked,
+      checkout,
+      paid,
+      ctr: percentOf(clicked, sent),
+      clickToCheckout: percentOf(checkout, clicked),
+      checkoutToPaid: percentOf(paid, checkout),
+      paidFromSent: percentOf(paid, sent),
+      steps: [
+        { id: 'sent', label: 'Enviados', value: sent, barPct: 100 },
+        { id: 'clicked', label: 'Cliques', value: clicked, barPct: percentOf(clicked, sent) },
+        { id: 'checkout', label: 'Checkout', value: checkout, barPct: percentOf(checkout, sent) },
+        { id: 'paid', label: 'Pagos', value: paid, barPct: percentOf(paid, sent) },
+      ],
+    };
+  }, [acquisition.promo]);
+
+  const chapterFunnel = useMemo(() => {
+    const sent = Number(acquisition.chapter?.sentEmails || 0);
+    const clicked = Number(acquisition.chapter?.chapterLandingClicks || 0);
+    const readsEmail = Number(acquisition.chapter?.chapterReadsFromEmail || 0);
+    const readsNormal = Number(acquisition.chapter?.chapterReadsNormal || 0);
+    const readsTotal = Number(acquisition.chapter?.chapterReadsTotal || readsEmail + readsNormal);
+    return {
+      sent,
+      clicked,
+      readsEmail,
+      readsNormal,
+      readsTotal,
+      ctr: percentOf(clicked, sent),
+      clickToRead: percentOf(readsEmail, clicked),
+      readShare: percentOf(readsEmail, readsTotal),
+      steps: [
+        { id: 'sent', label: 'Enviados', value: sent, barPct: 100 },
+        { id: 'clicked', label: 'Cliques', value: clicked, barPct: percentOf(clicked, sent) },
+        { id: 'reads', label: 'Leituras via e-mail', value: readsEmail, barPct: percentOf(readsEmail, sent) },
+      ],
+    };
+  }, [acquisition.chapter]);
+  const promoScore = scoreFromPercent(promoFunnel.paidFromSent);
+  const chapterScore = scoreFromPercent(chapterFunnel.readShare);
 
   const runIntegridade = async () => {
     setOpsMsg('');
@@ -495,6 +560,9 @@ export default function DashboardAdmin() {
           </button>
           <button type="button" className={activeTab === 'doacoes' ? 'active' : ''} onClick={() => handleTabChange('doacoes')}>
             Doações
+          </button>
+          <button type="button" className={activeTab === 'aquisicao' ? 'active' : ''} onClick={() => handleTabChange('aquisicao')}>
+            Aquisição
           </button>
         </div>
 
@@ -819,6 +887,173 @@ export default function DashboardAdmin() {
               </button>
             </div>
           </section>
+        )}
+
+        {activeTab === 'aquisicao' && (
+          <>
+            <section className="dashboard-sec">
+              <div className="dashboard-sec-head">
+                <h2>Aquisição por Promoção</h2>
+                <small>Da notificação por e-mail até pagamento aprovado</small>
+              </div>
+              <div className="dashboard-kpis">
+                <article className="kpi-card">
+                  <h3>Emails enviados</h3>
+                  <strong>{acquisition.promo?.sentEmails || 0}</strong>
+                  <small>Campanhas promocionais no período</small>
+                </article>
+                <article className="kpi-card">
+                  <h3>Cliques no link</h3>
+                  <strong>{acquisition.promo?.promoLandingClicks || 0}</strong>
+                  <small>Únicos: {acquisition.promo?.promoLandingUniqueClicks || 0}</small>
+                </article>
+                <article className="kpi-card">
+                  <h3>Checkouts iniciados</h3>
+                  <strong>{acquisition.promo?.premiumCheckoutsFromPromoEmail || 0}</strong>
+                  <small>Origem: promo_email</small>
+                </article>
+                <article className="kpi-card">
+                  <h3>Pagamentos aprovados</h3>
+                  <strong>{acquisition.promo?.premiumPaymentsFromPromoEmail || 0}</strong>
+                  <small>{brl(acquisition.promo?.premiumRevenueFromPromoEmail || 0)}</small>
+                </article>
+              </div>
+            </section>
+
+            <section className="dashboard-sec">
+              <div className="dashboard-sec-head">
+                <h2>Aquisição por Notificação de Capítulo</h2>
+                <small>Comparativo notificados x leitura normal</small>
+              </div>
+              <div className="dashboard-kpis">
+                <article className="kpi-card">
+                  <h3>Emails de capítulo</h3>
+                  <strong>{acquisition.chapter?.sentEmails || 0}</strong>
+                  <small>Notificações enviadas</small>
+                </article>
+                <article className="kpi-card">
+                  <h3>Leituras via e-mail</h3>
+                  <strong>{acquisition.chapter?.chapterReadsFromEmail || 0}</strong>
+                  <small>{acquisition.chapter?.chapterReadsFromEmailPct || 0}% das leituras rastreadas</small>
+                </article>
+                <article className="kpi-card">
+                  <h3>Leituras normais</h3>
+                  <strong>{acquisition.chapter?.chapterReadsNormal || 0}</strong>
+                  <small>Total rastreado: {acquisition.chapter?.chapterReadsTotal || 0}</small>
+                </article>
+                <article className="kpi-card">
+                  <h3>Premium vindo de capítulo</h3>
+                  <strong>{acquisition.chapter?.premiumPaymentsFromChapterEmail || 0}</strong>
+                  <small>{brl(acquisition.chapter?.premiumRevenueFromChapterEmail || 0)}</small>
+                </article>
+              </div>
+            </section>
+
+            <section className="dashboard-sec">
+              <div className="dashboard-sec-head">
+                <h2>Performance por Campanha</h2>
+                <small>Receita por promoção e pagamentos atribuídos</small>
+              </div>
+              <div className="analytics-table">
+                <div className="analytics-row analytics-row--head analytics-row--campaign">
+                  <span>Campanha</span>
+                  <span>Pagamentos</span>
+                  <span>Via e-mail promo</span>
+                  <span>Receita</span>
+                  <span>Score</span>
+                </div>
+                {(acquisition.promo?.campaigns || []).map((row) => (
+                  <div key={row.campaignId} className="analytics-row analytics-row--campaign">
+                    <span>{row.promoName || row.promoId || row.campaignId || 'Sem campanha'}</span>
+                    <span>{row.payments || 0}</span>
+                    <span>{row.fromPromoEmailPayments || 0}</span>
+                    <span>{brl(row.revenue || 0)}</span>
+                    <span>
+                      {(() => {
+                        const score = scoreFromPercent(
+                          percentOf(row.fromPromoEmailPayments || 0, row.payments || 0)
+                        );
+                        return <i className={`score-badge tone-${score.tone}`}>{score.grade}</i>;
+                      })()}
+                    </span>
+                  </div>
+                ))}
+                {!acquisition.promo?.campaigns?.length && (
+                  <p className="dashboard-empty">Sem campanhas com dados neste período.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="dashboard-sec">
+              <div className="dashboard-sec-head">
+                <h2>Funil de Conversão</h2>
+                <small>Leitura rápida de eficiência por canal</small>
+              </div>
+              <div className="conversion-score-grid">
+                <article className={`conversion-score-card tone-${promoScore.tone}`}>
+                  <p>Score da Campanha Promo</p>
+                  <strong>{promoScore.grade}</strong>
+                  <span>
+                    {promoFunnel.paidFromSent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% pago por e-mail enviado · {promoScore.label}
+                  </span>
+                </article>
+                <article className={`conversion-score-card tone-${chapterScore.tone}`}>
+                  <p>Score da Notificação de Capítulo</p>
+                  <strong>{chapterScore.grade}</strong>
+                  <span>
+                    {chapterFunnel.readShare.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% de leitura via e-mail · {chapterScore.label}
+                  </span>
+                </article>
+              </div>
+              <div className="conversion-funnel-grid">
+                <article className="conversion-card">
+                  <h3>Promoção (e-mail)</h3>
+                  <div className="conversion-kpis">
+                    <p>CTR: <strong>{promoFunnel.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Clique → Checkout: <strong>{promoFunnel.clickToCheckout.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Checkout → Pago: <strong>{promoFunnel.checkoutToPaid.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Pago / Enviado: <strong>{promoFunnel.paidFromSent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                  </div>
+                  <ul className="conversion-steps">
+                    {promoFunnel.steps.map((step) => (
+                      <li key={`promo-${step.id}`}>
+                        <div className="conversion-steps-head">
+                          <span>{step.label}</span>
+                          <strong>{step.value}</strong>
+                        </div>
+                        <div className="conversion-bar">
+                          <i style={{ width: `${Math.max(4, step.barPct)}%` }} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+
+                <article className="conversion-card">
+                  <h3>Capítulo (notificação)</h3>
+                  <div className="conversion-kpis">
+                    <p>CTR: <strong>{chapterFunnel.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Clique → Leitura: <strong>{chapterFunnel.clickToRead.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Leitura via e-mail / Total: <strong>{chapterFunnel.readShare.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Leituras normais: <strong>{chapterFunnel.readsNormal}</strong></p>
+                  </div>
+                  <ul className="conversion-steps">
+                    {chapterFunnel.steps.map((step) => (
+                      <li key={`chapter-${step.id}`}>
+                        <div className="conversion-steps-head">
+                          <span>{step.label}</span>
+                          <strong>{step.value}</strong>
+                        </div>
+                        <div className="conversion-bar conversion-bar--chapter">
+                          <i style={{ width: `${Math.max(4, step.barPct)}%` }} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              </div>
+            </section>
+          </>
         )}
       </section>
 

@@ -13,11 +13,17 @@ import {
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
 import { labelPrecoPremium } from '../../config/premiumAssinatura';
+import {
+  getAttribution,
+  parseAttributionFromSearch,
+  persistAttribution,
+} from '../../utils/trafficAttribution';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
 const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
+const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
 function formatarDataFimAssinatura(ms) {
   if (typeof ms !== 'number') return '';
@@ -71,6 +77,23 @@ export default function Apoie({ user, perfil }) {
   const jaMostrouAgradecimento = useRef(false);
 
   useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    html.classList.add('apoie-scroll-safe');
+    body.classList.add('apoie-scroll-safe');
+    body.style.overflowY = 'auto';
+    body.style.overscrollBehaviorY = 'auto';
+    html.style.overflowY = 'auto';
+    return () => {
+      html.classList.remove('apoie-scroll-safe');
+      body.classList.remove('apoie-scroll-safe');
+      body.style.overflowY = '';
+      body.style.overscrollBehaviorY = '';
+      html.style.overflowY = '';
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
     const fetchOffer = async () => {
       try {
@@ -93,14 +116,31 @@ export default function Apoie({ user, perfil }) {
     const refreshId = setInterval(fetchOffer, 30000);
     const tickId = setInterval(() => {
       if (!mounted) return;
-      setOfertaPremium((prev) => ({ ...prev, now: Date.now() }));
-    }, 1000);
+      setOfertaPremium((prev) => {
+        if (!prev?.isPromoActive || !prev?.promo?.endsAt) return prev;
+        return { ...prev, now: Date.now() };
+      });
+    }, 10000);
     return () => {
       mounted = false;
       clearInterval(refreshId);
       clearInterval(tickId);
     };
   }, []);
+
+  useEffect(() => {
+    const fromUrl = parseAttributionFromSearch(searchParams);
+    if (!fromUrl) return;
+    persistAttribution(fromUrl);
+    if (fromUrl.source === 'promo_email') {
+      registrarAttributionEvento({
+        eventType: 'promo_landing',
+        source: fromUrl.source,
+        campaignId: fromUrl.campaignId || null,
+        clickId: fromUrl.clickId || null,
+      }).catch(() => {});
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (mpRetorno !== 'ok' || jaMostrouAgradecimento.current) return;
@@ -276,9 +316,18 @@ export default function Apoie({ user, perfil }) {
       return;
     }
     const baselineUntil = typeof perfil?.memberUntil === 'number' ? perfil.memberUntil : 0;
+    const attribution = getAttribution();
     setCarregandoId('premium');
     try {
-      const { data } = await criarCheckoutPremium();
+      const { data } = await criarCheckoutPremium({
+        attribution: attribution
+          ? {
+              source: attribution.source,
+              campaignId: attribution.campaignId || null,
+              clickId: attribution.clickId || null,
+            }
+          : null,
+      });
       if (data?.url) {
         setAcompanhamentoPremium({
           ativo: true,
@@ -303,7 +352,7 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="shito-glitch">Apoie Shito: Fragmentos da Tempestade</h1>
+          <h1 className="apoie-title-discord">Apoie Shito: Fragmentos da Tempestade</h1>
 
           {celebracaoPremium.show && (
             <div className="apoie-celebracao-backdrop" role="status" aria-live="polite">

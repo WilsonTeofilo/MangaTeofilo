@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
@@ -7,6 +7,7 @@ import { db, functions } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
+import { OBRA_PADRAO_ID, buildChapterCampaignId, obterObraIdCapitulo } from '../../config/obras';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
@@ -103,7 +104,7 @@ export default function Leitor({ user, perfil }) {
       return;
     }
     const cached = getAttribution(2 * 24 * 60 * 60 * 1000);
-    const chapterCampaignId = `chapter_${id}`;
+    const chapterCampaignId = buildChapterCampaignId(id, OBRA_PADRAO_ID);
     const isSameChapterCampaign =
       cached?.source === 'chapter_email' &&
       (!cached?.campaignId || cached.campaignId === chapterCampaignId);
@@ -155,7 +156,11 @@ export default function Leitor({ user, perfil }) {
     registrarAttributionEvento({
       eventType: 'chapter_read',
       source: attrib.source || 'normal',
-      campaignId: attrib.campaignId || (attrib.source === 'chapter_email' ? `chapter_${id}` : null),
+      campaignId:
+        attrib.campaignId ||
+        (attrib.source === 'chapter_email'
+          ? buildChapterCampaignId(id, obterObraIdCapitulo(capitulo))
+          : null),
       clickId: attrib.clickId || null,
       chapterId: id,
     }).catch(() => {});
@@ -252,10 +257,13 @@ export default function Leitor({ user, perfil }) {
     });
   };
 
-  const comentariosOrdenados = [...listaComentarios].sort((a, b) =>
-    filtro === 'relevantes'
-      ? (b.likes || 0) - (a.likes || 0)
-      : (b.data  || 0) - (a.data  || 0)
+  const comentariosOrdenados = useMemo(
+    () => [...listaComentarios].sort((a, b) =>
+      filtro === 'relevantes'
+        ? (b.likes || 0) - (a.likes || 0)
+        : (b.data || 0) - (a.data || 0)
+    ),
+    [listaComentarios, filtro]
   );
 
   if (carregando) return <LoadingScreen />;
@@ -314,17 +322,39 @@ export default function Leitor({ user, perfil }) {
 
       <header className="leitor-header">
         <h1>{capitulo.titulo}</h1>
-        <button className="btn-config" onClick={() => setMostrarConfig((v) => !v)}>⚙</button>
+        <button
+          type="button"
+          className="btn-config"
+          aria-label="Abrir configuracoes de leitura"
+          aria-expanded={mostrarConfig}
+          onClick={() => setMostrarConfig((v) => !v)}
+        >
+          ⚙
+        </button>
       </header>
 
       {mostrarConfig && (
         <div className="config-panel">
-          <button className={modoLeitura === 'vertical'   ? 'active' : ''} onClick={() => setModoLeitura('vertical')}>Vertical</button>
-          <button className={modoLeitura === 'horizontal' ? 'active' : ''} onClick={() => setModoLeitura('horizontal')}>Horizontal</button>
+          <button
+            type="button"
+            aria-pressed={modoLeitura === 'vertical'}
+            className={modoLeitura === 'vertical' ? 'active' : ''}
+            onClick={() => setModoLeitura('vertical')}
+          >
+            Vertical
+          </button>
+          <button
+            type="button"
+            aria-pressed={modoLeitura === 'horizontal'}
+            className={modoLeitura === 'horizontal' ? 'active' : ''}
+            onClick={() => setModoLeitura('horizontal')}
+          >
+            Horizontal
+          </button>
           <div>
-            <button onClick={() => setZoom((z) => Math.max(50,  z - 10))}>-</button>
+            <button type="button" onClick={() => setZoom((z) => Math.max(50,  z - 10))}>-</button>
             <span>{zoom}%</span>
-            <button onClick={() => setZoom((z) => Math.min(200, z + 10))}>+</button>
+            <button type="button" onClick={() => setZoom((z) => Math.min(200, z + 10))}>+</button>
           </div>
         </div>
       )}
@@ -358,8 +388,22 @@ export default function Leitor({ user, perfil }) {
         <h3>Comentários ({listaComentarios.length})</h3>
 
         <div className="filtro-comentarios">
-          <button className={filtro === 'relevantes' ? 'ativo' : ''} onClick={() => setFiltro('relevantes')}>🔥 Relevantes</button>
-          <button className={filtro === 'recentes'   ? 'ativo' : ''} onClick={() => setFiltro('recentes')}>🕒 Recentes</button>
+          <button
+            type="button"
+            aria-pressed={filtro === 'relevantes'}
+            className={filtro === 'relevantes' ? 'ativo' : ''}
+            onClick={() => setFiltro('relevantes')}
+          >
+            🔥 Relevantes
+          </button>
+          <button
+            type="button"
+            aria-pressed={filtro === 'recentes'}
+            className={filtro === 'recentes' ? 'ativo' : ''}
+            onClick={() => setFiltro('recentes')}
+          >
+            🕒 Recentes
+          </button>
         </div>
 
         <form onSubmit={handleEnviarComentario} className="form-comentario">
@@ -397,15 +441,15 @@ export default function Leitor({ user, perfil }) {
           )}
 
           {comentariosOrdenados.map((c) => {
-            const perfil    = perfisUsuarios[c.userId];
+            const perfilPublico = perfisUsuarios[c.userId];
             const isLiked   = c.usuariosQueCurtiram?.[user?.uid];
-            const isPremium = isContaPremium(perfil);
+            const isPremium = isContaPremium(perfilPublico);
 
             return (
               <div key={c.id} className="comentario">
                 {/* Avatar visível para TODOS */}
                 <img
-                  src={perfil?.userAvatar || AVATAR_FALLBACK}
+                  src={perfilPublico?.userAvatar || AVATAR_FALLBACK}
                   alt="avatar"
                   className="avatar-comentario"
                   onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
@@ -413,7 +457,7 @@ export default function Leitor({ user, perfil }) {
                 <div className="comentario-corpo">
                   <div className="comentario-header">
                     <strong className="comentario-autor">
-                      {perfil?.userName || 'Carregando...'}
+                      {perfilPublico?.userName || 'Carregando...'}
                     </strong>
                     {isPremium && <span className="badge-premium" title="Membro premium">👑</span>}
                   </div>

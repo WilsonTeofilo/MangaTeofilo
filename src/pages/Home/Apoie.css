@@ -219,6 +219,15 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
   filter: brightness(1.08);
 }
 
+.apoie-modal-fechar:focus-visible,
+.apoie-link-login:focus-visible,
+.btn-apoie:focus-visible,
+.apoie-doacao-input:focus-visible {
+  outline: 2px solid #ffe08a;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(255, 204, 0, 0.25);
+}
+
 /* Doação livre */
 .apoie-doacao-livre {
   margin: 2.5rem auto 2rem;
@@ -374,7 +383,6 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
   transform-style: flat;
   perspective: none;
   backdrop-filter: blur(4px);
-  will-change: transform;
 }
 
 .apoie-card::before {
@@ -392,6 +400,7 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
 }
 
 .apoie-card:hover {
+  will-change: transform;
   transform: translateY(-10px);
   box-shadow: 0 22px 36px rgba(0,0,0,0.5), 0 0 26px rgba(255, 204, 0, 0.14);
   border-color: var(--naraa-gold);
@@ -552,10 +561,10 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
   transform-style: flat;
   transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
   backdrop-filter: blur(5px);
-  will-change: transform;
 }
 
 .apoie-premium-card:hover {
+  will-change: transform;
   transform: translateY(-4px);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35), 0 0 24px rgba(255, 204, 0, 0.2);
 }
@@ -577,6 +586,29 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
   font-size: clamp(1.35rem, 3.5vw, 1.75rem);
   color: var(--naraa-gold);
 }
+
+.apoie-premium-skeleton {
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 10px;
+}
+
+.apoie-skeleton-line {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 204, 0, 0.08) 0%,
+    rgba(255, 204, 0, 0.24) 45%,
+    rgba(255, 204, 0, 0.08) 100%
+  );
+  background-size: 240% 100%;
+  animation: apoieSkeleton 1.2s ease-in-out infinite;
+}
+
+.apoie-skeleton-line.lg { width: min(92%, 520px); height: 20px; }
+.apoie-skeleton-line.md { width: min(75%, 360px); }
+.apoie-skeleton-line.sm { width: min(58%, 240px); }
 
 .apoie-premium-desc {
   margin: 0 0 1.25rem;
@@ -734,6 +766,11 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+}
+
+@keyframes apoieSkeleton {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .btn-apoie-premium {

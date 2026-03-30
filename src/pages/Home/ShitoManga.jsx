@@ -14,13 +14,23 @@ export default function ShitoManga() {
     return window.scrollY <= limiar;
   });
   const hasIncremented = useRef(false);
+  const scrollRafRef = useRef(null);
   const navigate = useNavigate();
 
   const atualizarVisibilidadeSeta = useCallback(() => {
     const vh = window.visualViewport?.height ?? window.innerHeight;
     const limiar = Math.max(48, Math.min(vh * 0.06, 100));
-    setMostrarSetaScroll(window.scrollY <= limiar);
+    const proximoValor = window.scrollY <= limiar;
+    setMostrarSetaScroll((prev) => (prev === proximoValor ? prev : proximoValor));
   }, []);
+
+  const onScrollOrResize = useCallback(() => {
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      atualizarVisibilidadeSeta();
+    });
+  }, [atualizarVisibilidadeSeta]);
 
   useEffect(() => {
     if (!hasIncremented.current) {
@@ -41,15 +51,19 @@ export default function ShitoManga() {
   }, []);
 
   useEffect(() => {
-    window.addEventListener('scroll', atualizarVisibilidadeSeta, { passive: true });
-    window.visualViewport?.addEventListener('resize', atualizarVisibilidadeSeta);
-    window.addEventListener('resize', atualizarVisibilidadeSeta);
+    window.addEventListener('scroll', onScrollOrResize, { passive: true });
+    window.visualViewport?.addEventListener('resize', onScrollOrResize);
+    window.addEventListener('resize', onScrollOrResize);
     return () => {
-      window.removeEventListener('scroll', atualizarVisibilidadeSeta);
-      window.visualViewport?.removeEventListener('resize', atualizarVisibilidadeSeta);
-      window.removeEventListener('resize', atualizarVisibilidadeSeta);
+      window.removeEventListener('scroll', onScrollOrResize);
+      window.visualViewport?.removeEventListener('resize', onScrollOrResize);
+      window.removeEventListener('resize', onScrollOrResize);
+      if (scrollRafRef.current != null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
     };
-  }, [atualizarVisibilidadeSeta]);
+  }, [onScrollOrResize]);
 
   return (
       <div className="shito-page">

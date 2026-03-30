@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 // 1. IMPORTAÇÃO CENTRALIZADA (Usa o db do seu service)
 import { db } from '../../services/firebase';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
+import { OBRA_PADRAO_ID, capituloPertenceObra } from '../../config/obras';
 
 import './Capitulos.css';
 
@@ -31,7 +32,7 @@ export default function Capitulos({ user, perfil }) {
             ...dados[key],
             totalComentarios: qtdComentarios
           };
-        });
+        }).filter((cap) => capituloPertenceObra(cap, OBRA_PADRAO_ID));
         
         // Ordenação: Capítulo mais alto (recente) no topo
         const ordenados = arrayCapitulos.sort((a, b) => (Number(b.numero) || 0) - (Number(a.numero) || 0));

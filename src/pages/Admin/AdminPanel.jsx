@@ -1,20 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 
 import { db, storage, auth } from '../../services/firebase'; 
 import { isAdminUser } from '../../constants';
-import { msParaDatetimeLocal } from '../../utils/capituloLancamento';
+import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, obterObraIdCapitulo } from '../../config/obras';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_INPUT_IMAGE_SIZE_BYTES = 7 * 1024 * 1024;
+const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const TARGET_IMAGE_SIZE_BYTES = 2.2 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION_PX = 2400;
+const CAPA_ASPECT_W = 16;
+const CAPA_ASPECT_H = 9;
+const CAPA_OUTPUT_WIDTH = 1600;
+const CAPA_OUTPUT_HEIGHT = Math.round((CAPA_OUTPUT_WIDTH * CAPA_ASPECT_H) / CAPA_ASPECT_W);
+const CAPA_EDITOR_ASPECT_W = 16;
+const CAPA_EDITOR_ASPECT_H = 10;
+const CAPA_EDITOR_CROP_WIDTH_RATIO = 0.84;
 
 function validarImagemUpload(file, label = 'arquivo') {
   if (!file) return `${label} nao encontrado.`;
   if (!IMAGE_TYPES.includes(file.type)) return `${label} invalido. Use JPG, PNG ou WEBP.`;
-  if (file.size > MAX_IMAGE_SIZE_BYTES) return `${label} excede 5MB.`;
+  if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 7MB.`;
   return '';
 }
 
@@ -27,6 +37,236 @@ function extensaoImagemNoPath(file) {
   if (t === 'image/png') return '.png';
   if (t === 'image/webp') return '.webp';
   return '.jpg';
+}
+
+function nomeArquivoComExtensao(name, novaExt) {
+  const base = String(name || 'imagem')
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `${base}${novaExt}`;
+}
+
+function carregarImagem(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Nao foi possivel ler a imagem enviada.'));
+    };
+    img.src = url;
+  });
+}
+
+function canvasParaBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Falha ao processar imagem.'));
+        return;
+      }
+      resolve(blob);
+    }, type, quality);
+  });
+}
+
+async function blobWebpComLimite(canvas, maxBytes) {
+  let quality = 0.92;
+  let blob = await canvasParaBlob(canvas, 'image/webp', quality);
+  for (let i = 0; i < 8 && blob.size > maxBytes; i += 1) {
+    quality -= 0.08;
+    blob = await canvasParaBlob(canvas, 'image/webp', Math.max(0.45, quality));
+  }
+  return blob;
+}
+
+async function comprimirImagemParaUpload(file) {
+  if (file.size <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) return file;
+
+  const img = await carregarImagem(file);
+  let width = img.naturalWidth || img.width;
+  let height = img.naturalHeight || img.height;
+  const maiorLado = Math.max(width, height);
+  if (maiorLado > MAX_IMAGE_DIMENSION_PX) {
+    const scale = MAX_IMAGE_DIMENSION_PX / maiorLado;
+    width = Math.max(1, Math.round(width * scale));
+    height = Math.max(1, Math.round(height * scale));
+  }
+
+  let quality = 0.9;
+  let melhorBlob = null;
+  for (let tentativa = 0; tentativa < 10; tentativa += 1) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) throw new Error('Falha ao inicializar compressor de imagem.');
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const blob = await canvasParaBlob(canvas, 'image/webp', quality);
+    melhorBlob = blob;
+    if (blob.size <= TARGET_IMAGE_SIZE_BYTES || blob.size <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
+      return new File(
+        [blob],
+        nomeArquivoComExtensao(file.name, '.webp'),
+        { type: 'image/webp', lastModified: Date.now() }
+      );
+    }
+
+    if (quality > 0.58) {
+      quality -= 0.08;
+    } else {
+      width = Math.max(900, Math.round(width * 0.85));
+      height = Math.max(900, Math.round(height * 0.85));
+    }
+  }
+
+  if (!melhorBlob || melhorBlob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
+    throw new Error('Nao foi possivel otimizar a imagem para ate 5MB. Tente outra imagem.');
+  }
+
+  return new File(
+    [melhorBlob],
+    nomeArquivoComExtensao(file.name, '.webp'),
+    { type: 'image/webp', lastModified: Date.now() }
+  );
+}
+
+async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
+  const otimizada = await comprimirImagemParaUpload(file);
+  const img = await carregarImagem(otimizada);
+  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
+  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
+  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
+
+  let targetW = CAPA_OUTPUT_WIDTH;
+  let targetH = CAPA_OUTPUT_HEIGHT;
+  let blob = null;
+
+  for (let tentativa = 0; tentativa < 6; tentativa += 1) {
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) throw new Error('Falha ao processar recorte da capa.');
+    desenharCapaNoCanvas(ctx, img, targetW, targetH, { zoom, x: eixoX, y: eixoY });
+
+    blob = await blobWebpComLimite(canvas, MAX_COMPRESSED_IMAGE_SIZE_BYTES);
+    if (blob && blob.size <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) break;
+
+    targetW = Math.max(960, Math.round(targetW * 0.86));
+    targetH = Math.max(540, Math.round(targetH * 0.86));
+  }
+
+  if (!blob || blob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
+    throw new Error('Nao foi possivel otimizar a capa para ate 5MB. Tente outra imagem.');
+  }
+
+  return new File([blob], nomeArquivoComExtensao(file.name, '.webp'), {
+    type: 'image/webp',
+    lastModified: Date.now(),
+  });
+}
+
+function desenharCapaNoCanvas(ctx, img, targetW, targetH, ajuste = { zoom: 1, x: 0, y: 0 }) {
+  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
+  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
+  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
+
+  // Replica exatamente a geometria do editor visual:
+  // frame 16:10 com um quadro central 16:9 (84% da largura).
+  const frameW = targetW / CAPA_EDITOR_CROP_WIDTH_RATIO;
+  const frameH = frameW * (CAPA_EDITOR_ASPECT_H / CAPA_EDITOR_ASPECT_W);
+  const cropX = (frameW - targetW) / 2;
+  const cropY = (frameH - targetH) / 2;
+
+  const baseScale = Math.min(frameW / img.width, frameH / img.height);
+  const scale = baseScale * zoom;
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  const limiteX = Math.abs((frameW - drawW) / 2);
+  const limiteY = Math.abs((frameH - drawH) / 2);
+  const shiftX = (eixoX / 100) * limiteX;
+  const shiftY = (eixoY / 100) * limiteY;
+  const drawX = (frameW - drawW) / 2 + shiftX;
+  const drawY = (frameH - drawH) / 2 + shiftY;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#0b0d16';
+  ctx.fillRect(0, 0, targetW, targetH);
+  ctx.globalAlpha = 0.35;
+  const bgScale = Math.max(frameW / img.width, frameH / img.height);
+  const bgW = img.width * bgScale;
+  const bgH = img.height * bgScale;
+  ctx.drawImage(img, ((frameW - bgW) / 2) - cropX, ((frameH - bgH) / 2) - cropY, bgW, bgH);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(img, drawX - cropX, drawY - cropY, drawW, drawH);
+}
+
+function maskBrDateTime(raw) {
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 12);
+  const dd = digits.slice(0, 2);
+  const mm = digits.slice(2, 4);
+  const yyyy = digits.slice(4, 8);
+  const hh = digits.slice(8, 10);
+  const min = digits.slice(10, 12);
+  let out = '';
+  if (dd) out += dd;
+  if (mm) out += `/${mm}`;
+  if (yyyy) out += `/${yyyy}`;
+  if (hh) out += ` ${hh}`;
+  if (min) out += `:${min}`;
+  return out;
+}
+
+function parseBrDateTimeToMs(br) {
+  const v = String(br || '').trim();
+  const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  const hh = Number(m[4] || 0);
+  const min = Number(m[5] || 0);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31 || hh < 0 || hh > 23 || min < 0 || min > 59) {
+    return null;
+  }
+  const dt = new Date(yyyy, mm - 1, dd, hh, min, 0, 0);
+  if (
+    dt.getFullYear() !== yyyy ||
+    dt.getMonth() !== mm - 1 ||
+    dt.getDate() !== dd ||
+    dt.getHours() !== hh ||
+    dt.getMinutes() !== min
+  ) {
+    return null;
+  }
+  return dt.getTime();
+}
+
+function msParaBrDateTime(ms) {
+  if (!ms || !Number.isFinite(Number(ms))) return '';
+  try {
+    const fmt = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(new Date(Number(ms)));
+    const get = (type) => parts.find((p) => p.type === type)?.value || '';
+    return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`;
+  } catch {
+    return '';
+  }
 }
 
 // --- COMPONENTE: MODAL DE ERRO ---
@@ -45,9 +285,8 @@ function ModalErro({ mensagem, aoFechar }) {
   );
 }
 
-// --- COMPONENTE: CARD DA PÁGINA (INPUT + DRAG AND DROP) ---
-function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, onErro }) {
-  const [visivel, setVisivel] = useState(false);
+// --- COMPONENTE: CARD DA PÁGINA ---
+function PaginaCard({ index, url, onTrocar, onReordenar, total, onErro, onVer }) {
   const [valorInput, setValorInput] = useState(index + 1);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -55,13 +294,9 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, o
     setValorInput(index + 1);
   }, [index]);
 
-  useEffect(() => {
-    if (forcarRevelar) setVisivel(true);
-  }, [forcarRevelar]);
-
   const validarEReordenar = () => {
-    const valorDigitado = parseInt(valorInput);
-    if (isNaN(valorDigitado)) {
+    const valorDigitado = parseInt(valorInput, 10);
+    if (Number.isNaN(valorDigitado)) {
       setValorInput(index + 1);
       return;
     }
@@ -71,28 +306,25 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, o
       return;
     }
     const novoIndex = valorDigitado - 1;
-    if (novoIndex !== index) {
-      onReordenar(index, novoIndex);
-    }
+    if (novoIndex !== index) onReordenar(index, novoIndex);
   };
 
-  // Funções de Arrastar (Drag and Drop)
   const handleDragStart = (e) => {
-    e.dataTransfer.setData("indexOrigem", index);
+    e.dataTransfer.setData('indexOrigem', index);
     setIsDragging(true);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    const indexOrigem = parseInt(e.dataTransfer.getData("indexOrigem"));
+    const indexOrigem = parseInt(e.dataTransfer.getData('indexOrigem'), 10);
     setIsDragging(false);
-    if (indexOrigem !== index) {
+    if (!Number.isNaN(indexOrigem) && indexOrigem !== index) {
       onReordenar(indexOrigem, index);
     }
   };
 
   return (
-    <div 
+    <div
       className={`pagina-edit-card ${isDragging ? 'dragging' : ''}`}
       draggable="true"
       onDragStart={handleDragStart}
@@ -102,11 +334,11 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, o
     >
       <div className="reorder-control">
         <label>Posição:</label>
-        <input 
-          type="number" 
+        <input
+          type="number"
           value={valorInput}
           className="input-reorder"
-          onChange={(e) => setValorInput(e.target.value)} 
+          onChange={(e) => setValorInput(e.target.value)}
           onBlur={validarEReordenar}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -118,26 +350,160 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, forcarRevelar, o
       </div>
 
       <span className="badge-pg">Pág {index + 1}</span>
-      
+
       <div className="preview-placeholder">
-        {visivel ? (
-          <img src={url} alt={`página ${index}`} draggable="false" />
-        ) : (
-          <button type="button" className="btn-revelar" onClick={() => setVisivel(true)}>
-            VER PÁGINA
-          </button>
-        )}
+        <img src={url} alt={`página ${index + 1}`} draggable="false" />
       </div>
 
-      <label className="btn-trocar">
-        TROCAR JPG
-        <input 
-          type="file" 
-          hidden 
-          accept="image/jpeg,image/jpg,image/png,image/webp"
-          onChange={(e) => onTrocar(e.target.files[0])} 
+      <div className="pagina-card-actions">
+        <button type="button" className="btn-revelar" onClick={onVer}>
+          Ver página
+        </button>
+        <label className="btn-trocar">
+          Trocar
+          <input
+            type="file"
+            hidden
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            onChange={(e) => onTrocar(e.target.files[0])}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PaginaSelecionadaCard({ index, url, nome, total, onReordenar, onRemover, onErro, onVer }) {
+  const [valorInput, setValorInput] = useState(index + 1);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    setValorInput(index + 1);
+  }, [index]);
+
+  const validarEReordenar = () => {
+    const valorDigitado = parseInt(valorInput, 10);
+    if (Number.isNaN(valorDigitado)) {
+      setValorInput(index + 1);
+      return;
+    }
+    if (valorDigitado > total || valorDigitado < 1) {
+      onErro(`Página ${valorDigitado} não existe! Este capítulo só tem ${total} páginas selecionadas.`);
+      setValorInput(index + 1);
+      return;
+    }
+    const novoIndex = valorDigitado - 1;
+    if (novoIndex !== index) onReordenar(index, novoIndex);
+  };
+
+  const handleDragStart = (e) => {
+    e.dataTransfer.setData('indexOrigem', index);
+    setIsDragging(true);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const indexOrigem = parseInt(e.dataTransfer.getData('indexOrigem'), 10);
+    setIsDragging(false);
+    if (!Number.isNaN(indexOrigem) && indexOrigem !== index) {
+      onReordenar(indexOrigem, index);
+    }
+  };
+
+  return (
+    <div
+      className={`pagina-edit-card pagina-edit-card--selecionada ${isDragging ? 'dragging' : ''}`}
+      draggable="true"
+      onDragStart={handleDragStart}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+      onDragEnd={() => setIsDragging(false)}
+    >
+      <div className="reorder-control">
+        <label>Posição:</label>
+        <input
+          type="number"
+          value={valorInput}
+          className="input-reorder"
+          onChange={(e) => setValorInput(e.target.value)}
+          onBlur={validarEReordenar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              validarEReordenar();
+            }
+          }}
         />
-      </label>
+      </div>
+
+      <span className="badge-pg">Nova {index + 1}</span>
+
+      <div className="preview-placeholder">
+        <img src={url} alt={`selecionada ${index + 1}`} draggable="false" />
+      </div>
+
+      <p className="arquivo-selecionado-nome" title={nome}>{nome}</p>
+      <div className="pagina-card-actions">
+        <button type="button" className="btn-revelar" onClick={onVer}>
+          Ver página
+        </button>
+        <button type="button" className="btn-remover-pagina" onClick={() => onRemover(index)}>
+          Remover
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ModalPreviewPagina({ aberto, itens, indiceInicial = 0, aoFechar }) {
+  const limiteInicial = Math.max(0, (itens?.length || 0) - 1);
+  const baseInicial = Number.isFinite(Number(indiceInicial)) ? Number(indiceInicial) : 0;
+  const seguroInicial = Math.min(limiteInicial, Math.max(0, baseInicial));
+  const [indiceAtual, setIndiceAtual] = useState(seguroInicial);
+  const [zoom, setZoom] = useState(1);
+
+  useEffect(() => {
+    if (!aberto || !itens.length) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') aoFechar();
+      if (e.key === 'ArrowLeft') setIndiceAtual((i) => (i - 1 + itens.length) % itens.length);
+      if (e.key === 'ArrowRight') setIndiceAtual((i) => (i + 1) % itens.length);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [aberto, itens.length, aoFechar]);
+
+  if (!aberto || !itens.length) return null;
+  const indiceSeguroAtual = Math.min(Math.max(0, indiceAtual), itens.length - 1);
+  const atual = itens[indiceSeguroAtual];
+  return (
+    <div className="modal-preview-overlay" role="dialog" aria-modal="true">
+      <div className="modal-preview-card">
+        <header className="modal-preview-head">
+          <strong>{atual?.nome || `Página ${indiceSeguroAtual + 1}`}</strong>
+          <button type="button" className="btn-modal-close" onClick={aoFechar}>Fechar</button>
+        </header>
+        <div className="modal-preview-body">
+          <img
+            src={atual?.url}
+            alt={atual?.nome || `preview ${indiceSeguroAtual + 1}`}
+            style={{ transform: `scale(${zoom})` }}
+          />
+        </div>
+        <footer className="modal-preview-actions">
+          <button type="button" className="btn-revelar" onClick={() => setIndiceAtual((i) => (i - 1 + itens.length) % itens.length)}>
+            ← Anterior
+          </button>
+          <span>{indiceSeguroAtual + 1} / {itens.length}</span>
+          <button type="button" className="btn-revelar" onClick={() => setIndiceAtual((i) => (i + 1) % itens.length)}>
+            Próxima →
+          </button>
+          <label className="modal-preview-zoom">
+            Zoom ({zoom.toFixed(2)}x)
+            <input type="range" min="1" max="3" step="0.05" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
+          </label>
+        </footer>
+      </div>
     </div>
   );
 }
@@ -150,6 +516,10 @@ export default function AdminPanel() {
   const [titulo, setTitulo] = useState('');
   const [numeroCapitulo, setNumeroCapitulo] = useState('');
   const [capaCapitulo, setCapaCapitulo] = useState(null);
+  const [capaAjuste, setCapaAjuste] = useState({ zoom: 1, x: 0, y: 0 });
+  const [capaPreviewFinalUrl, setCapaPreviewFinalUrl] = useState('');
+  const capaEditorRef = useRef(null);
+  const dragCapaRef = useRef(null);
   const [arquivosPaginas, setArquivosPaginas] = useState([]);
   const [paginasExistentes, setPaginasExistentes] = useState([]);
 
@@ -158,7 +528,9 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(false);
   const [progressoMsg, setProgressoMsg] = useState('');
   const [porcentagem, setPorcentagem] = useState(0);
-  const [mostrarTodasAsFotos, setMostrarTodasAsFotos] = useState(false);
+  const [etapaAtiva, setEtapaAtiva] = useState(1);
+  const [dragUploadAtivo, setDragUploadAtivo] = useState(false);
+  const [modalPreview, setModalPreview] = useState({ aberto: false, origem: 'novas', indice: 0 });
   const [erroModal, setErroModal] = useState('');
   const [publicReleaseAtInput, setPublicReleaseAtInput] = useState('');
   const [antecipadoMembros, setAntecipadoMembros] = useState(false);
@@ -185,6 +557,82 @@ export default function AdminPanel() {
       unsubscribe();
     };
   }, [user, navigate]);
+
+  const previewsPaginasSelecionadas = useMemo(
+    () =>
+      arquivosPaginas.map((file, idx) => ({
+        key: `${file.name}_${file.lastModified}_${file.size}_${idx}`,
+        nome: file.name || `pagina_${idx + 1}`,
+        url: URL.createObjectURL(file),
+      })),
+    [arquivosPaginas]
+  );
+
+  const capaPreviewUrl = useMemo(() => {
+    if (!capaCapitulo) return '';
+    return URL.createObjectURL(capaCapitulo);
+  }, [capaCapitulo]);
+  const capituloEditando = useMemo(
+    () => capitulos.find((c) => c.id === editandoId) || null,
+    [capitulos, editandoId]
+  );
+  const capaVisualSrc = capaPreviewUrl || capituloEditando?.capaUrl || '/assets/fotos/shito.jpg';
+  const itensPreviewNovas = useMemo(
+    () => previewsPaginasSelecionadas.map((p, idx) => ({ url: p.url, nome: `Nova página ${idx + 1}` })),
+    [previewsPaginasSelecionadas]
+  );
+  const itensPreviewAtuais = useMemo(
+    () => paginasExistentes.map((url, idx) => ({ url, nome: `Página ${idx + 1}` })),
+    [paginasExistentes]
+  );
+  const itensModalPreview = modalPreview.origem === 'atuais' ? itensPreviewAtuais : itensPreviewNovas;
+  const totalPaginasAtual = paginasExistentes.length + arquivosPaginas.length;
+  const statusRevisao = publicReleaseAtInput?.trim()
+    ? 'Agendado'
+    : (totalPaginasAtual > 0 ? 'Publicado ao salvar' : 'Rascunho');
+
+  useEffect(() => {
+    return () => {
+      previewsPaginasSelecionadas.forEach((p) => URL.revokeObjectURL(p.url));
+    };
+  }, [previewsPaginasSelecionadas]);
+
+  useEffect(() => {
+    return () => {
+      if (capaPreviewUrl) URL.revokeObjectURL(capaPreviewUrl);
+    };
+  }, [capaPreviewUrl]);
+
+  useEffect(() => {
+    let ativo = true;
+    let objectUrl = '';
+    if (!capaPreviewUrl) {
+      setCapaPreviewFinalUrl('');
+      return () => {};
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      if (!ativo) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280;
+      canvas.height = Math.round((1280 * CAPA_ASPECT_H) / CAPA_ASPECT_W);
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) return;
+      desenharCapaNoCanvas(ctx, img, canvas.width, canvas.height, capaAjuste);
+      canvas.toBlob((blob) => {
+        if (!ativo || !blob) return;
+        objectUrl = URL.createObjectURL(blob);
+        setCapaPreviewFinalUrl(objectUrl);
+      }, 'image/webp', 0.9);
+    };
+    img.src = capaPreviewUrl;
+
+    return () => {
+      ativo = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [capaPreviewUrl, capaAjuste]);
 
   const handleReordenarPagina = async (indexAntigo, indexNovo) => {
     if (indexNovo < 0 || indexNovo >= paginasExistentes.length) return;
@@ -216,9 +664,11 @@ export default function AdminPanel() {
     setLoading(true);
     setProgressoMsg(`Trocando página ${index + 1}...`);
     try {
-      const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}${extensaoImagemNoPath(arquivoNovo)}`;
+      setProgressoMsg(`Otimizando página ${index + 1}...`);
+      const arquivoOtimizado = await comprimirImagemParaUpload(arquivoNovo);
+      const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
       const fileRef = storageRef(storage, pathStorage);
-      await uploadBytes(fileRef, arquivoNovo);
+      await uploadBytes(fileRef, arquivoOtimizado);
       const urlNova = await getDownloadURL(fileRef);
 
       const novasPaginas = [...paginasExistentes];
@@ -241,9 +691,11 @@ export default function AdminPanel() {
       if (erroArquivo) {
         throw new Error(erroArquivo);
       }
-      const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}${extensaoImagemNoPath(arquivos[i])}`;
+      setProgressoMsg(`Otimizando página ${i + 1}/${arquivos.length}...`);
+      const arquivoOtimizado = await comprimirImagemParaUpload(arquivos[i]);
+      const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
       const fileRef = storageRef(storage, pathStorage);
-      const uploadTask = uploadBytesResumable(fileRef, arquivos[i]);
+      const uploadTask = uploadBytesResumable(fileRef, arquivoOtimizado);
       
       await new Promise((res, rej) => {
         uploadTask.on('state_changed', 
@@ -259,13 +711,115 @@ export default function AdminPanel() {
     return urls;
   };
 
+  const handleSelecionarArquivosPaginas = (fileList) => {
+    const novos = Array.from(fileList || []);
+    if (!novos.length) return;
+    const erros = novos
+      .map((file, idx) => validarImagemUpload(file, `Pagina ${idx + 1}`))
+      .filter(Boolean);
+    if (erros.length) {
+      setErroModal(erros[0]);
+      return;
+    }
+    setArquivosPaginas((prev) => [...prev, ...novos]);
+    if (etapaAtiva < 2) setEtapaAtiva(2);
+  };
+
+  const handleSelecionarCapa = (file) => {
+    if (!file) return;
+    const erro = validarImagemUpload(file, 'Capa');
+    if (erro) {
+      setErroModal(erro);
+      return;
+    }
+    setCapaCapitulo(file);
+    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    if (etapaAtiva < 3) setEtapaAtiva(3);
+  };
+
+  const iniciarArrasteCapa = (event) => {
+    if (!capaPreviewUrl || !capaEditorRef.current) return;
+    event.preventDefault();
+    const box = capaEditorRef.current.getBoundingClientRect();
+    dragCapaRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      eixoX: capaAjuste.x,
+      eixoY: capaAjuste.y,
+      largura: Math.max(1, box.width),
+      altura: Math.max(1, box.height),
+    };
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const onMove = (event) => {
+      if (!dragCapaRef.current) return;
+      const drag = dragCapaRef.current;
+      const deltaX = event.clientX - drag.startX;
+      const deltaY = event.clientY - drag.startY;
+      const novoX = drag.eixoX + (deltaX / (drag.largura * 0.5)) * 100;
+      const novoY = drag.eixoY + (deltaY / (drag.altura * 0.5)) * 100;
+      setCapaAjuste((prev) => ({
+        ...prev,
+        x: Math.max(-100, Math.min(100, novoX)),
+        y: Math.max(-100, Math.min(100, novoY)),
+      }));
+    };
+
+    const onUp = () => {
+      if (!dragCapaRef.current) return;
+      dragCapaRef.current = null;
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+  }, []);
+
+  const handleReordenarSelecionada = (indexAntigo, indexNovo) => {
+    if (indexNovo < 0 || indexNovo >= arquivosPaginas.length) return;
+    setArquivosPaginas((prev) => {
+      const next = [...prev];
+      const [movida] = next.splice(indexAntigo, 1);
+      next.splice(indexNovo, 0, movida);
+      return next;
+    });
+  };
+
+  const handleRemoverSelecionada = (index) => {
+    setArquivosPaginas((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;
+    if (etapaAtiva !== 5) {
+      setErroModal('Finalize as etapas até "Publicar" para lançar o capítulo.');
+      return;
+    }
 
     setLoading(true);
     setProgressoMsg('Sincronizando...');
     try {
+      const numeroNormalizado = parseInt(numeroCapitulo, 10);
+      if (!Number.isFinite(numeroNormalizado) || numeroNormalizado <= 0) {
+        throw new Error('Número do capítulo inválido.');
+      }
+      const jaExisteMesmoNumeroNaObra = capitulos.some((cap) => (
+        cap.id !== editandoId &&
+        Number(cap.numero) === numeroNormalizado &&
+        obterObraIdCapitulo(cap) === OBRA_PADRAO_ID
+      ));
+      if (jaExisteMesmoNumeroNaObra) {
+        throw new Error(`Já existe capítulo #${numeroNormalizado} na obra SHITO.`);
+      }
+
       let urlCapa = null;
       let urlsPaginas = [];
 
@@ -274,8 +828,10 @@ export default function AdminPanel() {
         if (erroCapa) {
           throw new Error(erroCapa);
         }
-        const capaRef = storageRef(storage, `capas/${Date.now()}_${capaCapitulo.name}`);
-        await uploadBytes(capaRef, capaCapitulo);
+        setProgressoMsg('Otimizando e ajustando capa...');
+        const capaOtimizada = await processarCapaParaUpload(capaCapitulo, capaAjuste);
+        const capaRef = storageRef(storage, `capas/${Date.now()}_${capaOtimizada.name}`);
+        await uploadBytes(capaRef, capaOtimizada);
         urlCapa = await getDownloadURL(capaRef);
       }
 
@@ -289,14 +845,19 @@ export default function AdminPanel() {
 
       const dados = {
         titulo,
-        numero: parseInt(numeroCapitulo, 10),
+        numero: numeroNormalizado,
+        obraId: OBRA_PADRAO_ID,
+        obraTitulo: OBRA_SHITO_DEFAULT.tituloCurto,
         dataUpload: new Date().toISOString(),
       };
 
       let publicMs = null;
       if (publicReleaseAtInput?.trim()) {
-        const t = new Date(publicReleaseAtInput).getTime();
-        if (!Number.isNaN(t)) publicMs = t;
+        const parsed = parseBrDateTimeToMs(publicReleaseAtInput);
+        if (parsed == null) {
+          throw new Error('Data de lançamento inválida. Use o formato dd/mm/aaaa hh:mm.');
+        }
+        publicMs = parsed;
       }
       dados.publicReleaseAt = publicMs;
       dados.antecipadoMembros = Boolean(antecipadoMembros);
@@ -319,7 +880,8 @@ export default function AdminPanel() {
       setPaginasExistentes([]);
       setArquivosPaginas([]);
       setCapaCapitulo(null);
-      setMostrarTodasAsFotos(false);
+      setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+      setEtapaAtiva(1);
       setPublicReleaseAtInput('');
       setAntecipadoMembros(false);
       e.target.reset();
@@ -337,8 +899,10 @@ export default function AdminPanel() {
     setTitulo(cap.titulo);
     setNumeroCapitulo(cap.numero);
     setPaginasExistentes(cap.paginas || []);
-    setMostrarTodasAsFotos(false);
-    setPublicReleaseAtInput(msParaDatetimeLocal(cap.publicReleaseAt));
+    setCapaCapitulo(null);
+    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    setEtapaAtiva(2);
+    setPublicReleaseAtInput(msParaBrDateTime(cap.publicReleaseAt));
     setAntecipadoMembros(Boolean(cap.antecipadoMembros));
     window.scrollTo(0, 0);
   };
@@ -346,6 +910,15 @@ export default function AdminPanel() {
   return (
     <div className="admin-panel">
       <ModalErro mensagem={erroModal} aoFechar={() => setErroModal('')} />
+      {modalPreview.aberto && (
+        <ModalPreviewPagina
+          key={`${modalPreview.origem}_${modalPreview.indice}_${itensModalPreview.length}`}
+          aberto={modalPreview.aberto}
+          itens={itensModalPreview}
+          indiceInicial={modalPreview.indice}
+          aoFechar={() => setModalPreview({ aberto: false, origem: 'novas', indice: 0 })}
+        />
+      )}
 
       <header className="admin-header">
         <h1>SHITO - FORJA DO AUTOR</h1>
@@ -366,14 +939,16 @@ export default function AdminPanel() {
               <label className="lancamento-label">
                 Lançamento público (opcional)
                 <input
-                  type="datetime-local"
+                  type="text"
+                  inputMode="numeric"
                   className="lancamento-datetime"
+                  placeholder="dd/mm/aaaa hh:mm"
                   value={publicReleaseAtInput}
-                  onChange={(e) => setPublicReleaseAtInput(e.target.value)}
+                  onChange={(e) => setPublicReleaseAtInput(maskBrDateTime(e.target.value))}
                 />
               </label>
               <p className="lancamento-help">
-                Vazio = já público. Com data futura, o capítulo fica &quot;em breve&quot; até o horário (assinantes Premium podem ler antes se a opção abaixo estiver marcada).
+               Data Vazia = já público. Com data futura, o capítulo fica &quot;em breve&quot; até o horário (assinantes Premium podem ler antes se a opção abaixo estiver marcada).
               </p>
               <label className="lancamento-check">
                 <input
@@ -385,43 +960,252 @@ export default function AdminPanel() {
               </label>
             </div>
 
-            {editandoId && paginasExistentes.length > 0 && (
-              <div className="cirurgia-paginas">
-                <div className="cirurgia-header">
-                  <div className="cirurgia-info">
-                    <h3>Páginas Atuais</h3>
-                    <p>Arraste para reordenar ou use o campo de posição.</p>
-                  </div>
-                  <button 
-                    type="button" 
-                    className={`btn-revelar-tudo ${mostrarTodasAsFotos ? 'ativo' : ''}`}
-                    onClick={() => setMostrarTodasAsFotos(!mostrarTodasAsFotos)}
-                  >
-                    {mostrarTodasAsFotos ? 'ESCONDER TUDO' : 'REVELAR TODAS'}
-                  </button>
-                </div>
+            <div className="editor-steps">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`editor-step-chip${etapaAtiva === n ? ' active' : ''}`}
+                  onClick={() => setEtapaAtiva(n)}
+                >
+                  {n === 1 && '1. Upload'}
+                  {n === 2 && '2. Organizar'}
+                  {n === 3 && '3. Ajustar capa'}
+                  {n === 4 && '4. Revisar'}
+                  {n === 5 && '5. Publicar'}
+                </button>
+              ))}
+            </div>
 
-                <div className="paginas-edit-grid">
-                  {paginasExistentes.map((url, index) => (
-                    <PaginaCard 
-                      key={`${editandoId}-${url}`} 
-                      index={index}
-                      url={url}
-                      total={paginasExistentes.length}
-                      onTrocar={(file) => handleTrocarPaginaUnica(index, file)}
-                      onReordenar={handleReordenarPagina}
-                      forcarRevelar={mostrarTodasAsFotos}
-                      onErro={setErroModal}
+            {etapaAtiva === 1 && (
+              <div className="editor-step-panel">
+                <div
+                  className={`upload-dropzone${dragUploadAtivo ? ' is-active' : ''}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragUploadAtivo(true);
+                  }}
+                  onDragLeave={() => setDragUploadAtivo(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragUploadAtivo(false);
+                    handleSelecionarArquivosPaginas(e.dataTransfer.files);
+                  }}
+                >
+                  <h3>Envie as páginas do capítulo</h3>
+                  <p>Arraste e solte imagens aqui, ou use o seletor abaixo.</p>
+                </div>
+                <div className="file-inputs">
+                  <label>
+                    Capa do capítulo
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      onChange={(e) => handleSelecionarCapa(e.target.files?.[0])}
                     />
-                  ))}
+                  </label>
+                  <label>
+                    Páginas (múltiplas)
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      onChange={(e) => {
+                        handleSelecionarArquivosPaginas(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
             )}
 
-            <div className="file-inputs">
-              <label>Alterar Capa: <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => setCapaCapitulo(e.target.files[0])} /></label>
-              <label>Refazer Capítulo: <input type="file" multiple accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => setArquivosPaginas(Array.from(e.target.files))} /></label>
-            </div>
+            {etapaAtiva === 2 && (
+              <div className="editor-step-panel">
+                {editandoId && paginasExistentes.length > 0 && (
+                  <div className="cirurgia-paginas">
+                    <div className="cirurgia-header">
+                      <div className="cirurgia-info">
+                        <h3>Páginas atuais ({paginasExistentes.length})</h3>
+                        <p>Arraste para reordenar, visualize em modal e troque páginas pontuais.</p>
+                      </div>
+                    </div>
+                    <div className="paginas-edit-grid">
+                      {paginasExistentes.map((url, index) => (
+                        <PaginaCard
+                          key={`${editandoId}-${url}`}
+                          index={index}
+                          url={url}
+                          total={paginasExistentes.length}
+                          onTrocar={(file) => handleTrocarPaginaUnica(index, file)}
+                          onReordenar={handleReordenarPagina}
+                          onErro={setErroModal}
+                          onVer={() => setModalPreview({ aberto: true, origem: 'atuais', indice: index })}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="cirurgia-paginas">
+                  <div className="cirurgia-header">
+                    <div className="cirurgia-info">
+                      <h3>Pré-visualização das novas páginas ({arquivosPaginas.length})</h3>
+                      <p>Cards com thumbnail, preview em modal, remoção e reorder por arraste.</p>
+                    </div>
+                  </div>
+                  {arquivosPaginas.length > 0 ? (
+                    <div className="paginas-edit-grid">
+                      {previewsPaginasSelecionadas.map((preview, index) => (
+                        <PaginaSelecionadaCard
+                          key={preview.key}
+                          index={index}
+                          url={preview.url}
+                          nome={preview.nome}
+                          total={previewsPaginasSelecionadas.length}
+                          onReordenar={handleReordenarSelecionada}
+                          onRemover={handleRemoverSelecionada}
+                          onErro={setErroModal}
+                          onVer={() => setModalPreview({ aberto: true, origem: 'novas', indice: index })}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="editor-empty">Nenhuma nova página selecionada ainda.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {etapaAtiva === 3 && (
+              <div className="capa-ajuste-bloco">
+                <div className="cirurgia-header">
+                  <div className="cirurgia-info">
+                    <h3>Ajuste da capa (16:9)</h3>
+                    <p>Arraste na imagem e use sliders de ajuste fino. A prévia final replica o resultado real.</p>
+                  </div>
+                </div>
+
+                <div className="capa-ajuste-grid">
+                  <div className="capa-preview-frame">
+                    <div
+                      ref={capaEditorRef}
+                      className={`capa-preview-mask capa-preview-mask--editor${capaPreviewUrl ? ' is-editable' : ''}`}
+                      onMouseDown={iniciarArrasteCapa}
+                      title={capaPreviewUrl ? 'Clique e arraste para mover o enquadramento' : 'Selecione uma capa para editar'}
+                    >
+                      <img
+                        src={capaVisualSrc}
+                        alt={capaPreviewUrl ? 'Prévia da capa ajustada' : 'Prévia da capa atual'}
+                        className={`capa-preview-img${capaPreviewUrl ? '' : ' capa-preview-img--faded'}`}
+                        style={
+                          capaPreviewUrl
+                            ? { transform: `translate(${capaAjuste.x}%, ${capaAjuste.y}%) scale(${capaAjuste.zoom})` }
+                            : undefined
+                        }
+                      />
+                      <div className="capa-editor-outside-mask" aria-hidden="true"></div>
+                      <div className="capa-editor-crop-box" aria-hidden="true"></div>
+                      <span className="capa-preview-tag">1) Área dentro do quadro = o que vai para a capa</span>
+                    </div>
+
+                    <div className="capa-preview-mask capa-preview-mask--resultado">
+                      <img
+                        src={capaPreviewFinalUrl || capaVisualSrc}
+                        alt="Resultado final da capa"
+                        className="capa-preview-img capa-preview-img--resultado-main"
+                      />
+                      <span className="capa-preview-tag">2) Prévia final 16:9 (aba Capítulos)</span>
+                    </div>
+                  </div>
+
+                  <div className="capa-ajuste-controls">
+                    <label>
+                      Zoom ({capaAjuste.zoom.toFixed(2)}x)
+                      <input
+                        type="range"
+                        min="1"
+                        max="3"
+                        step="0.01"
+                        value={capaAjuste.zoom}
+                        disabled={!capaPreviewUrl}
+                        onChange={(e) =>
+                          setCapaAjuste((prev) => ({ ...prev, zoom: Number(e.target.value) }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Eixo X ({Math.round(capaAjuste.x)}%)
+                      <input
+                        type="range"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        value={capaAjuste.x}
+                        disabled={!capaPreviewUrl}
+                        onChange={(e) =>
+                          setCapaAjuste((prev) => ({ ...prev, x: Number(e.target.value) }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      Eixo Y ({Math.round(capaAjuste.y)}%)
+                      <input
+                        type="range"
+                        min="-100"
+                        max="100"
+                        step="1"
+                        value={capaAjuste.y}
+                        disabled={!capaPreviewUrl}
+                        onChange={(e) =>
+                          setCapaAjuste((prev) => ({ ...prev, y: Number(e.target.value) }))
+                        }
+                      />
+                    </label>
+                    <p className="capa-ajuste-dica">
+                      Dica: você pode arrastar direto na imagem para ajustar X/Y.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn-reset-capa"
+                      disabled={!capaPreviewUrl}
+                      onClick={() => setCapaAjuste({ zoom: 1, x: 0, y: 0 })}
+                    >
+                      Resetar ajuste
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {etapaAtiva === 4 && (
+              <div className="editor-step-panel review-panel">
+                <h3>Revisão final</h3>
+                <div className="review-kpis">
+                  <span><strong>Status:</strong> {statusRevisao}</span>
+                  <span><strong>Páginas:</strong> {totalPaginasAtual}</span>
+                  <span><strong>Novas páginas:</strong> {arquivosPaginas.length}</span>
+                  <span><strong>Lançamento:</strong> {publicReleaseAtInput?.trim() || 'Imediato'}</span>
+                </div>
+                <div className="capa-preview-mask capa-preview-mask--resultado">
+                  <img
+                    src={capaPreviewFinalUrl || capaVisualSrc}
+                    alt="Prévia final para revisão"
+                    className="capa-preview-img capa-preview-img--resultado-main"
+                  />
+                  <span className="capa-preview-tag">Prévia final pronta para publicar</span>
+                </div>
+              </div>
+            )}
+
+            {etapaAtiva === 5 && (
+              <div className="editor-step-panel review-panel">
+                <h3>Publicar capítulo</h3>
+                <p className="editor-empty">
+                  Confira os dados e clique em publicar. O botão ficará fixo ao final para facilitar.
+                </p>
+              </div>
+            )}
 
             {loading && (
               <div className="progress-container">
@@ -430,8 +1214,27 @@ export default function AdminPanel() {
               </div>
             )}
 
-            <div className="form-actions">
-              <button type="submit" className="btn-save" disabled={loading}>
+            <div className="step-nav-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                disabled={etapaAtiva <= 1}
+                onClick={() => setEtapaAtiva((s) => Math.max(1, s - 1))}
+              >
+                Etapa anterior
+              </button>
+              <button
+                type="button"
+                className="btn-edit"
+                disabled={etapaAtiva >= 5}
+                onClick={() => setEtapaAtiva((s) => Math.min(5, s + 1))}
+              >
+                Próxima etapa
+              </button>
+            </div>
+
+            <div className="form-actions form-actions--sticky">
+              <button type="submit" className="btn-save" disabled={loading || etapaAtiva !== 5}>
                 {loading ? 'PROCESSANDO...' : editandoId ? 'SALVAR ALTERAÇÕES' : 'LANÇAR CAPÍTULO'}
               </button>
               {editandoId && (
@@ -441,6 +1244,9 @@ export default function AdminPanel() {
                   onClick={() => {
                     setEditandoId(null);
                     setPaginasExistentes([]);
+                    setCapaCapitulo(null);
+                    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+                    setEtapaAtiva(1);
                     setPublicReleaseAtInput('');
                     setAntecipadoMembros(false);
                   }}
@@ -453,25 +1259,39 @@ export default function AdminPanel() {
         </section>
 
         <section className="list-section">
-          <h2>CRUD - Lista de Capítulos</h2>
+          <h2>Capítulos publicados</h2>
           <div className="capitulos-grid">
-            {capitulos.map((cap) => (
+            {capitulos.map((cap) => {
+              const ehAgendado = cap.publicReleaseAt && Number(cap.publicReleaseAt) > Date.now();
+              const ehRascunho = !cap.capaUrl || !Array.isArray(cap.paginas) || cap.paginas.length === 0;
+              const status = ehRascunho ? 'Rascunho' : (ehAgendado ? 'Agendado' : 'Publicado');
+              const dataLabel = cap.dataUpload
+                ? new Date(cap.dataUpload).toLocaleDateString('pt-BR')
+                : 'Sem data';
+              const views = Number(cap.visualizacoes || 0);
+              return (
               <div key={cap.id} className="cap-card">
-                <div className="cap-info">
-                  <span className="cap-number">#{cap.numero}</span>
-                  <span className="cap-title">{cap.titulo}</span>
-                  {cap.publicReleaseAt && Number(cap.publicReleaseAt) > Date.now() && (
-                    <span className="cap-lancamento-pill">Agendado</span>
-                  )}
+                <div className="cap-info cap-info--rich">
+                  <div className="cap-topline">
+                    <span className="cap-number">#{cap.numero}</span>
+                    <span className="cap-title">{cap.titulo}</span>
+                    <span className={`cap-status-pill ${status.toLowerCase()}`}>{status}</span>
+                  </div>
+                  <div className="cap-meta-row">
+                    <span>📅 {dataLabel}</span>
+                    <span>👁 {views} views</span>
+                    {cap.antecipadoMembros ? <span>👑 VIP antecipado</span> : <span>VIP off</span>}
+                  </div>
                 </div>
                 <div className="cap-actions">
-                  <button className="btn-edit" onClick={() => prepararEdicao(cap)}>EDITAR</button>
+                  <button className="btn-edit" onClick={() => prepararEdicao(cap)}>Editar</button>
                   <button className="btn-delete" onClick={() => {
                     if (window.confirm(`Apagar fragmento ${cap.numero}?`)) remove(dbRef(db, `capitulos/${cap.id}`));
-                  }}>APAGAR</button>
+                  }}>Apagar</button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </section>
       </main>

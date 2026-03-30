@@ -21,6 +21,19 @@ import {
   parsePremiumExternalRef,
   criarPreferenciaPremium,
 } from './mercadoPagoPremium.js';
+import {
+  sanitizeTrackingValue,
+  normalizeTrackingSource,
+  normalizeTrackingEventType,
+  trackingDedupKey,
+  buildTrackingClickId,
+} from './trackingUtils.js';
+import {
+  validPromoPrice,
+  parsePromoConfig,
+  normalizePromoHistoryItem,
+  getPremiumOfferAt,
+} from './promoUtils.js';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
@@ -97,87 +110,6 @@ function getSmtpFrom() {
 
 const PREMIUM_PROMO_PATH = 'financas/promocoes/premiumAtual';
 const PREMIUM_PROMO_HISTORY_PATH = 'financas/promocoes/premiumHistorico';
-
-function validPromoPrice(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.round(n * 100) / 100;
-}
-
-function parsePromoConfig(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const enabled = raw.enabled === true;
-  const priceBRL = validPromoPrice(raw.priceBRL);
-  const startsAt = Number(raw.startsAt || 0);
-  const endsAt = Number(raw.endsAt || 0);
-  if (!enabled || priceBRL == null || !Number.isFinite(startsAt) || !Number.isFinite(endsAt)) {
-    return null;
-  }
-  if (startsAt <= 0 || endsAt <= startsAt) return null;
-  return {
-    promoId: String(raw.promoId || `promo_${startsAt}`),
-    name: String(raw.name || 'Promocao Premium').trim() || 'Promocao Premium',
-    message: String(raw.message || '').trim(),
-    enabled,
-    priceBRL,
-    startsAt,
-    endsAt,
-    updatedAt: Number(raw.updatedAt || Date.now()),
-  };
-}
-
-function normalizePromoHistoryItem(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const promoId = String(raw.promoId || '').trim();
-  if (!promoId) return null;
-  const startsAt = Number(raw.startsAt || 0);
-  const endsAt = Number(raw.endsAt || 0);
-  const priceBRL = validPromoPrice(raw.priceBRL);
-  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || startsAt <= 0 || endsAt <= startsAt || priceBRL == null) {
-    return null;
-  }
-  return {
-    promoId,
-    name: String(raw.name || 'Promocao Premium').trim() || 'Promocao Premium',
-    message: String(raw.message || '').trim(),
-    priceBRL,
-    startsAt,
-    endsAt,
-    createdAt: Number(raw.createdAt || raw.updatedAt || Date.now()),
-    updatedAt: Number(raw.updatedAt || Date.now()),
-    createdBy: raw.createdBy ? String(raw.createdBy) : null,
-    updatedBy: raw.updatedBy ? String(raw.updatedBy) : null,
-    status: String(raw.status || 'scheduled'),
-    disabledAt: Number(raw.disabledAt || 0) || null,
-    emailStats: raw.emailStats && typeof raw.emailStats === 'object'
-      ? {
-          sent: toNum(raw.emailStats.sent, 0),
-          skipped: toNum(raw.emailStats.skipped, 0),
-          failed: toNum(raw.emailStats.failed, 0),
-        }
-      : { sent: 0, skipped: 0, failed: 0 },
-  };
-}
-
-async function getPremiumOfferAt(db, now = Date.now()) {
-  const snap = await db.ref(PREMIUM_PROMO_PATH).get();
-  const promo = parsePromoConfig(snap.val());
-  if (!promo) {
-    return {
-      currentPriceBRL: PREMIUM_PRICE_BRL,
-      basePriceBRL: PREMIUM_PRICE_BRL,
-      isPromoActive: false,
-      promo: null,
-    };
-  }
-  const active = now >= promo.startsAt && now <= promo.endsAt;
-  return {
-    currentPriceBRL: active ? promo.priceBRL : PREMIUM_PRICE_BRL,
-    basePriceBRL: PREMIUM_PRICE_BRL,
-    isPromoActive: active,
-    promo,
-  };
-}
 
 async function enviarEmailPromocaoPremium(db, promo) {
   const usersSnap = await db.ref('usuarios').get();
@@ -262,56 +194,6 @@ function parseBody(req) {
     try { return JSON.parse(req.body); } catch { return {}; }
   }
   return req.body || {};
-}
-
-function sanitizeTrackingValue(v, maxLen = 120) {
-  const s = String(v || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_\-:]/g, '');
-  if (!s) return null;
-  return s.slice(0, maxLen);
-}
-
-function normalizeTrackingSource(v) {
-  const s = sanitizeTrackingValue(v, 40);
-  if (!s) return null;
-  const allowed = new Set([
-    'promo_email',
-    'chapter_email',
-    'normal',
-    'direct',
-    'unknown',
-  ]);
-  return allowed.has(s) ? s : 'unknown';
-}
-
-function normalizeTrackingEventType(v) {
-  const s = sanitizeTrackingValue(v, 60);
-  if (!s) return null;
-  const allowed = new Set([
-    'promo_email_sent',
-    'promo_landing',
-    'chapter_email_sent',
-    'chapter_landing',
-    'chapter_read',
-    'premium_checkout_started',
-  ]);
-  return allowed.has(s) ? s : null;
-}
-
-function trackingDedupKey(eventType, clickId) {
-  const evt = sanitizeTrackingValue(eventType, 60);
-  const cid = sanitizeTrackingValue(clickId, 100);
-  if (!evt || !cid) return null;
-  return `${evt}|${cid}`;
-}
-
-function buildTrackingClickId(prefix, uid, at = Date.now()) {
-  const p = sanitizeTrackingValue(prefix, 24) || 'track';
-  const u = sanitizeTrackingValue(uid, 48) || 'anon';
-  const rand = Math.random().toString(36).slice(2, 8);
-  return `${p}_${u}_${at}_${rand}`;
 }
 
 async function pushMarketingEvent(db, event) {
@@ -521,18 +403,24 @@ async function aplicarPremiumAprovado(
   trafficCampaign,
   trafficClickId
 ) {
-  const procRef = db.ref(`financas/mp_processed/${paymentId}`);
-  const procSnap = await procRef.get();
-  if (procSnap.exists()) {
-    logger.info('Premium: pagamento ja processado', { paymentId });
-    return { applied: false, duplicate: true };
-  }
-
   const now = Date.now();
   const snap = await db.ref(`usuarios/${uid}`).get();
   if (!snap.exists()) {
     logger.error('Premium: usuario nao existe', { uid, paymentId });
     return { applied: false, duplicate: false };
+  }
+  const procRef = db.ref(`financas/mp_processed/${paymentId}`);
+  const procTx = await procRef.transaction((curr) => {
+    if (curr) return;
+    return {
+      uid,
+      at: now,
+      tipo: 'premium_aprovado',
+    };
+  });
+  if (!procTx.committed) {
+    logger.info('Premium: pagamento ja processado', { paymentId });
+    return { applied: false, duplicate: true };
   }
   const profile = snap.val() || {};
   const currentUntil = typeof profile.memberUntil === 'number' ? profile.memberUntil : 0;
@@ -557,7 +445,11 @@ async function aplicarPremiumAprovado(
   patch[`usuarios_publicos/${uid}/userAvatar`] = avatarPub;
   patch[`usuarios_publicos/${uid}/accountType`] = 'premium';
   patch[`usuarios_publicos/${uid}/updatedAt`] = now;
-  patch[`financas/mp_processed/${paymentId}`] = { uid, at: now };
+  patch[`financas/mp_processed/${paymentId}`] = {
+    uid,
+    at: now,
+    tipo: 'premium_aprovado',
+  };
 
   await db.ref().update(patch);
 
@@ -649,8 +541,15 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
   }
 
   const procRef = db.ref(`financas/mp_processed/${paymentId}`);
-  const procSnap = await procRef.get();
-  if (procSnap.exists()) {
+  const procTx = await procRef.transaction((curr) => {
+    if (curr) return;
+    return {
+      uid: apoioUid,
+      at: Date.now(),
+      tipo: 'apoio_aprovado',
+    };
+  });
+  if (!procTx.committed) {
     logger.info('Apoio: pagamento ja processado', { paymentId });
     return;
   }
@@ -893,9 +792,11 @@ export const notifyNewChapter = onValueCreated(
   async (event) => {
     const capId    = event.params.capId;
     const capitulo = event.data?.val() || {};
+    const obraId   = String(capitulo?.obraId || 'shito').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'shito';
+    const obraNome = String(capitulo?.obraTitulo || capitulo?.obraName || 'Shito');
     const titulo   = capitulo?.titulo || `Capitulo ${capitulo?.numero || ''}`.trim();
     const url      = `${APP_BASE_URL.value()}/ler/${capId}`;
-    const chapterCampaignId = `chapter_${capId}`;
+    const chapterCampaignId = `chapter_${obraId}_${capId}`;
 
     const db           = getDatabase();
     const usuariosSnap = await db.ref('usuarios').get();
@@ -936,11 +837,11 @@ export const notifyNewChapter = onValueCreated(
         await transporter.sendMail({
           from,
           to:      userEmail,
-          subject: `Novo capitulo em Shito: ${titulo}`,
+          subject: `Novo capitulo em ${obraNome}: ${titulo}`,
           text:    `Novo capitulo lancado!\n\nTitulo: ${titulo}\nLink: ${trackedUrl}\n\nPara parar, desative em Perfil > Notificacoes.`,
           html:    `
             <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#fff;padding:32px;border-radius:8px;">
-              <h2 style="color:#ffcc00;margin:0 0 16px;">Novo capitulo em Shito</h2>
+              <h2 style="color:#ffcc00;margin:0 0 16px;">Novo capitulo em ${obraNome}</h2>
               <p style="color:#ccc;margin:0 0 24px;"><strong style="color:#fff">${titulo}</strong></p>
               <a href="${trackedUrl}" style="background:#ffcc00;color:#000;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">
                 Ler agora
@@ -1291,7 +1192,7 @@ export const criarCheckoutPremium = onCall(
     const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
     const notificationUrl = `${baseFn}/mercadopagowebhook`;
     const db = getDatabase();
-    const offer = await getPremiumOfferAt(db, Date.now());
+    const offer = await getPremiumOfferAt(db, Date.now(), PREMIUM_PRICE_BRL);
     const payload =
       request.data && typeof request.data === 'object' ? request.data : {};
     const attributionRaw =
@@ -1344,7 +1245,7 @@ export const obterOfertaPremiumPublica = onCall(
   async () => {
     const db = getDatabase();
     const now = Date.now();
-    const offer = await getPremiumOfferAt(db, now);
+    const offer = await getPremiumOfferAt(db, now, PREMIUM_PRICE_BRL);
     return {
       ok: true,
       now,
@@ -1433,10 +1334,37 @@ export const adminObterPromocaoPremium = onCall(
       .sort((a, b) => Number(b.startsAt || 0) - Number(a.startsAt || 0))
       .slice(0, 60);
 
-    const financeEvents = financeSnap.exists() ? Object.values(financeSnap.val() || {}) : [];
-    const marketingEvents = marketingSnap.exists() ? Object.values(marketingSnap.val() || {}) : [];
+    const financeEventsRaw = financeSnap.exists() ? Object.values(financeSnap.val() || {}) : [];
+    const marketingEventsRaw = marketingSnap.exists() ? Object.values(marketingSnap.val() || {}) : [];
     const campaignIds = new Set(history.map((h) => h.promoId));
     if (parsed?.promoId) campaignIds.add(parsed.promoId);
+    const campaigns = history.slice(0, 60);
+    if (parsed?.promoId && parsed?.startsAt && parsed?.endsAt) {
+      campaigns.push({
+        promoId: parsed.promoId,
+        startsAt: parsed.startsAt,
+        endsAt: parsed.endsAt,
+      });
+    }
+    const starts = campaigns
+      .map((c) => toNum(c?.startsAt, 0))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    const ends = campaigns
+      .map((c) => toNum(c?.endsAt, 0))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    const minAt = starts.length ? Math.min(...starts) - 24 * 60 * 60 * 1000 : 0;
+    const maxAt = ends.length ? Math.max(...ends) + 24 * 60 * 60 * 1000 : Date.now() + 24 * 60 * 60 * 1000;
+    const financeEvents = financeEventsRaw.filter((ev) => {
+      const at = toNum(ev?.at, 0);
+      if (!at) return false;
+      if (at < minAt || at > maxAt) return false;
+      return String(ev?.tipo || '') === 'premium_aprovado';
+    });
+    const marketingEvents = marketingEventsRaw.filter((ev) => {
+      const at = toNum(ev?.at, 0);
+      if (!at) return false;
+      return at >= minAt && at <= maxAt;
+    });
     const performanceByCampaign = buildPromoPerformanceByCampaign(
       financeEvents,
       marketingEvents,
@@ -2243,7 +2171,10 @@ export const adminDashboardResumo = onCall(
     ]);
 
     const rawEvents = eventsSnap.exists()
-      ? Object.values(eventsSnap.val() || {})
+      ? Object.values(eventsSnap.val() || {}).filter((ev) => {
+          const tipo = String(ev?.tipo || '');
+          return tipo === 'premium_aprovado' || tipo === 'apoio_aprovado';
+        })
       : [];
     const rawMarketingEvents = marketingSnap.exists()
       ? Object.values(marketingSnap.val() || {})

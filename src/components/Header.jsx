@@ -56,6 +56,11 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, []);
 
   useEffect(() => {
+    setMenuAberto(false);
+    setAdminMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
     const syncMenuState = () => {
       if (window.innerWidth > MOBILE_BREAKPOINT) {
         setMenuAberto(false);
@@ -73,8 +78,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
   /** Coroa só com assinatura Premium paga ativa (mesma regra do leitor). */
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
   const navItems = [
-    { label: 'Início', path: '/' },
-    { label: 'Capítulos', path: '/capitulos' },
+    { label: 'Lista de Mangás', path: '/mangas' },
+    { label: 'Loja', path: '/loja' },
+    ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
     { label: 'Sobre o Autor', path: '/sobre-autor' },
     { label: 'Apoie a Obra', path: '/apoie' },
   ];
@@ -82,11 +88,11 @@ export default function Header({ usuario, perfil, adminAccess }) {
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   return (
-    <nav className="reader-header">
+    <nav className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''}`}>
       <div className="nav-container">
 
         <button type="button" className="nav-logo" onClick={() => pushRoute('/')}>
-          SHITO
+          MangaTeofilo
         </button>
 
         <button
@@ -127,13 +133,16 @@ export default function Header({ usuario, perfil, adminAccess }) {
                 onClick={() => setAdminMenuOpen((prev) => !prev)}
                 onFocus={abrirMenuAdmin}
               >
-                ADMINISTRATIVO
+                <span className="admin-label-long">ADMINISTRATIVO</span>
+                <span className="admin-label-short">ADMIN</span>
               </button>
               <div className="admin-dropdown">
-                <button type="button" onClick={() => pushRoute('/admin/manga')}>Lançar Mangá</button>
+                <button type="button" onClick={() => pushRoute('/admin/capitulos')}>Capítulos</button>
+                <button type="button" onClick={() => pushRoute('/admin/obras')}>CRUD de Obras</button>
                 <button type="button" onClick={() => pushRoute('/admin/avatares')}>CRUD de Avatares</button>
                 <button type="button" onClick={() => pushRoute('/admin/dashboard')}>Dashboard</button>
                 <button type="button" onClick={() => pushRoute('/admin/financeiro')}>Financeiro & Promos</button>
+                <button type="button" onClick={() => pushRoute('/admin/loja')}>Loja Física</button>
               </div>
             </li>
           )}

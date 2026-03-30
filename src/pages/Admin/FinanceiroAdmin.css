@@ -1,25 +1,25 @@
 .admin-empty-page {
   min-height: 100vh;
   padding: 28px;
-  background: radial-gradient(1200px 600px at 80% -120px, rgba(88, 130, 255, 0.2), transparent 60%),
-    linear-gradient(180deg, #0b1220, #0a0f1a);
+  background: radial-gradient(900px 520px at 80% -120px, rgba(255, 204, 0, 0.08), transparent 60%),
+    linear-gradient(180deg, #0a0a0a, #080808);
 }
 
 .admin-empty-card {
   width: min(1280px, 95vw);
   margin: 0 auto;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(16, 16, 16, 0.94);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
   padding: 28px 24px;
-  color: #f2f5ff;
+  color: #f2f2f2;
 }
 
 .admin-empty-card button {
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  color: #d8e6ff;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e4e4e4;
   border-radius: 12px;
   padding: 10px 14px;
   font-weight: 700;
@@ -49,7 +49,7 @@
 
 .financeiro-header p {
   margin: 8px 0 0;
-  color: #b8c3db;
+  color: #a9a9a9;
   max-width: 680px;
 }
 
@@ -61,9 +61,9 @@
 }
 
 .financeiro-btn-primary {
-  border-color: rgba(110, 157, 255, 0.9) !important;
-  background: linear-gradient(180deg, rgba(96, 143, 248, 0.95), rgba(71, 121, 237, 0.95)) !important;
-  color: #f2f7ff !important;
+  border-color: rgba(255, 204, 0, 0.68) !important;
+  background: linear-gradient(180deg, rgba(255, 204, 0, 0.32), rgba(255, 204, 0, 0.16)) !important;
+  color: #fff0bf !important;
 }
 
 .financeiro-tabs {
@@ -74,9 +74,9 @@
 }
 
 .financeiro-tabs button.active {
-  border-color: rgba(95, 152, 255, 0.65);
-  background: rgba(95, 152, 255, 0.22);
-  color: #dfeaff;
+  border-color: rgba(255, 204, 0, 0.58);
+  background: rgba(255, 204, 0, 0.2);
+  color: #ffe5a1;
 }
 
 .financeiro-promocao,
@@ -84,7 +84,7 @@
   margin: 22px 0;
   padding: 20px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -98,8 +98,8 @@
 .promo-banner {
   border-radius: 16px;
   padding: 18px;
-  background: rgba(82, 145, 255, 0.12);
-  border: 1px solid rgba(82, 145, 255, 0.28);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   margin-bottom: 12px;
 }
 
@@ -113,13 +113,13 @@
 
 .promo-banner h3 {
   margin: 0;
-  color: #eef4ff;
+  color: #f2f2f2;
   font-size: 1.08rem;
 }
 
 .promo-banner--active {
-  background: linear-gradient(180deg, rgba(255, 192, 83, 0.16), rgba(255, 158, 59, 0.1));
-  border-color: rgba(255, 186, 76, 0.42);
+  background: linear-gradient(180deg, rgba(255, 204, 0, 0.16), rgba(255, 204, 0, 0.08));
+  border-color: rgba(255, 204, 0, 0.42);
 }
 
 .promo-banner--inactive {
@@ -147,14 +147,14 @@
 }
 
 .promo-status-chip.scheduled {
-  background: rgba(91, 156, 255, 0.24);
-  color: #cde0ff;
-  border: 1px solid rgba(91, 156, 255, 0.42);
+  background: rgba(255, 255, 255, 0.12);
+  color: #dedede;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .promo-campaign-name {
   margin: 0 0 6px;
-  color: #f5f8ff;
+  color: #f3f3f3;
   font-weight: 700;
 }
 
@@ -178,7 +178,7 @@
 
 .promo-dates-line {
   margin: 0 0 12px;
-  color: #ecdfca;
+  color: #c9c0af;
 }
 
 .promo-countdown-block {
@@ -207,7 +207,7 @@
 
 .promo-timer {
   margin: 0;
-  color: #cfd9ef;
+  color: #b5b5b5;
 }
 
 .promo-empty-icon {
@@ -225,7 +225,7 @@
   padding: 14px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(8, 16, 30, 0.5);
+  background: rgba(10, 10, 10, 0.58);
   margin-bottom: 12px;
 }
 
@@ -245,7 +245,7 @@
   display: grid;
   gap: 7px;
   font-size: 0.76rem;
-  color: #b9c9ea;
+  color: #b8b8b8;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 700;
@@ -253,10 +253,10 @@
 
 .financeiro-grid input,
 .financeiro-grid textarea {
-  background: #0f1728;
+  background: #0f0f0f;
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
-  color: #ecf2ff;
+  color: #ebebeb;
   padding: 11px;
 }
 
@@ -269,7 +269,7 @@
   align-items: center;
   gap: 8px;
   font-size: 0.86rem;
-  color: #d7e6ff;
+  color: #d2d2d2;
   margin-top: 10px;
 }
 
@@ -293,7 +293,7 @@
   font-size: 0.85rem;
   line-height: 1.55;
   margin-bottom: 10px;
-  color: #c9d5ec !important;
+  color: #bebebe !important;
 }
 
 .financeiro-migracao-texto code,
@@ -313,7 +313,7 @@
 }
 
 .financeiro-migracao-list li {
-  color: #d7e3fb;
+  color: #cfcfcf;
   font-size: 0.84rem;
   line-height: 1.45;
 }
@@ -330,13 +330,13 @@
 
 .financeiro-migracao-msg {
   font-size: 0.82rem;
-  color: #9ec5ff;
+  color: #e1e1e1;
   margin: 0;
   word-break: break-word;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(73, 130, 255, 0.12);
-  border: 1px solid rgba(73, 130, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .financeiro-resultados,
@@ -345,7 +345,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 14px;
-  background: rgba(8, 16, 30, 0.45);
+  background: rgba(12, 12, 12, 0.72);
 }
 
 .financeiro-resultados h3,
@@ -364,7 +364,7 @@
 
 .financeiro-resultados-head p {
   margin: 0;
-  color: #d5e4ff;
+  color: #d0d0d0;
 }
 
 .financeiro-resultados-kpis {
@@ -383,7 +383,7 @@
 
 .financeiro-resultados-kpis small {
   font-size: 0.72rem;
-  color: #9eb3d9;
+  color: #9e9e9e;
 }
 
 .financeiro-resultados-kpis strong {
@@ -409,7 +409,7 @@
   display: flex;
   justify-content: space-between;
   gap: 6px;
-  color: #cde0ff;
+  color: #d2d2d2;
   font-size: 0.8rem;
   margin-bottom: 5px;
 }
@@ -435,7 +435,7 @@
 }
 
 .financeiro-historico-head small {
-  color: #99aed7;
+  color: #9c9c9c;
 }
 
 .financeiro-historico-list {
@@ -461,11 +461,11 @@
 
 .financeiro-historico-item p {
   margin: 0 0 4px;
-  color: #cad9f5;
+  color: #cfcfcf;
 }
 
 .financeiro-historico-item small {
-  color: #97acd7;
+  color: #979797;
 }
 
 .financeiro-historico-acoes {
@@ -506,7 +506,7 @@
 }
 
 .financeiro-simulador-kpis small {
-  color: #9db1d8;
+  color: #9d9d9d;
   font-size: 0.73rem;
 }
 
@@ -536,7 +536,7 @@
 
 .financeiro-simulador-cenarios p {
   margin: 0 0 4px;
-  color: #acc0e5;
+  color: #b7b7b7;
   font-size: 0.78rem;
 }
 

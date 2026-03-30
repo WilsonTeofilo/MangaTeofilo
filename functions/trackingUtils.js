@@ -13,6 +13,7 @@ export function normalizeTrackingSource(v) {
   const allowed = new Set([
     'promo_email',
     'chapter_email',
+    'home_multi',
     'normal',
     'direct',
     'unknown',
@@ -30,6 +31,8 @@ export function normalizeTrackingEventType(v) {
     'chapter_landing',
     'chapter_read',
     'premium_checkout_started',
+    'home_block_impression',
+    'home_block_click',
   ]);
   return allowed.has(s) ? s : null;
 }

@@ -17,18 +17,28 @@ import { cleanupDeprecatedUsuarioFields } from './userProfileSync';
 
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
+import SeoManager from './seo/SeoManager.jsx';
 
-import ShitoManga from './pages/Home/ShitoManga.jsx';
+import HomeAdaptive from './pages/Home/HomeAdaptive.jsx';
 import SobreAutor from './pages/Home/SobreAutor.jsx';
 import Apoie from './pages/Home/Apoie.jsx';
+import ListaMangas from './pages/Mangas/ListaMangas.jsx';
+import ObraDetalhe from './pages/Mangas/ObraDetalhe.jsx';
+import BibliotecaFavoritos from './pages/Mangas/BibliotecaFavoritos.jsx';
+import LojaCatalogo from './pages/Loja/LojaCatalogo.jsx';
+import LojaProduto from './pages/Loja/LojaProduto.jsx';
+import LojaCarrinho from './pages/Loja/LojaCarrinho.jsx';
+import LojaPedidos from './pages/Loja/LojaPedidos.jsx';
 import Login from './pages/Auth/Login.jsx';
 import Perfil from './pages/Perfil/Perfil.jsx';
-import Capitulos from './pages/Capitulos/Capitulos.jsx';
 import Leitor from './pages/Leitor/Leitor.jsx';
 import AdminPanel from './pages/Admin/AdminPanel.jsx';
+import CapitulosAdminHub from './pages/Admin/CapitulosAdminHub.jsx';
+import ObrasAdmin from './pages/Admin/ObrasAdmin.jsx';
 import AvatarAdmin from './pages/Admin/AvatarAdmin.jsx';
 import DashboardAdmin from './pages/Admin/DashboardAdmin.jsx';
 import FinanceiroAdmin from './pages/Admin/FinanceiroAdmin.jsx';
+import LojaAdmin from './pages/Admin/LojaAdmin.jsx';
 
 import './index.css';
 
@@ -135,6 +145,7 @@ function AppRoutes() {
 
   return (
     <>
+      <SeoManager />
       <ScrollToTop />
       <Header
         usuario={podeAcessarApp ? usuario : null}
@@ -146,16 +157,72 @@ function AppRoutes() {
         <Routes>
           <Route
             path="/"
-            element={<ShitoManga user={podeAcessarApp ? usuario : null} />}
+            element={<HomeAdaptive user={podeAcessarApp ? usuario : null} />}
           />
           <Route
-            path="/capitulos"
+            path="/mangas"
+            element={<ListaMangas user={podeAcessarApp ? usuario : null} />}
+          />
+          <Route
+            path="/obra/:obraId"
             element={
-              <Capitulos
+              <ObraDetalhe
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
               />
             }
+          />
+          <Route
+            path="/biblioteca"
+            element={
+              podeAcessarApp ? (
+                <BibliotecaFavoritos
+                  user={usuario}
+                  perfil={perfilUsuario}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route
+            path="/loja"
+            element={
+              <LojaCatalogo
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
+          />
+          <Route
+            path="/loja/produto/:productId"
+            element={
+              <LojaProduto
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
+          />
+          <Route
+            path="/loja/carrinho"
+            element={
+              <LojaCarrinho
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
+          />
+          <Route
+            path="/loja/pedidos"
+            element={
+              <LojaPedidos
+                user={podeAcessarApp ? usuario : null}
+              />
+            }
+          />
+          <Route
+            path="/capitulos"
+            element={<Navigate to="/mangas" replace />}
           />
           <Route
             path="/ler/:id"
@@ -199,7 +266,17 @@ function AppRoutes() {
             path="/admin"
             element={
               isAdmin ? (
-                <Navigate to="/admin/manga" replace />
+                <Navigate to="/admin/capitulos" replace />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/capitulos"
+            element={
+              isAdmin ? (
+                <CapitulosAdminHub />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -210,6 +287,16 @@ function AppRoutes() {
             element={
               isAdmin ? (
                 <AdminPanel user={usuario} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/obras"
+            element={
+              isAdmin ? (
+                <ObrasAdmin />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -240,6 +327,16 @@ function AppRoutes() {
             element={
               isAdmin ? (
                 <FinanceiroAdmin />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/loja"
+            element={
+              isAdmin ? (
+                <LojaAdmin />
               ) : (
                 <Navigate to="/" replace />
               )

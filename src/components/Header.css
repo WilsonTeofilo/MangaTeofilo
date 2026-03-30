@@ -24,28 +24,30 @@
 }
 
 .nav-container {
-  max-width: 1280px;
+  max-width: none;
   width: 100%;
-  margin: 0 auto;
-  padding: 0 22px;
+  margin: 0;
+  padding: 0 6px 0 2px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   min-width: 0;
   flex-wrap: nowrap;
 }
 
 .nav-logo {
-  font-size: 1.75rem;
+  font-size: 1.48rem;
   font-weight: 900;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.2px;
   color: var(--naraa-gold);
   cursor: pointer;
   text-shadow: 0 0 16px rgba(255, 204, 0, 0.18);
   transition: var(--transition-smooth);
   border: none;
   background: transparent;
+  flex: 0 0 auto;
+  margin-right: 22px;
 }
 
 .nav-logo:hover {
@@ -60,7 +62,7 @@
   justify-content: center;
   flex: 1 1 auto;
   min-width: 0;
-  gap: 24px;
+  gap: clamp(9px, 1.3vw, 24px);
   margin: 0;
   padding: 0;
   transition: var(--transition-smooth);
@@ -69,8 +71,8 @@
 .nav-menu li {
   color: #9ca4b5;
   font-weight: 700;
-  font-size: 0.84rem;
-  letter-spacing: 0.8px;
+  font-size: clamp(0.66rem, 0.55vw, 0.84rem);
+  letter-spacing: clamp(0.2px, 0.06vw, 0.8px);
   text-transform: uppercase;
   cursor: pointer;
   position: relative;
@@ -138,13 +140,17 @@
   background: rgba(255, 204, 0, 0.08);
   color: var(--naraa-gold);
   border-radius: 8px;
-  padding: 7px 12px;
+  padding: 6px 10px;
   font-weight: 800;
-  font-size: 0.78rem;
-  letter-spacing: 0.7px;
+  font-size: clamp(0.62rem, 0.48vw, 0.78rem);
+  letter-spacing: clamp(0.2px, 0.05vw, 0.7px);
   cursor: pointer;
   transition: var(--transition-smooth);
   white-space: nowrap;
+}
+
+.admin-label-short {
+  display: none;
 }
 
 .admin-menu-trigger:hover {
@@ -164,7 +170,7 @@
   border-radius: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
   overflow: hidden;
-  z-index: 2100;
+  z-index: 3200;
 }
 
 .admin-menu-item:hover .admin-dropdown,
@@ -206,6 +212,8 @@
   align-items: center;
   flex: 0 0 auto;
   min-width: 0;
+  margin-left: auto !important;
+  justify-content: flex-end;
 }
 
 .btn-login-header {
@@ -296,7 +304,7 @@
   color: #edf0f8;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 132px;
+  max-width: 104px;
   white-space: nowrap;
 }
 
@@ -389,6 +397,45 @@
     min-width: 60px;
     padding: 4px 7px;
     font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 1680px) and (min-width: 1361px) {
+  .reader-header--logged .nav-container {
+    padding: 0 14px;
+    gap: 8px;
+  }
+
+  .reader-header--logged .nav-auth {
+    max-width: 132px;
+  }
+
+  .reader-header--logged .header-avatar-wrapper {
+    width: 44px;
+    height: 44px;
+  }
+
+  .reader-header--logged .user-info-header {
+    max-width: 124px;
+    gap: 6px;
+  }
+
+  .reader-header--logged .welcome-text {
+    display: none;
+  }
+
+  .reader-header--logged .btn-logout-header {
+    min-width: 52px;
+    padding: 3px 6px;
+    font-size: 0.66rem;
+  }
+
+  .reader-header--admin .admin-label-long {
+    display: none;
+  }
+
+  .reader-header--admin .admin-label-short {
+    display: inline;
   }
 }
 
@@ -544,6 +591,43 @@
   }
 }
 
+@media (max-width: 1500px) and (min-width: 1361px) {
+  .nav-container {
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .nav-menu {
+    gap: 10px;
+  }
+
+  .nav-menu li {
+    font-size: 0.72rem;
+    letter-spacing: 0.35px;
+  }
+
+  .admin-menu-trigger {
+    padding: 5px 8px;
+    font-size: 0.66rem;
+    letter-spacing: 0.28px;
+  }
+
+  .user-info-header {
+    max-width: 126px;
+    gap: 6px;
+  }
+
+  .welcome-text {
+    display: none;
+  }
+
+  .btn-logout-header {
+    min-width: 54px;
+    font-size: 0.66rem;
+    padding: 3px 6px;
+  }
+}
+
 @media (max-width: 760px) {
   .btn-login-long {
     display: none;
@@ -642,5 +726,150 @@
 
   .welcome-text {
     font-size: 0.95rem;
+  }
+}
+
+/* --- Hardening against global class collisions from page CSS --- */
+.reader-header .nav-container {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+
+.reader-header .nav-menu {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.reader-header .nav-auth {
+  margin-left: auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.reader-header .user-info-header {
+  flex-wrap: nowrap;
+  max-width: 220px;
+}
+
+/* --- Desktop lock: prevent collisions when logged/admin --- */
+.reader-header.reader-header--admin .admin-label-long {
+  display: none !important;
+}
+
+.reader-header.reader-header--admin .admin-label-short {
+  display: inline !important;
+}
+
+.reader-header.reader-header--logged .welcome-text {
+  display: none !important;
+}
+
+.reader-header.reader-header--logged .header-avatar-wrapper {
+  width: 62px !important;
+  height: 62px !important;
+}
+
+.reader-header.reader-header--logged .user-info-header {
+  max-width: 178px !important;
+  gap: 8px !important;
+}
+
+.reader-header.reader-header--logged .btn-logout-header {
+  min-width: 76px !important;
+  padding: 6px 12px !important;
+  font-size: 0.78rem !important;
+}
+
+@media (max-width: 1360px) {
+  .reader-header .nav-container {
+    flex-wrap: nowrap !important;
+  }
+
+  .reader-header .nav-auth {
+    margin-left: auto;
+    max-width: 170px;
+  }
+
+  .reader-header .user-info-header {
+    max-width: 150px;
+  }
+
+  .reader-header .user-text-group {
+    display: none;
+  }
+
+  .reader-header.reader-header--logged .header-avatar-wrapper {
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  .reader-header.reader-header--logged .user-info-header {
+    max-width: 108px !important;
+  }
+}
+
+/* --- Final desktop hierarchy lock (prevents regressions) --- */
+@media (min-width: 1361px) {
+  .reader-header .nav-container {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 8px 0 0 !important;
+    gap: 14px !important;
+    justify-content: flex-start !important;
+  }
+
+  .reader-header .nav-logo {
+    margin-left: 0 !important;
+    margin-right: 30px !important;
+    padding-left: 0 !important;
+    flex: 0 0 auto !important;
+    font-size: 1.5rem !important;
+  }
+
+  .reader-header .nav-menu {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    justify-content: center !important;
+    margin-right: 14px !important;
+    overflow: visible !important;
+  }
+
+  .reader-header .nav-menu li {
+    font-size: 0.76rem !important;
+    letter-spacing: 0.35px !important;
+  }
+
+  .reader-header .admin-menu-item {
+    margin-right: 8px !important;
+  }
+
+  .reader-header .nav-auth {
+    margin-left: auto !important;
+    justify-content: flex-end !important;
+    min-width: 188px !important;
+    flex: 0 0 auto !important;
+    position: relative;
+    z-index: 2;
+  }
+
+  .reader-header.reader-header--logged .header-avatar-wrapper {
+    width: 62px !important;
+    height: 62px !important;
+  }
+
+  .reader-header.reader-header--logged .user-info-header {
+    max-width: none !important;
+    gap: 8px !important;
+  }
+
+  .reader-header.reader-header--logged .welcome-text {
+    display: none !important;
+  }
+
+  .reader-header.reader-header--logged .btn-logout-header {
+    min-width: 76px !important;
+    padding: 6px 12px !important;
+    font-size: 0.78rem !important;
   }
 }

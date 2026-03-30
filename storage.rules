@@ -26,6 +26,14 @@ service firebase.storage {
                    && fileName.matches('.*\\.(jpe?g|png|webp)$')));
     }
 
+    match /obras/{obra}/{fileName} {
+      allow read: if true;
+      allow write: if isShitoAdmin()
+                   && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
+                   && fileName.matches('.*\\.(jpe?g|png|webp)$')));
+    }
+
     match /avatares/{fileName} {
       allow read: if true;
       allow write: if isShitoAdmin()

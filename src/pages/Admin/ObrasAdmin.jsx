@@ -29,6 +29,14 @@ function nowMs() {
   return Date.now();
 }
 
+function normalizarAjusteObra(raw) {
+  return {
+    zoom: Math.min(3, Math.max(1, Number(raw?.zoom ?? 1))),
+    x: Math.min(100, Math.max(-100, Number(raw?.x ?? 0))),
+    y: Math.min(100, Math.max(-100, Number(raw?.y ?? 0))),
+  };
+}
+
 function formatDateTimeBr(value) {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n <= 0) return 'Sem data';
@@ -338,6 +346,10 @@ export default function ObrasAdmin() {
 
   const capaPreviewUrl = useMemo(() => (capaArquivo ? URL.createObjectURL(capaArquivo) : ''), [capaArquivo]);
   const bannerPreviewUrl = useMemo(() => (bannerArquivo ? URL.createObjectURL(bannerArquivo) : ''), [bannerArquivo]);
+  const capaFonteEditavel = capaPreviewUrl || String(form.capaUrl || '').trim();
+  const bannerFonteEditavel = bannerPreviewUrl || String(form.bannerUrl || '').trim();
+  const capaEditavel = Boolean(capaFonteEditavel);
+  const bannerEditavel = Boolean(bannerFonteEditavel);
   const capaLiveUrl = capaPreviewFinalUrl || capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg';
   const bannerLiveUrl = bannerPreviewFinalUrl || bannerPreviewUrl || form.bannerUrl || form.capaUrl || '/assets/fotos/shito.jpg';
   const preview = useMemo(() => ({
@@ -416,8 +428,8 @@ export default function ObrasAdmin() {
     });
     setCapaArquivo(null);
     setBannerArquivo(null);
-    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
-    setBannerAjuste({ zoom: 1, x: 0, y: 0 });
+    setCapaAjuste(normalizarAjusteObra(obra.capaAjuste));
+    setBannerAjuste(normalizarAjusteObra(obra.bannerAjuste));
   };
 
   const carregarObraSelecionada = () => {
@@ -466,6 +478,8 @@ export default function ObrasAdmin() {
       seoKeywords: String(form.seoKeywords || '').trim(),
       status: form.status,
       isPublished: Boolean(form.isPublished),
+      capaAjuste: normalizarAjusteObra(capaAjuste),
+      bannerAjuste: normalizarAjusteObra(bannerAjuste),
       updatedAt: nowMs(),
     };
 
@@ -583,8 +597,8 @@ export default function ObrasAdmin() {
   const iniciarArrasteMidia = (event, tipo) => {
     const ref = tipo === 'capa' ? capaEditorRef.current : bannerEditorRef.current;
     if (!ref) return;
-    const possuiPreview = tipo === 'capa' ? Boolean(capaPreviewUrl) : Boolean(bannerPreviewUrl);
-    if (!possuiPreview) return;
+    const possuiFonte = tipo === 'capa' ? capaEditavel : bannerEditavel;
+    if (!possuiFonte) return;
     event.preventDefault();
     const clientX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
     const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
@@ -653,7 +667,7 @@ export default function ObrasAdmin() {
 
   useEffect(() => {
     let ativo = true;
-    if (!capaPreviewUrl) {
+    if (!capaFonteEditavel) {
       setCapaDimensoes(null);
       return () => {};
     }
@@ -665,15 +679,15 @@ export default function ObrasAdmin() {
         h: Number(img.naturalHeight || img.height || 0),
       });
     };
-    img.src = capaPreviewUrl;
+    img.src = capaFonteEditavel;
     return () => {
       ativo = false;
     };
-  }, [capaPreviewUrl]);
+  }, [capaFonteEditavel]);
 
   useEffect(() => {
     let ativo = true;
-    if (!bannerPreviewUrl) {
+    if (!bannerFonteEditavel) {
       setBannerDimensoes(null);
       return () => {};
     }
@@ -685,11 +699,11 @@ export default function ObrasAdmin() {
         h: Number(img.naturalHeight || img.height || 0),
       });
     };
-    img.src = bannerPreviewUrl;
+    img.src = bannerFonteEditavel;
     return () => {
       ativo = false;
     };
-  }, [bannerPreviewUrl]);
+  }, [bannerFonteEditavel]);
 
   useEffect(() => {
     let ativo = true;
@@ -931,16 +945,16 @@ export default function ObrasAdmin() {
                 <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => selecionarCapa(e.target.files?.[0])} />
                 <div
                   ref={capaEditorRef}
-                  className={`obra-editor-mask obra-editor-mask--cover${capaPreviewUrl ? ' is-editable' : ''}`}
+                  className={`obra-editor-mask obra-editor-mask--cover${capaEditavel ? ' is-editable' : ''}`}
                   onMouseDown={(e) => iniciarArrasteMidia(e, 'capa')}
                   onTouchStart={(e) => iniciarArrasteMidia(e, 'capa')}
-                  title={capaPreviewUrl ? 'Arraste para ajustar o enquadramento da capa' : 'Envie uma capa para editar'}
+                  title={capaEditavel ? 'Arraste para ajustar o enquadramento da capa' : 'Envie uma capa para editar'}
                 >
                   <img
                     src={capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg'}
                     alt="Editor da capa"
                     className="obra-editor-img"
-                    style={capaPreviewUrl ? capaEditorImageStyle : undefined}
+                    style={capaEditavel ? capaEditorImageStyle : undefined}
                   />
                   <div className="obra-editor-outside-mask" aria-hidden="true">
                     <i style={{ left: 0, top: 0, width: '100%', height: `${coverCrop.topPct}%` }} />
@@ -960,13 +974,13 @@ export default function ObrasAdmin() {
                 </div>
                 <div className="obra-media-controls">
                   <label>Zoom
-                    <input type="range" min="1" max="3" step="0.01" value={capaAjuste.zoom} disabled={!capaPreviewUrl} onChange={(e) => setCapaAjuste((p) => ({ ...p, zoom: Number(e.target.value) }))} />
+                    <input type="range" min="1" max="3" step="0.01" value={capaAjuste.zoom} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => ({ ...p, zoom: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaPreviewUrl} onChange={(e) => setCapaAjuste((p) => ({ ...p, x: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => ({ ...p, x: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaPreviewUrl} onChange={(e) => setCapaAjuste((p) => ({ ...p, y: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => ({ ...p, y: Number(e.target.value) }))} />
                   </label>
                 </div>
                 <details>
@@ -984,16 +998,16 @@ export default function ObrasAdmin() {
                 <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => selecionarBanner(e.target.files?.[0])} />
                 <div
                   ref={bannerEditorRef}
-                  className={`obra-editor-mask obra-editor-mask--banner${bannerPreviewUrl ? ' is-editable' : ''}`}
+                  className={`obra-editor-mask obra-editor-mask--banner${bannerEditavel ? ' is-editable' : ''}`}
                   onMouseDown={(e) => iniciarArrasteMidia(e, 'banner')}
                   onTouchStart={(e) => iniciarArrasteMidia(e, 'banner')}
-                  title={bannerPreviewUrl ? 'Arraste para ajustar o enquadramento do banner' : 'Envie um banner para editar'}
+                  title={bannerEditavel ? 'Arraste para ajustar o enquadramento do banner' : 'Envie um banner para editar'}
                 >
                   <img
                     src={bannerPreviewUrl || form.bannerUrl || '/assets/fotos/shito.jpg'}
                     alt="Editor do banner"
                     className="obra-editor-img"
-                    style={bannerPreviewUrl ? bannerEditorImageStyle : undefined}
+                    style={bannerEditavel ? bannerEditorImageStyle : undefined}
                   />
                   <div className="obra-editor-outside-mask" aria-hidden="true">
                     <i style={{ left: 0, top: 0, width: '100%', height: `${bannerCrop.topPct}%` }} />
@@ -1013,13 +1027,13 @@ export default function ObrasAdmin() {
                 </div>
                 <div className="obra-media-controls">
                   <label>Zoom
-                    <input type="range" min="1" max="3" step="0.01" value={bannerAjuste.zoom} disabled={!bannerPreviewUrl} onChange={(e) => setBannerAjuste((p) => ({ ...p, zoom: Number(e.target.value) }))} />
+                    <input type="range" min="1" max="3" step="0.01" value={bannerAjuste.zoom} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => ({ ...p, zoom: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerPreviewUrl} onChange={(e) => setBannerAjuste((p) => ({ ...p, x: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => ({ ...p, x: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerPreviewUrl} onChange={(e) => setBannerAjuste((p) => ({ ...p, y: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => ({ ...p, y: Number(e.target.value) }))} />
                   </label>
                 </div>
                 <details>

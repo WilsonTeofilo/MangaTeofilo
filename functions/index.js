@@ -1443,11 +1443,13 @@ export const obterOfertaPremiumPublica = onCall(
       currentPriceBRL: offer.currentPriceBRL,
       basePriceBRL: offer.basePriceBRL,
       isPromoActive: offer.isPromoActive,
-      promo: offer.isPromoActive
+      promoStatus: offer.promoStatus || 'none',
+      promo: offer.promo
         ? {
             promoId: offer.promo?.promoId || null,
             name: offer.promo?.name || null,
             message: offer.promo?.message || '',
+            priceBRL: offer.promo?.priceBRL || null,
             startsAt: offer.promo?.startsAt || null,
             endsAt: offer.promo?.endsAt || null,
           }
@@ -1686,6 +1688,60 @@ export const adminSalvarPromocaoPremium = onCall(
       promo,
       notifyUsers: body.notifyUsers === true,
       emailStats,
+    };
+  }
+);
+
+export const adminIncrementarDuracaoPromocaoPremium = onCall(
+  { region: 'us-central1' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
+      throw new HttpsError('permission-denied', 'Apenas administradores.');
+    }
+
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    const days = Math.max(0, Math.floor(Number(body.days || 0)));
+    const hours = Math.max(0, Math.floor(Number(body.hours || 0)));
+    const minutes = Math.max(0, Math.floor(Number(body.minutes || 0)));
+    const extraMs =
+      days * 24 * 60 * 60 * 1000 +
+      hours * 60 * 60 * 1000 +
+      minutes * 60 * 1000;
+    if (extraMs <= 0) {
+      throw new HttpsError('invalid-argument', 'Informe um incremento maior que zero.');
+    }
+
+    const db = getDatabase();
+    const now = Date.now();
+    const snap = await db.ref(PREMIUM_PROMO_PATH).get();
+    const promo = parsePromoConfig(snap.val());
+    if (!promo) {
+      throw new HttpsError('failed-precondition', 'Nao existe promocao premium ativa/configurada.');
+    }
+    const isActive = now >= Number(promo.startsAt || 0) && now <= Number(promo.endsAt || 0);
+    if (!isActive) {
+      throw new HttpsError('failed-precondition', 'So e possivel incrementar a duracao de uma promocao ativa.');
+    }
+
+    const newEndsAt = Number(promo.endsAt) + extraMs;
+    await db.ref(PREMIUM_PROMO_PATH).update({
+      endsAt: newEndsAt,
+      updatedAt: now,
+      updatedBy: request.auth.uid,
+    });
+    await db.ref(`${PREMIUM_PROMO_HISTORY_PATH}/${promo.promoId}`).update({
+      endsAt: newEndsAt,
+      updatedAt: now,
+      updatedBy: request.auth.uid,
+      status: 'ativa',
+    });
+
+    return {
+      ok: true,
+      promoId: promo.promoId,
+      added: { days, hours, minutes, ms: extraMs },
+      endsAt: newEndsAt,
     };
   }
 );

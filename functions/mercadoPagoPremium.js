@@ -2,8 +2,8 @@
  * Checkout Pro — assinatura premium (30 dias corridos), Mercado Pago.
  */
 
-/** Mesmo valor que PREMIUM_PRECO_BRL em src/config/premiumAssinatura.js — produção: 23; teste: 0.05 */
-export const PREMIUM_PRICE_BRL = 0.05;
+/** Mesmo valor que PREMIUM_PRECO_BRL em src/config/premiumAssinatura.js — produção: 23 */
+export const PREMIUM_PRICE_BRL = 23;
 export const PREMIUM_D_MS = 30 * 24 * 60 * 60 * 1000;
 export const PREMIUM_PLAN_ID = 'premium_mensal_23';
 

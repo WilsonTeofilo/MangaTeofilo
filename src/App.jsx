@@ -142,6 +142,16 @@ function AppRoutes() {
   }
 
   const isAdmin = adminAccess.canAccessAdmin;
+  const qs = new URLSearchParams(location.search || '');
+  const trafficSource = String(qs.get('src') || '').toLowerCase();
+  const cameFromPromoTracking =
+    trafficSource === 'promo_email' ||
+    trafficSource === 'chapter_email';
+
+  // Segurança UX: se o tracking abrir na home, empurra para /apoie mantendo query.
+  if (location.pathname === '/' && cameFromPromoTracking) {
+    return <Navigate to={`/apoie${location.search || ''}`} replace />;
+  }
 
   return (
     <>

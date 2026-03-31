@@ -53,6 +53,7 @@ export default function Apoie({ user, perfil }) {
     currentPriceBRL: null,
     basePriceBRL: null,
     isPromoActive: false,
+    promoStatus: 'none',
     promo: null,
     now: Date.now(),
   });
@@ -108,6 +109,7 @@ export default function Apoie({ user, perfil }) {
           currentPriceBRL: Number(data?.currentPriceBRL),
           basePriceBRL: Number(data?.basePriceBRL),
           isPromoActive: data?.isPromoActive === true,
+          promoStatus: String(data?.promoStatus || 'none'),
           promo: data?.promo || null,
           now: Number(data?.now || Date.now()),
         });
@@ -121,7 +123,7 @@ export default function Apoie({ user, perfil }) {
     const tickId = setInterval(() => {
       if (!mounted || document.visibilityState !== 'visible') return;
       setOfertaPremium((prev) => {
-        if (!prev?.isPromoActive || !prev?.promo?.endsAt) return prev;
+        if (!prev?.promo) return prev;
         return { ...prev, now: Date.now() };
       });
     }, 1000);
@@ -354,11 +356,22 @@ export default function Apoie({ user, perfil }) {
   const fimPremium = formatarDataFimAssinatura(perfil?.memberUntil);
   const precoBase = Number.isFinite(ofertaPremium.basePriceBRL) ? ofertaPremium.basePriceBRL : null;
   const precoAtual = Number.isFinite(ofertaPremium.currentPriceBRL) ? ofertaPremium.currentPriceBRL : null;
+  const precoSeguro = Number.isFinite(precoAtual) && precoAtual > 0
+    ? precoAtual
+    : (Number.isFinite(precoBase) && precoBase > 0 ? precoBase : 23);
+  const promoStartsAt = Number(ofertaPremium?.promo?.startsAt || 0);
   const promoEndsAt = Number(ofertaPremium?.promo?.endsAt || 0);
+  const promoProgramada = ofertaPremium.promoStatus === 'scheduled' && promoStartsAt > ofertaPremium.now;
+  const segundosAteInicio = promoProgramada
+    ? Math.floor((promoStartsAt - ofertaPremium.now) / 1000)
+    : 0;
   const segundosRestantes =
     ofertaPremium.isPromoActive && promoEndsAt > ofertaPremium.now
       ? Math.floor((promoEndsAt - ofertaPremium.now) / 1000)
       : 0;
+  const hs = String(Math.floor((segundosAteInicio % 86400) / 3600)).padStart(2, '0');
+  const ms = String(Math.floor((segundosAteInicio % 3600) / 60)).padStart(2, '0');
+  const ssStart = String(segundosAteInicio % 60).padStart(2, '0');
   const hh = String(Math.floor((segundosRestantes % 86400) / 3600)).padStart(2, '0');
   const mm = String(Math.floor((segundosRestantes % 3600) / 60)).padStart(2, '0');
   const ss = String(segundosRestantes % 60).padStart(2, '0');
@@ -491,7 +504,7 @@ export default function Apoie({ user, perfil }) {
             ) : (
               <>
                 <h2 className="apoie-premium-titulo">
-                  Assinatura Premium — {labelPrecoPremium(precoAtual)} / 30 dias
+                  Assinatura Premium — {labelPrecoPremium(precoSeguro)} / 30 dias
                 </h2>
                 {ofertaPremium.isPromoActive && (
                   <div className="apoie-premium-oferta">
@@ -505,6 +518,20 @@ export default function Apoie({ user, perfil }) {
                     )}
                     <p className="apoie-premium-timer">
                       Termina em: <strong>{hh}:{mm}:{ss}</strong>
+                    </p>
+                  </div>
+                )}
+                {promoProgramada && (
+                  <div className="apoie-premium-oferta">
+                    <p>
+                      <strong>{ofertaPremium?.promo?.name || 'Promoção relâmpago'}</strong> programada.
+                    </p>
+                    <p>
+                      Entrará em: <strong>{hs}:{ms}:{ssStart}</strong>
+                    </p>
+                    <p>
+                      Quando iniciar, o valor muda automaticamente para{' '}
+                      <strong>{labelPrecoPremium(ofertaPremium?.promo?.priceBRL || precoSeguro)}</strong>.
                     </p>
                   </div>
                 )}
@@ -623,7 +650,7 @@ export default function Apoie({ user, perfil }) {
                 ? 'Abrindo checkout…'
                 : premiumAtivo
                   ? 'Renovar Premium (30 dias)'
-                  : `Assinar Premium — ${labelPrecoPremium(precoAtual)}`}
+                  : `Assinar Premium — ${labelPrecoPremium(precoSeguro)}`}
             </button>
           </div>
 

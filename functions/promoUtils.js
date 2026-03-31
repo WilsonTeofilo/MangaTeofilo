@@ -65,21 +65,25 @@ export function normalizePromoHistoryItem(raw) {
 }
 
 export async function getPremiumOfferAt(db, now = Date.now(), basePriceBRL = 23) {
+  const basePrice = validPromoPrice(basePriceBRL) || 23;
   const snap = await db.ref('financas/promocoes/premiumAtual').get();
   const promo = parsePromoConfig(snap.val());
   if (!promo) {
     return {
-      currentPriceBRL: basePriceBRL,
-      basePriceBRL,
+      currentPriceBRL: basePrice,
+      basePriceBRL: basePrice,
       isPromoActive: false,
+      promoStatus: 'none',
       promo: null,
     };
   }
   const active = now >= promo.startsAt && now <= promo.endsAt;
+  const scheduled = now < promo.startsAt;
   return {
-    currentPriceBRL: active ? promo.priceBRL : basePriceBRL,
-    basePriceBRL,
+    currentPriceBRL: active ? promo.priceBRL : basePrice,
+    basePriceBRL: basePrice,
     isPromoActive: active,
+    promoStatus: active ? 'active' : (scheduled ? 'scheduled' : 'ended'),
     promo,
   };
 }

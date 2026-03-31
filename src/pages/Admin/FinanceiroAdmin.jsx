@@ -10,6 +10,7 @@ import './FinanceiroAdmin.css';
 const migrateDeprecatedFields = httpsCallable(functions, 'adminMigrateDeprecatedUserFields');
 const adminObterPromocaoPremium = httpsCallable(functions, 'adminObterPromocaoPremium');
 const adminSalvarPromocaoPremium = httpsCallable(functions, 'adminSalvarPromocaoPremium');
+const adminIncrementarDuracaoPromocaoPremium = httpsCallable(functions, 'adminIncrementarDuracaoPromocaoPremium');
 const PRECO_BASE = Number(PREMIUM_PRECO_BRL || 23);
 const PROMO_TEMPLATES = [
   {
@@ -90,6 +91,9 @@ export default function FinanceiroAdmin() {
   const [durMin, setDurMin] = useState('0');
   const [durSeg, setDurSeg] = useState('0');
   const [notifyUsers, setNotifyUsers] = useState(true);
+  const [incDias, setIncDias] = useState('0');
+  const [incHoras, setIncHoras] = useState('1');
+  const [incMin, setIncMin] = useState('0');
 
   useEffect(() => {
     const temPromoComTempo = Boolean(promoAtual?.startsAt) && Boolean(promoAtual?.endsAt);
@@ -208,14 +212,21 @@ export default function FinanceiroAdmin() {
     }
   };
 
-  const encerrarPromo = async () => {
-    if (!window.confirm('Deseja encerrar esta promoção agora?')) return;
+  const encerrarPromo = async ({ agendada = false } = {}) => {
+    const pergunta = agendada
+      ? 'Deseja cancelar esta campanha agendada?'
+      : 'Deseja encerrar esta promoção agora?';
+    if (!window.confirm(pergunta)) return;
     setLoadingPromo(true);
     setMsgPromo('');
     try {
       await adminSalvarPromocaoPremium({ enabled: false });
       setPromoAtual(null);
-      setMsgPromo('Promoção encerrada. O checkout voltou ao preço base.');
+      setMsgPromo(
+        agendada
+          ? 'Campanha agendada cancelada. O checkout segue no preço base.'
+          : 'Promoção encerrada. O checkout voltou ao preço base.'
+      );
     } catch (err) {
       setMsgPromo(mensagemErroCallable(err));
     } finally {
@@ -223,10 +234,43 @@ export default function FinanceiroAdmin() {
     }
   };
 
-  const promoAtivaAgora = Boolean(
-    promoAtual && nowMs >= Number(promoAtual.startsAt || 0) && nowMs <= Number(promoAtual.endsAt || 0)
-  );
-  const restante = Math.max(0, Number(promoAtual?.endsAt || 0) - nowMs);
+  const incrementarDuracao = async (preset = null) => {
+    const dias = Math.max(0, Math.floor(Number(preset?.days ?? incDias ?? 0)));
+    const horas = Math.max(0, Math.floor(Number(preset?.hours ?? incHoras ?? 0)));
+    const minutos = Math.max(0, Math.floor(Number(preset?.minutes ?? incMin ?? 0)));
+    if (!promoAtivaAgora) {
+      setMsgPromo('Só é possível incrementar o tempo quando a promoção está ativa.');
+      return;
+    }
+    if (dias + horas + minutos <= 0) {
+      setMsgPromo('Informe pelo menos dias, horas ou minutos para incrementar.');
+      return;
+    }
+    setLoadingPromo(true);
+    setMsgPromo('');
+    try {
+      const { data } = await adminIncrementarDuracaoPromocaoPremium({
+        days: dias,
+        hours: horas,
+        minutes: minutos,
+      });
+      setMsgPromo(
+        `Tempo adicionado com sucesso (+${dias}d ${horas}h ${minutos}min). Novo término: ${formatDateBr(data?.endsAt)}.`
+      );
+      await carregarPromo();
+    } catch (err) {
+      setMsgPromo(mensagemErroCallable(err));
+    } finally {
+      setLoadingPromo(false);
+    }
+  };
+
+  const promoStartMs = Number(promoAtual?.startsAt || 0);
+  const promoEndMs = Number(promoAtual?.endsAt || 0);
+  const promoAtivaAgora = Boolean(promoAtual && nowMs >= promoStartMs && nowMs <= promoEndMs);
+  const promoAgendada = Boolean(promoAtual && nowMs < promoStartMs);
+  const promoEncerrada = Boolean(promoAtual && nowMs > promoEndMs);
+  const restante = Math.max(0, promoEndMs - nowMs);
   const totalSec = Math.floor(restante / 1000);
   const dd = String(Math.floor(totalSec / 86400)).padStart(2, '0');
   const hh = String(Math.floor((totalSec % 86400) / 3600)).padStart(2, '0');
@@ -351,11 +395,17 @@ export default function FinanceiroAdmin() {
           <div className="financeiro-promocao">
             <h2>Estado atual da campanha</h2>
             {promoAtual ? (
-              <div className={`promo-banner ${promoAtivaAgora ? 'promo-banner--active' : ''}`}>
+              <div className={`promo-banner ${promoAtivaAgora ? 'promo-banner--active' : ''} ${promoEncerrada ? 'promo-banner--ended' : ''}`}>
                 <div className="promo-banner-head">
-                  <h3>{promoAtivaAgora ? '🔥 Promoção ativa' : 'Campanha programada'}</h3>
-                  <span className={`promo-status-chip ${promoAtivaAgora ? 'active' : 'scheduled'}`}>
-                    {promoAtivaAgora ? 'ATIVA' : 'AGENDADA'}
+                  <h3>
+                    {promoAtivaAgora
+                      ? '🔥 Promoção ativa'
+                      : promoAgendada
+                        ? 'Campanha programada'
+                        : 'Campanha encerrada'}
+                  </h3>
+                  <span className={`promo-status-chip ${promoAtivaAgora ? 'active' : promoAgendada ? 'scheduled' : 'ended'}`}>
+                    {promoAtivaAgora ? 'ATIVA' : promoAgendada ? 'AGENDADA' : 'ENCERRADA'}
                   </span>
                 </div>
                 <p className="promo-campaign-name">{promoAtual.name}</p>
@@ -367,12 +417,51 @@ export default function FinanceiroAdmin() {
                   Janela da campanha: {formatDateBr(promoAtual.startsAt)} até {formatDateBr(promoAtual.endsAt)}
                 </p>
                 {promoAtivaAgora ? (
-                  <div className="promo-countdown-block">
-                    <small>Tempo restante</small>
-                    <strong>{timerFormatado}</strong>
-                  </div>
+                  <>
+                    <div className="promo-countdown-block">
+                      <small>Tempo restante</small>
+                      <strong>{timerFormatado}</strong>
+                    </div>
+                    <div className="promo-incremento">
+                      <h4>Incrementar duração da promoção ativa</h4>
+                      <div className="promo-incremento-grid">
+                        <label>
+                          Dias
+                          <input type="number" min="0" value={incDias} onChange={(e) => setIncDias(e.target.value)} />
+                        </label>
+                        <label>
+                          Horas
+                          <input type="number" min="0" value={incHoras} onChange={(e) => setIncHoras(e.target.value)} />
+                        </label>
+                        <label>
+                          Minutos
+                          <input type="number" min="0" value={incMin} onChange={(e) => setIncMin(e.target.value)} />
+                        </label>
+                      </div>
+                      <div className="promo-incremento-acoes">
+                        <button type="button" disabled={loadingPromo} onClick={() => incrementarDuracao()}>
+                          {loadingPromo ? 'Aplicando...' : 'Aplicar incremento'}
+                        </button>
+                        <button type="button" disabled={loadingPromo} onClick={() => incrementarDuracao({ minutes: 15 })}>
+                          +15 min
+                        </button>
+                        <button type="button" disabled={loadingPromo} onClick={() => incrementarDuracao({ hours: 1 })}>
+                          +1h
+                        </button>
+                        <button type="button" disabled={loadingPromo} onClick={() => incrementarDuracao({ days: 1 })}>
+                          +1 dia
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : promoAgendada ? (
+                  <p className="promo-timer">
+                    Promoção cadastrada, aguardando o horário de início.
+                  </p>
                 ) : (
-                  <p className="promo-timer">Promoção cadastrada, fora da janela ativa no momento.</p>
+                  <p className="promo-timer">
+                    Esta campanha já finalizou em {formatDateBr(promoAtual.endsAt)}.
+                  </p>
                 )}
               </div>
             ) : (
@@ -392,14 +481,16 @@ export default function FinanceiroAdmin() {
               <button type="button" disabled={loadingPromo} onClick={carregarPromo}>
                 Recarregar estado
               </button>
-              <button
-                type="button"
-                className="financeiro-btn-encerrar"
-                disabled={loadingPromo || !promoAtual}
-                onClick={encerrarPromo}
-              >
-                Encerrar agora
-              </button>
+              {(promoAtivaAgora || promoAgendada) && (
+                <button
+                  type="button"
+                  className="financeiro-btn-encerrar"
+                  disabled={loadingPromo || !promoAtual}
+                  onClick={() => encerrarPromo({ agendada: promoAgendada })}
+                >
+                  {promoAgendada ? 'Cancelar campanha' : 'Encerrar agora'}
+                </button>
+              )}
             </div>
             {msgPromo && <p className="financeiro-migracao-msg">{msgPromo}</p>}
 

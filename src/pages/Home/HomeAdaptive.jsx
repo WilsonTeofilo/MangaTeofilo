@@ -10,6 +10,7 @@ import {
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
 } from '../../config/obras';
+import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import ShitoManga from './ShitoManga';
 import './HomeAdaptive.css';
 
@@ -349,7 +350,11 @@ export default function HomeAdaptive({ user }) {
                 tabIndex={0}
                 onKeyDown={(e) => e.key === 'Enter' && navigate(`/ler/${cap.id}`)}
               >
-                <img src={cap.capaUrl || '/assets/fotos/shito.jpg'} alt={cap.titulo || `Capítulo ${cap.numero}`} />
+                <img
+                  src={cap.capaUrl || '/assets/fotos/shito.jpg'}
+                  alt={cap.titulo || `Capítulo ${cap.numero}`}
+                  style={chapterCoverStyle(cap.capaAjuste)}
+                />
                 <div className="home-update-meta">
                   <strong>{cap.titulo || `Capítulo ${cap.numero}`}</strong>
                   <span>

@@ -10,7 +10,7 @@
 .reader-header {
   position: sticky;
   top: 0;
-  z-index: 1100;
+  z-index: 9000;
   width: 100%;
   height: var(--header-height);
   display: flex;
@@ -236,6 +236,12 @@
   display: none;
 }
 
+.btn-login-icon {
+  display: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .btn-login-header:hover {
   background: rgba(255, 204, 0, 0.18);
   color: #fff;
@@ -362,6 +368,11 @@
 
 .mobile-only-logout {
   display: none;
+}
+
+body.mobile-menu-open {
+  overflow: hidden;
+  touch-action: none;
 }
 
 @media (max-width: 1360px) {
@@ -495,41 +506,58 @@
 @media (max-width: 1360px) {
   .reader-header {
     height: var(--header-mobile-height);
+    overflow: visible;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .nav-container {
     justify-content: flex-start;
     position: relative;
-    padding: 0 16px;
+    padding: 0 20px 0 16px;
   }
 
   .mobile-menu-icon {
     display: flex;
     position: absolute;
-    right: 16px;
+    right: 12px;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 1200;
+    z-index: 9300;
+  }
+
+  .mobile-menu-overlay {
+    position: fixed;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 9100;
+    cursor: default;
   }
 
   .nav-menu {
     position: fixed;
     top: 0;
-    right: -100%;
-    width: min(82vw, 320px);
-    height: 100vh;
+    right: 0;
+    width: min(86vw, 340px);
+    height: 100dvh;
+    max-height: 100dvh;
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    padding: 88px 22px 22px;
+    padding: calc(72px + env(safe-area-inset-top, 0px)) 22px calc(22px + env(safe-area-inset-bottom, 0px));
     background: linear-gradient(170deg, #0d0f15, #08090d);
     border-left: 1px solid rgba(255, 204, 0, 0.35);
     box-shadow: -18px 0 35px rgba(0, 0, 0, 0.6);
-    z-index: 1150;
+    z-index: 9200;
+    transform: translateX(100%);
+    transition: transform var(--transition-smooth);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .nav-menu.active {
-    right: 0;
+    transform: translateX(0);
   }
 
   .nav-menu li {
@@ -564,7 +592,7 @@
   .nav-auth {
     position: static;
     margin-left: auto;
-    padding-right: 44px;
+    padding-right: 56px;
     max-width: 180px;
   }
 
@@ -652,9 +680,24 @@
   }
 
   .btn-login-header {
-    max-width: 88px;
-    padding: 7px 8px;
-    font-size: 0.64rem;
+    max-width: 44px;
+    width: 44px;
+    height: 34px;
+    min-width: 44px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  .btn-login-short,
+  .btn-login-long {
+    display: none !important;
+  }
+
+  .btn-login-icon {
+    display: inline;
   }
 }
 

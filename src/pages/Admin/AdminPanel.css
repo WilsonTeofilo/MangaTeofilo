@@ -597,7 +597,7 @@
 }
 
 .capa-preview-mask--editor {
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 16 / 9;
 }
 
 .capa-preview-mask--editor .capa-preview-img {

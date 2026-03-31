@@ -23,9 +23,38 @@ const CAPA_ASPECT_W = 16;
 const CAPA_ASPECT_H = 9;
 const CAPA_OUTPUT_WIDTH = 1600;
 const CAPA_OUTPUT_HEIGHT = Math.round((CAPA_OUTPUT_WIDTH * CAPA_ASPECT_H) / CAPA_ASPECT_W);
-const CAPA_EDITOR_ASPECT_W = 16;
-const CAPA_EDITOR_ASPECT_H = 10;
-const CAPA_EDITOR_CROP_WIDTH_RATIO = 0.84;
+const CAPA_PAN_MARGIN_RATIO = 0.06;
+const CAPA_DRAG_SENSITIVITY = 1.65;
+
+function normalizarCapaAjuste(raw) {
+  const zoom = Math.min(3, Math.max(1, Number(raw?.zoom ?? 1)));
+  const x = Math.min(100, Math.max(-100, Number(raw?.x ?? 0)));
+  const y = Math.min(100, Math.max(-100, Number(raw?.y ?? 0)));
+  return { zoom, x, y };
+}
+
+function calcularGeometriaCapa(imgW, imgH, frameW, frameH, ajuste = { zoom: 1, x: 0, y: 0 }) {
+  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
+  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
+  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
+
+  const coverScale = Math.max(frameW / imgW, frameH / imgH);
+  const minScalePanX = (frameW * (1 + CAPA_PAN_MARGIN_RATIO * 2)) / imgW;
+  const minScalePanY = (frameH * (1 + CAPA_PAN_MARGIN_RATIO * 2)) / imgH;
+  const baseScale = Math.max(coverScale, minScalePanX, minScalePanY);
+  const scale = baseScale * zoom;
+
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  const limiteX = Math.max(0, (drawW - frameW) / 2);
+  const limiteY = Math.max(0, (drawH - frameH) / 2);
+  const shiftX = (eixoX / 100) * limiteX;
+  const shiftY = (eixoY / 100) * limiteY;
+  const drawX = (frameW - drawW) / 2 + shiftX;
+  const drawY = (frameH - drawH) / 2 + shiftY;
+
+  return { drawW, drawH, drawX, drawY };
+}
 
 function validarImagemUpload(file, label = 'arquivo') {
   if (!file) return `${label} nao encontrado.`;
@@ -179,53 +208,27 @@ async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
 }
 
 function desenharCapaNoCanvas(ctx, img, targetW, targetH, ajuste = { zoom: 1, x: 0, y: 0 }) {
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
-
-  // Replica exatamente a geometria do editor visual:
-  // frame 16:10 com um quadro central 16:9 (84% da largura).
-  const frameW = targetW / CAPA_EDITOR_CROP_WIDTH_RATIO;
-  const frameH = frameW * (CAPA_EDITOR_ASPECT_H / CAPA_EDITOR_ASPECT_W);
-  const cropX = (frameW - targetW) / 2;
-  const cropY = (frameH - targetH) / 2;
-
-  const baseScale = Math.max(frameW / img.width, frameH / img.height);
-  const scale = baseScale * zoom;
-  const drawW = img.width * scale;
-  const drawH = img.height * scale;
-  const limiteX = Math.abs((frameW - drawW) / 2);
-  const limiteY = Math.abs((frameH - drawH) / 2);
-  const shiftX = (eixoX / 100) * limiteX;
-  const shiftY = (eixoY / 100) * limiteY;
-  const drawX = (frameW - drawW) / 2 + shiftX;
-  const drawY = (frameH - drawH) / 2 + shiftY;
+  const { drawW, drawH, drawX, drawY } = calcularGeometriaCapa(
+    Number(img.width || 0),
+    Number(img.height || 0),
+    targetW,
+    targetH,
+    ajuste
+  );
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#0b0d16';
   ctx.fillRect(0, 0, targetW, targetH);
-  ctx.globalAlpha = 0.35;
-  const bgScale = Math.max(frameW / img.width, frameH / img.height);
-  const bgW = img.width * bgScale;
-  const bgH = img.height * bgScale;
-  ctx.drawImage(img, ((frameW - bgW) / 2) - cropX, ((frameH - bgH) / 2) - cropY, bgW, bgH);
-  ctx.globalAlpha = 1;
-  ctx.drawImage(img, drawX - cropX, drawY - cropY, drawW, drawH);
+  ctx.drawImage(img, drawX, drawY, drawW, drawH);
 }
 
 function capaEditorLayout() {
-  const left = ((1 - CAPA_EDITOR_CROP_WIDTH_RATIO) / 2) * 100;
-  const cropHRatio =
-    CAPA_EDITOR_CROP_WIDTH_RATIO *
-    (CAPA_ASPECT_H / CAPA_ASPECT_W) *
-    (CAPA_EDITOR_ASPECT_W / CAPA_EDITOR_ASPECT_H);
-  const top = ((1 - cropHRatio) / 2) * 100;
   return {
-    leftPct: left,
-    topPct: top,
-    widthPct: CAPA_EDITOR_CROP_WIDTH_RATIO * 100,
-    heightPct: cropHRatio * 100,
+    leftPct: 0,
+    topPct: 0,
+    widthPct: 100,
+    heightPct: 100,
   };
 }
 
@@ -233,23 +236,9 @@ function estiloEditorCapa(dim, ajuste = { zoom: 1, x: 0, y: 0 }) {
   const w = Number(dim?.w || 0);
   const h = Number(dim?.h || 0);
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return {};
-
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
-
-  const frameW = CAPA_EDITOR_ASPECT_W;
-  const frameH = CAPA_EDITOR_ASPECT_H;
-  const baseScale = Math.max(frameW / w, frameH / h);
-  const scale = baseScale * zoom;
-  const drawW = w * scale;
-  const drawH = h * scale;
-  const limiteX = Math.abs((frameW - drawW) / 2);
-  const limiteY = Math.abs((frameH - drawH) / 2);
-  const shiftX = (eixoX / 100) * limiteX;
-  const shiftY = (eixoY / 100) * limiteY;
-  const drawX = (frameW - drawW) / 2 + shiftX;
-  const drawY = (frameH - drawH) / 2 + shiftY;
+  const frameW = CAPA_ASPECT_W;
+  const frameH = CAPA_ASPECT_H;
+  const { drawW, drawH, drawX, drawY } = calcularGeometriaCapa(w, h, frameW, frameH, ajuste);
 
   return {
     width: `${(drawW / frameW) * 100}%`,
@@ -570,7 +559,8 @@ export default function AdminPanel() {
   const [titulo, setTitulo] = useState('');
   const [numeroCapitulo, setNumeroCapitulo] = useState('');
   const [capaCapitulo, setCapaCapitulo] = useState(null);
-  const [capaAjuste, setCapaAjuste] = useState({ zoom: 1, x: 0, y: 0 });
+  const [capaAjuste, setCapaAjuste] = useState(normalizarCapaAjuste());
+  const [capaAjusteInicial, setCapaAjusteInicial] = useState(normalizarCapaAjuste());
   const [capaDimensoes, setCapaDimensoes] = useState(null);
   const [capaPreviewFinalUrl, setCapaPreviewFinalUrl] = useState('');
   const capaEditorRef = useRef(null);
@@ -655,6 +645,8 @@ export default function AdminPanel() {
     [capitulos, obraIdSelecionada]
   );
   const capaVisualSrc = capaPreviewUrl || capituloEditando?.capaUrl || '/assets/fotos/shito.jpg';
+  const capaFonteEditavel = capaPreviewUrl || capituloEditando?.capaUrl || '';
+  const capaEditavel = Boolean(capaPreviewUrl || capituloEditando?.capaUrl);
   const capaEditorImageStyle = useMemo(
     () => estiloEditorCapa(capaDimensoes, capaAjuste),
     [capaDimensoes, capaAjuste]
@@ -702,7 +694,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     let ativo = true;
-    if (!capaPreviewUrl) {
+    if (!capaFonteEditavel) {
       setCapaDimensoes(null);
       return () => {};
     }
@@ -714,11 +706,15 @@ export default function AdminPanel() {
         h: Number(img.naturalHeight || img.height || 0),
       });
     };
-    img.src = capaPreviewUrl;
+    img.onerror = () => {
+      if (!ativo) return;
+      setCapaDimensoes(null);
+    };
+    img.src = capaFonteEditavel;
     return () => {
       ativo = false;
     };
-  }, [capaPreviewUrl]);
+  }, [capaFonteEditavel]);
 
   useEffect(() => {
     let ativo = true;
@@ -727,7 +723,6 @@ export default function AdminPanel() {
       setCapaPreviewFinalUrl('');
       return () => {};
     }
-
     const img = new Image();
     img.onload = () => {
       if (!ativo) return;
@@ -742,6 +737,10 @@ export default function AdminPanel() {
         objectUrl = URL.createObjectURL(blob);
         setCapaPreviewFinalUrl(objectUrl);
       }, 'image/webp', 0.9);
+    };
+    img.onerror = () => {
+      if (!ativo) return;
+      setCapaPreviewFinalUrl('');
     };
     img.src = capaPreviewUrl;
 
@@ -761,7 +760,9 @@ export default function AdminPanel() {
     setNumeroCapitulo(cap.numero || '');
     setPaginasExistentes(cap.paginas || []);
     setCapaCapitulo(null);
-    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    const ajusteExistente = normalizarCapaAjuste(cap.capaAjuste);
+    setCapaAjuste(ajusteExistente);
+    setCapaAjusteInicial(ajusteExistente);
     setEtapaAtiva(2);
     setPublicReleaseAtInput(msParaBrDateTime(cap.publicReleaseAt));
     setAntecipadoMembros(Boolean(cap.antecipadoMembros));
@@ -866,12 +867,14 @@ export default function AdminPanel() {
       return;
     }
     setCapaCapitulo(file);
-    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    const ajustePadrao = normalizarCapaAjuste();
+    setCapaAjuste(ajustePadrao);
+    setCapaAjusteInicial(ajustePadrao);
     if (etapaAtiva < 3) setEtapaAtiva(3);
   };
 
   const iniciarArrasteCapa = (event) => {
-    if (!capaPreviewUrl || !capaEditorRef.current) return;
+    if (!capaEditavel || !capaEditorRef.current) return;
     event.preventDefault();
     const clientX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
     const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
@@ -896,8 +899,8 @@ export default function AdminPanel() {
       const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
       const deltaX = clientX - drag.startX;
       const deltaY = clientY - drag.startY;
-      const novoX = drag.eixoX + (deltaX / (drag.largura * 0.5)) * 100;
-      const novoY = drag.eixoY + (deltaY / (drag.altura * 0.5)) * 100;
+      const novoX = drag.eixoX + ((deltaX / (drag.largura * 0.5)) * 100 * CAPA_DRAG_SENSITIVITY);
+      const novoY = drag.eixoY + ((deltaY / (drag.altura * 0.5)) * 100 * CAPA_DRAG_SENSITIVITY);
       setCapaAjuste((prev) => ({
         ...prev,
         x: Math.max(-100, Math.min(100, novoX)),
@@ -964,6 +967,7 @@ export default function AdminPanel() {
 
       let urlCapa = null;
       let urlsPaginas = [];
+      const ajusteNormalizado = normalizarCapaAjuste(capaAjuste);
 
       if (capaCapitulo) {
         const erroCapa = validarImagemUpload(capaCapitulo, 'Capa');
@@ -1005,6 +1009,7 @@ export default function AdminPanel() {
       dados.antecipadoMembros = Boolean(antecipadoMembros);
 
       if (urlCapa) dados.capaUrl = urlCapa;
+      if (urlCapa || capaEditavel) dados.capaAjuste = ajusteNormalizado;
       if (urlsPaginas.length > 0) dados.paginas = urlsPaginas;
 
       if (editandoId) {
@@ -1022,7 +1027,9 @@ export default function AdminPanel() {
       setPaginasExistentes([]);
       setArquivosPaginas([]);
       setCapaCapitulo(null);
-      setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+      const ajustePadrao = normalizarCapaAjuste();
+      setCapaAjuste(ajustePadrao);
+      setCapaAjusteInicial(ajustePadrao);
       setEtapaAtiva(1);
       setPublicReleaseAtInput('');
       setAntecipadoMembros(false);
@@ -1042,11 +1049,29 @@ export default function AdminPanel() {
     setNumeroCapitulo(cap.numero);
     setPaginasExistentes(cap.paginas || []);
     setCapaCapitulo(null);
-    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    const ajusteExistente = normalizarCapaAjuste(cap.capaAjuste);
+    setCapaAjuste(ajusteExistente);
+    setCapaAjusteInicial(ajusteExistente);
     setEtapaAtiva(2);
     setPublicReleaseAtInput(msParaBrDateTime(cap.publicReleaseAt));
     setAntecipadoMembros(Boolean(cap.antecipadoMembros));
     window.scrollTo(0, 0);
+  };
+
+  const cancelarEdicao = () => {
+    const ajustePadrao = normalizarCapaAjuste();
+    setEditandoId(null);
+    setTitulo('');
+    setNumeroCapitulo('');
+    setPaginasExistentes([]);
+    setArquivosPaginas([]);
+    setCapaCapitulo(null);
+    setCapaAjuste(ajustePadrao);
+    setCapaAjusteInicial(ajustePadrao);
+    setEtapaAtiva(1);
+    setPublicReleaseAtInput('');
+    setAntecipadoMembros(false);
+    navigate('/admin/capitulos');
   };
 
   return (
@@ -1237,16 +1262,16 @@ export default function AdminPanel() {
                   <div className="capa-preview-frame">
                     <div
                       ref={capaEditorRef}
-                      className={`capa-preview-mask capa-preview-mask--editor${capaPreviewUrl ? ' is-editable' : ''}`}
+                      className={`capa-preview-mask capa-preview-mask--editor${capaEditavel ? ' is-editable' : ''}`}
                       onMouseDown={iniciarArrasteCapa}
                     onTouchStart={iniciarArrasteCapa}
-                      title={capaPreviewUrl ? 'Clique e arraste para mover o enquadramento' : 'Selecione uma capa para editar'}
+                      title={capaEditavel ? 'Clique e arraste para mover o enquadramento' : 'Selecione uma capa para editar'}
                     >
                       <img
                         src={capaVisualSrc}
-                        alt={capaPreviewUrl ? 'Prévia da capa ajustada' : 'Prévia da capa atual'}
-                        className={`capa-preview-img${capaPreviewUrl ? '' : ' capa-preview-img--faded'}`}
-                        style={capaPreviewUrl ? capaEditorImageStyle : undefined}
+                        alt={capaEditavel ? 'Prévia da capa ajustada' : 'Prévia da capa atual'}
+                        className={`capa-preview-img${capaEditavel ? '' : ' capa-preview-img--faded'}`}
+                        style={capaEditavel ? capaEditorImageStyle : undefined}
                       />
                       <div className="capa-editor-outside-mask" aria-hidden="true">
                         <i style={{ left: 0, top: 0, width: '100%', height: `${capaCrop.topPct}%` }} />
@@ -1286,7 +1311,7 @@ export default function AdminPanel() {
                         max="3"
                         step="0.01"
                         value={capaAjuste.zoom}
-                        disabled={!capaPreviewUrl}
+                        disabled={!capaEditavel}
                         onChange={(e) =>
                           setCapaAjuste((prev) => ({ ...prev, zoom: Number(e.target.value) }))
                         }
@@ -1300,7 +1325,7 @@ export default function AdminPanel() {
                         max="100"
                         step="1"
                         value={capaAjuste.x}
-                        disabled={!capaPreviewUrl}
+                        disabled={!capaEditavel}
                         onChange={(e) =>
                           setCapaAjuste((prev) => ({ ...prev, x: Number(e.target.value) }))
                         }
@@ -1314,7 +1339,7 @@ export default function AdminPanel() {
                         max="100"
                         step="1"
                         value={capaAjuste.y}
-                        disabled={!capaPreviewUrl}
+                        disabled={!capaEditavel}
                         onChange={(e) =>
                           setCapaAjuste((prev) => ({ ...prev, y: Number(e.target.value) }))
                         }
@@ -1326,8 +1351,8 @@ export default function AdminPanel() {
                     <button
                       type="button"
                       className="btn-reset-capa"
-                      disabled={!capaPreviewUrl}
-                      onClick={() => setCapaAjuste({ zoom: 1, x: 0, y: 0 })}
+                      disabled={!capaEditavel}
+                      onClick={() => setCapaAjuste(normalizarCapaAjuste())}
                     >
                       Resetar ajuste
                     </button>
@@ -1423,15 +1448,7 @@ export default function AdminPanel() {
                 <button
                   type="button"
                   className="btn-cancel"
-                  onClick={() => {
-                    setEditandoId(null);
-                    setPaginasExistentes([]);
-                    setCapaCapitulo(null);
-                    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
-                    setEtapaAtiva(1);
-                    setPublicReleaseAtInput('');
-                    setAntecipadoMembros(false);
-                  }}
+                  onClick={cancelarEdicao}
                 >
                   CANCELAR EDIÇÃO
                 </button>

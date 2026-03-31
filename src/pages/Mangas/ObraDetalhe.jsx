@@ -10,6 +10,7 @@ import {
   obterObraIdCapitulo,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
+import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import './ObraDetalhe.css';
 
 function toList(snapshotVal) {
@@ -195,6 +196,7 @@ export default function ObraDetalhe({ user, perfil }) {
                           src={cap.capaUrl || '/assets/fotos/shito.jpg'}
                           alt={cap.titulo || `Capítulo ${cap.numero}`}
                           className="shito-cap-miniature"
+                          style={chapterCoverStyle(cap.capaAjuste)}
                         />
                       </div>
                       <div className="cap-text-details">

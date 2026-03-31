@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "shitoproject-ed649"
+    "default": "shitoproject-ed649",
+    "prod": "shitoproject-ed649"
   },
   "targets": {},
   "etags": {}

@@ -53,12 +53,42 @@ const BANNER_EDITOR_CONFIG = {
   editorH: 10,
   cropWidthRatio: 0.84,
 };
+const OBRAS_EDITOR_PAN_MARGIN_RATIO = 0.06;
+const OBRAS_EDITOR_DRAG_SENSITIVITY = 1.6;
 
 function validarImagemUpload(file, label = 'Imagem') {
   if (!file) return `${label} não encontrado.`;
   if (!IMAGE_TYPES.includes(file.type)) return `${label} inválido. Use JPG, PNG ou WEBP.`;
   if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 7MB.`;
   return '';
+}
+
+function calcularGeometriaEditorObra(
+  imgW,
+  imgH,
+  frameW,
+  frameH,
+  ajuste = { zoom: 1, x: 0, y: 0 }
+) {
+  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
+  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
+  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
+
+  const coverScale = Math.max(frameW / imgW, frameH / imgH);
+  const minScalePanX = (frameW * (1 + OBRAS_EDITOR_PAN_MARGIN_RATIO * 2)) / imgW;
+  const minScalePanY = (frameH * (1 + OBRAS_EDITOR_PAN_MARGIN_RATIO * 2)) / imgH;
+  const baseScale = Math.max(coverScale, minScalePanX, minScalePanY);
+  const scale = baseScale * zoom;
+  const drawW = imgW * scale;
+  const drawH = imgH * scale;
+  const limiteX = Math.max(0, (drawW - frameW) / 2);
+  const limiteY = Math.max(0, (drawH - frameH) / 2);
+  const shiftX = (eixoX / 100) * limiteX;
+  const shiftY = (eixoY / 100) * limiteY;
+  const drawX = (frameW - drawW) / 2 + shiftX;
+  const drawY = (frameH - drawH) / 2 + shiftY;
+
+  return { drawW, drawH, drawX, drawY };
 }
 
 function nomeArquivoComExtensao(name, novaExt) {
@@ -135,25 +165,17 @@ function desenharImagemAjustada(
   ajuste = { zoom: 1, x: 0, y: 0 },
   editorConfig = BANNER_EDITOR_CONFIG
 ) {
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
-
   const frameW = targetW / editorConfig.cropWidthRatio;
   const frameH = frameW * (editorConfig.editorH / editorConfig.editorW);
   const cropX = (frameW - targetW) / 2;
   const cropY = (frameH - targetH) / 2;
-
-  const baseScale = Math.max(frameW / img.width, frameH / img.height);
-  const scale = baseScale * zoom;
-  const drawW = img.width * scale;
-  const drawH = img.height * scale;
-  const limiteX = Math.abs((frameW - drawW) / 2);
-  const limiteY = Math.abs((frameH - drawH) / 2);
-  const shiftX = (eixoX / 100) * limiteX;
-  const shiftY = (eixoY / 100) * limiteY;
-  const drawX = (frameW - drawW) / 2 + shiftX;
-  const drawY = (frameH - drawH) / 2 + shiftY;
+  const { drawW, drawH, drawX, drawY } = calcularGeometriaEditorObra(
+    Number(img.width || 0),
+    Number(img.height || 0),
+    frameW,
+    frameH,
+    ajuste
+  );
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -205,22 +227,9 @@ function estiloEditorImagem(dim, ajuste = { zoom: 1, x: 0, y: 0 }, editorConfig 
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
     return {};
   }
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
-
   const frameW = editorConfig.editorW;
   const frameH = editorConfig.editorH;
-  const baseScale = Math.max(frameW / w, frameH / h);
-  const scale = baseScale * zoom;
-  const drawW = w * scale;
-  const drawH = h * scale;
-  const limiteX = Math.abs((frameW - drawW) / 2);
-  const limiteY = Math.abs((frameH - drawH) / 2);
-  const shiftX = (eixoX / 100) * limiteX;
-  const shiftY = (eixoY / 100) * limiteY;
-  const drawX = (frameW - drawW) / 2 + shiftX;
-  const drawY = (frameH - drawH) / 2 + shiftY;
+  const { drawW, drawH, drawX, drawY } = calcularGeometriaEditorObra(w, h, frameW, frameH, ajuste);
 
   return {
     width: `${(drawW / frameW) * 100}%`,
@@ -602,8 +611,8 @@ export default function ObrasAdmin() {
       const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
       const deltaX = clientX - drag.startX;
       const deltaY = clientY - drag.startY;
-      const novoX = drag.eixoX + (deltaX / (drag.largura * 0.5)) * 100;
-      const novoY = drag.eixoY + (deltaY / (drag.altura * 0.5)) * 100;
+      const novoX = drag.eixoX + ((deltaX / (drag.largura * 0.5)) * 100 * OBRAS_EDITOR_DRAG_SENSITIVITY);
+      const novoY = drag.eixoY + ((deltaY / (drag.altura * 0.5)) * 100 * OBRAS_EDITOR_DRAG_SENSITIVITY);
       if (drag.tipo === 'capa') {
         setCapaAjuste((prev) => ({ ...prev, x: Math.max(-100, Math.min(100, novoX)), y: Math.max(-100, Math.min(100, novoY)) }));
       } else {

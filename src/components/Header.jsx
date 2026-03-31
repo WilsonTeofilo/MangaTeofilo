@@ -74,6 +74,12 @@ export default function Header({ usuario, perfil, adminAccess }) {
     return () => window.removeEventListener('resize', syncMenuState);
   }, []);
 
+  useEffect(() => {
+    const mobileOpen = menuAberto && window.innerWidth <= MOBILE_BREAKPOINT;
+    document.body.classList.toggle('mobile-menu-open', mobileOpen);
+    return () => document.body.classList.remove('mobile-menu-open');
+  }, [menuAberto]);
+
   const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
   /** Coroa só com assinatura Premium paga ativa (mesma regra do leitor). */
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
@@ -88,7 +94,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   return (
-    <nav className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''}`}>
+    <nav
+      className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''} ${menuAberto ? 'menu-open' : ''}`}
+    >
       <div className="nav-container">
 
         <button type="button" className="nav-logo" onClick={() => pushRoute('/')}>
@@ -106,6 +114,15 @@ export default function Header({ usuario, perfil, adminAccess }) {
           <span className="bar" />
           <span className="bar" />
         </button>
+
+        {menuAberto && (
+          <button
+            type="button"
+            className="mobile-menu-overlay"
+            aria-label="Fechar menu"
+            onClick={() => setMenuAberto(false)}
+          />
+        )}
 
         <ul className={`nav-menu ${menuAberto ? 'active' : ''}`}>
           {navItems.map((item) => (
@@ -158,9 +175,15 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
         <div className="nav-auth">
           {!usuario ? (
-            <button className="btn-login-header" onClick={() => pushRoute('/login')}>
+            <button
+              className="btn-login-header"
+              onClick={() => pushRoute('/login')}
+              aria-label="Entrar ou cadastrar"
+              title="Entrar ou cadastrar"
+            >
               <span className="btn-login-long">ENTRAR / CADASTRAR</span>
               <span className="btn-login-short">ENTRAR</span>
+              <span className="btn-login-icon" aria-hidden="true">⎆</span>
             </button>
           ) : (
             <div className="user-info-header" title="Acessar Perfil">

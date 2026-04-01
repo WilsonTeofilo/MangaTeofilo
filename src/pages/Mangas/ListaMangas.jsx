@@ -8,8 +8,11 @@ import {
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
+  obraCreatorId,
 } from '../../config/obras';
+import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
+import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './ListaMangas.css';
 
 function pathObraPublica(obra) {
@@ -46,6 +49,7 @@ export default function ListaMangas({ user }) {
   const [loadingCaps, setLoadingCaps] = useState(true);
   const [obras, setObras] = useState([]);
   const [capitulos, setCapitulos] = useState([]);
+  const [creatorsMap, setCreatorsMap] = useState({});
   const [favoritosLegacy, setFavoritosLegacy] = useState({});
   const [favoritosCanon, setFavoritosCanon] = useState({});
 
@@ -58,7 +62,7 @@ export default function ListaMangas({ user }) {
         return;
       }
       const lista = ensureLegacyShitoObra(toList(snapshot.val()))
-        .filter((obra) => obra?.isPublished !== false)
+        .filter((obra) => obraVisivelNoCatalogoPublico(obra))
         .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
       setObras(lista);
       setLoadingObras(false);
@@ -72,6 +76,13 @@ export default function ListaMangas({ user }) {
       const lista = snapshot.exists() ? toList(snapshot.val()) : [];
       setCapitulos(lista);
       setLoadingCaps(false);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'usuarios_publicos'), (snapshot) => {
+      setCreatorsMap(snapshot.exists() ? snapshot.val() || {} : {});
     });
     return () => unsub();
   }, []);
@@ -130,6 +141,21 @@ export default function ListaMangas({ user }) {
     });
   }, [obras, capitulos, favoritosMap]);
 
+  const discovery = useMemo(
+    () => buildDiscoveryRanking({ obras, capitulos, creatorsMap }),
+    [obras, capitulos, creatorsMap]
+  );
+
+  const creatorName = (obra) => {
+    const profile = creatorsMap?.[obraCreatorId(obra)] || null;
+    return (
+      profile?.creatorProfile?.displayName ||
+      profile?.creatorDisplayName ||
+      profile?.userName ||
+      'Criador'
+    );
+  };
+
   const toggleFavorito = async (obra) => {
     if (!user?.uid) {
       navigate('/login');
@@ -143,6 +169,7 @@ export default function ListaMangas({ user }) {
     await saveWorkFavoriteBoth(db, user.uid, wid, {
       obraId: wid,
       workId: wid,
+      creatorId: obraCreatorId(obra),
       titulo: obra.titulo || wid,
       savedAt: Date.now(),
     });
@@ -154,77 +181,159 @@ export default function ListaMangas({ user }) {
 
   return (
     <main className="lista-mangas-page">
-      <header className="lista-mangas-header">
-        <h1>Obras</h1>
-        <p>Catálogo MangaTeofilo — mangás autorais, atualizações e favoritos por obra.</p>
-      </header>
+      <div className="lista-mangas-inner">
+        <header className="lista-mangas-header">
+          <h1>Lista de mangás</h1>
+          <p>
+            Catálogo MangaTeofilo — grelha de capas responsiva (celular, tablet, TV). Toque na capa para abrir a
+            obra.
+          </p>
+        </header>
 
-      {obrasCards.length === 0 ? (
-        <section className="lista-mangas-empty">
-          <h2>Nenhuma obra publicada</h2>
-          <p>Quando uma obra estiver com <code>isPublished=true</code>, ela aparecerá aqui.</p>
-        </section>
-      ) : (
-        <section className="lista-mangas-grid">
-          {obrasCards.map((obra) => (
-            <article
-              key={obra.obraId}
-              className="manga-card"
-              role="button"
-              tabIndex={0}
-              onClick={() => navigate(pathObraPublica(obra))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  navigate(pathObraPublica(obra));
-                }
-              }}
-            >
-              <div className="manga-card-cover-wrap">
-                <img
-                  src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
-                  alt={obra.titulo || obra.obraId}
-                  className="manga-card-cover"
-                />
-                <div className="manga-card-badges">
-                  {obra.badgeNovo && <span className="badge novo">Novo</span>}
-                  {obra.status === 'completed' && <span className="badge completo">Completo</span>}
-                  {obra.status === 'hiatus' && <span className="badge hiato">Hiato</span>}
-                  {obra.status === 'ongoing' && <span className="badge ongoing">Em lançamento</span>}
-                </div>
-              </div>
-              <div className="manga-card-body">
-                <h3>{obra.titulo || obra.obraId}</h3>
-                <p className="manga-update">{obra.updatedLabel}</p>
-                <p className="manga-meta">{obra.totalCapitulos} capítulos</p>
-                <div className="manga-card-actions">
-                  <button
-                    type="button"
-                    className="btn-obra-abrir"
-                    onClick={(e) => {
-                      e.stopPropagation();
+        {discovery.trendingWorks.length > 0 ? (
+          <section className="lista-discovery-section">
+            <div className="lista-discovery-head">
+              <h2>Obras em alta</h2>
+              <p>Ranking por seguidores, likes, views, comentarios e recencia.</p>
+            </div>
+            <div className="lista-discovery-row">
+              {discovery.trendingWorks.slice(0, 6).map((obra, index) => (
+                <article
+                  key={`discover-work-${obra.id}`}
+                  className="lista-discovery-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(pathObraPublica(obra))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
                       navigate(pathObraPublica(obra));
-                    }}
-                  >
-                    Ver obra
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn-obra-fav ${obra.isFavorito ? 'is-fav' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFavorito(obra);
-                    }}
-                  >
-                    {obra.isFavorito ? '★ Favoritado' : '☆ Favoritar'}
-                  </button>
+                    }
+                  }}
+                >
+                  <span className="lista-discovery-rank">#{index + 1}</span>
+                  <img
+                    src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                    alt={obra.titulo || obra.id}
+                    className="lista-discovery-cover"
+                  />
+                  <div className="lista-discovery-body">
+                    <strong>{obra.titulo || obra.id}</strong>
+                    <span>por {creatorName(obra)}</span>
+                    <span>{Math.round(obra.totalViews || 0)} views · {obra.totalLikes || 0} likes</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {discovery.popularCreators.length > 0 ? (
+          <section className="lista-discovery-section">
+            <div className="lista-discovery-head">
+              <h2>Criadores populares</h2>
+              <p>Perfis com audiencia forte e obras puxando descoberta no catalogo.</p>
+            </div>
+            <div className="lista-discovery-row">
+              {discovery.popularCreators.slice(0, 6).map((creator, index) => (
+                <article
+                  key={`discover-creator-${creator.creatorId}`}
+                  className="lista-discovery-card is-creator"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/criador/${encodeURIComponent(creator.creatorId)}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate(`/criador/${encodeURIComponent(creator.creatorId)}`);
+                    }
+                  }}
+                >
+                  <span className="lista-discovery-rank">#{index + 1}</span>
+                  <img
+                    src={creator.avatarUrl || '/assets/fotos/shito.jpg'}
+                    alt={creator.displayName}
+                    className="lista-discovery-cover"
+                  />
+                  <div className="lista-discovery-body">
+                    <strong>{creator.displayName}</strong>
+                    <span>@{creator.username || creator.creatorId}</span>
+                    <span>{creator.followersCount} seguidores · {creator.worksCount} obra(s)</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {obrasCards.length === 0 ? (
+          <section className="lista-mangas-empty">
+            <h2>Nenhuma obra publicada</h2>
+            <p>Quando uma obra estiver com <code>isPublished=true</code>, ela aparecerá aqui.</p>
+          </section>
+        ) : (
+          <section className="lista-mangas-grid">
+            {obrasCards.map((obra) => (
+              <article
+                key={obra.obraId}
+                className="manga-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(pathObraPublica(obra))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(pathObraPublica(obra));
+                  }
+                }}
+              >
+                <div className="manga-card-cover-wrap">
+                  <img
+                    src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                    alt={obra.titulo || obra.obraId}
+                    className="manga-card-cover"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <div className="manga-card-badges">
+                    {obra.badgeNovo && <span className="badge novo">Novo</span>}
+                    {obra.status === 'completed' && <span className="badge completo">Completo</span>}
+                    {obra.status === 'hiatus' && <span className="badge hiato">Hiato</span>}
+                    {obra.status === 'ongoing' && <span className="badge ongoing">Em lançamento</span>}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </section>
-      )}
+                <div className="manga-card-body">
+                  <h3>{obra.titulo || obra.obraId}</h3>
+                  <p className="manga-update">{obra.updatedLabel}</p>
+                  <p className="manga-meta">{obra.totalCapitulos} capítulos</p>
+                  <div className="manga-card-actions">
+                    <button
+                      type="button"
+                      className="btn-obra-abrir"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(pathObraPublica(obra));
+                      }}
+                    >
+                      Ver obra
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn-obra-fav ${obra.isFavorito ? 'is-fav' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleFavorito(obra);
+                      }}
+                    >
+                      {obra.isFavorito ? '★ Favoritado' : '☆ Favoritar'}
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+      </div>
     </main>
   );
 }
-

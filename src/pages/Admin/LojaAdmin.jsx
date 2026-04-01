@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, push, ref, remove, set, update } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 
-import { db } from '../../services/firebase';
+import { db, functions } from '../../services/firebase';
 import {
   normalizeProductCategory,
   normalizeStoreConfig,
@@ -36,8 +37,8 @@ const EMPTY_PRODUCT = {
 
 const PRODUCT_TABS = [
   { id: 'dados', label: 'Dados' },
-  { id: 'midia', label: 'Mídia' },
-  { id: 'preco', label: 'Preço' },
+  { id: 'midia', label: 'MÃ­dia' },
+  { id: 'preco', label: 'PreÃ§o' },
   { id: 'estoque', label: 'Estoque' },
   { id: 'categoria', label: 'Categoria' },
 ];
@@ -56,8 +57,26 @@ function parseSizes(text) {
     .filter(Boolean);
 }
 
-export default function LojaAdmin() {
+function orderBelongsToCreator(order, creatorUid) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  return items.some((item) => String(item?.creatorId || '').trim() === creatorUid);
+}
+
+function creatorOrderTotal(order, creatorUid) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  return items.reduce((sum, item) => {
+    if (String(item?.creatorId || '').trim() !== creatorUid) return sum;
+    return sum + Number(item?.lineTotal || 0);
+  }, 0);
+}
+
+export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
+  const creatorUid = String(user?.uid || '').trim();
+  const isMangaka = Boolean(adminAccess?.isMangaka && creatorUid);
+  const ordersPath = workspace === 'creator' ? '/creator/loja' : '/admin/pedidos';
+  const isCreatorWorkspace = workspace === 'creator';
+  const listVisibleOrders = useMemo(() => httpsCallable(functions, 'adminListVisibleStoreOrders'), []);
   const [config, setConfig] = useState(STORE_DEFAULT_CONFIG);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -65,8 +84,8 @@ export default function LojaAdmin() {
   const [editingId, setEditingId] = useState('');
   const [ok, setOk] = useState('');
   const [productTab, setProductTab] = useState('dados');
-  const [shipIn, setShipIn] = useState(0);
-  const [thanksIn, setThanksIn] = useState('');
+  const [shipIn, setShipIn] = useState(null);
+  const [thanksIn, setThanksIn] = useState(null);
 
   useEffect(() => {
     const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {
@@ -76,64 +95,83 @@ export default function LojaAdmin() {
       const list = Object.entries(snap.exists() ? snap.val() : {}).map(([id, v]) => ({ id, ...(v || {}) }));
       setProducts(list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
     });
-    const unsubOrders = onValue(ref(db, 'loja/pedidos'), (snap) => {
-      const list = Object.entries(snap.exists() ? snap.val() : {}).map(([id, v]) => ({ id, ...(v || {}) }));
-      setOrders(list.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)));
-    });
+    let unsubOrders = () => {};
+    if (isMangaka) {
+      listVisibleOrders()
+        .then(({ data }) => {
+          const list = Array.isArray(data?.orders) ? data.orders : [];
+          setOrders(list.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)));
+        })
+        .catch(() => {
+          setOrders([]);
+          setOk('Nao foi possivel carregar pedidos visiveis do criador.');
+          setTimeout(() => setOk(''), 3200);
+        });
+    } else {
+      unsubOrders = onValue(ref(db, 'loja/pedidos'), (snap) => {
+        const list = Object.entries(snap.exists() ? snap.val() : {}).map(([id, v]) => ({ id, ...(v || {}) }));
+        setOrders(list.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0)));
+      });
+    }
     return () => {
       unsubCfg();
       unsubProducts();
       unsubOrders();
     };
-  }, []);
+  }, [isMangaka, listVisibleOrders]);
 
-  useEffect(() => {
-    setShipIn(config.fixedShippingBrl);
-    setThanksIn(config.postPurchaseThanks || '');
-  }, [config.fixedShippingBrl, config.postPurchaseThanks]);
+  const visibleProducts = useMemo(() => {
+    if (!isMangaka) return products;
+    return products.filter((product) => String(product?.creatorId || '').trim() === creatorUid);
+  }, [creatorUid, isMangaka, products]);
+
+  const visibleOrders = useMemo(() => {
+    if (!isMangaka) return orders;
+    return orders.filter((order) => orderBelongsToCreator(order, creatorUid));
+  }, [creatorUid, isMangaka, orders]);
 
   const totals = useMemo(() => {
-    return orders.reduce(
+    return visibleOrders.reduce(
       (acc, order) => {
-        acc.total += Number(order.total || 0);
+        const totalBase = isMangaka ? creatorOrderTotal(order, creatorUid) : Number(order.total || 0);
+        acc.total += totalBase;
         if (order.status === 'paid' || order.status === 'processing' || order.status === 'shipped' || order.status === 'delivered') {
-          acc.paid += Number(order.total || 0);
+          acc.paid += totalBase;
         }
         if (order.status === 'pending') acc.pending += 1;
         return acc;
       },
       { total: 0, paid: 0, pending: 0 }
     );
-  }, [orders]);
+  }, [creatorUid, isMangaka, visibleOrders]);
 
   async function saveConfig(patch) {
+    if (isMangaka) {
+      setOk('Configuracoes globais da loja ficam com o admin-chefe.');
+      setTimeout(() => setOk(''), 3200);
+      return;
+    }
     await update(ref(db, 'loja/config'), { ...patch, updatedAt: Date.now() });
-    setOk('Configuração salva.');
+    setOk('ConfiguraÃ§Ã£o salva.');
     setTimeout(() => setOk(''), 2200);
   }
 
-  const [heroEyebrowIn, setHeroEyebrowIn] = useState('');
-  const [heroTitleIn, setHeroTitleIn] = useState('');
-  const [heroSubtitleIn, setHeroSubtitleIn] = useState('');
-
-  useEffect(() => {
-    setHeroEyebrowIn(config.heroEyebrow || '');
-    setHeroTitleIn(config.heroTitle || '');
-    setHeroSubtitleIn(config.heroSubtitle || '');
-  }, [config.heroEyebrow, config.heroTitle, config.heroSubtitle]);
+  const [heroEyebrowIn, setHeroEyebrowIn] = useState(null);
+  const [heroTitleIn, setHeroTitleIn] = useState(null);
+  const [heroSubtitleIn, setHeroSubtitleIn] = useState(null);
 
   async function saveShippingBlock() {
     await saveConfig({
-      fixedShippingBrl: Math.max(0, Number(shipIn || 0)),
-      postPurchaseThanks: String(thanksIn || '').trim(),
+      fixedShippingBrl: Math.max(0, Number(shipIn ?? config.fixedShippingBrl ?? 0)),
+      postPurchaseThanks: String(thanksIn ?? config.postPurchaseThanks ?? '').trim(),
     });
   }
 
   async function saveHeroBlock() {
     await saveConfig({
-      heroEyebrow: String(heroEyebrowIn || '').trim(),
-      heroTitle: String(heroTitleIn || '').trim(),
-      heroSubtitle: String(heroSubtitleIn || '').trim(),
+      heroEyebrow: String(heroEyebrowIn ?? config.heroEyebrow ?? '').trim(),
+      heroTitle: String(heroTitleIn ?? config.heroTitle ?? '').trim(),
+      heroSubtitle: String(heroSubtitleIn ?? config.heroSubtitle ?? '').trim(),
     });
   }
 
@@ -159,14 +197,14 @@ export default function LojaAdmin() {
       obra: String(form.obra || '').trim(),
       collection: String(form.collection || '').trim(),
       dropLabel: String(form.dropLabel || '').trim(),
-      creatorId: String(form.creatorId || '').trim() || null,
+      creatorId: isMangaka ? creatorUid : String(form.creatorId || '').trim() || null,
       sizes: type === STORE_TYPE_KEYS.ROUPA ? sizes : [],
       isNew: form.isNew === true,
       updatedAt: now,
     };
 
     if (!payload.title || payload.price <= 0) {
-      setOk('Preencha nome e preço válidos.');
+      setOk('Preencha nome e preÃ§o vÃ¡lidos.');
       setTimeout(() => setOk(''), 2500);
       return;
     }
@@ -183,7 +221,7 @@ export default function LojaAdmin() {
         const newRef = push(ref(db, 'loja/produtos'));
         await set(newRef, { ...payload, createdAt: now });
       }
-      setForm(EMPTY_PRODUCT);
+      setForm({ ...EMPTY_PRODUCT, creatorId: isMangaka ? creatorUid : '' });
       setEditingId('');
       setProductTab('dados');
       setOk('Produto salvo.');
@@ -195,6 +233,11 @@ export default function LojaAdmin() {
   }
 
   function loadProductIntoForm(p) {
+    if (isMangaka && String(p?.creatorId || '').trim() !== creatorUid) {
+      setOk('Voce so pode editar produtos do seu creatorId.');
+      setTimeout(() => setOk(''), 3200);
+      return;
+    }
     setEditingId(p.id);
     setForm({
       customId: p.id,
@@ -212,7 +255,7 @@ export default function LojaAdmin() {
       obra: String(p.obra || ''),
       collection: String(p.collection || ''),
       dropLabel: String(p.dropLabel || ''),
-      creatorId: String(p.creatorId || ''),
+      creatorId: isMangaka ? creatorUid : String(p.creatorId || ''),
       sizesText: Array.isArray(p.sizes) ? p.sizes.join(', ') : '',
       isNew: p.isNew === true,
     });
@@ -223,11 +266,13 @@ export default function LojaAdmin() {
     <main className="loja-admin-page">
       <header className="loja-admin-head">
         <div>
-          <h1>Loja — Admin</h1>
+          <h1>{isMangaka ? 'Loja do criador' : workspace === 'creator' ? 'Operacao da loja' : 'Loja â€” Admin'}</h1>
           {ok ? <p>{ok}</p> : null}
+          {!ok && isMangaka ? <p>Gerencie produtos e acompanhe apenas os pedidos ligados ao seu creatorId.</p> : null}
+          {!ok && !isMangaka && isCreatorWorkspace ? <p>Contexto de loja dentro do workspace creator.</p> : null}
         </div>
-        <button type="button" className="loja-admin-link-pedidos" onClick={() => navigate('/admin/pedidos')}>
-          Pedidos da loja →
+        <button type="button" className="loja-admin-link-pedidos" onClick={() => navigate(ordersPath)}>
+          {isMangaka ? 'Pedidos e operacao â†’' : 'Pedidos da loja â†’'}
         </button>
       </header>
 
@@ -247,7 +292,15 @@ export default function LojaAdmin() {
       </section>
 
       <section className="loja-admin-card loja-admin-card--wide">
-        <h2>Configuração</h2>
+        <h2>{isMangaka ? 'Resumo da sua operacao' : 'ConfiguraÃ§Ã£o'}</h2>
+        {isMangaka ? (
+          <p>
+            A vitrine global continua com a plataforma. Aqui voce foca no que e seu: produtos, estoque e pedidos
+            relacionados ao seu catalogo.
+          </p>
+        ) : null}
+        {!isMangaka ? (
+        <>
         <div className="loja-admin-config-grid">
           <label>
             <input
@@ -263,7 +316,7 @@ export default function LojaAdmin() {
               checked={config.storeVisibleToUsers}
               onChange={(e) => saveConfig({ storeVisibleToUsers: e.target.checked })}
             />{' '}
-            Visível ao público
+            VisÃ­vel ao pÃºblico
           </label>
           <label>
             <input
@@ -287,20 +340,20 @@ export default function LojaAdmin() {
         <div className="loja-admin-shipping-block">
           <h3>Hero da loja (vitrine)</h3>
           <label className="loja-admin-field">
-            Eyebrow (linha pequena acima do título)
-            <input value={heroEyebrowIn} onChange={(e) => setHeroEyebrowIn(e.target.value)} placeholder="Shito Project" />
+            Eyebrow (linha pequena acima do tÃ­tulo)
+            <input value={heroEyebrowIn ?? config.heroEyebrow ?? ''} onChange={(e) => setHeroEyebrowIn(e.target.value)} placeholder="Shito Project" />
           </label>
           <label className="loja-admin-field">
-            Título principal
-            <input value={heroTitleIn} onChange={(e) => setHeroTitleIn(e.target.value)} placeholder="SHITO COLLECTION" />
+            TÃ­tulo principal
+            <input value={heroTitleIn ?? config.heroTitle ?? ''} onChange={(e) => setHeroTitleIn(e.target.value)} placeholder="SHITO COLLECTION" />
           </label>
           <label className="loja-admin-field">
-            Subtítulo
+            SubtÃ­tulo
             <textarea
               rows={2}
-              value={heroSubtitleIn}
+              value={heroSubtitleIn ?? config.heroSubtitle ?? ''}
               onChange={(e) => setHeroSubtitleIn(e.target.value)}
-              placeholder="Peças do universo..."
+              placeholder="PeÃ§as do universo..."
             />
           </label>
           <button type="button" className="loja-admin-btn-primary" onClick={saveHeroBlock}>
@@ -309,28 +362,30 @@ export default function LojaAdmin() {
         </div>
 
         <div className="loja-admin-shipping-block">
-          <h3>Frete fixo e pós-compra</h3>
+          <h3>Frete fixo e pÃ³s-compra</h3>
           <label className="loja-admin-field">
             Frete fixo (R$)
-            <input type="number" min={0} step={0.01} value={shipIn} onChange={(e) => setShipIn(Number(e.target.value || 0))} />
+            <input type="number" min={0} step={0.01} value={shipIn ?? config.fixedShippingBrl ?? 0} onChange={(e) => setShipIn(Number(e.target.value || 0))} />
           </label>
           <label className="loja-admin-field">
-            Mensagem após pagamento (site)
+            Mensagem apÃ³s pagamento (site)
             <textarea
               rows={3}
-              value={thanksIn}
+              value={thanksIn ?? config.postPurchaseThanks ?? ''}
               onChange={(e) => setThanksIn(e.target.value)}
-              placeholder="Ex.: Obrigado! Você apoia o Shito — benefício X liberado em breve."
+              placeholder="Ex.: Obrigado! VocÃª apoia o Shito â€” benefÃ­cio X liberado em breve."
             />
           </label>
           <button type="button" className="loja-admin-btn-primary" onClick={saveShippingBlock}>
             Salvar frete e mensagem
           </button>
         </div>
+        </>
+        ) : null}
       </section>
 
       <section className="loja-admin-card loja-admin-card--wide loja-admin-product-editor">
-        <h2>{editingId ? `Editar: ${editingId}` : 'Novo produto'}</h2>
+        <h2>{editingId ? `Editar: ${editingId}` : isMangaka ? 'Novo produto do criador' : 'Novo produto'}</h2>
 
         <div className="loja-admin-tabs">
           {PRODUCT_TABS.map((t) => (
@@ -349,7 +404,7 @@ export default function LojaAdmin() {
           <div className="loja-admin-tab-panel">
             {!editingId ? (
               <label className="loja-admin-field">
-                ID do produto (opcional, a-z 0-9 _ - , 2–40 chars)
+                ID do produto (opcional, a-z 0-9 _ - , 2â€“40 chars)
                 <input
                   value={form.customId}
                   onChange={(e) => setForm((f) => ({ ...f, customId: e.target.value }))}
@@ -364,15 +419,15 @@ export default function LojaAdmin() {
               <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
             </label>
             <label className="loja-admin-field">
-              Descrição
+              DescriÃ§Ã£o
               <textarea rows={5} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
             </label>
             <label className="loja-admin-field">
-              Coleção / drop (agrupa na vitrine)
+              ColeÃ§Ã£o / drop (agrupa na vitrine)
               <input
                 value={form.collection}
                 onChange={(e) => setForm((f) => ({ ...f, collection: e.target.value }))}
-                placeholder='Ex.: DROP 01 — TEMPESTUA'
+                placeholder='Ex.: DROP 01 â€” TEMPESTUA'
               />
             </label>
             <label className="loja-admin-field">
@@ -384,11 +439,11 @@ export default function LojaAdmin() {
               />
             </label>
             <label className="loja-admin-field">
-              UID do criador (opcional — repasse no painel do mangaká após venda)
+              UID do criador (opcional â€” repasse no painel do mangakÃ¡ apÃ³s venda)
               <input
                 value={form.creatorId}
                 onChange={(e) => setForm((f) => ({ ...f, creatorId: e.target.value }))}
-                placeholder="UID Firebase do mangaká"
+                placeholder="UID Firebase do mangakÃ¡"
                 autoComplete="off"
               />
             </label>
@@ -412,7 +467,7 @@ export default function LojaAdmin() {
         {productTab === 'preco' && (
           <div className="loja-admin-tab-panel">
             <label className="loja-admin-field">
-              Preço (R$)
+              PreÃ§o (R$)
               <input
                 type="number"
                 min={0}
@@ -427,10 +482,10 @@ export default function LojaAdmin() {
                 checked={form.isOnSale}
                 onChange={(e) => setForm((f) => ({ ...f, isOnSale: e.target.checked }))}
               />{' '}
-              Em promoção
+              Em promoÃ§Ã£o
             </label>
             <label className="loja-admin-field">
-              Preço promocional (R$)
+              PreÃ§o promocional (R$)
               <input
                 type="number"
                 min={0}
@@ -445,7 +500,7 @@ export default function LojaAdmin() {
                 checked={form.isVIPDiscountEnabled}
                 onChange={(e) => setForm((f) => ({ ...f, isVIPDiscountEnabled: e.target.checked }))}
               />{' '}
-              Elegível a desconto VIP
+              ElegÃ­vel a desconto VIP
             </label>
           </div>
         )}
@@ -467,7 +522,7 @@ export default function LojaAdmin() {
                 checked={form.isActive}
                 onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
               />{' '}
-              Ativo (visível na loja)
+              Ativo (visÃ­vel na loja)
             </label>
             <label>
               <input
@@ -475,7 +530,7 @@ export default function LojaAdmin() {
                 checked={form.isNew}
                 onChange={(e) => setForm((f) => ({ ...f, isNew: e.target.checked }))}
               />{' '}
-              Badge &quot;Novo&quot; forçado
+              Badge &quot;Novo&quot; forÃ§ado
             </label>
           </div>
         )}
@@ -485,8 +540,8 @@ export default function LojaAdmin() {
             <label className="loja-admin-field">
               Tipo
               <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
-                <option value={STORE_TYPE_KEYS.MANGA}>Mangá / produto físico</option>
-                <option value={STORE_TYPE_KEYS.ROUPA}>Vestuário (tamanhos)</option>
+                <option value={STORE_TYPE_KEYS.MANGA}>MangÃ¡ / produto fÃ­sico</option>
+                <option value={STORE_TYPE_KEYS.ROUPA}>VestuÃ¡rio (tamanhos)</option>
               </select>
             </label>
             <label className="loja-admin-field">
@@ -503,7 +558,7 @@ export default function LojaAdmin() {
             </label>
             {form.type === STORE_TYPE_KEYS.ROUPA ? (
               <label className="loja-admin-field">
-                Tamanhos (separados por vírgula)
+                Tamanhos (separados por vÃ­rgula)
                 <input
                   value={form.sizesText}
                   onChange={(e) => setForm((f) => ({ ...f, sizesText: e.target.value }))}
@@ -526,15 +581,15 @@ export default function LojaAdmin() {
               setProductTab('dados');
             }}
           >
-            Limpar formulário
+            Limpar formulÃ¡rio
           </button>
         </div>
       </section>
 
       <section className="loja-admin-card loja-admin-card--wide">
-        <h2>Produtos cadastrados</h2>
+        <h2>{isMangaka ? 'Seus produtos' : 'Produtos cadastrados'}</h2>
         <div className="loja-admin-list loja-admin-list--products">
-          {products.map((p) => {
+          {visibleProducts.map((p) => {
             const img = (Array.isArray(p.images) && p.images[0]) || '/assets/fotos/shito.jpg';
             const cat = normalizeProductCategory(p);
             return (
@@ -543,8 +598,8 @@ export default function LojaAdmin() {
                 <div>
                   <strong>{p.title}</strong>
                   <span>
-                    R$ {Number(p.price || 0).toFixed(2)} · estoque {Number(p.stock || 0)} ·{' '}
-                    {STORE_CATEGORY_LABELS[cat] || cat} · {p.isActive === false ? 'inativo' : 'ativo'}
+                    R$ {Number(p.price || 0).toFixed(2)} Â· estoque {Number(p.stock || 0)} Â·{' '}
+                    {STORE_CATEGORY_LABELS[cat] || cat} Â· {p.isActive === false ? 'inativo' : 'ativo'}
                   </span>
                 </div>
                 <div>
@@ -569,3 +624,4 @@ export default function LojaAdmin() {
     </main>
   );
 }
+

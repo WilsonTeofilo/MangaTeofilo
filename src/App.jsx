@@ -15,8 +15,18 @@ import { onValue, ref } from 'firebase/database';
 import { auth, db } from './services/firebase';
 import { isAdminUser } from './constants';
 import { emptyAdminAccess, resolveAdminAccess } from './auth/adminAccess';
-import { canAccessAdminPath, getDefaultAdminRedirect } from './auth/adminPermissions';
+import {
+  canAccessAdminPath,
+  canAccessCreatorPath,
+  getDefaultAdminRedirect,
+  getDefaultCreatorRedirect,
+} from './auth/adminPermissions';
 import { cleanupDeprecatedUsuarioFields } from './userProfileSync';
+import {
+  buildCreatorOnboardingSteps,
+  creatorOnboardingIsRequiredComplete,
+  creatorOnboardingPrimaryNextPath,
+} from './utils/creatorOnboardingProgress';
 
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
@@ -25,6 +35,7 @@ import SeoManager from './seo/SeoManager.jsx';
 import HomeAdaptive from './pages/Home/HomeAdaptive.jsx';
 import SobreAutor from './pages/Home/SobreAutor.jsx';
 import Apoie from './pages/Home/Apoie.jsx';
+import ApoieCreatorRedirect from './pages/Home/ApoieCreatorRedirect.jsx';
 import ListaMangas from './pages/Mangas/ListaMangas.jsx';
 import ObraDetalhe from './pages/Mangas/ObraDetalhe.jsx';
 import BibliotecaFavoritos from './pages/Mangas/BibliotecaFavoritos.jsx';
@@ -35,6 +46,14 @@ import LojaPedidos from './pages/Loja/LojaPedidos.jsx';
 import Login from './pages/Auth/Login.jsx';
 import Perfil from './pages/Perfil/Perfil.jsx';
 import Leitor from './pages/Leitor/Leitor.jsx';
+import CreatorPublicProfilePage from './pages/Criador/CreatorPublicProfilePage.jsx';
+import CreatorWorkspace from './pages/Criador/CreatorWorkspace.jsx';
+import CreatorProfilePage from './pages/Criador/CreatorProfilePage.jsx';
+import CreatorMonetizationPage from './pages/Criador/CreatorMonetizationPage.jsx';
+import CreatorStorePage from './pages/Criador/CreatorStorePage.jsx';
+import CreatorWorksPage from './pages/Criador/CreatorWorksPage.jsx';
+import CreatorChaptersPage from './pages/Criador/CreatorChaptersPage.jsx';
+import CreatorChapterEditorPage from './pages/Criador/CreatorChapterEditorPage.jsx';
 import AdminPanel from './pages/Admin/AdminPanel.jsx';
 import CapitulosAdminHub from './pages/Admin/CapitulosAdminHub.jsx';
 import ObrasAdmin from './pages/Admin/ObrasAdmin.jsx';
@@ -46,6 +65,7 @@ import AdminLojaPedidos from './pages/Admin/AdminLojaPedidos.jsx';
 import EquipeAdmin from './pages/Admin/EquipeAdmin.jsx';
 import SessoesAdmin from './pages/Admin/SessoesAdmin.jsx';
 import MangakaFinanceiroAdmin from './pages/Admin/MangakaFinanceiroAdmin.jsx';
+import CriadoresAdmin from './pages/Admin/CriadoresAdmin.jsx';
 
 import './index.css';
 
@@ -80,6 +100,9 @@ function AppRoutes() {
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [perfilCarregando, setPerfilCarregando] = useState(false);
   const [adminAccess, setAdminAccess] = useState(emptyAdminAccess());
+  const [creatorObrasVal, setCreatorObrasVal] = useState(null);
+  const [creatorCapsVal, setCreatorCapsVal] = useState(null);
+  const [creatorProdutosVal, setCreatorProdutosVal] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -111,6 +134,29 @@ function AppRoutes() {
   }, [usuario?.uid]);
 
   useEffect(() => {
+    if (!usuario?.uid || !adminAccess.isMangaka) {
+      setCreatorObrasVal(null);
+      setCreatorCapsVal(null);
+      setCreatorProdutosVal(null);
+      return () => {};
+    }
+    const unsubObras = onValue(ref(db, 'obras'), (snap) => {
+      setCreatorObrasVal(snap.exists() ? snap.val() : {});
+    });
+    const unsubCaps = onValue(ref(db, 'capitulos'), (snap) => {
+      setCreatorCapsVal(snap.exists() ? snap.val() : {});
+    });
+    const unsubProdutos = onValue(ref(db, 'loja/produtos'), (snap) => {
+      setCreatorProdutosVal(snap.exists() ? snap.val() : {});
+    });
+    return () => {
+      unsubObras();
+      unsubCaps();
+      unsubProdutos();
+    };
+  }, [usuario?.uid, adminAccess.isMangaka]);
+
+  useEffect(() => {
     if (!usuario?.uid) return;
     cleanupDeprecatedUsuarioFields(usuario.uid).catch(() => {});
   }, [usuario?.uid]);
@@ -133,7 +179,7 @@ function AppRoutes() {
     return () => {
       ativo = false;
     };
-  }, [usuario]);
+  }, [usuario, perfilUsuario?.role, perfilUsuario?.creatorApplicationStatus]);
 
   if (carregando) {
     return <div className="shito-app-splash" aria-hidden="true" />;
@@ -157,7 +203,22 @@ function AppRoutes() {
   }
 
   const isAdmin = adminAccess.canAccessAdmin;
+  const canAccessAdminWorkspace = isAdmin && !adminAccess.isMangaka;
+  const canAccessCreator = canAccessCreatorPath('/creator', adminAccess);
+  const creatorOnboardingSteps = buildCreatorOnboardingSteps({
+    uid: usuario?.uid,
+    perfilDb: perfilUsuario || {},
+    obrasVal: creatorObrasVal,
+    capsVal: creatorCapsVal,
+    produtosVal: creatorProdutosVal,
+    storeSkipped: Boolean(perfilUsuario?.creatorOnboardingStoreSkipped),
+  });
+  const creatorOnboardingComplete =
+    !adminAccess.isMangaka || creatorOnboardingIsRequiredComplete(creatorOnboardingSteps);
+  const creatorOnboardingNextPath = creatorOnboardingPrimaryNextPath(creatorOnboardingSteps);
+  const adminAccessReady = !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist;
   const adminPathOk = (path) => canAccessAdminPath(path, adminAccess);
+  const creatorPathOk = (path) => canAccessCreatorPath(path, adminAccess);
   const qs = new URLSearchParams(location.search || '');
   const trafficSource = String(qs.get('src') || '').toLowerCase();
   const cameFromPromoTracking =
@@ -200,6 +261,7 @@ function AppRoutes() {
               <ObraDetalhe
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
+                adminAccess={adminAccess}
               />
             }
           />
@@ -209,6 +271,7 @@ function AppRoutes() {
               <ObraDetalhe
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
+                adminAccess={adminAccess}
               />
             }
           />
@@ -274,6 +337,7 @@ function AppRoutes() {
             }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
+          <Route path="/apoie/criador/:creatorId" element={<ApoieCreatorRedirect />} />
           <Route
             path="/apoie"
             element={
@@ -288,14 +352,58 @@ function AppRoutes() {
 
           <Route
             path="/perfil"
-            element={podeAcessarApp ? <Perfil user={usuario} /> : <RedirectToLogin />}
+            element={
+              podeAcessarApp ? <Perfil user={usuario} adminAccess={adminAccess} /> : <RedirectToLogin />
+            }
+          />
+          <Route
+            path="/creator/perfil"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/perfil') ? (
+                podeAcessarApp ? <CreatorProfilePage user={usuario} adminAccess={adminAccess} /> : <RedirectToLogin />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/criador/:creatorId"
+            element={<CreatorPublicProfilePage user={podeAcessarApp ? usuario : null} />}
           />
 
           <Route
             path="/admin"
             element={
-              isAdmin ? (
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : canAccessAdminWorkspace ? (
                 <Navigate to={getDefaultAdminRedirect(adminAccess)} replace />
+              ) : canAccessCreator ? (
+                <Navigate
+                  to={adminAccess.isMangaka && !creatorOnboardingComplete
+                    ? creatorOnboardingNextPath
+                    : getDefaultCreatorRedirect(adminAccess)}
+                  replace
+                />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : canAccessCreator ? (
+                <Navigate
+                  to={adminAccess.isMangaka && !creatorOnboardingComplete
+                    ? creatorOnboardingNextPath
+                    : getDefaultCreatorRedirect(adminAccess)}
+                  replace
+                />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -304,7 +412,9 @@ function AppRoutes() {
           <Route
             path="/admin/capitulos"
             element={
-              adminPathOk('/admin/capitulos') ? (
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/capitulos') ? (
                 <CapitulosAdminHub adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
@@ -314,8 +424,10 @@ function AppRoutes() {
           <Route
             path="/admin/manga"
             element={
-              adminPathOk('/admin/manga') ? (
-                <AdminPanel adminAccess={adminAccess} />
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/manga') ? (
+                <AdminPanel adminAccess={adminAccess} workspace="admin" />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -324,8 +436,10 @@ function AppRoutes() {
           <Route
             path="/admin/obras"
             element={
-              adminPathOk('/admin/obras') ? (
-                <ObrasAdmin adminAccess={adminAccess} />
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/obras') ? (
+                <ObrasAdmin adminAccess={adminAccess} workspace="admin" />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -334,7 +448,9 @@ function AppRoutes() {
           <Route
             path="/admin/avatares"
             element={
-              adminPathOk('/admin/avatares') ? (
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/avatares') ? (
                 <AvatarAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -344,7 +460,9 @@ function AppRoutes() {
           <Route
             path="/admin/dashboard"
             element={
-              adminPathOk('/admin/dashboard') ? (
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/dashboard') ? (
                 <DashboardAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -354,9 +472,11 @@ function AppRoutes() {
           <Route
             path="/admin/financeiro"
             element={
-              adminPathOk('/admin/financeiro') ? (
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/financeiro') ? (
                 adminAccess?.isMangaka ? (
-                  <MangakaFinanceiroAdmin user={usuario} />
+                  <MangakaFinanceiroAdmin user={usuario} workspace="admin" />
                 ) : (
                   <FinanceiroAdmin />
                 )
@@ -368,8 +488,10 @@ function AppRoutes() {
           <Route
             path="/admin/loja"
             element={
-              adminPathOk('/admin/loja') ? (
-                <LojaAdmin />
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/loja') ? (
+                <LojaAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -378,8 +500,10 @@ function AppRoutes() {
           <Route
             path="/admin/pedidos"
             element={
-              adminPathOk('/admin/pedidos') ? (
-                <AdminLojaPedidos />
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/pedidos') ? (
+                <AdminLojaPedidos user={usuario} adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -388,7 +512,9 @@ function AppRoutes() {
           <Route
             path="/admin/sessoes"
             element={
-              adminPathOk('/admin/sessoes') ? (
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/sessoes') ? (
                 <SessoesAdmin adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
@@ -398,8 +524,122 @@ function AppRoutes() {
           <Route
             path="/admin/equipe"
             element={
-              adminPathOk('/admin/equipe') ? (
-                <EquipeAdmin />
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/equipe') ? (
+                <EquipeAdmin adminAccess={adminAccess} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/criadores"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/criadores') ? (
+                <CriadoresAdmin />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/dashboard"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/dashboard') ? (
+                adminAccess?.isMangaka ? (
+                  <CreatorWorkspace user={usuario} perfil={perfilUsuario} />
+                ) : adminPathOk('/admin/dashboard') ? (
+                  <DashboardAdmin />
+                ) : (
+                  <FinanceiroAdmin />
+                )
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/obras"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/obras') ? (
+                <CreatorWorksPage adminAccess={adminAccess} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/capitulos"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/capitulos') ? (
+                <CreatorChaptersPage adminAccess={adminAccess} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/editor"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/editor') ? (
+                <CreatorChapterEditorPage adminAccess={adminAccess} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/avatares"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/avatares') ? (
+                <Navigate to="/admin/avatares" replace />
+              ) : (
+                <Navigate to="/creator/perfil" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/promocoes"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/promocoes') ? (
+                adminAccess?.isMangaka ? (
+                  <CreatorMonetizationPage user={usuario} />
+                ) : (
+                  <FinanceiroAdmin />
+                )
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/loja"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/loja') ? (
+                adminAccess?.isMangaka ? (
+                  <CreatorStorePage user={usuario} adminAccess={adminAccess} />
+                ) : adminPathOk('/admin/pedidos') ? (
+                  <AdminLojaPedidos user={usuario} adminAccess={adminAccess} />
+                ) : (
+                  <LojaAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
+                )
               ) : (
                 <Navigate to="/" replace />
               )

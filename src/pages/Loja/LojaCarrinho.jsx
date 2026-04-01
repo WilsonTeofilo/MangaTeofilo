@@ -3,7 +3,7 @@ import { onValue, ref, set } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
-import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
+import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import { applyVipDiscount, normalizeStoreConfig, STORE_DEFAULT_CONFIG } from '../../config/store';
 import { getStoreDemoProductsRecord } from '../../data/storeDemoProducts';
 import { clearCart, getCartItems, removeFromCart, updateCartQuantity } from '../../store/cartStore';
@@ -31,7 +31,7 @@ export default function LojaCarrinho({ user, perfil }) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
 
-  const vip = assinaturaPremiumAtiva(perfil);
+  const vip = descontoVipLojaAtivo(perfil, user);
 
   const products = useMemo(() => {
     const demos = getStoreDemoProductsRecord();

@@ -6,13 +6,16 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
+import { applyChapterCommentDelta, applyChapterReadDelta } from '../../utils/discoveryStats';
 import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
-import { OBRA_PADRAO_ID, buildChapterCampaignId, obterObraIdCapitulo } from '../../config/obras';
+import { OBRA_PADRAO_ID, buildChapterCampaignId, obterObraIdCapitulo, obraCreatorId } from '../../config/obras';
+import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
+const upsertNotificationSubscription = httpsCallable(functions, 'upsertNotificationSubscription');
 
 /** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
 const isContaPremium = (perfilPublico) => {
@@ -43,6 +46,9 @@ export default function Leitor({ user, perfil }) {
   const [paginaAtual, setPaginaAtual]     = useState(0);
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [modalLoginComentario, setModalLoginComentario] = useState(false);
+  const [creatorUidApoio, setCreatorUidApoio] = useState(null);
+  const [isSubscribedCurrentWork, setIsSubscribedCurrentWork] = useState(false);
+  const [subscribeCurrentWorkBusy, setSubscribeCurrentWorkBusy] = useState(false);
 
   const touchStartX          = useRef(0);
   const touchEndX            = useRef(0);
@@ -56,6 +62,32 @@ export default function Leitor({ user, perfil }) {
   useEffect(() => {
     if (user) setModalLoginComentario(false);
   }, [user]);
+
+  useEffect(() => {
+    if (!capitulo) {
+      setCreatorUidApoio(null);
+      return () => {};
+    }
+    const fromCap = String(capitulo.creatorId || '').trim();
+    if (fromCap) {
+      setCreatorUidApoio(fromCap);
+      return () => {};
+    }
+    const oid = obterObraIdCapitulo(capitulo);
+    let cancelled = false;
+    get(ref(db, `obras/${oid}`))
+      .then((snap) => {
+        if (cancelled) return;
+        const data = snap.exists() ? snap.val() : {};
+        setCreatorUidApoio(obraCreatorId({ ...data, id: oid }));
+      })
+      .catch(() => {
+        if (!cancelled) setCreatorUidApoio(obraCreatorId({}));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [capitulo]);
 
   useEffect(() => {
     if (!modalLoginComentario) return;
@@ -149,11 +181,21 @@ export default function Leitor({ user, perfil }) {
 
   useEffect(() => {
     if (!capitulo || !id) return;
-    const cap = { ...capitulo, id };
-    if (!capituloLiberadoParaUsuario(cap, user, perfil)) return;
+    const cap = { ...(capituloParaAcesso || capitulo), id };
+    if (
+      !capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: creatorUidApoio || '' })
+    ) {
+      return;
+    }
     if (jaContouVisualizacao.current) return;
     jaContouVisualizacao.current = true;
     runTransaction(ref(db, `capitulos/${id}/visualizacoes`), (v) => (v || 0) + 1);
+    applyChapterReadDelta(db, {
+      chapterId: id,
+      workId: obterObraIdCapitulo(capitulo),
+      creatorId: creatorUidApoio || obraCreatorId({ creatorId: capitulo?.creatorId || '' }),
+      amount: 1,
+    }).catch(() => {});
     const attrib = leituraAttributionRef.current || { source: 'normal' };
     registrarAttributionEvento({
       eventType: 'chapter_read',
@@ -166,7 +208,7 @@ export default function Leitor({ user, perfil }) {
       clickId: attrib.clickId || null,
       chapterId: id,
     }).catch(() => {});
-  }, [capitulo, id, user, perfil]);
+  }, [capitulo, capituloParaAcesso, id, user, perfil, creatorUidApoio]);
 
   // ✅ Sincroniza perfil público ANTES de comentar
   // Garante que todos os visitantes verão o avatar e nome atualizados
@@ -191,8 +233,20 @@ export default function Leitor({ user, perfil }) {
   };
 
   const totalPaginas = capitulo?.paginas?.length || 0;
+  const currentWorkId = obterObraIdCapitulo(capitulo);
   const irProxima  = () => setPaginaAtual((p) => Math.min(p + 1, totalPaginas - 1));
   const irAnterior = () => setPaginaAtual((p) => Math.max(p - 1, 0));
+
+  useEffect(() => {
+    if (!user?.uid || !currentWorkId) {
+      setIsSubscribedCurrentWork(false);
+      return () => {};
+    }
+    const unsub = onValue(ref(db, `usuarios/${user.uid}/subscribedWorks/${currentWorkId}`), (snap) => {
+      setIsSubscribedCurrentWork(snap.exists());
+    });
+    return () => unsub();
+  }, [currentWorkId, user?.uid]);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -216,6 +270,13 @@ export default function Leitor({ user, perfil }) {
     if (!user) setModalLoginComentario(true);
   };
 
+  const capituloParaAcesso = useMemo(() => {
+    if (!capitulo) return null;
+    return creatorUidApoio && !capitulo.creatorId
+      ? { ...capitulo, creatorId: creatorUidApoio }
+      : capitulo;
+  }, [capitulo, creatorUidApoio]);
+
   const handleEnviarComentario = async (e) => {
     e.preventDefault();
     if (!user) {
@@ -233,6 +294,12 @@ export default function Leitor({ user, perfil }) {
         userId: user.uid,
         data:   serverTimestamp(),
         likes:  0,
+      });
+      await applyChapterCommentDelta(db, {
+        chapterId: id,
+        workId: obterObraIdCapitulo(capitulo),
+        creatorId: creatorUidApoio || obraCreatorId({ creatorId: capitulo?.creatorId || '' }),
+        amount: 1,
       });
       setComentario('');
     } catch (err) {
@@ -271,6 +338,49 @@ export default function Leitor({ user, perfil }) {
     [listaComentarios, filtro]
   );
 
+  const apoieComCriadorPath = useMemo(
+    () => apoiePathParaCriador(creatorUidApoio || ''),
+    [creatorUidApoio]
+  );
+
+  const irParaApoioDoCriador = () => {
+    registrarAttributionEvento({
+      eventType: 'creator_support_click',
+      source: leituraAttributionRef.current?.source || 'normal',
+      campaignId: creatorUidApoio ? `creator_${creatorUidApoio}` : null,
+      clickId: creatorUidApoio || null,
+      chapterId: id,
+    }).catch(() => {});
+    navigate(apoieComCriadorPath);
+  };
+
+  const handleSubscribeCurrentWork = async () => {
+    if (!user) {
+      navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
+      return;
+    }
+    if (!currentWorkId) return;
+    setSubscribeCurrentWorkBusy(true);
+    try {
+      const nextEnabled = !isSubscribedCurrentWork;
+      await upsertNotificationSubscription({
+        type: 'work',
+        targetId: currentWorkId,
+        enabled: nextEnabled,
+      });
+      if (nextEnabled && typeof window !== 'undefined' && typeof Notification !== 'undefined') {
+        const wantsBrowserNotifications = window.confirm(
+          'Quer ser avisado no navegador quando sair o proximo capitulo desta obra?'
+        );
+        if (wantsBrowserNotifications && Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+      }
+    } finally {
+      setSubscribeCurrentWorkBusy(false);
+    }
+  };
+
   if (carregando) return <LoadingScreen />;
   if (!capitulo) {
     return (
@@ -282,8 +392,12 @@ export default function Leitor({ user, perfil }) {
     );
   }
 
-  const capComId = { ...capitulo, id };
-  if (!capituloLiberadoParaUsuario(capComId, user, perfil)) {
+  const capAcesso = { ...(capituloParaAcesso || capitulo), id };
+  if (
+    !capituloLiberadoParaUsuario(capAcesso, user, perfil, {
+      creatorIdFallback: creatorUidApoio || '',
+    })
+  ) {
     const quando = formatarDataLancamento(capitulo.publicReleaseAt);
     return (
       <div className="leitor-container">
@@ -300,7 +414,7 @@ export default function Leitor({ user, perfil }) {
           </p>
           {capitulo.antecipadoMembros && (
             <p className="leitor-lancamento-hint">
-              Quem tem <strong>assinatura Premium</strong> ativa pode ler antes do horário público.
+              Quem tem <strong>membership ativa do autor desta obra</strong> pode ler antes do horário público.
             </p>
           )}
           <button
@@ -313,7 +427,7 @@ export default function Leitor({ user, perfil }) {
           <button
             type="button"
             className="leitor-lancamento-apoie"
-            onClick={() => navigate('/apoie')}
+            onClick={irParaApoioDoCriador}
           >
             Apoiar a obra
           </button>
@@ -385,8 +499,27 @@ export default function Leitor({ user, perfil }) {
       )}
 
       <footer className="leitor-footer">
-        <button onClick={() => navigate('/works')}>Voltar às obras</button>
+        <button type="button" onClick={() => navigate('/works')}>Voltar às obras</button>
+        <button type="button" className="leitor-footer-apoie" onClick={irParaApoioDoCriador}>
+          Apoiar criador
+        </button>
       </footer>
+        <section className="leitor-next-alert">
+          <strong>Quer continuar recebendo?</strong>
+          <p>Ative o acompanhamento desta obra e os proximos capitulos vao cair automaticamente no seu sino.</p>
+          <button
+            type="button"
+            className="leitor-next-alert-btn"
+          disabled={subscribeCurrentWorkBusy}
+          onClick={handleSubscribeCurrentWork}
+        >
+          {subscribeCurrentWorkBusy
+            ? 'Salvando...'
+            : isSubscribedCurrentWork
+              ? 'Voce ja acompanha esta obra'
+              : 'Acompanhar obra'}
+        </button>
+      </section>
 
       {/* ── COMENTÁRIOS ── */}
       <section className="comentarios-section">
@@ -535,4 +668,3 @@ export default function Leitor({ user, perfil }) {
     </div>
   );
 }
-

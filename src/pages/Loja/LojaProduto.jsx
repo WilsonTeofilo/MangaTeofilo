@@ -3,9 +3,8 @@ import { onValue, ref } from 'firebase/database';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
-import { isAdminUser } from '../../constants';
 import { addToCart, cartCount, getCartItems } from '../../store/cartStore';
-import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
+import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import {
   applyVipDiscount,
   getProductCollectionKey,
@@ -31,8 +30,7 @@ export default function LojaProduto({ user, perfil }) {
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
 
-  const isAdmin = isAdminUser(user);
-  const vip = assinaturaPremiumAtiva(perfil) || isAdmin;
+  const vip = descontoVipLojaAtivo(perfil, user);
   const id = useMemo(() => decodeURIComponent(String(productId || '')), [productId]);
 
   useEffect(() => {

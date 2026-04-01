@@ -9,8 +9,11 @@ import {
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
+  obraCreatorId,
 } from '../../config/obras';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
+import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
+import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import ShitoManga from './ShitoManga';
 import './HomeAdaptive.css';
 
@@ -20,33 +23,15 @@ function pathObraPublica(obra) {
   return `/work/${encodeURIComponent(slug || id)}`;
 }
 
+function pathCriadorPublico(obra) {
+  return `/criador/${encodeURIComponent(obraCreatorId(obra))}`;
+}
+
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
 function toList(snapshotVal) {
   if (!snapshotVal || typeof snapshotVal !== 'object') return [];
   return Object.entries(snapshotVal).map(([id, data]) => ({ id, ...(data || {}) }));
-}
-
-function capTimestamp(cap) {
-  const release = Number(cap?.publicReleaseAt);
-  if (Number.isFinite(release) && release > 0) return release;
-  const upload = Date.parse(cap?.dataUpload || '');
-  if (Number.isFinite(upload) && upload > 0) return upload;
-  return 0;
-}
-
-function parseGenres(obra) {
-  if (Array.isArray(obra?.generos)) {
-    return obra.generos.map((g) => String(g || '').trim()).filter(Boolean);
-  }
-  if (typeof obra?.generos === 'string') {
-    return obra.generos
-      .split(',')
-      .map((g) => g.trim())
-      .filter(Boolean);
-  }
-  if (typeof obra?.genero === 'string') return [obra.genero.trim()].filter(Boolean);
-  return [];
 }
 
 function randToken() {
@@ -59,6 +44,7 @@ export default function HomeAdaptive({ user }) {
   const [loadingCapitulos, setLoadingCapitulos] = useState(true);
   const [obrasPublicadas, setObrasPublicadas] = useState([]);
   const [capitulos, setCapitulos] = useState([]);
+  const [creatorsMap, setCreatorsMap] = useState({});
   const [heroIndex, setHeroIndex] = useState(0);
   const [categoriaAtiva, setCategoriaAtiva] = useState('all');
   const blocoImpressionRef = useRef(new Set());
@@ -73,7 +59,7 @@ export default function HomeAdaptive({ user }) {
         return;
       }
       const lista = ensureLegacyShitoObra(toList(snapshot.val()))
-        .filter((obra) => obra?.isPublished !== false)
+        .filter((obra) => obraVisivelNoCatalogoPublico(obra))
         .sort((a, b) => (Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0)));
       setObrasPublicadas(lista);
       setLoadingObras(false);
@@ -91,6 +77,13 @@ export default function HomeAdaptive({ user }) {
     return () => unsub();
   }, []);
 
+  useEffect(() => {
+    const unsub = onValue(ref(db, 'usuarios_publicos'), (snapshot) => {
+      setCreatorsMap(snapshot.exists() ? snapshot.val() || {} : {});
+    });
+    return () => unsub();
+  }, []);
+
   const modoHome = useMemo(() => {
     if (loadingObras || loadingCapitulos) return 'loading';
     if (obrasPublicadas.length === 0) return 'empty';
@@ -99,69 +92,21 @@ export default function HomeAdaptive({ user }) {
   }, [loadingObras, loadingCapitulos, obrasPublicadas.length]);
 
   const dadosMulti = useMemo(() => {
-    const obraIds = new Set(obrasPublicadas.map((obra) => String(obra.id || '').toLowerCase()));
-    const capitulosValidos = capitulos
-      .filter((cap) => obraIds.has(obterObraIdCapitulo(cap)))
-      .map((cap) => ({ ...cap, _ts: capTimestamp(cap) }))
-      .sort((a, b) => b._ts - a._ts);
-
-    const updates = capitulosValidos.slice(0, 16);
-    const obrasComStats = obrasPublicadas
-      .map((obra) => {
-        const obraId = String(obra.id || '').toLowerCase();
-        const caps = capitulosValidos.filter((cap) => obterObraIdCapitulo(cap) === obraId);
-        const ultimoCap = caps[0];
-        const totalViews = caps.reduce((sum, cap) => sum + Number(cap?.visualizacoes || 0), 0);
-        return {
-          ...obra,
-          obraId,
-          genres: parseGenres(obra),
-          totalViews,
-          chaptersCount: caps.length,
-          lastChapterNumber: ultimoCap?.numero ?? null,
-          lastUpdateTs: ultimoCap?._ts || Number(obra?.updatedAt || 0),
-          latestChapterId: ultimoCap?.id || null,
-        };
-      })
-      .sort((a, b) => Number(b.lastUpdateTs || 0) - Number(a.lastUpdateTs || 0));
-
-    const trending = [...obrasComStats]
-      .sort((a, b) => {
-        if (b.totalViews !== a.totalViews) return b.totalViews - a.totalViews;
-        return Number(b.lastUpdateTs || 0) - Number(a.lastUpdateTs || 0);
-      })
-      .slice(0, 12);
-
-    const genreCounter = new Map();
-    obrasComStats.forEach((obra) => {
-      obra.genres.forEach((g) => {
-        const key = g.toLowerCase();
-        genreCounter.set(key, (genreCounter.get(key) || 0) + 1);
-      });
+    const ranking = buildDiscoveryRanking({
+      obras: obrasPublicadas,
+      capitulos,
+      creatorsMap,
     });
-    const categorias = [
-      { id: 'all', label: 'Todos' },
-      ...[...genreCounter.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([id]) => ({ id, label: id })),
-    ];
-
-    const recomendados = [...obrasComStats]
-      .sort((a, b) => (Number(b.chaptersCount || 0) - Number(a.chaptersCount || 0)))
-      .slice(0, 12);
-
-    const hero = [...obrasComStats]
-      .sort((a, b) => {
-        if (Number(b.lastUpdateTs || 0) !== Number(a.lastUpdateTs || 0)) {
-          return Number(b.lastUpdateTs || 0) - Number(a.lastUpdateTs || 0);
-        }
-        return Number(b.totalViews || 0) - Number(a.totalViews || 0);
-      })
-      .slice(0, 5);
-
-    return { updates, obrasComStats, trending, categorias, recomendados, hero };
-  }, [capitulos, obrasPublicadas]);
+    return {
+      updates: ranking.updates,
+      obrasComStats: ranking.works,
+      trending: ranking.trendingWorks,
+      creators: ranking.popularCreators,
+      categorias: ranking.categories,
+      recomendados: ranking.recommendedWorks,
+      hero: ranking.heroWorks,
+    };
+  }, [capitulos, creatorsMap, obrasPublicadas]);
 
   const obrasCategoria = useMemo(() => {
     if (categoriaAtiva === 'all') return dadosMulti.obrasComStats;
@@ -169,6 +114,17 @@ export default function HomeAdaptive({ user }) {
       obra.genres.some((g) => g.toLowerCase() === categoriaAtiva)
     );
   }, [categoriaAtiva, dadosMulti.obrasComStats]);
+
+  const nomeCriador = (obra) => {
+    const creatorId = obraCreatorId(obra);
+    const profile = creatorsMap?.[creatorId] || null;
+    return (
+      profile?.creatorProfile?.displayName ||
+      profile?.creatorDisplayName ||
+      profile?.userName ||
+      'Criador'
+    );
+  };
 
   const registrarEventoHome = async (eventType, blockId, targetId = 'na') => {
     try {
@@ -185,7 +141,7 @@ export default function HomeAdaptive({ user }) {
 
   useEffect(() => {
     if (modoHome !== 'multi') return;
-    ['hero', 'updates', 'trending', 'categorias', 'recomendados'].forEach((blockId) => {
+    ['hero', 'updates', 'trending', 'creators', 'categorias', 'recomendados'].forEach((blockId) => {
       if (blocoImpressionRef.current.has(blockId)) return;
       blocoImpressionRef.current.add(blockId);
       registrarEventoHome('home_block_impression', blockId);
@@ -224,10 +180,16 @@ export default function HomeAdaptive({ user }) {
         >
           <span className="home-single-alt-pill">Obra em destaque</span>
           <h1>{obra?.titulo || 'Nova obra'}</h1>
+          <p className="home-single-alt-author">por {nomeCriador(obra)}</p>
           <p>{obra?.sinopse || 'Acompanhe os lançamentos desta obra.'}</p>
-          <button type="button" className="btn-read-now" onClick={() => navigate(pathObraPublica(obra))}>
-            Ler agora
-          </button>
+          <div className="home-hero-actions">
+            <button type="button" className="btn-read-now" onClick={() => navigate(pathObraPublica(obra))}>
+              Ler agora
+            </button>
+            <button type="button" className="btn-hero-sec" onClick={() => navigate(pathCriadorPublico(obra))}>
+              Ver criador
+            </button>
+          </div>
         </div>
       </section>
     );
@@ -301,7 +263,7 @@ export default function HomeAdaptive({ user }) {
         </header>
         <aside className="home-top-ranking">
           <div className="home-top-ranking-head">
-            <h3>Mais visualizados</h3>
+            <h3>Obras em alta</h3>
             <button
               type="button"
               onClick={() => {
@@ -329,7 +291,19 @@ export default function HomeAdaptive({ user }) {
                 <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
                 <div>
                   <strong>{obra.titulo || obra.id}</strong>
-                  <span>{obra.totalViews} views</span>
+                  <span>por {nomeCriador(obra)}</span>
+                  <span>{Math.round(obra.totalViews || 0)} views · {obra.totalLikes || 0} likes</span>
+                  <button
+                    type="button"
+                    className="home-rank-creator-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      registrarEventoHome('home_block_click', 'trending', `creator_${String(obra.id)}`);
+                      navigate(pathCriadorPublico(obra));
+                    }}
+                  >
+                    Ver criador
+                  </button>
                 </div>
               </article>
             ))}
@@ -378,7 +352,7 @@ export default function HomeAdaptive({ user }) {
 
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>Trending</h2>
+          <h2>Descoberta em alta</h2>
         </div>
         <div className="home-obras-grid">
           {dadosMulti.trending.map((obra) => (
@@ -396,7 +370,37 @@ export default function HomeAdaptive({ user }) {
               <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
               <div className="home-obra-card-body">
                 <strong>{obra.titulo || obra.id}</strong>
+                <span>por {nomeCriador(obra)}</span>
                 <span>{obra.totalViews} views · cap #{obra.lastChapterNumber ?? '--'}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="home-multi-section">
+        <div className="home-multi-section-head">
+          <h2>Criadores populares</h2>
+        </div>
+        <div className="home-creators-grid">
+          {dadosMulti.creators.map((creator) => (
+            <article
+              key={`creator_${creator.creatorId}`}
+              className="home-creator-card"
+              onClick={() => {
+                registrarEventoHome('home_block_click', 'creators', String(creator.creatorId));
+                navigate(`/criador/${encodeURIComponent(creator.creatorId)}`);
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && navigate(`/criador/${encodeURIComponent(creator.creatorId)}`)}
+            >
+              <img src={creator.avatarUrl || '/assets/fotos/shito.jpg'} alt={creator.displayName} />
+              <div className="home-creator-card-body">
+                <strong>{creator.displayName}</strong>
+                <span>@{creator.username || creator.creatorId}</span>
+                <span>{creator.followersCount} seguidores</span>
+                <span>{creator.worksCount} obra(s) · {Math.round(creator.totalViews)} views</span>
               </div>
             </article>
           ))}
@@ -474,4 +478,3 @@ export default function HomeAdaptive({ user }) {
     </div>
   );
 }
-

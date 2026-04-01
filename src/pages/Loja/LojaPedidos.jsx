@@ -112,7 +112,10 @@ export default function LojaPedidos({ user }) {
                   <div>
                     <h3>Pedido #{o.id.slice(-8).toUpperCase()}</h3>
                     <p>Status: {formatLojaOrderStatusPt(o.status)}</p>
-                    <p className="loja-order-date">{formatarDataHoraBr(Number(o.createdAt || Date.now()))}</p>
+                    <p className="loja-order-date">{formatarDataHoraBr(Number(o.createdAt || 0))}</p>
+                    {o.paymentStatus && o.paymentStatus !== 'approved' ? (
+                      <p className="loja-order-date">Mercado Pago: {String(o.paymentStatus)}</p>
+                    ) : null}
                     {track && trackUrl ? (
                       <p className="loja-order-tracking-inline">
                         <span className="loja-order-tracking-code">Rastreio: {track}</span>

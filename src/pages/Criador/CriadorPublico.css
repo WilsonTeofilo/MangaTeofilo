@@ -1,0 +1,239 @@
+.criador-page {
+  min-height: calc(100vh - 80px);
+  padding: 32px 20px 56px;
+  background:
+    radial-gradient(circle at top left, rgba(216, 176, 85, 0.18), transparent 32%),
+    linear-gradient(180deg, #0a0d14 0%, #121722 100%);
+  color: #f3f0e8;
+}
+
+.criador-hero {
+  max-width: 1120px;
+  margin: 0 auto 28px;
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 28px;
+  align-items: center;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  background: rgba(8, 10, 16, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.criador-hero__avatar img {
+  width: 180px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.criador-hero__pill {
+  display: inline-flex;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(216, 176, 85, 0.14);
+  color: #f0cf7a;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.criador-hero__content h1 {
+  margin: 14px 0 10px;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+}
+
+.criador-hero__username {
+  margin: 0;
+  font-size: 1rem;
+  color: rgba(243, 240, 232, 0.62);
+}
+
+.criador-hero__content p {
+  max-width: 760px;
+  color: rgba(243, 240, 232, 0.82);
+  line-height: 1.65;
+}
+
+.criador-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.criador-stats-grid article {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.criador-stats-grid strong,
+.criador-stats-grid span {
+  display: block;
+}
+
+.criador-stats-grid strong {
+  font-size: 1.3rem;
+}
+
+.criador-stats-grid span {
+  margin-top: 6px;
+  color: rgba(243, 240, 232, 0.68);
+}
+
+.criador-hero__support-copy {
+  margin-top: 12px;
+  font-size: 0.95rem;
+  color: rgba(243, 240, 232, 0.68);
+}
+
+.criador-notify-box {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.criador-notify-box strong,
+.criador-notify-box p {
+  display: block;
+}
+
+.criador-notify-box p {
+  margin: 8px 0 0;
+  color: rgba(243, 240, 232, 0.72);
+}
+
+.criador-notify-box__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.criador-notify-box__options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #f3f0e8;
+  font-size: 0.9rem;
+}
+
+.criador-notify-box__options input[type="checkbox"] {
+  accent-color: #f0cf7a;
+}
+
+.criador-hero__actions,
+.criador-hero__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.criador-hero__actions button,
+.criador-hero__links a {
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 18px;
+  background: #f0cf7a;
+  color: #111;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.criador-hero__actions .is-secondary {
+  background: transparent;
+  color: #f3f0e8;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.criador-section {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.criador-section__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.criador-obras-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.criador-obra-card {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.criador-obra-card img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 18px;
+}
+
+.criador-obra-card strong,
+.criador-obra-card span {
+  display: block;
+}
+
+.criador-obra-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.criador-obra-stats small {
+  color: rgba(243, 240, 232, 0.64);
+}
+
+.criador-obra-card span,
+.criador-section__empty {
+  color: rgba(243, 240, 232, 0.72);
+}
+
+.criador-empty {
+  max-width: 720px;
+  margin: 60px auto 0;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .criador-hero {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .criador-hero__avatar {
+    margin: 0 auto;
+  }
+
+  .criador-hero__actions,
+  .criador-hero__links {
+    justify-content: center;
+  }
+
+  .criador-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

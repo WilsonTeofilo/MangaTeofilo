@@ -25,7 +25,7 @@ export function emptyAdminAccess() {
 const adminGetMyAdminProfile = httpsCallable(functions, 'adminGetMyAdminProfile');
 
 /**
- * Resolve acesso admin: allowlist (chefes), claim JWT, depois perfil no backend (permissões).
+ * Resolve acesso admin: allowlist (chefes) + perfil no backend em `admins/registry`.
  */
 export async function resolveAdminAccess(user) {
   if (!user) return emptyAdminAccess();
@@ -37,39 +37,27 @@ export async function resolveAdminAccess(user) {
   }
 
   const byAllowlist = isAdminUser(user);
-  let byClaim = false;
   let claimChecked = false;
-  let panelRoleFromToken = null;
 
   try {
-    const tokenResult = await getIdTokenResult(user, false);
-    byClaim = tokenResult?.claims?.admin === true;
-    panelRoleFromToken = tokenResult?.claims?.panelRole || null;
-    claimChecked = true;
+    claimChecked = Boolean(await getIdTokenResult(user, false));
   } catch {
     claimChecked = false;
   }
 
-  const isMangakaToken = panelRoleFromToken === 'mangaka';
-  const canAccessAdmin = byAllowlist || byClaim || isMangakaToken;
-
   const base = {
-    byClaim,
+    byClaim: false,
     byAllowlist,
-    canAccessAdmin,
+    canAccessAdmin: byAllowlist,
     claimChecked,
     profileLoaded: false,
     superAdmin: byAllowlist,
     legacyAdmin: false,
     isChiefAdmin: byAllowlist,
-    isMangaka: isMangakaToken,
-    panelRole: panelRoleFromToken,
-    permissions: byAllowlist ? null : null,
+    isMangaka: false,
+    panelRole: byAllowlist ? 'super_admin' : null,
+    permissions: null,
   };
-
-  if (!canAccessAdmin) {
-    return { ...base, profileLoaded: true };
-  }
 
   try {
     const { data } = await adminGetMyAdminProfile();
@@ -85,17 +73,16 @@ export async function resolveAdminAccess(user) {
         permissions: null,
       };
     }
-    const isMangaka = data.mangaka === true || isMangakaToken;
-    const panelRole =
-      data.panelRole || panelRoleFromToken || (byAllowlist ? 'super_admin' : data.super ? 'super_admin' : 'admin');
+    const isMangaka = data.mangaka === true;
+    const panelRole = data.panelRole || (byAllowlist ? 'super_admin' : data.super ? 'super_admin' : 'admin');
     return {
-      byClaim,
+      byClaim: false,
       byAllowlist,
       canAccessAdmin: true,
       claimChecked,
       profileLoaded: true,
       superAdmin: byAllowlist || data.super === true,
-      legacyAdmin: data.legacy === true && !isMangaka,
+      legacyAdmin: false,
       isChiefAdmin: (byAllowlist || data.super === true) && !isMangaka,
       isMangaka,
       panelRole,
@@ -106,11 +93,10 @@ export async function resolveAdminAccess(user) {
       ...base,
       profileLoaded: true,
       superAdmin: byAllowlist,
-      /** Sem perfil: claim sem allowlist herda painel cheio (comportamento legado). */
-      legacyAdmin: byClaim && !byAllowlist && !isMangakaToken,
+      legacyAdmin: false,
       isChiefAdmin: byAllowlist,
-      isMangaka: isMangakaToken,
-      panelRole: panelRoleFromToken,
+      isMangaka: false,
+      panelRole: byAllowlist ? 'super_admin' : null,
       permissions: {},
     };
   }

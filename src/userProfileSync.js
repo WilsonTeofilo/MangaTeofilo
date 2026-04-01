@@ -98,6 +98,15 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
       marketingOptInAt:  null,
       membershipStatus:  'inativo',
       memberUntil:       null,
+      userEntitlements: {
+        global: {
+          isPremium: false,
+          status: 'inativo',
+          memberUntil: null,
+        },
+        creators: {},
+        updatedAt: agora,
+      },
       currentPlanId:     null,
       lastPaymentAt:     null,
       sourceAcquisition: 'organico',
@@ -129,6 +138,23 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   if (!atual.sourceAcquisition)     patch.sourceAcquisition  = 'organico';
   if (!atual.membershipStatus)      patch.membershipStatus   = 'inativo';
   if (!atual.createdAt)             patch.createdAt          = agora;
+  if (!atual.userEntitlements || typeof atual.userEntitlements !== 'object') {
+    patch.userEntitlements = {
+      global: {
+        isPremium:
+          String(atual.accountType || '').toLowerCase() === 'premium' &&
+          atual.membershipStatus === 'ativo' &&
+          typeof atual.memberUntil === 'number' &&
+          atual.memberUntil > agora,
+        status: atual.membershipStatus || 'inativo',
+        memberUntil: typeof atual.memberUntil === 'number' ? atual.memberUntil : null,
+      },
+      creators: atual.creatorMemberships && typeof atual.creatorMemberships === 'object'
+        ? atual.creatorMemberships
+        : {},
+      updatedAt: agora,
+    };
+  }
   if (typeof atual.birthYear !== 'number' && atual.birthYear !== null) patch.birthYear = null;
   if (typeof atual.notifyNewChapter !== 'boolean') patch.notifyNewChapter = false;
   if (typeof atual.notifyPromotions !== 'boolean') patch.notifyPromotions = false;

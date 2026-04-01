@@ -46,7 +46,8 @@ export async function criarPreferenciaApoio(
   appBaseUrl,
   uid,
   notificationUrl,
-  attributionCreatorId = null
+  attributionCreatorId = null,
+  options = {}
 ) {
   const plan = APOIO_PLANOS_MP[planId];
   if (!plan) throw new Error(`Plano desconhecido: ${planId}`);
@@ -77,6 +78,15 @@ export async function criarPreferenciaApoio(
       tipo: 'apoio',
       planId: String(planId),
       attributionCreatorId: attributionCreatorId ? String(attributionCreatorId).trim() : null,
+      ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
+    };
+  }
+  if (options.backUrlQuery) {
+    const q = String(options.backUrlQuery || '');
+    body.back_urls = {
+      success: `${base}/apoie?mp=ok&${q}`,
+      failure: `${base}/apoie?mp=erro`,
+      pending: `${base}/apoie?mp=pending`,
     };
   }
   if (notificationUrl) {
@@ -117,7 +127,8 @@ export async function criarPreferenciaApoioValorLivre(
   appBaseUrl,
   uid,
   notificationUrl,
-  attributionCreatorId = null
+  attributionCreatorId = null,
+  options = {}
 ) {
   const v = arredondarBrl(Number(valorBruto));
   if (!Number.isFinite(v) || v < VALOR_MIN || v > VALOR_MAX) {
@@ -152,6 +163,15 @@ export async function criarPreferenciaApoioValorLivre(
       tipo: 'apoio_custom',
       customAmount: v,
       attributionCreatorId: attributionCreatorId ? String(attributionCreatorId).trim() : null,
+      ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
+    };
+  }
+  if (options.backUrlQuery) {
+    const q = String(options.backUrlQuery || '');
+    body.back_urls = {
+      success: `${base}/apoie?mp=ok&${q}`,
+      failure: `${base}/apoie?mp=erro`,
+      pending: `${base}/apoie?mp=pending`,
     };
   }
   if (notificationUrl) {

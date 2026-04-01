@@ -8,10 +8,12 @@ import {
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
+  obraCreatorId,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth } from '../../utils/workFavorites';
+import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './BibliotecaFavoritos.css';
 
 function pathObraPublica(obra, obraIdFallback) {
@@ -86,7 +88,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
         setLoadingObras(false);
         return;
       }
-      const lista = ensureLegacyShitoObra(toList(snapshot.val())).filter((obra) => obra?.isPublished !== false);
+      const lista = ensureLegacyShitoObra(toList(snapshot.val())).filter((obra) => obraVisivelNoCatalogoPublico(obra));
       setObras(lista);
       setLoadingObras(false);
     });
@@ -120,7 +122,11 @@ export default function BibliotecaFavoritos({ user, perfil }) {
         const favMeta = favoritosMap?.[obraIdRaw] || favoritosMap?.[obraId] || {};
         const obra = obrasMap.get(obraId) || null;
         const listaCaps = (capitulosPorObra.get(obraId) || []).sort(capSortDesc);
-        const capAcessivel = listaCaps.find((cap) => capituloLiberadoParaUsuario(cap, user, perfil)) || null;
+        const fallbackCreator = obra ? obraCreatorId(obra) : '';
+        const capAcessivel =
+          listaCaps.find((cap) =>
+            capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCreator })
+          ) || null;
         const capUltimo = listaCaps[0] || null;
         const obraExcluida = !obra;
         return {

@@ -530,10 +530,13 @@ function ModalPreviewPagina({ aberto, itens, indiceInicial = 0, aoFechar }) {
 }
 
 // --- COMPONENTE PRINCIPAL ---
-export default function AdminPanel({ adminAccess }) {
+export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const user = auth.currentUser;
+  const chaptersHubPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
+  const isCreatorWorkspace = workspace === 'creator';
+  const isMangaka = Boolean(adminAccess?.isMangaka);
   const obraIdSelecionada = normalizarObraId(searchParams.get('obra') || OBRA_PADRAO_ID);
   const capituloEditQueryId = String(searchParams.get('edit') || '').trim();
 
@@ -623,9 +626,9 @@ export default function AdminPanel({ adminAccess }) {
     if (!adminAccess?.isMangaka || !user?.uid) return;
     const own = obraCreatorId(obraSelecionada) === user.uid;
     if (!own) {
-      navigate('/admin/capitulos');
+      navigate(chaptersHubPath);
     }
-  }, [adminAccess?.isMangaka, user?.uid, obraSelecionada, navigate]);
+  }, [adminAccess?.isMangaka, user?.uid, obraSelecionada, navigate, chaptersHubPath]);
 
   const capitulosDaObra = useMemo(
     () =>
@@ -1074,7 +1077,7 @@ export default function AdminPanel({ adminAccess }) {
     setEtapaAtiva(1);
     setPublicReleaseAtInput('');
     setAntecipadoMembros(false);
-    navigate('/admin/capitulos');
+    navigate(chaptersHubPath);
   };
 
   return (
@@ -1091,8 +1094,13 @@ export default function AdminPanel({ adminAccess }) {
       )}
 
       <header className="admin-header">
-        <h1>{(obraSelecionada?.tituloCurto || 'Obra').toUpperCase()} - FORJA DO AUTOR</h1>
-        <button className="btn-voltar" onClick={() => navigate('/admin/capitulos')}>Voltar capítulos</button>
+        <h1>
+          {(obraSelecionada?.tituloCurto || 'Obra').toUpperCase()}
+          {isMangaka ? ' - ESTUDIO DE CAPITULOS' : isCreatorWorkspace ? ' - OPERACAO DE CAPITULOS' : ' - FORJA DO AUTOR'}
+        </h1>
+        <button className="btn-voltar" onClick={() => navigate(chaptersHubPath)}>
+          {isMangaka ? 'Voltar para meus capitulos' : 'Voltar capítulos'}
+        </button>
       </header>
 
       <main className="admin-container">
@@ -1102,7 +1110,11 @@ export default function AdminPanel({ adminAccess }) {
           <span>Slug: {obraSelecionada?.slug || obraIdSelecionada}</span>
         </section>
         <section className="form-section">
-          <h2>{editandoId ? `🔧 Editar capítulo — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}` : `✨ Criar capítulo — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}</h2>
+          <h2>
+            {editandoId
+              ? `${isMangaka ? 'Editar meu capitulo' : 'Editar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`
+              : `${isMangaka ? 'Criar capitulo' : 'Criar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}
+          </h2>
           
           <form onSubmit={handleSubmit} className="admin-form">
             <div className="input-row">
@@ -1123,7 +1135,9 @@ export default function AdminPanel({ adminAccess }) {
                 />
               </label>
               <p className="lancamento-help">
-               Data Vazia = já público. Com data futura, o capítulo fica &quot;em breve&quot; até o horário (assinantes Premium podem ler antes se a opção abaixo estiver marcada).
+               {isMangaka
+                 ? 'Deixe vazio para publicar agora. Com data futura, o capitulo fica em breve ate a abertura publica.'
+                 : 'Data vazia = ja publico. Com data futura, o capitulo fica em breve ate o horario. Se a opcao abaixo estiver marcada, membros ativos do criador podem ler antes da abertura publica.'}
               </p>
               <label className="lancamento-check">
                 <input
@@ -1131,7 +1145,7 @@ export default function AdminPanel({ adminAccess }) {
                   checked={antecipadoMembros}
                   onChange={(e) => setAntecipadoMembros(e.target.checked)}
                 />
-                Membros VIP (assinatura ativa) leem antes do horário público
+                Membros com membership ativa do criador leem antes do horario publico
               </label>
             </div>
 
@@ -1168,7 +1182,7 @@ export default function AdminPanel({ adminAccess }) {
                   }}
                 >
                   <h3>Envie as páginas do capítulo</h3>
-                  <p>Arraste e solte imagens aqui, ou use o seletor abaixo.</p>
+                  <p>{isMangaka ? 'Arraste paginas aqui para montar seu capitulo.' : 'Arraste e solte imagens aqui, ou use o seletor abaixo.'}</p>
                 </div>
                 <div className="file-inputs">
                   <label>
@@ -1202,7 +1216,7 @@ export default function AdminPanel({ adminAccess }) {
                     <div className="cirurgia-header">
                       <div className="cirurgia-info">
                         <h3>Páginas atuais ({paginasExistentes.length})</h3>
-                        <p>Arraste para reordenar, visualize em modal e troque páginas pontuais.</p>
+                    <p>{isMangaka ? 'Reordene paginas, revise e troque trechos sem perder o fluxo.' : 'Arraste para reordenar, visualize em modal e troque páginas pontuais.'}</p>
                       </div>
                     </div>
                     <div className="paginas-edit-grid">
@@ -1226,7 +1240,7 @@ export default function AdminPanel({ adminAccess }) {
                   <div className="cirurgia-header">
                     <div className="cirurgia-info">
                       <h3>Pré-visualização das novas páginas ({arquivosPaginas.length})</h3>
-                      <p>Cards com thumbnail, preview em modal, remoção e reorder por arraste.</p>
+                      <p>{isMangaka ? 'Confira as novas paginas antes de publicar.' : 'Cards com thumbnail, preview em modal, remoção e reorder por arraste.'}</p>
                     </div>
                   </div>
                   {arquivosPaginas.length > 0 ? (
@@ -1257,7 +1271,7 @@ export default function AdminPanel({ adminAccess }) {
                 <div className="cirurgia-header">
                   <div className="cirurgia-info">
                     <h3>Ajuste da capa (16:9)</h3>
-                    <p>Arraste na imagem e use sliders de ajuste fino. A prévia final replica o resultado real.</p>
+                    <p>{isMangaka ? 'Ajuste a capa que vai aparecer no catalogo e no leitor.' : 'Arraste na imagem e use sliders de ajuste fino. A prévia final replica o resultado real.'}</p>
                   </div>
                 </div>
 
@@ -1366,7 +1380,7 @@ export default function AdminPanel({ adminAccess }) {
 
             {etapaAtiva === 4 && (
               <div className="editor-step-panel review-panel">
-                <h3>Revisão final</h3>
+                <h3>{isMangaka ? 'Revisao final do capitulo' : 'Revisão final'}</h3>
                 <div className="review-checklist">
                   {checklistPublicacao.map((item) => (
                     <div key={item.id} className={`review-check-item ${item.ok ? 'ok' : 'pendente'}`}>
@@ -1410,9 +1424,9 @@ export default function AdminPanel({ adminAccess }) {
 
             {etapaAtiva === 5 && (
               <div className="editor-step-panel review-panel">
-                <h3>Publicar capítulo</h3>
+                <h3>{isMangaka ? 'Publicar capitulo' : 'Publicar capítulo'}</h3>
                 <p className="editor-empty">
-                  Confira os dados e clique em publicar. O botão ficará fixo ao final para facilitar.
+                  {isMangaka ? 'Confira tudo e publique sem depender do admin.' : 'Confira os dados e clique em publicar. O botão ficará fixo ao final para facilitar.'}
                 </p>
               </div>
             )}
@@ -1461,10 +1475,12 @@ export default function AdminPanel({ adminAccess }) {
         </section>
 
         <section className="list-section">
-          <h2>Capítulos da obra</h2>
+          <h2>{isMangaka ? 'Capitulos publicados nesta obra' : 'Capítulos da obra'}</h2>
           <div className="capitulos-grid">
             {capitulosDaObra.length === 0 ? (
-              <p className="editor-empty">Nenhum capítulo cadastrado para esta obra.</p>
+              <p className="editor-empty">
+                {isMangaka ? 'Nenhum capitulo cadastrado para esta obra ainda.' : 'Nenhum capítulo cadastrado para esta obra.'}
+              </p>
             ) : capitulosDaObra.map((cap) => {
               const ehAgendado = cap.publicReleaseAt && Number(cap.publicReleaseAt) > Date.now();
               const ehRascunho = !cap.capaUrl || !Array.isArray(cap.paginas) || cap.paginas.length === 0;
@@ -1484,7 +1500,7 @@ export default function AdminPanel({ adminAccess }) {
                   <div className="cap-meta-row">
                     <span>📅 {dataLabel}</span>
                     <span>👁 {views} views</span>
-                    {cap.antecipadoMembros ? <span>👑 VIP antecipado</span> : <span>VIP off</span>}
+                    {cap.antecipadoMembros ? <span>👑 Membership antecipada</span> : <span>Membership off</span>}
                   </div>
                 </div>
                 <div className="cap-actions">

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../../services/firebase';
@@ -11,38 +10,72 @@ import './AdminStaff.css';
 const adminListStaff = httpsCallable(functions, 'adminListStaff');
 const adminUpsertStaff = httpsCallable(functions, 'adminUpsertStaff');
 const adminRemoveStaff = httpsCallable(functions, 'adminRemoveStaff');
-const adminBackfillObraCreatorIds = httpsCallable(functions, 'adminBackfillObraCreatorIds');
-const adminBackfillChapterCreatorIds = httpsCallable(functions, 'adminBackfillChapterCreatorIds');
 
-function emptyPermState() {
-  const o = {};
+function buildEmptyPermissions() {
+  const next = {};
   STAFF_PERMISSION_FIELDS.forEach(({ field }) => {
-    o[field] = false;
+    next[field] = false;
   });
-  return o;
+  return next;
 }
 
-export default function EquipeAdmin() {
-  const navigate = useNavigate();
+function countActivePermissions(permissions) {
+  return STAFF_PERMISSION_FIELDS.reduce((total, { field }) => total + (permissions?.[field] === true ? 1 : 0), 0);
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function buildPayloadFromPermissions(permissions) {
+  const payload = {};
+  STAFF_PERMISSION_FIELDS.forEach(({ field }) => {
+    if (permissions?.[field] === true) payload[field] = true;
+  });
+  return payload;
+}
+
+export default function EquipeAdmin({ adminAccess }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
-  const [emailNovo, setEmailNovo] = useState('');
-  const [staffRoleForm, setStaffRoleForm] = useState('admin');
-  const [permForm, setPermForm] = useState(() => emptyPermState());
   const [busy, setBusy] = useState(false);
-  const [backfillMsg, setBackfillMsg] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [formEmail, setFormEmail] = useState('');
+  const [formPermissions, setFormPermissions] = useState(() => buildEmptyPermissions());
+
+  const canManageMembers = adminAccess?.superAdmin === true || adminAccess?.isChiefAdmin === true;
+
+  const permissionGroups = useMemo(() => {
+    return STAFF_PERMISSION_FIELDS.reduce((groups, item) => {
+      const key = item.category || 'Outros';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+      return groups;
+    }, {});
+  }, []);
+
+  const existingAdminEmails = useMemo(() => {
+    const emails = new Set();
+    staff.forEach((member) => {
+      if (member?.role !== 'admin') return;
+      const email = normalizeEmail(member.email);
+      if (email) emails.add(email);
+    });
+    return emails;
+  }, [staff]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setErr('');
+    setError('');
     try {
       const { data } = await adminListStaff();
       setStaff(Array.isArray(data?.staff) ? data.staff : []);
-    } catch (e) {
-      setErr(mensagemErroCallable(e));
+    } catch (err) {
       setStaff([]);
+      setError(mensagemErroCallable(err));
     } finally {
       setLoading(false);
     }
@@ -52,231 +85,282 @@ export default function EquipeAdmin() {
     load();
   }, [load]);
 
-  const togglePerm = (field) => {
-    setPermForm((prev) => ({ ...prev, [field]: !prev[field] }));
+  const closeModal = useCallback(() => {
+    setIsModalOpen(false);
+    setEditingMember(null);
+    setFormEmail('');
+    setFormPermissions(buildEmptyPermissions());
+  }, []);
+
+  const openAddModal = () => {
+    setMessage('');
+    setError('');
+    setEditingMember(null);
+    setFormEmail('');
+    setFormPermissions(buildEmptyPermissions());
+    setIsModalOpen(true);
   };
 
-  const permissoesPayload = useMemo(() => {
-    const o = {};
-    STAFF_PERMISSION_FIELDS.forEach(({ field }) => {
-      if (permForm[field]) o[field] = true;
+  const openEditModal = (member) => {
+    setMessage('');
+    setError('');
+    setEditingMember(member);
+    setFormEmail(member?.email || '');
+    setFormPermissions(() => {
+      const next = buildEmptyPermissions();
+      STAFF_PERMISSION_FIELDS.forEach(({ field }) => {
+        next[field] = member?.permissions?.[field] === true;
+      });
+      return next;
     });
-    return o;
-  }, [permForm]);
+    setIsModalOpen(true);
+  };
 
-  const handleUpsert = async (e) => {
-    e.preventDefault();
-    setMsg('');
-    setErr('');
-    const em = String(emailNovo || '').trim();
-    if (!em) {
-      setErr('Informe o e-mail do usuário (conta já existente no Firebase Auth).');
+  const togglePermission = (field) => {
+    setFormPermissions((current) => ({ ...current, [field]: !current[field] }));
+  };
+
+  const handleSave = async (event) => {
+    event.preventDefault();
+    setMessage('');
+    setError('');
+
+    const email = normalizeEmail(formEmail);
+    if (!email) {
+      setError('Informe um e-mail valido para continuar.');
       return;
     }
+
+    const currentEditingEmail = normalizeEmail(editingMember?.email);
+    const emailAlreadyExists = existingAdminEmails.has(email) && email !== currentEditingEmail;
+    if (emailAlreadyExists) {
+      setError('Ja existe um admin cadastrado com este e-mail.');
+      return;
+    }
+
     setBusy(true);
     try {
       await adminUpsertStaff({
-        email: em,
-        permissions: staffRoleForm === 'mangaka' ? {} : permissoesPayload,
-        role: staffRoleForm,
+        email,
+        role: 'admin',
+        permissions: buildPayloadFromPermissions(formPermissions),
       });
-      setMsg(
-        'Conta atualizada. O usuário precisa renovar a sessão (sair e entrar, ou aguardar e recarregar) para o token refletir o novo papel.'
-      );
-      setEmailNovo('');
-      setPermForm(emptyPermState());
+      setMessage(editingMember ? 'Membro atualizado com sucesso.' : 'Membro adicionado com sucesso.');
+      closeModal();
       await load();
-    } catch (e) {
-      setErr(mensagemErroCallable(e));
+    } catch (err) {
+      setError(mensagemErroCallable(err));
     } finally {
       setBusy(false);
     }
   };
 
-  const runBackfillObras = async () => {
-    setBackfillMsg('');
-    setBusy(true);
-    try {
-      const { data } = await adminBackfillObraCreatorIds();
-      setBackfillMsg(`Obras atualizadas: ${Number(data?.updated || 0)}.`);
-    } catch (e) {
-      setBackfillMsg(mensagemErroCallable(e));
-    } finally {
-      setBusy(false);
+  const handleRemove = async (member) => {
+    if (!member?.uid || member?.role === 'super_admin' || !canManageMembers) return;
+    if (!window.confirm(`Remover ${member.name || member.email || 'este admin'} da equipe?`)) {
+      return;
     }
-  };
 
-  const runBackfillCaps = async () => {
-    setBackfillMsg('');
     setBusy(true);
+    setMessage('');
+    setError('');
     try {
-      const { data } = await adminBackfillChapterCreatorIds();
-      setBackfillMsg(`Capítulos atualizados: ${Number(data?.updated || 0)}.`);
-    } catch (e) {
-      setBackfillMsg(mensagemErroCallable(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleRemove = async (uid) => {
-    if (!uid) return;
-    if (!window.confirm('Remover este registro (admin ou mangaká)? Claims e role no RTDB serão limpos.')) return;
-    setBusy(true);
-    setErr('');
-    setMsg('');
-    try {
-      await adminRemoveStaff({ uid });
-      setMsg('Admin removido.');
+      await adminRemoveStaff({ uid: member.uid });
+      setMessage('Membro removido com sucesso.');
       await load();
-    } catch (e) {
-      setErr(mensagemErroCallable(e));
+    } catch (err) {
+      setError(mensagemErroCallable(err));
     } finally {
       setBusy(false);
     }
   };
+
+  const adminMembers = staff.filter((member) => member?.role === 'admin');
+  const superAdmins = staff.filter((member) => member?.role === 'super_admin');
 
   return (
-    <main className="admin-empty-page">
-      <section className="admin-empty-card financeiro-card">
-        <header className="financeiro-header">
+    <main className="admin-empty-page admin-team-page">
+      <section className="admin-empty-card admin-team-shell">
+        <header className="financeiro-header admin-team-header">
           <div>
-            <h1>Equipe (admins e mangakás)</h1>
-            <p>
-              Só admin chefe cria ou remove contas do registro. Mangaká acessa o mesmo painel com dados filtrados
-              (multi-tenant). Admins personalizados não removem uns aos outros nem o chefe.
-            </p>
+            <p className="admin-team-eyebrow">Administracao</p>
+            <h1>Equipe</h1>
+            <p>Gerencie administradores da plataforma</p>
           </div>
-          <div className="financeiro-header-actions">
-            <button type="button" onClick={() => navigate('/admin/sessoes')}>
-              Sessões
+          {canManageMembers ? (
+            <button type="button" className="financeiro-btn-primary" onClick={openAddModal} disabled={busy}>
+              + Adicionar membro
             </button>
-            <button type="button" onClick={() => navigate('/admin/capitulos')}>
-              Voltar
-            </button>
-          </div>
+          ) : null}
         </header>
 
-        {err ? <p className="financeiro-msg financeiro-msg--erro">{err}</p> : null}
-        {msg ? <p className="financeiro-msg financeiro-msg--ok">{msg}</p> : null}
-        {backfillMsg ? <p className="financeiro-msg financeiro-msg--ok">{backfillMsg}</p> : null}
+        {error ? <p className="financeiro-msg financeiro-msg--erro">{error}</p> : null}
+        {message ? <p className="financeiro-msg financeiro-msg--ok">{message}</p> : null}
 
-        <section className="financeiro-migracao">
-          <h2>Multi-tenant (migração)</h2>
-          <p className="financeiro-section-hint">
-            Preenche <code>creatorId</code> em obras/capítulos antigos (dono legado = primeiro super-admin). Rode
-            obras primeiro, depois capítulos.
-          </p>
-          <div className="admin-staff-submit-row financeiro-acoes">
-            <button type="button" className="financeiro-btn-primary" disabled={busy} onClick={runBackfillObras}>
-              Backfill obras
-            </button>
-            <button type="button" className="financeiro-btn-primary" disabled={busy} onClick={runBackfillCaps}>
-              Backfill capítulos
-            </button>
-          </div>
+        <section className="admin-team-overview">
+          <article className="admin-team-stat-card">
+            <span>Total de membros</span>
+            <strong>{staff.length}</strong>
+          </article>
+          <article className="admin-team-stat-card">
+            <span>Super admins</span>
+            <strong>{superAdmins.length}</strong>
+          </article>
+          <article className="admin-team-stat-card">
+            <span>Admins</span>
+            <strong>{adminMembers.length}</strong>
+          </article>
         </section>
 
-        <div className="admin-staff-stack">
-          <section className="financeiro-migracao">
-            <h2>Nova conta no registro (por e-mail)</h2>
-            <form onSubmit={handleUpsert}>
-              <div className="financeiro-grid">
-                <label className="financeiro-grid-full">
-                  E-mail (conta Firebase Auth)
-                  <input
-                    type="email"
-                    value={emailNovo}
-                    onChange={(ev) => setEmailNovo(ev.target.value)}
-                    autoComplete="off"
-                    placeholder="nome@exemplo.com"
-                  />
-                </label>
-              </div>
+        <section className="admin-team-panel">
+          <div className="admin-team-panel-head">
+            <div>
+              <h2>Membros</h2>
+              <p>Fonte de verdade: <code>admins/registry</code> para admins e lista fixa para super admins.</p>
+            </div>
+          </div>
 
-              <fieldset className="admin-staff-perms">
-                <legend>Tipo</legend>
-                <label className="admin-staff-perm-label">
-                  <input
-                    type="radio"
-                    name="staff-role"
-                    checked={staffRoleForm === 'admin'}
-                    onChange={() => setStaffRoleForm('admin')}
-                  />
-                  <span>Admin da plataforma (permissões abaixo + claim admin)</span>
-                </label>
-                <label className="admin-staff-perm-label">
-                  <input
-                    type="radio"
-                    name="staff-role"
-                    checked={staffRoleForm === 'mangaka'}
-                    onChange={() => setStaffRoleForm('mangaka')}
-                  />
-                  <span>Mangaká (painel com obras/capítulos/financeiro só do criador)</span>
-                </label>
-              </fieldset>
+          {loading ? <p className="admin-staff-loading">Carregando equipe...</p> : null}
+          {!loading && staff.length === 0 ? <p className="admin-staff-empty">Nenhum membro encontrado.</p> : null}
 
-              {staffRoleForm === 'admin' ? (
-                <fieldset className="admin-staff-perms">
-                  <legend>Permissões</legend>
-                  <div className="admin-staff-perms-grid">
-                    {STAFF_PERMISSION_FIELDS.map(({ field, label }) => (
-                      <label key={field} className="admin-staff-perm-label">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(permForm[field])}
-                          onChange={() => togglePerm(field)}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              ) : null}
+          {!loading && staff.length > 0 ? (
+            <div className="admin-team-table-wrap">
+              <table className="admin-team-table">
+                <thead>
+                  <tr>
+                    <th>Membro</th>
+                    <th>Role</th>
+                    <th>Permissoes</th>
+                    <th className="admin-team-actions-col">Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staff.map((member) => {
+                    const displayName = member?.name || member?.email || member?.uid;
+                    const email = member?.email || 'E-mail indisponivel';
+                    const permissionCount = countActivePermissions(member?.permissions);
+                    const canEdit = canManageMembers && member?.role === 'admin' && Boolean(member?.email);
+                    const canRemove = canManageMembers && member?.role === 'admin';
 
-              <div className="admin-staff-submit-row financeiro-acoes">
-                <button type="submit" className="financeiro-btn-primary" disabled={busy}>
-                  {staffRoleForm === 'mangaka' ? 'Salvar mangaká' : 'Salvar admin'}
+                    return (
+                      <tr key={member.uid}>
+                        <td>
+                          <div className="admin-team-member-cell">
+                            <strong>{displayName}</strong>
+                            <span>{email}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`admin-team-role-badge admin-team-role-badge--${member.role}`}>
+                            {member.role === 'super_admin' ? 'super_admin' : 'admin'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="admin-team-permission-summary">
+                            {member.role === 'super_admin'
+                              ? 'Acesso total'
+                              : `${permissionCount} permiss${permissionCount === 1 ? 'ao ativa' : 'oes ativas'}`}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="admin-team-row-actions">
+                            {canEdit ? (
+                              <button type="button" onClick={() => openEditModal(member)} disabled={busy}>
+                                Editar
+                              </button>
+                            ) : null}
+                            {canRemove ? (
+                              <button
+                                type="button"
+                                className="admin-team-danger-btn"
+                                onClick={() => handleRemove(member)}
+                                disabled={busy}
+                              >
+                                Remover
+                              </button>
+                            ) : null}
+                            {!canEdit && !canRemove ? <span className="admin-team-muted-action">Protegido</span> : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+
+        {isModalOpen ? (
+          <div className="admin-team-modal-backdrop" role="presentation" onClick={closeModal}>
+            <section
+              className="admin-team-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-team-modal-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="admin-team-modal-head">
+                <div>
+                  <p className="admin-team-eyebrow">Equipe</p>
+                  <h2 id="admin-team-modal-title">{editingMember ? 'Editar membro' : 'Adicionar membro'}</h2>
+                </div>
+                <button type="button" className="admin-team-close-btn" onClick={closeModal} disabled={busy}>
+                  Fechar
                 </button>
               </div>
-            </form>
-          </section>
 
-          <section className="financeiro-migracao">
-            <h2>Registro (admins e mangakás)</h2>
-            {loading ? <p className="admin-staff-loading">Carregando…</p> : null}
-            {!loading && staff.length === 0 ? (
-              <p className="admin-staff-empty">
-                Nenhum registro em <code>admins/registry</code>.
-              </p>
-            ) : null}
-            {!loading && staff.length > 0 ? (
-              <ul className="admin-staff-member-list">
-                {staff.map((row) => (
-                  <li key={row.uid} className="admin-staff-member-card">
-                    <div className="admin-staff-member-email">{row.email || row.uid}</div>
-                    <div className="admin-staff-member-uid">
-                      {row.uid}{' '}
-                      <span className="admin-staff-role-pill">
-                        {row.role === 'mangaka' ? 'mangaká' : 'admin'}
-                      </span>
+              <form className="admin-team-form" onSubmit={handleSave}>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={formEmail}
+                    onChange={(event) => setFormEmail(event.target.value)}
+                    placeholder="nome@empresa.com"
+                    autoComplete="off"
+                    readOnly={Boolean(editingMember)}
+                  />
+                </label>
+
+                <label>
+                  Role
+                  <input type="text" value="admin" readOnly />
+                </label>
+
+                <fieldset className="admin-team-permission-groups">
+                  <legend>Permissoes</legend>
+                  {Object.entries(permissionGroups).map(([category, items]) => (
+                    <div key={category} className="admin-team-permission-group">
+                      <h3>{category}</h3>
+                      <div className="admin-team-checkbox-list">
+                        {items.map((item) => (
+                          <label key={item.field} className="admin-team-checkbox">
+                            <input
+                              type="checkbox"
+                              checked={formPermissions[item.field] === true}
+                              onChange={() => togglePermission(item.field)}
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                    <div className="admin-staff-member-actions">
-                      <button
-                        type="button"
-                        className="financeiro-btn-encerrar"
-                        disabled={busy}
-                        onClick={() => handleRemove(row.uid)}
-                      >
-                        Remover
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        </div>
+                  ))}
+                </fieldset>
+
+                <div className="admin-team-modal-actions">
+                  <button type="button" onClick={closeModal} disabled={busy}>
+                    Cancelar
+                  </button>
+                  <button type="submit" className="financeiro-btn-primary" disabled={busy}>
+                    {busy ? 'Salvando...' : editingMember ? 'Salvar alteracoes' : 'Adicionar membro'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        ) : null}
       </section>
     </main>
   );

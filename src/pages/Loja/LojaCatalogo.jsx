@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { isAdminUser } from '../../constants';
-import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
+import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import { cartCount, getCartItems } from '../../store/cartStore';
 import {
   applyVipDiscount,
@@ -59,7 +59,7 @@ export default function LojaCatalogo({ user, perfil }) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const isAdmin = isAdminUser(user);
-  const vip = assinaturaPremiumAtiva(perfil) || isAdmin;
+  const vip = descontoVipLojaAtivo(perfil, user);
 
   useEffect(() => {
     const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {

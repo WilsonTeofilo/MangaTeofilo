@@ -1,21 +1,35 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
-import { useNavigate, useParams } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { db } from '../../services/firebase';
+import { db, functions } from '../../services/firebase';
+import { isAdminUser } from '../../constants';
+import { emptyAdminAccess } from '../../auth/adminAccess';
 import {
   OBRA_PADRAO_ID,
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
   normalizarObraId,
   obterObraIdCapitulo,
+  obraCreatorId,
   resolverObraIdPorSlugOuId,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
+import { obraEstaArquivada } from '../../utils/obraCatalogo';
+import { applyObraPageSeo, defaultSiteTitle } from '../../seo/applyObraPageSeo';
 import './ObraDetalhe.css';
+
+function usuarioPodeVerObraArquivada(user, adminAccess, obra) {
+  if (!obraEstaArquivada(obra)) return true;
+  if (!user?.uid) return false;
+  if (isAdminUser(user)) return true;
+  if (adminAccess?.canAccessAdmin && !adminAccess?.isMangaka) return true;
+  return obraCreatorId(obra) === user.uid;
+}
 
 function toList(snapshotVal) {
   if (!snapshotVal || typeof snapshotVal !== 'object') return [];
@@ -32,11 +46,12 @@ function chapterSort(a, b) {
 }
 
 /** Rota `/obra/:obraId` ou `/work/:slug` (slug ou id). */
-export default function ObraDetalhe({ user, perfil }) {
+export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAccess() }) {
   const params = useParams();
   const routeObraId = params.obraId;
   const routeSlug = params.slug;
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [obraId, setObraId] = useState(null);
   const [idResolvido, setIdResolvido] = useState(false);
@@ -45,6 +60,27 @@ export default function ObraDetalhe({ user, perfil }) {
   const [obra, setObra] = useState(null);
   const [capitulos, setCapitulos] = useState([]);
   const [isFavorito, setIsFavorito] = useState(false);
+  const [creatorProfile, setCreatorProfile] = useState(null);
+  const [isSubscribedWork, setIsSubscribedWork] = useState(false);
+  const [workNotificationBusy, setWorkNotificationBusy] = useState(false);
+  const upsertNotificationSubscription = useMemo(
+    () => httpsCallable(functions, 'upsertNotificationSubscription'),
+    []
+  );
+
+  const obraParaExibir = useMemo(() => {
+    if (!obra) return null;
+    if (!usuarioPodeVerObraArquivada(user, adminAccess, obra)) return null;
+    return obra;
+  }, [obra, user, adminAccess]);
+
+  useEffect(() => {
+    if (!obraParaExibir) return () => {};
+    applyObraPageSeo({ pathname: location.pathname, obra: obraParaExibir });
+    return () => {
+      document.title = defaultSiteTitle();
+    };
+  }, [obraParaExibir, location.pathname]);
 
   useEffect(() => {
     if (routeObraId) {
@@ -133,9 +169,48 @@ export default function ObraDetalhe({ user, perfil }) {
     };
   }, [user?.uid, obraId]);
 
+  useEffect(() => {
+    if (!user?.uid || !obraId) {
+      setIsSubscribedWork(false);
+      return () => {};
+    }
+    const unsub = onValue(
+      ref(db, `usuarios/${user.uid}/subscribedWorks/${obraId}`),
+      (snapshot) => {
+        setIsSubscribedWork(snapshot.exists());
+      }
+    );
+    return () => unsub();
+  }, [obraId, user?.uid]);
+
+  useEffect(() => {
+    const creatorId = obraCreatorId(obra);
+    if (!creatorId) {
+      setCreatorProfile(null);
+      return () => {};
+    }
+    const unsub = onValue(ref(db, `usuarios_publicos/${creatorId}`), (snapshot) => {
+      setCreatorProfile(snapshot.exists() ? snapshot.val() || null : null);
+    });
+    return () => unsub();
+  }, [obra]);
+
+  const capitulosResolvidos = useMemo(() => {
+    const fallbackCreatorId = obraCreatorId(obra);
+    return capitulos.map((cap) => (
+      cap?.creatorId ? cap : { ...cap, creatorId: fallbackCreatorId }
+    ));
+  }, [capitulos, obra]);
+
+  const fallbackCriadorObra = obraCreatorId(obra);
   const capituloCTA = useMemo(
-    () => capitulos.find((cap) => capituloLiberadoParaUsuario(cap, user, perfil)) || capitulos[0] || null,
-    [capitulos, user, perfil]
+    () =>
+      capitulosResolvidos.find((cap) =>
+        capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCriadorObra })
+      ) ||
+      capitulosResolvidos[0] ||
+      null,
+    [capitulosResolvidos, user, perfil, fallbackCriadorObra]
   );
 
   const toggleFavorito = async () => {
@@ -147,7 +222,8 @@ export default function ObraDetalhe({ user, perfil }) {
     const payload = {
       obraId,
       workId: obraId,
-      titulo: obra?.titulo || obraId,
+      creatorId: obraCreatorId(obraParaExibir || obra),
+      titulo: obraParaExibir?.titulo || obra?.titulo || obraId,
       savedAt: Date.now(),
     };
     if (isFavorito) {
@@ -160,6 +236,37 @@ export default function ObraDetalhe({ user, perfil }) {
   const abrirCTA = () => {
     if (!capituloCTA) return;
     navigate(`/ler/${capituloCTA.id}`);
+  };
+
+  const abrirCriador = () => {
+    const alvo = obraParaExibir || obra;
+    navigate(`/criador/${encodeURIComponent(obraCreatorId(alvo))}`);
+  };
+
+  const salvarAvisosObra = async () => {
+    if (!user?.uid) {
+      navigate('/login');
+      return;
+    }
+    setWorkNotificationBusy(true);
+    try {
+      const nextEnabled = !isSubscribedWork;
+      await upsertNotificationSubscription({
+        type: 'work',
+        targetId: obraId,
+        enabled: nextEnabled,
+      });
+      if (nextEnabled && typeof window !== 'undefined' && typeof Notification !== 'undefined') {
+        const wantsBrowserNotifications = window.confirm(
+          'Obra acompanhada. Deseja receber avisos no navegador quando sair o proximo capitulo?'
+        );
+        if (wantsBrowserNotifications && Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+      }
+    } finally {
+      setWorkNotificationBusy(false);
+    }
   };
 
   if (!idResolvido) return <div className="shito-app-splash" aria-hidden="true" />;
@@ -179,12 +286,16 @@ export default function ObraDetalhe({ user, perfil }) {
 
   if (loading) return <div className="shito-app-splash" aria-hidden="true" />;
 
-  if (!obra) {
+  if (!obraParaExibir) {
     return (
       <main className="obra-page">
         <section className="obra-not-found">
           <h1>Obra não encontrada</h1>
-          <p>Essa obra não existe ou ainda não foi publicada.</p>
+          <p>
+            {obra && obraEstaArquivada(obra)
+              ? 'Esta obra foi arquivada e não está mais no catálogo público.'
+              : 'Essa obra não existe ou ainda não foi publicada.'}
+          </p>
           <button type="button" onClick={() => navigate('/works')}>
             Ver obras
           </button>
@@ -198,23 +309,30 @@ export default function ObraDetalhe({ user, perfil }) {
       <section
         className="obra-hero"
         style={{
-          backgroundImage: `linear-gradient(180deg, rgba(6,9,16,0.25), rgba(6,9,16,0.92)), url('${obra.bannerUrl || obra.capaUrl || '/assets/fotos/shito.jpg'}')`,
+          backgroundImage: `linear-gradient(180deg, rgba(6,9,16,0.25), rgba(6,9,16,0.92)), url('${obraParaExibir.bannerUrl || obraParaExibir.capaUrl || '/assets/fotos/shito.jpg'}')`,
         }}
       >
         <div className="obra-hero-content">
           <img
             className="obra-cover"
-            src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
-            alt={obra.titulo || obraId}
+            src={obraParaExibir.capaUrl || obraParaExibir.bannerUrl || '/assets/fotos/shito.jpg'}
+            alt={obraParaExibir.titulo || obraId}
           />
           <div className="obra-info">
-            <h1>{obra.titulo || obraId}</h1>
-            <p className="obra-sinopse">{obra.sinopse || 'Sinopse em breve.'}</p>
+            <h1>{obraParaExibir.titulo || obraId}</h1>
+            <p className="obra-sinopse">{obraParaExibir.sinopse || 'Sinopse em breve.'}</p>
             <div className="obra-meta">
-              <span>Status: {obra.status || 'ongoing'}</span>
-              <span>Público: {obra.publicoAlvo || 'Geral'}</span>
+              <span>Status: {obraParaExibir.status || 'ongoing'}</span>
+              <span>Público: {obraParaExibir.publicoAlvo || 'Geral'}</span>
               <span>{capitulos.length} capítulos</span>
             </div>
+            <button type="button" className="obra-creator-chip" onClick={abrirCriador}>
+              <img
+                src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
+                alt={creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}
+              />
+              <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
+            </button>
             <div className="obra-actions">
               <button type="button" className="btn-obra-cta" onClick={abrirCTA} disabled={!capituloCTA}>
                 Ler agora
@@ -222,7 +340,21 @@ export default function ObraDetalhe({ user, perfil }) {
               <button type="button" className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`} onClick={toggleFavorito}>
                 {isFavorito ? '★ Desfavoritar' : '☆ Favoritar'}
               </button>
+              <button type="button" className="btn-obra-fav-page" onClick={abrirCriador}>
+                Ver criador
+              </button>
             </div>
+            {user?.uid ? (
+              <div className="obra-notify-box">
+                <strong>Acompanhar esta obra</strong>
+                <p>Quando voce acompanha uma obra, os novos capitulos passam a cair automaticamente no sino.</p>
+                <div className="obra-notify-box__options">
+                  <button type="button" className="btn-obra-fav-page" onClick={salvarAvisosObra} disabled={workNotificationBusy}>
+                    {workNotificationBusy ? 'Salvando...' : isSubscribedWork ? 'Parar de acompanhar' : 'Acompanhar obra'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -236,10 +368,12 @@ export default function ObraDetalhe({ user, perfil }) {
           <p className="obra-capitulos-empty">Essa obra ainda não possui capítulos publicados.</p>
         ) : (
           <div className="obra-capitulos-list shueisha-capitulos-list">
-            {capitulos.map((cap) => {
+            {capitulosResolvidos.map((cap) => {
               if (!cap) return null;
-              const liberado = capituloLiberadoParaUsuario(cap, user, perfil);
-              const agendado = Number(cap?.publicReleaseAt || 0) > Date.now();
+              const liberado = capituloLiberadoParaUsuario(cap, user, perfil, {
+                creatorIdFallback: fallbackCriadorObra,
+              });
+              const agendado = Number(cap?.publicReleaseAt || 0) > 0;
               return (
                 <article
                   key={cap.id}
@@ -258,6 +392,8 @@ export default function ObraDetalhe({ user, perfil }) {
                           alt={cap.titulo || `Capítulo ${cap.numero}`}
                           className="shito-cap-miniature"
                           style={chapterCoverStyle(cap.capaAjuste)}
+                          loading="lazy"
+                          decoding="async"
                         />
                       </div>
                       <div className="cap-text-details">
@@ -270,7 +406,7 @@ export default function ObraDetalhe({ user, perfil }) {
                         <div className="obra-cap-access">
                           {liberado && <span className="pill publico">Público</span>}
                           {!liberado && cap.antecipadoMembros && (
-                            <span className="pill premium">Premium antecipado</span>
+                            <span className="pill premium">Membership antecipada</span>
                           )}
                           {!liberado && !cap.antecipadoMembros && agendado && (
                             <span className="pill agendado">Agendado</span>

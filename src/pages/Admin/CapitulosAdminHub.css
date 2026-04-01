@@ -180,6 +180,22 @@
   color: #ababab;
 }
 
+.capitulos-admin-hub__workid-warn {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 180, 80, 0.35);
+  background: rgba(60, 40, 12, 0.45);
+  color: #e8c9a0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.capitulos-admin-hub__workid-warn code {
+  font-size: 0.78em;
+  color: #ffd89a;
+}
+
 @media (max-width: 900px) {
   .capitulos-admin-hub__head {
     flex-direction: column;

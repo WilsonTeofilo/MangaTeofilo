@@ -51,8 +51,9 @@ function buildSeo(pathname) {
   if (pathname === '/mangas' || pathname === '/works') {
     return {
       ...defs,
-      title: `Obras | ${SITE_NAME}`,
-      description: 'Explore o catálogo de mangás autorais, veja status, novidades e favorite por obra.',
+      title: `Lista de mangás | ${SITE_NAME}`,
+      description:
+        'Catálogo responsivo de mangás autorais: capas em grelha, atualizações, status e favoritos — celular, tablet e desktop.',
     };
   }
 
@@ -81,7 +82,8 @@ function buildSeo(pathname) {
       ...defs,
       type: 'article',
       title: `Leitor de Capítulos | ${SITE_NAME}`,
-      description: 'Acompanhe capítulos lançados e leitura premium no leitor oficial.',
+      description:
+        'Acompanhe capitulos lancados no leitor oficial, com acesso antecipado liberado pela membership do autor quando o lancamento permitir.',
     };
   }
 
@@ -89,7 +91,8 @@ function buildSeo(pathname) {
     return {
       ...defs,
       title: `Biblioteca de Capítulos | ${SITE_NAME}`,
-      description: 'Veja todos os capítulos disponíveis, datas e acesso premium antecipado.',
+      description:
+        'Veja capitulos disponiveis, datas de liberacao e acesso antecipado para membros do autor, quando aplicavel.',
     };
   }
 
@@ -167,4 +170,5 @@ export default function SeoManager() {
 
   return null;
 }
+
 

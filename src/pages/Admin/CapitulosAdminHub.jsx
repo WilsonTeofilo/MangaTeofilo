@@ -20,10 +20,13 @@ function toSortedObras(raw) {
   return list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
 }
 
-export default function CapitulosAdminHub({ adminAccess }) {
+export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const user = auth.currentUser;
   const isMangaka = Boolean(adminAccess?.isMangaka);
+  const editorPathBase = workspace === 'creator' ? '/creator/editor' : '/admin/manga';
+  const obrasPath = workspace === 'creator' ? '/creator/obras' : '/admin/obras';
+  const isCreatorWorkspace = workspace === 'creator';
   const [loading, setLoading] = useState(true);
   const [obras, setObras] = useState([]);
   const [allCapitulos, setAllCapitulos] = useState([]);
@@ -80,14 +83,25 @@ export default function CapitulosAdminHub({ adminAccess }) {
       .sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0));
   }, [capitulos, obraId]);
 
+  const capsSemWorkId = useMemo(
+    () => capitulosObra.filter((cap) => !String(cap.workId || '').trim()).length,
+    [capitulosObra]
+  );
+
   if (loading) return <div className="shito-app-splash" aria-hidden="true" />;
 
   return (
     <main className="capitulos-admin-hub">
       <header className="capitulos-admin-hub__head">
         <div>
-          <h1>{isMangaka ? 'Meus capítulos' : 'Capítulos'}</h1>
-          <p>Selecione a obra primeiro. Depois crie ou edite capítulos dela.</p>
+          <h1>{isMangaka ? 'Meus capítulos' : isCreatorWorkspace ? 'Fluxo de capítulos' : 'Capítulos'}</h1>
+          <p>
+            {isMangaka
+              ? 'Selecione uma obra sua e publique sem depender do admin.'
+              : isCreatorWorkspace
+                ? 'Acompanhe e edite capitulos no dominio creator, com supervisao quando permitido.'
+                : 'Selecione a obra primeiro. Depois crie ou edite capítulos dela.'}
+          </p>
         </div>
       </header>
 
@@ -107,14 +121,14 @@ export default function CapitulosAdminHub({ adminAccess }) {
             <button
               type="button"
               className="capitulos-admin-hub__new-chapter"
-              onClick={() => navigate(`/admin/manga?obra=${encodeURIComponent(obraId)}`)}
+              onClick={() => navigate(`${editorPathBase}?obra=${encodeURIComponent(obraId)}`)}
             >
               + Novo capítulo
             </button>
             <p className="capitulos-admin-hub__hint-create">
-              Não encontrou a obra?
-              <button type="button" className="capitulos-admin-hub__create-work" onClick={() => navigate('/admin/obras')}>
-                Criar nova obra
+              {isMangaka ? 'Ainda nao criou a obra base?' : 'Não encontrou a obra?'}
+              <button type="button" className="capitulos-admin-hub__create-work" onClick={() => navigate(obrasPath)}>
+                {isMangaka ? 'Criar minha obra' : 'Criar nova obra'}
               </button>
             </p>
           </div>
@@ -126,24 +140,32 @@ export default function CapitulosAdminHub({ adminAccess }) {
       </section>
 
       <section className="capitulos-admin-hub__list">
+        {capsSemWorkId > 0 ? (
+          <p className="capitulos-admin-hub__workid-warn" role="status">
+            {capsSemWorkId} capítulo(s) sem campo <code>workId</code> (legado). Use em Equipe → Backfill workId ou
+            re-salve o capítulo no editor para alinhar à fase multi-obra.
+          </p>
+        ) : null}
         <header>
-          <h2>Capítulos da obra</h2>
+          <h2>{isMangaka ? 'Linha editorial da obra' : 'Capítulos da obra'}</h2>
           <span>{capitulosObra.length} capítulos</span>
         </header>
         {!capitulosObra.length ? (
-          <p className="capitulos-admin-hub__empty">Nenhum capítulo ainda. Crie o primeiro.</p>
+          <p className="capitulos-admin-hub__empty">
+            {isMangaka ? 'Nenhum capitulo ainda. Publique o primeiro para tirar a obra do zero.' : 'Nenhum capítulo ainda. Crie o primeiro.'}
+          </p>
         ) : (
           <div className="capitulos-admin-hub__rows">
             {capitulosObra.map((cap) => (
               <article key={cap.id}>
                 <div>
                   <strong>#{cap.numero} — {cap.titulo || 'Sem título'}</strong>
-                  <span>{cap.publicReleaseAt ? 'Agendado' : 'Publicado'} · {cap.antecipadoMembros ? 'VIP antecipado' : 'VIP off'}</span>
+                  <span>{cap.publicReleaseAt ? 'Agendado' : 'Publicado'} · {cap.antecipadoMembros ? 'Membership antecipada' : 'Membership off'}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() =>
-                    navigate(`/admin/manga?obra=${encodeURIComponent(obraId)}&edit=${encodeURIComponent(cap.id)}`)
+                    navigate(`${editorPathBase}?obra=${encodeURIComponent(obraId)}&edit=${encodeURIComponent(cap.id)}`)
                   }
                 >
                   Editar
@@ -156,4 +178,5 @@ export default function CapitulosAdminHub({ adminAccess }) {
     </main>
   );
 }
+
 

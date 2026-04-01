@@ -1,6 +1,6 @@
 /**
- * RBAC Shito: super_admin (cachorões fixos) + admins com permissões em admins/registry.
- * Validação sempre no backend; claim JWT admin:true libera escrita RTDB nas rules.
+ * RBAC Shito: super_admin (cachoroes fixos) + admins com permissoes em admins/registry.
+ * Validacao sempre no backend; claims servem apenas para espelhar o papel no cliente.
  */
 
 import { HttpsError } from 'firebase-functions/v2/https';
@@ -21,7 +21,7 @@ export const SUPER_ADMIN_EMAILS = new Set([
   'drakenteofilo@gmail.com',
 ]);
 
-/** Chaves lógicas → campo em permissions no registry. */
+/** Chaves logicas -> campo em permissions no registry. */
 export const PERM = {
   capitulos: 'canAccessCapitulos',
   mangaLegacy: 'canAccessMangaLegacy',
@@ -30,6 +30,7 @@ export const PERM = {
   dashboard: 'canAccessDashboard',
   financeiro: 'canAccessFinanceiro',
   loja: 'canAccessLojaAdmin',
+  pedidos: 'canAccessPedidos',
   migrateUsers: 'canRunUserMigration',
   revokeSessions: 'canRevokeUserSessions',
 };
@@ -52,7 +53,7 @@ export function defaultPermissionsAllTrue() {
   return o;
 }
 
-/** Permissões do painel para mangaká (escopo de dados filtrado no front + RTDB). */
+/** Permissoes do painel para mangaka (escopo de dados filtrado no front + RTDB). */
 export function defaultMangakaPermissions() {
   const base = defaultPermissionsAllFalse();
   base[PERM.capitulos] = true;
@@ -115,15 +116,6 @@ export async function getAdminAuthContext(auth) {
       legacy: false,
       mangaka: false,
       permissions: normalizePermissionsForRegistry(row.permissions),
-    };
-  }
-  if (auth.token?.admin === true) {
-    return {
-      uid: auth.uid,
-      super: false,
-      legacy: true,
-      mangaka: false,
-      permissions: defaultPermissionsAllTrue(),
     };
   }
   return null;

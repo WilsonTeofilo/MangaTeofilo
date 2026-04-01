@@ -6,6 +6,23 @@ import { functions } from '../../services/firebase';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { formatarDataHoraSegBr } from '../../utils/datasBr';
 
+function escapeCsv(value) {
+  const s = String(value ?? '');
+  if (/[",\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const csv = [headers.join(';'), ...rows.map((row) => row.map(escapeCsv).join(';'))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function formatarPct1(n) {
   return `${Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
@@ -253,6 +270,42 @@ export default function FinanceiroAdmin() {
   const [promoActivityLog, setPromoActivityLog] = useState([]);
   const [metaPagamentosInput, setMetaPagamentosInput] = useState('');
   const [salvandoMeta, setSalvandoMeta] = useState(false);
+
+  const exportarHistoricoCampanhasCsv = () => {
+    downloadCsv(
+      'premium-campaign-history.csv',
+      ['promoId', 'name', 'status', 'priceBRL', 'startsAt', 'endsAt', 'sentEmails', 'clicks', 'checkouts', 'payments', 'revenue'],
+      promoHistory.map((camp) => {
+        const perf = camp?.performance || {};
+        return [
+          camp?.promoId || '',
+          camp?.name || '',
+          statusCampanhaDerivado(camp, nowMs),
+          Number(camp?.priceBRL || 0).toFixed(2),
+          formatarDataHoraSegBr(camp?.startsAt, { seVazio: '' }),
+          formatarDataHoraSegBr(camp?.endsAt, { seVazio: '' }),
+          Number(perf?.sentEmails || 0),
+          Number(perf?.clicks || 0),
+          Number(perf?.checkouts || 0),
+          Number(perf?.payments || 0),
+          Number(perf?.revenue || 0).toFixed(2),
+        ];
+      })
+    );
+  };
+
+  const exportarLogCampanhasCsv = () => {
+    downloadCsv(
+      'premium-campaign-activity-log.csv',
+      ['at', 'action', 'promoId', 'detail'],
+      promoActivityLog.map((entry) => [
+        formatarDataHoraSegBr(entry?.at, { seVazio: '' }),
+        entry?.action || '',
+        entry?.promoId || '',
+        textoLogPromocao(entry),
+      ])
+    );
+  };
 
   useEffect(() => {
     const temPromoComTempo = Boolean(promoAtual?.startsAt) && Boolean(promoAtual?.endsAt);
@@ -943,6 +996,22 @@ export default function FinanceiroAdmin() {
                 title="Sincroniza promo, histórico e métricas com o Firebase (outro dispositivo ou alteração manual)."
               >
                 Sincronizar dados
+              </button>
+              <button
+                type="button"
+                className="financeiro-btn-secondary-lg"
+                onClick={exportarHistoricoCampanhasCsv}
+                disabled={!promoHistory.length}
+              >
+                Exportar histórico CSV
+              </button>
+              <button
+                type="button"
+                className="financeiro-btn-secondary-lg"
+                onClick={exportarLogCampanhasCsv}
+                disabled={!promoActivityLog.length}
+              >
+                Exportar log CSV
               </button>
               {(promoAtivaAgora || promoAgendada) && (
                 <button

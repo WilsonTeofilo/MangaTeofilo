@@ -23,7 +23,7 @@
   border-radius: 24px;
   padding: 45px;
   width: 100%;
-  max-width: 500px; /* Reduzi levemente para ficar mais elegante */
+  max-width: 560px; /* Largura extra para checklist do criador */
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
   text-align: center;
   border-bottom: 4px solid var(--naraa-gold); /* Destaque na base */
@@ -43,6 +43,60 @@
   font-size: 0.85rem;
   margin-bottom: 35px;
   font-weight: 500;
+}
+
+.perfil-mangaka-apoio {
+  text-align: left;
+  margin: -12px 0 28px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(120, 200, 160, 0.35);
+  background: rgba(25, 55, 42, 0.45);
+}
+
+.perfil-mangaka-apoio-label {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: #9ec9b0;
+  line-height: 1.45;
+}
+
+.perfil-mangaka-apoio-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.perfil-mangaka-apoio-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--perfil-bg-input);
+  color: #e8f5ee;
+  font-size: 0.75rem;
+}
+
+.perfil-mangaka-apoio-copy {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 220, 180, 0.5);
+  background: rgba(50, 110, 80, 0.5);
+  color: #d4ffe8;
+  font-weight: 700;
+  cursor: pointer;
+  transition: var(--perfil-transition);
+}
+
+.perfil-mangaka-apoio-copy:hover {
+  background: rgba(60, 130, 95, 0.55);
+}
+
+.perfil-creator-application-half {
+  flex: 1 1 220px;
+  margin-bottom: 0;
 }
 
 /* PREVIEW DO AVATAR */
@@ -90,6 +144,12 @@
 
 .notify-group {
   margin-top: -8px;
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .notify-label {
@@ -361,6 +421,22 @@ select.perfil-input {
   color: #a8a8a8 !important;
 }
 
+.perfil-membership-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #d7d7d7;
+  display: grid;
+  gap: 8px;
+}
+
+.perfil-membership-list li {
+  line-height: 1.5;
+}
+
+.perfil-membership-list span {
+  color: #ffcc00;
+}
+
 @media (max-width: 500px) {
   .perfil-card { padding: 30px 20px; }
   .avatar-options-grid {
@@ -382,4 +458,198 @@ select.perfil-input {
     max-height: calc(100dvh - 80px);
     overflow-y: auto;
   }
+}
+
+/* Onboarding guiado (mangaká) */
+.perfil-mangaka-fields-anchor {
+  scroll-margin-top: 100px;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.perfil-onboarding {
+  text-align: left;
+  margin: -12px 0 28px;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 204, 0, 0.22);
+  background: linear-gradient(165deg, rgba(28, 24, 12, 0.95), rgba(14, 12, 8, 0.98));
+}
+
+.perfil-onboarding-head {
+  margin-bottom: 14px;
+}
+
+.perfil-onboarding-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--naraa-gold);
+}
+
+.perfil-onboarding-sub {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  color: #b0a890;
+  line-height: 1.45;
+}
+
+.perfil-onboarding-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.perfil-onboarding-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 204, 0, 0.55), rgba(255, 204, 0, 0.95));
+  transition: width 0.35s ease;
+}
+
+.perfil-onboarding-progress-label {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: #9a9a9a;
+}
+
+.perfil-onboarding-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.perfil-onboarding-step {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.perfil-onboarding-step.is-done {
+  border-color: rgba(120, 200, 140, 0.35);
+  background: rgba(20, 45, 32, 0.25);
+}
+
+.perfil-onboarding-step.is-optional:not(.is-done) {
+  opacity: 0.92;
+}
+
+.perfil-onboarding-step-status {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c9c9c9;
+}
+
+.perfil-onboarding-step.is-done .perfil-onboarding-step-status {
+  background: rgba(120, 200, 140, 0.35);
+  color: #d8ffe8;
+}
+
+.perfil-onboarding-step-body {
+  min-width: 0;
+}
+
+.perfil-onboarding-step-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.perfil-onboarding-step-title-row strong {
+  font-size: 0.84rem;
+  color: #f2f2f2;
+}
+
+.perfil-onboarding-optional-tag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #aaa;
+}
+
+.perfil-onboarding-step-hint {
+  margin: 0 0 8px;
+  font-size: 0.74rem;
+  color: #8a8a8a;
+  line-height: 1.4;
+}
+
+.perfil-onboarding-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.perfil-onboarding-btn {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 204, 0, 0.45);
+  background: rgba(255, 204, 0, 0.12);
+  color: #fff0bf;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: var(--perfil-transition);
+}
+
+.perfil-onboarding-btn:hover {
+  border-color: rgba(255, 204, 0, 0.65);
+  background: rgba(255, 204, 0, 0.2);
+}
+
+.perfil-onboarding-btn--ghost {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ccc;
+}
+
+.perfil-onboarding-btn--ghost:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.perfil-onboarding-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.perfil-onboarding-foot {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.perfil-onboarding-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }

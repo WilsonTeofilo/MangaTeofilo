@@ -7,6 +7,7 @@ import { auth, db, storage } from '../../services/firebase';
 import { PLATFORM_LEGACY_CREATOR_UID } from '../../constants';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, ensureLegacyShitoObra, obraCreatorId } from '../../config/obras';
+import { obraEstaArquivada } from '../../utils/obraCatalogo';
 import './ObrasAdmin.css';
 
 const STATUS_OPTIONS = [
@@ -257,13 +258,16 @@ function emptyForm() {
     seoKeywords: '',
     status: 'ongoing',
     isPublished: false,
+    archived: false,
   };
 }
 
-export default function ObrasAdmin({ adminAccess }) {
+export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const user = auth.currentUser;
   const isMangaka = Boolean(adminAccess?.isMangaka);
+  const chaptersPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
+  const isCreatorWorkspace = workspace === 'creator';
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [obras, setObras] = useState([]);
@@ -361,6 +365,7 @@ export default function ObrasAdmin({ adminAccess }) {
     bannerUrl: bannerLiveUrl,
     status: form.status || 'ongoing',
     isPublished: Boolean(form.isPublished),
+    archived: Boolean(form.archived),
   }), [form, capaLiveUrl, bannerLiveUrl]);
   const capaEditorImageStyle = useMemo(
     () => estiloEditorImagem(capaDimensoes, capaAjuste, COVER_EDITOR_CONFIG),
@@ -430,6 +435,7 @@ export default function ObrasAdmin({ adminAccess }) {
       seoKeywords: obra.seoKeywords || '',
       status: obra.status || 'ongoing',
       isPublished: obra.isPublished === true,
+      archived: obraEstaArquivada(obra),
     });
     setCapaArquivo(null);
     setBannerArquivo(null);
@@ -493,6 +499,7 @@ export default function ObrasAdmin({ adminAccess }) {
       seoKeywords: String(form.seoKeywords || '').trim(),
       status: form.status,
       isPublished: Boolean(form.isPublished),
+      archivedAt: form.archived ? Date.now() : null,
       capaAjuste: normalizarAjusteObra(capaAjuste),
       bannerAjuste: normalizarAjusteObra(bannerAjuste),
       updatedAt: nowMs(),
@@ -856,16 +863,18 @@ export default function ObrasAdmin({ adminAccess }) {
     <main className="obras-admin-page">
       <header className="obras-admin-head">
         <div>
-          <h1>{isMangaka ? 'Minhas obras' : 'Editor de Obras'}</h1>
+          <h1>{isMangaka ? 'Minhas obras' : isCreatorWorkspace ? 'Biblioteca de obras' : 'Editor de Obras'}</h1>
           <p>
             {isMangaka
-              ? 'CRUD apenas das suas obras (multi-tenant).'
-              : 'Gerencie dados, mídia, SEO e publicação com preview em tempo real.'}
+              ? 'Crie, edite e publique apenas as obras do seu proprio catalogo.'
+              : isCreatorWorkspace
+                ? 'Supervisione o catalogo de criadores sem sair do contexto de conteudo.'
+                : 'Gerencie dados, mídia, SEO e publicação com preview em tempo real.'}
           </p>
         </div>
         <div className="obras-admin-head-actions">
           <button type="button" className="btn-sec" onClick={iniciarNovo}>Nova obra</button>
-          <button type="button" className="btn-sec" onClick={() => navigate('/admin/capitulos')}>Ir para capítulos</button>
+          <button type="button" className="btn-sec" onClick={() => navigate(chaptersPath)}>Ir para capítulos</button>
         </div>
       </header>
 
@@ -879,8 +888,12 @@ export default function ObrasAdmin({ adminAccess }) {
         <div className="obras-admin-form">
           <section className="obra-block obra-editor-mode">
             <header className="obra-block-head">
-              <h2>Selecionar obra para edição</h2>
-              <p>Escolha uma obra existente para editar, ou inicie uma nova sem sobrescrever.</p>
+              <h2>{isMangaka ? 'Escolha uma obra para continuar' : 'Selecionar obra para edição'}</h2>
+              <p>
+                {isMangaka
+                  ? 'Abra uma obra existente para continuar o trabalho ou comece uma nova sem perder o que ja existe.'
+                  : 'Escolha uma obra existente para editar, ou inicie uma nova sem sobrescrever.'}
+              </p>
             </header>
             <div className="obra-editor-mode-row">
               <label>
@@ -904,14 +917,18 @@ export default function ObrasAdmin({ adminAccess }) {
               </div>
             </div>
             <p className={`obra-editor-mode-status ${editandoId ? 'is-editing' : 'is-creating'}`}>
-              {editandoId ? `Modo atual: editando "${form.titulo || editandoId}"` : 'Modo atual: criando nova obra'}
+              {editandoId
+                ? `Modo atual: editando "${form.titulo || editandoId}"`
+                : isMangaka
+                  ? 'Modo atual: preparando uma nova obra para seu catalogo'
+                  : 'Modo atual: criando nova obra'}
             </p>
           </section>
 
           <section className="obra-block">
             <header className="obra-block-head">
               <h2>Informações básicas</h2>
-              <p>Defina a identidade principal da obra.</p>
+              <p>{isMangaka ? 'Defina como sua obra vai aparecer para os leitores.' : 'Defina a identidade principal da obra.'}</p>
             </header>
             <div className="obra-grid">
               <label>
@@ -995,7 +1012,7 @@ export default function ObrasAdmin({ adminAccess }) {
           <section className="obra-block">
             <header className="obra-block-head">
               <h2>Mídia</h2>
-              <p>Faça upload da capa/banner e ajuste enquadramento antes de salvar.</p>
+              <p>{isMangaka ? 'Suba capa e banner com enquadramento pronto para sua pagina publica.' : 'Faça upload da capa/banner e ajuste enquadramento antes de salvar.'}</p>
             </header>
             <div className="obra-media-grid">
               <div className="obra-media-card">
@@ -1107,7 +1124,7 @@ export default function ObrasAdmin({ adminAccess }) {
               <aside className="obra-preview obra-preview--in-media">
                 <header className="obra-block-head">
                   <h2>Preview em tempo real</h2>
-                  <p>Simulação de exibição da obra no site.</p>
+                  <p>{isMangaka ? 'Veja como os leitores vao encontrar sua obra no site.' : 'Simulação de exibição da obra no site.'}</p>
                 </header>
                 <div
                   className="obra-preview-banner"
@@ -1173,7 +1190,7 @@ export default function ObrasAdmin({ adminAccess }) {
           <section className="obra-block">
             <header className="obra-block-head">
               <h2>Status e visibilidade</h2>
-              <p>Controle estágio editorial e publicação para o catálogo.</p>
+              <p>{isMangaka ? 'Controle quando sua obra fica pronta para aparecer no catalogo.' : 'Controle estágio editorial e publicação para o catálogo.'}</p>
             </header>
             <div className="obra-grid">
               <label>
@@ -1194,6 +1211,14 @@ export default function ObrasAdmin({ adminAccess }) {
                   onChange={(e) => setForm((p) => ({ ...p, isPublished: e.target.checked }))}
                 />
                 Publicada (visível para usuários)
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={Boolean(form.archived)}
+                  onChange={(e) => setForm((p) => ({ ...p, archived: e.target.checked }))}
+                />
+                Arquivada (fora do catálogo público; você e a equipe ainda veem no painel)
               </label>
             </div>
           </section>
@@ -1218,8 +1243,8 @@ export default function ObrasAdmin({ adminAccess }) {
 
       <section className="obras-admin-list">
         <header className="obra-block-head">
-          <h2>Obras cadastradas</h2>
-          <p>Edite, alterne visibilidade e acompanhe atualização por obra.</p>
+          <h2>{isMangaka ? 'Seu catalogo' : 'Obras cadastradas'}</h2>
+          <p>{isMangaka ? 'Edite, publique e acompanhe a evolucao de cada obra sua.' : 'Edite, alterne visibilidade e acompanhe atualização por obra.'}</p>
         </header>
         <div className="obra-list-grid">
           {obras.map((obra) => (
@@ -1231,6 +1256,7 @@ export default function ObrasAdmin({ adminAccess }) {
                 <span>
                   {STATUS_OPTIONS.find((s) => s.id === obra.status)?.label || 'Em lançamento'} ·{' '}
                   {obra.isPublished ? 'Publicado' : 'Oculto'}
+                  {obraEstaArquivada(obra) ? ' · Arquivada' : ''}
                 </span>
                 <span>Atualizado em {formatarDataHoraBr(obra.updatedAt, { seVazio: 'Sem data' })}</span>
               </div>

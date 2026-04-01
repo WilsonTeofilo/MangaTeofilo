@@ -23,6 +23,9 @@
         "obraId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
         },
+        "workId": {
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
+        },
         "obraTitulo": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 120)"
         },
@@ -79,6 +82,9 @@
         },
         "creatorId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
+        },
+        "archivedAt": {
+          ".validate": "!newData.exists() || newData.val() === null || newData.isNumber()"
         }
       }
     },
@@ -122,7 +128,13 @@
       },
       "produtos": {
         ".read": true,
-        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
+        ".write": false,
+        "$productId": {
+          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+          "creatorId": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
+          }
+        }
       },
       "carrinhos": {
         "$uid": {
@@ -176,7 +188,16 @@
         "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
         "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
         "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
-        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" }
+        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
+        "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "creatorOnboardingChecklistHidden": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "creatorOnboardingStoreSkipped": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "creatorMemberships": {
+          ".read": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
+          ".write": "false"
+        }
       }
     },
 
@@ -188,6 +209,13 @@
         "userName":    { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userAvatar":  { ".validate": "newData.isString() && newData.val().length > 0" },
         "accountType": { ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true) || newData.val() === root.child('usuarios').child($uid).child('accountType').val() || (auth.uid === $uid && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)))" },
+        "creatorDisplayName": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
+        "creatorBio": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)" },
+        "instagramUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "youtubeUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
         "updatedAt":   { ".validate": "newData.isNumber()" }
       }
     },

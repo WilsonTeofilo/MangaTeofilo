@@ -3,7 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
-import { onValueCreated } from 'firebase-functions/v2/database';
+import { onValueCreated, onValueWritten } from 'firebase-functions/v2/database';
 import {
   USUARIOS_DEPRECATED_KEYS,
   USUARIOS_PUBLICOS_DEPRECATED_KEYS,
@@ -40,6 +40,7 @@ import {
 } from './promoUtils.js';
 import {
   ADMIN_REGISTRY_PATH,
+  defaultPermissionsAllTrue,
   defaultMangakaPermissions,
   getAdminAuthContext,
   requireAdminAuth,
@@ -54,7 +55,9 @@ import {
   sanitizeCreatorId,
   recordCreatorPayment,
   recordCreatorAttributedPremium,
+  recordCreatorMembershipSubscription,
 } from './creatorDataLedger.js';
+import { buildUserEntitlements, buildUserEntitlementsPatch } from './userEntitlements.js';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
@@ -71,6 +74,7 @@ if (!getApps().length) {
 const PENDING_TTL_MS  = 40 * 60 * 1000;
 const INATIVO_TTL_MS  = 60 * 60 * 1000;
 const INACTIVE_TTL_MS = 8 * 30 * 24 * 60 * 60 * 1000;
+const CREATOR_MEMBERSHIP_D_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ── Params / Secrets ───────────────────────────────────────────────────────
 const APP_BASE_URL = defineString('APP_BASE_URL', {
@@ -163,23 +167,40 @@ async function enviarEmailPromocaoPremium(db, promo) {
 
   for (const [uid, profile] of Object.entries(users)) {
     const appStatus = profile?.status;
-    const optIn = profile?.notifyPromotions === true;
-    if (appStatus !== 'ativo' || !optIn) {
+    const prefs = notificationPrefsFromProfile(profile || {});
+    const canInApp = prefs.inAppEnabled && prefs.promotionsInApp;
+    const canEmail = prefs.emailEnabled && prefs.promotionsEmail;
+    if (appStatus !== 'ativo' || (!canInApp && !canEmail)) {
       skippedNoOptIn += 1;
       continue;
     }
     try {
-      const authUser = await getAuth().getUser(uid);
-      const to = authUser?.email;
-      if (!to || authUser.disabled) {
-        skippedOptInNoEmail += 1;
-        continue;
-      }
       const clickId = buildTrackingClickId('promo', uid);
       const trackedUrl = `${base}/apoie?src=promo_email&camp=${encodeURIComponent(
         String(promo?.promoId || '')
       )}&cid=${encodeURIComponent(clickId)}`;
-      await transporter.sendMail({
+      let to = '';
+      if (canEmail) {
+        const authUser = await getAuth().getUser(uid);
+        to = authUser?.email || '';
+        if (!to || authUser.disabled) {
+          skippedOptInNoEmail += 1;
+          if (!canInApp) continue;
+        }
+      }
+      if (canInApp) {
+        await pushUserNotification(db, uid, {
+          type: 'promotion',
+          title: promo?.name || 'Promocao Premium',
+          message: promo?.message || 'A promocao Premium esta ativa por tempo limitado.',
+          data: {
+            promoId: String(promo?.promoId || ''),
+            readPath: '/apoie',
+          },
+        });
+      }
+      if (canEmail) {
+        await transporter.sendMail({
         from,
         to,
         subject: `Shito — promocao Premium ativa por tempo limitado`,
@@ -195,15 +216,16 @@ async function enviarEmailPromocaoPremium(db, promo) {
             </a>
           </div>
         `,
-      });
-      await pushMarketingEvent(db, {
+        });
+        await pushMarketingEvent(db, {
         eventType: 'promo_email_sent',
         source: 'promo_email',
         campaignId: promo?.promoId || null,
         clickId,
         uid,
-      });
-      sent += 1;
+        });
+        sent += 1;
+      }
     } catch (err) {
       failed += 1;
       logger.error('Promo premium: erro ao enviar email', { uid, error: err?.message });
@@ -382,6 +404,97 @@ function buildPremiumExpiryWarningHtml(memberUntilMs) {
   `;
 }
 
+async function aplicarMembershipCriadorAprovada(
+  db,
+  uid,
+  creatorId,
+  paymentId,
+  paymentAmount,
+  paymentCurrency
+) {
+  const cid = sanitizeCreatorId(creatorId);
+  if (!uid || !cid) return { applied: false, duplicate: false };
+
+  const now = Date.now();
+  const creatorPublicSnap = await db.ref(`usuarios_publicos/${cid}`).get();
+  const creatorPublic = creatorPublicSnap.val() || {};
+  const creatorName = String(creatorPublic.creatorDisplayName || creatorPublic.userName || '').trim();
+  const membershipRef = db.ref(`usuarios/${uid}/creatorMemberships/${cid}`);
+  const membershipSnap = await membershipRef.get();
+  const atual = membershipSnap.val() || {};
+  const currentUntil = Number(atual.memberUntil || 0);
+  const newUntil = Math.max(now, currentUntil) + CREATOR_MEMBERSHIP_D_MS;
+  const membershipPatch = {
+    creatorId: cid,
+    creatorName: creatorName || atual.creatorName || null,
+    status: 'ativo',
+    memberUntil: newUntil,
+    isMember: true,
+    lastPaymentAt: now,
+    lastPaymentId: String(paymentId || ''),
+    lastPaymentAmount: Number.isFinite(Number(paymentAmount)) ? round2(paymentAmount) : null,
+    lastPaymentCurrency: String(paymentCurrency || 'BRL'),
+    updatedAt: now,
+  };
+  await membershipRef.update(membershipPatch);
+  await db.ref(`usuarios/${uid}/userEntitlements/creators/${cid}`).update({
+    isMember: true,
+    status: 'ativo',
+    memberUntil: newUntil,
+    creatorName: creatorName || atual.creatorName || null,
+    lastPaymentAt: now,
+    lastPaymentId: String(paymentId || ''),
+    lastPaymentAmount: Number.isFinite(Number(paymentAmount)) ? round2(paymentAmount) : null,
+    lastPaymentCurrency: String(paymentCurrency || 'BRL'),
+    updatedAt: now,
+  });
+  await db.ref(`usuarios/${uid}/userEntitlements/updatedAt`).set(now);
+
+  await recordCreatorMembershipSubscription(db, {
+    creatorId: cid,
+    subscriberUid: uid,
+    paymentId,
+    amount: paymentAmount,
+    memberUntil: newUntil,
+  });
+
+  await recordCreatorPayment(db, {
+    creatorId: cid,
+    amount: paymentAmount,
+    currency: paymentCurrency,
+    type: 'creator_membership',
+    buyerUid: uid,
+    paymentId,
+    extra: { durationDays: 30 },
+  });
+
+  return { applied: true, newUntil };
+}
+
+async function reverterMembershipCriadorSeNecessario(db, uid, creatorId, paymentId, status) {
+  const cid = sanitizeCreatorId(creatorId);
+  if (!uid || !cid || !paymentId) return;
+  const membershipRef = db.ref(`usuarios/${uid}/creatorMemberships/${cid}`);
+  const snap = await membershipRef.get();
+  if (!snap.exists()) return;
+  const row = snap.val() || {};
+  if (String(row.lastPaymentId || '') !== String(paymentId)) return;
+  await membershipRef.update({
+    status: 'cancelado',
+    memberUntil: Date.now(),
+    isMember: false,
+    refundStatus: String(status || 'refunded'),
+    updatedAt: Date.now(),
+  });
+  await db.ref(`usuarios/${uid}/userEntitlements/creators/${cid}`).update({
+    isMember: false,
+    status: 'cancelado',
+    memberUntil: Date.now(),
+    updatedAt: Date.now(),
+  });
+  await db.ref(`usuarios/${uid}/userEntitlements/updatedAt`).set(Date.now());
+}
+
 /** Extrai ID de pagamento de notificação Mercado Pago (POST JSON ou GET IPN). */
 function extractMercadoPagoPaymentId(req) {
   if (req.method === 'GET') {
@@ -420,7 +533,80 @@ async function fetchMercadoPagoPayment(accessToken, paymentId) {
   return data;
 }
 
+function isRefundLikeStatus(status) {
+  return REFUND_PAYMENT_STATUSES.has(String(status || '').toLowerCase());
+}
+
+async function appendUniqueFinanceEvent(db, key, payload) {
+  const safeKey = String(key || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 160);
+  if (!safeKey) return false;
+  const lockRef = db.ref(`financas/event_locks/${safeKey}`);
+  const trx = await lockRef.transaction((curr) => (curr ? undefined : { at: Date.now() }));
+  if (!trx.committed) return false;
+  await db.ref('financas/eventos').push(payload);
+  return true;
+}
+
+async function markProcessedPaymentStatus(db, paymentId, status) {
+  const pid = String(paymentId || '').trim();
+  if (!pid) return;
+  try {
+    await db.ref(`financas/mp_processed/${pid}/lastStatus`).set(String(status || 'unknown'));
+    await db.ref(`financas/mp_processed/${pid}/lastStatusAt`).set(Date.now());
+  } catch (err) {
+    logger.warn('MP: falha ao atualizar lastStatus', { paymentId: pid, error: err?.message });
+  }
+}
+
+async function recordCreatorRefundAdjustment(db, entries) {
+  const rows = Array.isArray(entries) ? entries : [];
+  for (const row of rows) {
+    const amount = round2(Math.abs(Number(row?.amount || 0)));
+    if (!amount) continue;
+    await recordCreatorPayment(db, {
+      creatorId: row?.creatorId,
+      amount: -amount,
+      currency: row?.currency || 'BRL',
+      type: row?.type || 'refund_adjustment',
+      buyerUid: row?.buyerUid || null,
+      paymentId: row?.paymentId || '',
+      orderId: row?.orderId || null,
+      status: row?.status || 'refunded',
+      entryKey: row?.entryKey || '',
+      extra: {
+        adjustment: 'debit',
+        note: 'Ajuste financeiro por reembolso/chargeback/cancelamento confirmado no Mercado Pago.',
+        ...(row?.extra && typeof row.extra === 'object' ? row.extra : {}),
+      },
+    });
+  }
+}
+
 const AVATAR_FALLBACK_FUNCTIONS = '/assets/avatares/ava1.webp';
+const PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS = Array.from(SUPER_ADMIN_UIDS)[0] || null;
+const REFUND_PAYMENT_STATUSES = new Set([
+  'refunded',
+  'charged_back',
+  'cancelled',
+  'rejected',
+]);
+
+function appendNestedPatch(target, basePath, value) {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, nested] of Object.entries(value)) {
+    const nextPath = `${basePath}/${key}`;
+    if (
+      nested &&
+      typeof nested === 'object' &&
+      !Array.isArray(nested) &&
+      !(nested instanceof Date)
+    ) {
+      appendNestedPatch(target, nextPath, nested);
+    } else {
+      target[nextPath] = nested;
+    }
+  }
+}
 
 /**
  * Ativa/renova 30 dias de Premium após pagamento aprovado (idempotente por paymentId).
@@ -476,6 +662,10 @@ async function aplicarPremiumAprovado(
   patch[`usuarios/${uid}/lastPaymentAt`] = now;
   patch[`usuarios/${uid}/currentPlanId`] = PREMIUM_PLAN_ID;
   patch[`usuarios/${uid}/premium5dNotifiedForUntil`] = null;
+  patch[`usuarios/${uid}/userEntitlements/global/isPremium`] = true;
+  patch[`usuarios/${uid}/userEntitlements/global/status`] = 'ativo';
+  patch[`usuarios/${uid}/userEntitlements/global/memberUntil`] = newUntil;
+  patch[`usuarios/${uid}/userEntitlements/updatedAt`] = now;
   patch[`usuarios_publicos/${uid}/uid`] = uid;
   patch[`usuarios_publicos/${uid}/userName`] = userNamePub;
   patch[`usuarios_publicos/${uid}/userAvatar`] = avatarPub;
@@ -554,16 +744,46 @@ async function aplicarPremiumAprovado(
 async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
   const pay = await fetchMercadoPagoPayment(accessToken, paymentId);
   const status = String(pay?.status || '');
-  if (status !== 'approved') {
+  const db = getDatabase();
+  await markProcessedPaymentStatus(db, paymentId, status);
+  const premiumUid = parsePremiumExternalRef(pay.external_reference);
+  const metadata = pay.metadata && typeof pay.metadata === 'object' ? pay.metadata : {};
+
+  if (status !== 'approved' && !isRefundLikeStatus(status)) {
     logger.info('MP: pagamento nao aprovado', { paymentId, status });
     return;
   }
 
-  const db = getDatabase();
-  const premiumUid = parsePremiumExternalRef(pay.external_reference);
   if (premiumUid) {
     const amount = Number(pay.transaction_amount);
-    const metadata = pay.metadata && typeof pay.metadata === 'object' ? pay.metadata : {};
+    if (isRefundLikeStatus(status)) {
+      const attrCid = metadata.attributionCreatorId ? String(metadata.attributionCreatorId).trim() : null;
+      const wrote = await appendUniqueFinanceEvent(db, `premium_refund_${paymentId}_${status}`, {
+        tipo: 'premium_estornado',
+        uid: premiumUid,
+        paymentId: String(paymentId),
+        amount: Number.isFinite(amount) ? amount : null,
+        currency: String(pay.currency_id || 'BRL'),
+        origem: PREMIUM_PLAN_ID,
+        status,
+        at: Date.now(),
+      });
+      if (wrote && attrCid) {
+        await recordCreatorRefundAdjustment(db, [{
+          creatorId: attrCid,
+          amount,
+          currency: String(pay.currency_id || 'BRL'),
+          type: 'premium_refund_adjustment',
+          buyerUid: premiumUid,
+          paymentId,
+          status,
+          entryKey: `premium_refund_adjustment_${paymentId}_${status}`,
+          extra: { planId: PREMIUM_PLAN_ID },
+        }]);
+      }
+      logger.info('Premium: pagamento revertido/negado', { paymentId, status, uid: premiumUid });
+      return;
+    }
     const expectedAmount = validPromoPrice(metadata.expectedAmount) || PREMIUM_PRICE_BRL;
     if (!Number.isFinite(amount) || Math.abs(amount - expectedAmount) > 0.02) {
       logger.error('MP: valor inesperado para premium', { paymentId, amount, uid: premiumUid });
@@ -597,6 +817,54 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     }
     const orderPre = orderSnapPre.val() || {};
     const amount = Number(pay.transaction_amount);
+    if (isRefundLikeStatus(status)) {
+      const orderItemsRefund = Array.isArray(orderPre.items) ? orderPre.items : [];
+      await db.ref(`loja/pedidos/${storeRef.orderId}`).update({
+        paymentStatus: status,
+        refundStatus: status,
+        refundedAt: Date.now(),
+        updatedAt: Date.now(),
+        status: orderPre.status === 'delivered' ? orderPre.status : 'cancelled',
+      });
+      const wrote = await appendUniqueFinanceEvent(db, `store_refund_${paymentId}_${status}`, {
+        tipo: 'loja_pedido_estornado',
+        uid: storeRef.uid,
+        orderId: storeRef.orderId,
+        paymentId: String(paymentId),
+        amount: Number.isFinite(amount) ? amount : Number(orderPre.total || 0),
+        currency: String(pay?.currency_id || 'BRL'),
+        origem: 'loja_fisica',
+        status,
+        at: Date.now(),
+      });
+      if (wrote) {
+        const byCreatorRefund = new Map();
+        for (const item of orderItemsRefund) {
+          const cid = sanitizeCreatorId(item?.creatorId);
+          if (!cid) continue;
+          const lt = round2(item?.lineTotal);
+          if (!lt) continue;
+          byCreatorRefund.set(cid, (byCreatorRefund.get(cid) || 0) + lt);
+        }
+        await recordCreatorRefundAdjustment(
+          db,
+          [...byCreatorRefund.entries()].map(([cid, amt]) => ({
+            creatorId: cid,
+            amount: amt,
+            currency: String(pay?.currency_id || 'BRL'),
+            type: 'loja_refund_adjustment',
+            buyerUid: storeRef.uid,
+            paymentId,
+            orderId: storeRef.orderId,
+            status,
+            entryKey: `loja_refund_adjustment_${paymentId}_${cid}`,
+            extra: { source: 'checkout_store' },
+          }))
+        );
+      }
+      logger.info('Loja: pagamento revertido/negado', { paymentId, status, orderId: storeRef.orderId });
+      return;
+    }
     const expected = Number(orderPre.total || 0);
     if (!Number.isFinite(amount) || !Number.isFinite(expected) || Math.abs(amount - expected) > 0.05) {
       logger.error('Loja: valor MP divergente do pedido', {
@@ -708,7 +976,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     return;
   }
 
-  const metadata = pay.metadata && typeof pay.metadata === 'object' ? pay.metadata : {};
   const metadataUidRaw = metadata.uid;
   const metadataUid =
     metadataUidRaw == null ? '' : String(metadataUidRaw).trim();
@@ -718,6 +985,42 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       paymentId,
       ref: pay.external_reference,
     });
+    return;
+  }
+
+  const amount = Number(pay.transaction_amount);
+  const currency = String(pay.currency_id || 'BRL');
+  const apoioAttr = sanitizeCreatorId(metadata.attributionCreatorId);
+  const creatorMembershipMode = metadata.creatorMembership === true || String(metadata.tipo || '') === 'creator_membership';
+  if (isRefundLikeStatus(status)) {
+    const origemRefund = String(metadata.planId || metadata.tipo || 'doacao_livre');
+    const wrote = await appendUniqueFinanceEvent(db, `apoio_refund_${paymentId}_${status}`, {
+      tipo: 'apoio_estornado',
+      uid: apoioUid,
+      paymentId: String(paymentId),
+      amount: Number.isFinite(amount) ? amount : null,
+      currency,
+      origem: origemRefund,
+      status,
+      at: Date.now(),
+    });
+    if (wrote && apoioAttr && Number.isFinite(amount) && amount > 0) {
+      await recordCreatorRefundAdjustment(db, [{
+        creatorId: apoioAttr,
+        amount,
+        currency,
+        type: creatorMembershipMode ? 'creator_membership_refund_adjustment' : 'apoio_refund_adjustment',
+        buyerUid: apoioUid,
+        paymentId,
+        status,
+        entryKey: `${creatorMembershipMode ? 'creator_membership' : 'apoio'}_refund_adjustment_${paymentId}_${status}`,
+        extra: { origem: origemRefund },
+      }]);
+    }
+    if (creatorMembershipMode && apoioAttr) {
+      await reverterMembershipCriadorSeNecessario(db, apoioUid, apoioAttr, paymentId, status);
+    }
+    logger.info('Apoio: pagamento revertido/negado', { paymentId, status, uid: apoioUid });
     return;
   }
 
@@ -736,8 +1039,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
   }
 
   const now = Date.now();
-  const amount = Number(pay.transaction_amount);
-  const currency = String(pay.currency_id || 'BRL');
   const description = String(pay.description || '').toLowerCase();
   let origem = 'doacao_livre';
   if (String(metadata.planId || '').trim()) {
@@ -759,7 +1060,7 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
   });
 
   await db.ref('financas/eventos').push({
-    tipo: 'apoio_aprovado',
+    tipo: creatorMembershipMode ? 'creator_membership_aprovada' : 'apoio_aprovado',
     uid: apoioUid,
     paymentId: String(paymentId),
     amount: Number.isFinite(amount) ? amount : null,
@@ -768,20 +1069,37 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     at: now,
   });
 
-  const apoioAttr = sanitizeCreatorId(metadata.attributionCreatorId);
   if (apoioAttr && Number.isFinite(amount) && amount > 0) {
-    await recordCreatorPayment(db, {
-      creatorId: apoioAttr,
-      amount,
-      currency,
-      type: 'apoio',
-      buyerUid: apoioUid,
-      paymentId,
-      extra: { origem },
-    });
+    if (creatorMembershipMode) {
+      await aplicarMembershipCriadorAprovada(
+        db,
+        apoioUid,
+        apoioAttr,
+        paymentId,
+        amount,
+        currency
+      );
+    } else {
+      await recordCreatorPayment(db, {
+        creatorId: apoioAttr,
+        amount,
+        currency,
+        type: 'apoio',
+        buyerUid: apoioUid,
+        paymentId,
+        extra: { origem },
+      });
+    }
   }
 
-  logger.info('Apoio registrado', { uid: apoioUid, paymentId, amount, origem });
+  logger.info('Apoio registrado', {
+    uid: apoioUid,
+    paymentId,
+    amount,
+    origem,
+    creatorMembershipMode,
+    creatorId: apoioAttr || null,
+  });
 }
 
 // ── CLEANUP AGENDADO ───────────────────────────────────────────────────────
@@ -975,106 +1293,222 @@ export const verifyLoginCode = onRequest(
 );
 
 // ── NOTIFY NEW CHAPTER ─────────────────────────────────────────────────────
-export const notifyNewChapter = onValueCreated(
+function chapterPublicReleaseAt(chapter) {
+  const releaseAt = Number(chapter?.publicReleaseAt || 0);
+  return Number.isFinite(releaseAt) && releaseAt > 0 ? releaseAt : 0;
+}
+
+function chapterIsPubliclyReleased(chapter, now = Date.now()) {
+  if (!chapter || typeof chapter !== 'object') return false;
+  const releaseAt = chapterPublicReleaseAt(chapter);
+  return releaseAt <= 0 || releaseAt <= now;
+}
+
+async function notifyChapterReleaseAudience(db, capId, capitulo) {
+  if (!capId || !capitulo || typeof capitulo !== 'object') return;
+  const obraId = String(capitulo?.obraId || 'shito').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'shito';
+  const obraNome = String(capitulo?.obraTitulo || capitulo?.obraName || 'Shito');
+  const titulo = capitulo?.titulo || `Capitulo ${capitulo?.numero || ''}`.trim();
+  const chapterCampaignId = `chapter_${obraId}_${capId}`;
+  const chapterCreatorId = sanitizeCreatorId(capitulo?.creatorId) || PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS;
+  const usuariosSnap = await db.ref('usuarios').get();
+
+  if (!usuariosSnap.exists()) {
+    logger.info('Sem usuarios para notificar.', { capId });
+    return;
+  }
+
+  const usuarios = usuariosSnap.val() || {};
+  const candidatos = Object.entries(usuarios)
+    .filter(([, p]) => p?.status === 'ativo')
+    .map(([uid, profile]) => ({ uid, profile: profile || {} }));
+
+  if (candidatos.length === 0) {
+    logger.info('Nenhum usuario elegivel para capitulo.', { capId });
+    return;
+  }
+
+  let enviados = 0;
+  let ignorados = 0;
+  let falhas = 0;
+
+  for (const candidate of candidatos) {
+    const uid = candidate.uid;
+    const profile = candidate.profile || {};
+    try {
+      const creatorSub =
+        profile?.followingCreators?.[chapterCreatorId] ||
+        profile?.notificationSubscriptions?.creators?.[chapterCreatorId] ||
+        null;
+      const workSub =
+        profile?.subscribedWorks?.[obraId] ||
+        profile?.notificationSubscriptions?.works?.[obraId] ||
+        null;
+      if (!creatorSub && !workSub) {
+        ignorados += 1;
+        continue;
+      }
+      await notifyUserByPreference(db, uid, profile || {}, {
+        kind: 'chapter',
+        notification: {
+          type: 'chapter_release',
+          title: `Novo capitulo em ${obraNome}`,
+          message: `${titulo} acabou de entrar no ar.`,
+          creatorId: chapterCreatorId,
+          workId: obraId,
+          chapterId: String(capId),
+          targetPath: `/ler/${encodeURIComponent(String(capId))}`,
+          groupKey: `chapter_release:${chapterCreatorId || 'none'}:${obraId}`,
+          dedupeKey: `chapter_release:${obraId}:${capId}`,
+          aggregateWindowMs: 12 * 60 * 60 * 1000,
+          data: {
+            chapterId: String(capId),
+            workId: obraId,
+            creatorId: chapterCreatorId,
+            workTitle: obraNome,
+            campaignId: chapterCampaignId,
+            readPath: `/ler/${encodeURIComponent(String(capId))}`,
+            creatorPath: `/criador/${encodeURIComponent(chapterCreatorId)}`,
+          },
+        },
+      });
+      enviados += 1;
+    } catch (err) {
+      falhas += 1;
+      logger.error('Falha ao notificar usuario.', { capId, uid, error: err?.message });
+    }
+  }
+
+  await db.ref(`capitulos/${capId}/releaseNotificationSentAt`).set(Date.now());
+  logger.info('Notificacao de capitulo concluida.', {
+    capId,
+    candidatos: candidatos.length,
+    enviados,
+    ignorados,
+    falhas,
+  });
+}
+
+export const notifyNewChapter = onValueWritten(
   {
-    ref:            '/capitulos/{capId}',
-    region:         'us-central1',
-    memory:         '256MiB',
+    ref: '/capitulos/{capId}',
+    region: 'us-central1',
+    memory: '256MiB',
     timeoutSeconds: 120,
-    secrets:        [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM],
+    secrets: [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM],
   },
   async (event) => {
-    const capId    = event.params.capId;
-    const capitulo = event.data?.val() || {};
-    const obraId   = String(capitulo?.obraId || 'shito').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'shito';
-    const obraNome = String(capitulo?.obraTitulo || capitulo?.obraName || 'Shito');
-    const titulo   = capitulo?.titulo || `Capitulo ${capitulo?.numero || ''}`.trim();
-    const baseRoot = APP_BASE_URL.value().replace(/\/$/, '');
-    const chapterCampaignId = `chapter_${obraId}_${capId}`;
+    const capId = String(event.params.capId || '').trim();
+    const before = event.data?.before?.exists() ? event.data.before.val() || {} : null;
+    const after = event.data?.after?.exists() ? event.data.after.val() || {} : null;
+    if (!capId || !after) return;
+    if (Number(after?.releaseNotificationSentAt || 0) > 0) return;
+    const now = Date.now();
+    const becamePublic =
+      chapterIsPubliclyReleased(after, now) && !chapterIsPubliclyReleased(before, now);
+    const createdAlreadyPublic = !before && chapterIsPubliclyReleased(after, now);
+    if (!becamePublic && !createdAlreadyPublic) return;
+    await notifyChapterReleaseAudience(getDatabase(), capId, after);
+  }
+);
 
-    const db           = getDatabase();
-    const usuariosSnap = await db.ref('usuarios').get();
+export const notifyScheduledChapterReleases = onSchedule(
+  {
+    schedule: 'every 10 minutes',
+    timeZone: 'America/Sao_Paulo',
+    memory: '256MiB',
+    timeoutSeconds: 120,
+  },
+  async () => {
+    const db = getDatabase();
+    const snapshot = await db.ref('capitulos').get();
+    if (!snapshot.exists()) return;
+    const now = Date.now();
+    const chapters = snapshot.val() || {};
+    let processed = 0;
+    for (const [capId, chapter] of Object.entries(chapters)) {
+      if (!chapterIsPubliclyReleased(chapter, now)) continue;
+      if (Number(chapter?.releaseNotificationSentAt || 0) > 0) continue;
+      await notifyChapterReleaseAudience(db, capId, chapter || {});
+      processed += 1;
+    }
+    logger.info('Varredura de capitulos agendados concluida.', { processed });
+  }
+);
 
-    if (!usuariosSnap.exists()) {
-      logger.info('Sem usuarios para notificar.', { capId });
+export const notifyNewWorkPublished = onValueWritten(
+  {
+    ref: '/obras/{obraId}',
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 120,
+  },
+  async (event) => {
+    const obraId = String(event.params.obraId || '').trim().toLowerCase();
+    const before = event.data?.before?.exists() ? event.data.before.val() || {} : null;
+    const obra = event.data?.after?.exists() ? event.data.after.val() || {} : null;
+    if (!obraId || !obra || obra?.isPublished !== true) {
       return;
     }
-
-    const usuarios   = usuariosSnap.val() || {};
-    const candidatos = Object.entries(usuarios)
-      .filter(([, p]) => p?.notifyNewChapter === true && p?.status === 'ativo')
-      .map(([uid]) => uid);
-
-    if (candidatos.length === 0) {
-      logger.info('Nenhum usuario opt-in.', { capId });
+    if (before?.isPublished === true || Number(obra?.publishNotificationSentAt || 0) > 0) {
       return;
     }
-
-    const transporter = getTransporter();
-    const from        = getSmtpFrom();
-    let enviados = 0, ignorados = 0, falhas = 0;
-
-    for (const uid of candidatos) {
+    const creatorId = sanitizeCreatorId(obra?.creatorId || obra?.userId || obra?.authorId);
+    if (!creatorId) {
+      logger.info('Obra criada sem creatorId valido para notificacao.', { obraId });
+      return;
+    }
+    const db = getDatabase();
+    const title = String(obra?.titulo || obra?.title || 'Nova obra').trim() || 'Nova obra';
+    const slug = String(obra?.slug || obraId).trim() || obraId;
+    const usersSnap = await db.ref('usuarios').get();
+    if (!usersSnap.exists()) return;
+    const usuarios = usersSnap.val() || {};
+    let enviados = 0;
+    let ignorados = 0;
+    let falhas = 0;
+    for (const [uid, profile] of Object.entries(usuarios)) {
+      if (profile?.status !== 'ativo') {
+        ignorados += 1;
+        continue;
+      }
+      const isFollowing = Boolean(
+        profile?.followingCreators?.[creatorId] || profile?.notificationSubscriptions?.creators?.[creatorId]
+      );
+      if (!isFollowing) {
+        ignorados += 1;
+        continue;
+      }
       try {
-        const authUser  = await getAuth().getUser(uid);
-        const userEmail = authUser?.email;
-
-        if (!userEmail || !authUser.emailVerified || authUser.disabled) {
-          ignorados += 1;
-          continue;
-        }
-        const clickId = buildTrackingClickId('chapter', uid);
-        const qs = new URLSearchParams({
-          src: 'chapter_email',
-          camp: chapterCampaignId,
-          cid: clickId,
-          capId: String(capId),
-        });
-        const trackedUrl = `${baseRoot}/apoie?${qs.toString()}`;
-        const lerUrl = `${baseRoot}/ler/${encodeURIComponent(String(capId))}?${qs.toString()}`;
-
-        await transporter.sendMail({
-          from,
-          to:      userEmail,
-          subject: `Novo capitulo em ${obraNome}: ${titulo}`,
-          text:    `Novo capitulo lancado!\n\nTitulo: ${titulo}\n\nApoiar a obra (checkout): ${trackedUrl}\n\nLer o capitulo: ${lerUrl}\n\nPara parar, desative em Perfil > Notificacoes.`,
-          html:    `
-            <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#fff;padding:32px;border-radius:8px;">
-              <h2 style="color:#ffcc00;margin:0 0 16px;">Novo capitulo em ${obraNome}</h2>
-              <p style="color:#ccc;margin:0 0 24px;"><strong style="color:#fff">${titulo}</strong></p>
-              <a href="${trackedUrl}" style="background:#ffcc00;color:#000;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">
-                Apoiar a obra
-              </a>
-              <p style="margin:20px 0 0;font-size:13px;color:#aaa;">
-                <a href="${lerUrl}" style="color:#ffcc00;">Ler o capitulo agora</a>
-              </p>
-              <p style="font-size:11px;color:#444;margin-top:32px;">Para parar de receber, desative em Perfil &gt; Notificacoes.</p>
-            </div>
-          `,
-        });
-        await pushMarketingEvent(db, {
-          eventType: 'chapter_email_sent',
-          source: 'chapter_email',
-          campaignId: chapterCampaignId,
-          chapterId: capId,
-          clickId,
-          uid,
+        await notifyUserByPreference(db, uid, profile || {}, {
+          kind: 'system',
+          notification: {
+            type: 'new_work',
+            title: 'Nova obra publicada',
+            message: `${title} acabou de entrar no catalogo.`,
+            creatorId,
+            workId: obraId,
+            targetPath: `/work/${encodeURIComponent(slug)}`,
+            groupKey: `new_work:${creatorId}`,
+            dedupeKey: `new_work:${obraId}`,
+            aggregateWindowMs: 12 * 60 * 60 * 1000,
+            data: {
+              creatorId,
+              workId: obraId,
+              workTitle: title,
+              readPath: `/work/${encodeURIComponent(slug)}`,
+              creatorPath: `/criador/${encodeURIComponent(creatorId)}`,
+            },
+          },
         });
         enviados += 1;
-
-      } catch (err) {
+      } catch (error) {
         falhas += 1;
-        logger.error('Falha ao notificar usuario.', { capId, uid, error: err?.message });
+        logger.error('Falha ao notificar nova obra.', { obraId, uid, error: error?.message });
       }
     }
-
-    logger.info('Notificacao concluida.', {
-      capId,
-      candidatos: candidatos.length,
-      enviados,
-      ignorados,
-      falhas,
-    });
+    await db.ref(`obras/${obraId}/publishNotificationSentAt`).set(Date.now());
+    logger.info('Notificacao de nova obra concluida.', { obraId, enviados, ignorados, falhas });
   }
 );
 
@@ -1190,6 +1624,9 @@ export const criarCheckoutApoio = onCall(
     const payload =
       request.data && typeof request.data === 'object' ? request.data : {};
     const attributionCreatorId = sanitizeCreatorId(payload.attributionCreatorId);
+    const creatorMembership = payload.creatorMembership === true;
+    const creatorMembershipCreatorId =
+      sanitizeCreatorId(payload.creatorMembershipCreatorId) || attributionCreatorId;
     const planRaw = payload.planId;
     const customTry = tryParseApoioCustomAmount(payload.customAmount);
     const planNorm = normalizeApoioPlanId(planRaw);
@@ -1202,10 +1639,36 @@ export const criarCheckoutApoio = onCall(
       customAmount: payload.customAmount,
       hasValidPlan,
       hasValidCustom,
+      creatorMembership,
     });
+
+    let creatorMembershipPrice = null;
+    if (creatorMembership) {
+      if (!creatorMembershipCreatorId) {
+        throw new HttpsError('invalid-argument', 'Membership do criador exige um creatorId valido.');
+      }
+      if (creatorMembershipCreatorId === request.auth.uid) {
+        throw new HttpsError('failed-precondition', 'Voce nao pode assinar a propria membership de criador.');
+      }
+      const creatorPublic = await getMonetizableCreatorPublicProfile(getDatabase(), creatorMembershipCreatorId, {
+        requireMembershipEnabled: true,
+      });
+      const creatorName = String(creatorPublic.creatorDisplayName || creatorPublic.userName || '').trim();
+      if (!creatorName) {
+        throw new HttpsError('failed-precondition', 'Este criador ainda nao concluiu a identidade publica minima.');
+      }
+      creatorMembershipPrice = Number(creatorPublic.creatorMembershipPriceBRL);
+      if (!Number.isFinite(creatorMembershipPrice) || creatorMembershipPrice < 1 || creatorMembershipPrice > APOIO_CUSTOM_MAX) {
+        throw new HttpsError('failed-precondition', 'Este criador ainda nao configurou um valor valido de membership.');
+      }
+    }
 
     if (hasValidPlan && hasValidCustom) {
       throw new HttpsError('invalid-argument', 'Use planId OU customAmount, nao os dois.');
+    }
+
+    if (creatorMembership && (hasValidPlan || hasValidCustom)) {
+      throw new HttpsError('invalid-argument', 'Membership do criador usa o valor configurado pelo criador e nao aceita planId/customAmount.');
     }
 
     if (!hasValidCustom && !hasValidPlan) {
@@ -1237,6 +1700,10 @@ export const criarCheckoutApoio = onCall(
       );
     }
 
+    if (!creatorMembership && attributionCreatorId) {
+      await getMonetizableCreatorPublicProfile(getDatabase(), attributionCreatorId);
+    }
+
     let token;
     try {
       token = MP_ACCESS_TOKEN.value();
@@ -1256,7 +1723,23 @@ export const criarCheckoutApoio = onCall(
 
     try {
       let url;
-      if (hasValidCustom) {
+      if (creatorMembership) {
+        url = await criarPreferenciaApoioValorLivre(
+          token,
+          creatorMembershipPrice,
+          APP_BASE_URL.value(),
+          request.auth.uid,
+          notificationUrl,
+          creatorMembershipCreatorId,
+          {
+            metadata: {
+              tipo: 'creator_membership',
+              creatorMembership: true,
+            },
+            backUrlQuery: `tipo=creator_membership&creatorId=${encodeURIComponent(creatorMembershipCreatorId)}`,
+          }
+        );
+      } else if (hasValidCustom) {
         url = await criarPreferenciaApoioValorLivre(
           token,
           customTry.value,
@@ -1344,10 +1827,7 @@ export const criarCheckoutLoja = onCall(
     const fixedShippingBrl = round2(Math.max(0, Number(config.fixedShippingBrl || 0)));
 
     const profile = userSnap.exists() ? userSnap.val() || {} : {};
-    const now = Date.now();
-    const vip =
-      profile?.accountType === 'premium' ||
-      (Number(profile?.memberUntil || 0) > now && profile?.membershipStatus === 'ativo');
+    const vip = buildUserEntitlements(profile).global.isPremium === true;
     const vipDiscountPct = Math.max(0, Math.min(60, Number(config.vipDiscountPct || 10)));
 
     const products = productsSnap.exists() ? productsSnap.val() || {} : {};
@@ -1577,6 +2057,9 @@ export const criarCheckoutPremium = onCall(
       clickId: sanitizeTrackingValue(attributionRaw.clickId, 120),
       creatorId: attributionCreatorId || null,
     };
+    if (attributionCreatorId) {
+      await getMonetizableCreatorPublicProfile(db, attributionCreatorId);
+    }
 
     try {
       const url = await criarPreferenciaPremium(
@@ -2049,6 +2532,21 @@ export const assinaturasPremiumDiario = onSchedule(
     const fromAddr = getSmtpFrom();
 
     for (const [uid, profile] of Object.entries(users)) {
+      const needsEntitlementsRepair =
+        !profile?.userEntitlements ||
+        typeof profile.userEntitlements !== 'object' ||
+        typeof profile.userEntitlements.global !== 'object' ||
+        typeof profile.userEntitlements.creators !== 'object';
+      if (needsEntitlementsRepair) {
+        try {
+          const repairPatch = {};
+          appendNestedPatch(repairPatch, `usuarios/${uid}`, buildUserEntitlementsPatch(profile));
+          await db.ref().update(repairPatch);
+        } catch (err) {
+          logger.error('userEntitlements repair falhou', { uid, error: err?.message });
+        }
+      }
+
       const statusMembro = profile?.membershipStatus;
       const mu = profile?.memberUntil;
       const tipoConta = String(profile?.accountType || 'comum').toLowerCase();
@@ -2070,6 +2568,17 @@ export const assinaturasPremiumDiario = onSchedule(
           await db.ref(`usuarios/${uid}`).update({
             membershipStatus: 'vencido',
             accountType: 'comum',
+            userEntitlements: {
+              ...(profile?.userEntitlements && typeof profile.userEntitlements === 'object'
+                ? profile.userEntitlements
+                : {}),
+              global: {
+                isPremium: false,
+                status: 'vencido',
+                memberUntil: typeof mu === 'number' ? mu : null,
+              },
+              updatedAt: now,
+            },
           });
           await db.ref(`usuarios_publicos/${uid}`).update({
             uid,
@@ -2932,25 +3441,1095 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
   };
 });
 
+async function buildCreatorApplicationRow(uid, row) {
+  let email = null;
+  try {
+    const user = await getAuth().getUser(uid);
+    email = user.email || null;
+  } catch {
+    email = null;
+  }
+  const app = row?.creatorApplication && typeof row.creatorApplication === 'object'
+    ? row.creatorApplication
+    : {};
+  return {
+    uid,
+    email,
+    userName: String(row?.userName || ''),
+    userAvatar: String(row?.userAvatar || ''),
+    creatorDisplayName: String(row?.creatorDisplayName || app.displayName || ''),
+    creatorBio: String(row?.creatorBio || ''),
+    creatorBioShort: String(app.bioShort || ''),
+    creatorInstagramUrl: String(row?.instagramUrl || app?.socialLinks?.instagramUrl || ''),
+    creatorYoutubeUrl: String(row?.youtubeUrl || app?.socialLinks?.youtubeUrl || ''),
+    creatorApplication: app,
+    creatorStatus: String(row?.creatorStatus || ''),
+    creatorOnboardingCompleted: row?.creatorOnboardingCompleted === true,
+    creatorMonetizationPreference: String(row?.creatorMonetizationPreference || app?.monetizationPreference || ''),
+    creatorMonetizationStatus: String(row?.creatorMonetizationStatus || ''),
+    birthYear: Number(row?.birthYear || 0) || null,
+    signupIntent: String(row?.signupIntent || ''),
+    creatorApplicationStatus: String(row?.creatorApplicationStatus || ''),
+    creatorRequestedAt: Number(row?.creatorRequestedAt || 0),
+    creatorApprovedAt: Number(row?.creatorApprovedAt || 0),
+    creatorRejectedAt: Number(row?.creatorRejectedAt || 0),
+    creatorReviewedBy: String(row?.creatorReviewedBy || ''),
+    creatorReviewReason: String(row?.creatorReviewReason || app?.reviewReason || ''),
+    creatorModerationAction: String(row?.creatorModerationAction || ''),
+    creatorModerationBy: String(row?.creatorModerationBy || ''),
+    creatorModeratedAt: Number(row?.creatorModeratedAt || 0),
+    creatorMonetizationReviewReason: String(row?.creatorMonetizationReviewReason || ''),
+    role: String(row?.role || 'user'),
+    accountStatus: String(row?.status || ''),
+  };
+}
+
+function slugifyCreatorUsername(input, uid) {
+  const base = String(input || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24);
+  const suffix = String(uid || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6);
+  return `${base || 'criador'}${suffix ? `-${suffix}` : ''}`;
+}
+
+function creatorAgeFromBirthYear(birthYear) {
+  const year = Number(birthYear);
+  if (!Number.isInteger(year) || year < 1900) return null;
+  return new Date().getFullYear() - year;
+}
+
+async function pushUserNotification(db, uid, payload) {
+  if (!uid || !payload || typeof payload !== 'object') return { ok: false, reason: 'invalid_payload' };
+  const now = Date.now();
+  const type = String(payload.type || 'system').trim().toLowerCase() || 'system';
+  const title = String(payload.title || 'Atualizacao').trim() || 'Atualizacao';
+  const message = String(payload.message || '').trim();
+  const data = payload.data && typeof payload.data === 'object' ? { ...payload.data } : {};
+  const creatorId = String(payload.creatorId || data.creatorId || '').trim() || null;
+  const workId = String(payload.workId || data.workId || '').trim() || null;
+  const chapterId = String(payload.chapterId || data.chapterId || '').trim() || null;
+  const subjectId = String(
+    payload.subjectId ||
+      data.promoId ||
+      data.status ||
+      data.monetizationStatus ||
+      chapterId ||
+      workId ||
+      creatorId ||
+      ''
+  ).trim();
+  const targetPath =
+    String(payload.targetPath || data.readPath || data.creatorPath || '').trim() || '/perfil';
+  const dedupeKey = String(
+    payload.dedupeKey || [type, subjectId || 'none', targetPath].join(':')
+  ).trim();
+  const groupKey = String(
+    payload.groupKey ||
+      [type, creatorId || 'none', workId || 'none', payload.groupScope || 'default'].join(':')
+  ).trim();
+  const priority = Number.isFinite(Number(payload.priority))
+    ? Number(payload.priority)
+    : notificationPriorityFromType(type);
+  const dedupeWindowMs =
+    Number(payload.dedupeWindowMs) > 0 ? Number(payload.dedupeWindowMs) : notificationDedupeWindowMs(type);
+  const aggregateWindowMs =
+    payload.allowGrouping === false
+      ? 0
+      : Number(payload.aggregateWindowMs) > 0
+        ? Number(payload.aggregateWindowMs)
+        : notificationAggregateWindowMs(type);
+
+  const notificationsRef = db.ref(`usuarios/${uid}/notifications`);
+  const snap = await notificationsRef.get();
+  const rows = snap.exists()
+    ? Object.entries(snap.val() || {}).map(([id, value]) => ({ id, ...(value || {}) }))
+    : [];
+
+  const duplicate = rows.find((item) => {
+    if (String(item?.dedupeKey || '') !== dedupeKey) return false;
+    return now - Number(item?.createdAt || item?.updatedAt || 0) <= dedupeWindowMs;
+  });
+  if (duplicate) {
+    return { ok: true, deduped: true, notificationId: duplicate.id };
+  }
+
+  if (aggregateWindowMs > 0) {
+    const grouped = rows
+      .filter((item) => {
+        if (String(item?.groupKey || '') !== groupKey) return false;
+        if (item?.read === true) return false;
+        return now - Number(item?.updatedAt || item?.createdAt || 0) <= aggregateWindowMs;
+      })
+      .sort((a, b) => Number(b?.updatedAt || b?.createdAt || 0) - Number(a?.updatedAt || a?.createdAt || 0))[0];
+
+    if (grouped?.id) {
+      const nextCount = Math.max(2, Number(grouped?.aggregate?.count || 1) + 1);
+      const groupedCopy = buildGroupedNotificationCopy({
+        type,
+        title,
+        message,
+        count: nextCount,
+        data,
+        fallbackTitle: grouped?.title,
+        fallbackMessage: grouped?.message,
+      });
+      await notificationsRef.child(grouped.id).update({
+        type,
+        title: groupedCopy.title,
+        message: groupedCopy.message,
+        read: false,
+        priority: Math.max(Number(grouped?.priority || 0), priority),
+        updatedAt: now,
+        createdAt: now,
+        targetPath,
+        creatorId,
+        workId,
+        chapterId,
+        groupKey,
+        dedupeKey,
+        data: {
+          ...(grouped?.data && typeof grouped.data === 'object' ? grouped.data : {}),
+          ...data,
+          readPath: targetPath,
+        },
+        aggregate: {
+          count: nextCount,
+          lastTitle: title,
+          lastMessage: message,
+          lastCreatedAt: now,
+          lastChapterId: chapterId,
+        },
+      });
+      return { ok: true, grouped: true, notificationId: grouped.id };
+    }
+  }
+
+  const created = await notificationsRef.push({
+    type,
+    title,
+    message,
+    read: false,
+    priority,
+    createdAt: now,
+    updatedAt: now,
+    targetPath,
+    creatorId,
+    workId,
+    chapterId,
+    groupKey,
+    dedupeKey,
+    aggregate: {
+      count: 1,
+      lastTitle: title,
+      lastMessage: message,
+      lastCreatedAt: now,
+      lastChapterId: chapterId,
+    },
+    data: {
+      ...data,
+      readPath: targetPath,
+      creatorId,
+      workId,
+      chapterId,
+    },
+  });
+  return { ok: true, notificationId: created.key };
+}
+
+function notificationPriorityFromType(type) {
+  switch (String(type || '').trim().toLowerCase()) {
+    case 'account_moderation':
+      return 3;
+    case 'creator_application':
+    case 'creator_monetization':
+    case 'membership_update':
+    case 'system':
+      return 2;
+    case 'promotion':
+    case 'new_work':
+    case 'chapter_release':
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function notificationDedupeWindowMs(type) {
+  switch (String(type || '').trim().toLowerCase()) {
+    case 'promotion':
+      return 6 * 60 * 60 * 1000;
+    case 'new_work':
+    case 'chapter_release':
+      return 60 * 60 * 1000;
+    default:
+      return 15 * 60 * 1000;
+  }
+}
+
+function notificationAggregateWindowMs(type) {
+  switch (String(type || '').trim().toLowerCase()) {
+    case 'chapter_release':
+      return 12 * 60 * 60 * 1000;
+    case 'promotion':
+      return 24 * 60 * 60 * 1000;
+    case 'new_work':
+      return 12 * 60 * 60 * 1000;
+    default:
+      return 0;
+  }
+}
+
+function buildGroupedNotificationCopy({ type, title, message, count, data, fallbackTitle, fallbackMessage }) {
+  const workTitle = String(data?.workTitle || '').trim();
+  const creatorName = String(data?.creatorName || '').trim();
+  switch (String(type || '').trim().toLowerCase()) {
+    case 'chapter_release':
+      if (workTitle) {
+        return {
+          title: `${workTitle} tem ${count} atualizacoes novas`,
+          message: 'Os capitulos mais recentes ja estao disponiveis no seu sino.',
+        };
+      }
+      return {
+        title: `Voce recebeu ${count} avisos de capitulos`,
+        message: 'Ha capitulos novos esperando leitura.',
+      };
+    case 'new_work':
+      return {
+        title: creatorName ? `${creatorName} publicou novidades` : `Voce recebeu ${count} avisos de obras`,
+        message: 'Tem obra nova publicada entre os criadores que voce acompanha.',
+      };
+    case 'promotion':
+      return {
+        title: `Promocoes atualizadas (${count})`,
+        message: 'Existem campanhas novas ou recentes para voce conferir.',
+      };
+    default:
+      return {
+        title: fallbackTitle || title,
+        message: fallbackMessage || message,
+      };
+  }
+}
+
+function notificationPrefsFromProfile(profile) {
+  const prefs = profile?.notificationPrefs && typeof profile.notificationPrefs === 'object'
+    ? profile.notificationPrefs
+    : {};
+  return {
+    inAppEnabled: true,
+    emailEnabled: prefs?.promotionsEmail === true || profile?.notifyPromotions === true,
+    chapterReleasesInApp: true,
+    chapterReleasesEmail: false,
+    promotionsInApp: true,
+    promotionsEmail: prefs?.promotionsEmail === true || profile?.notifyPromotions === true,
+    creatorLifecycleInApp: true,
+    creatorLifecycleEmail: false,
+  };
+}
+
+async function sendEmailToUser(uid, { subject, text, html }) {
+  if (!uid || !subject || (!text && !html)) return false;
+  try {
+    const authUser = await getAuth().getUser(uid);
+    const to = authUser?.email;
+    if (!to || !authUser.emailVerified || authUser.disabled) return false;
+    await getTransporter().sendMail({
+      from: getSmtpFrom(),
+      to,
+      subject,
+      text: text || '',
+      html: html || undefined,
+    });
+    return true;
+  } catch (err) {
+    logger.error('Falha ao enviar email ao usuario', { uid, error: err?.message });
+    return false;
+  }
+}
+
+async function notifyUserByPreference(db, uid, profile, config) {
+  if (!uid || !config || typeof config !== 'object') return;
+  const prefs = notificationPrefsFromProfile(profile || {});
+  const kind = String(config.kind || 'system').trim().toLowerCase();
+  const canInApp =
+    kind === 'chapter'
+      ? prefs.inAppEnabled && prefs.chapterReleasesInApp
+      : kind === 'promotion'
+        ? prefs.inAppEnabled && prefs.promotionsInApp
+        : prefs.inAppEnabled && prefs.creatorLifecycleInApp;
+  const canEmail =
+    kind === 'chapter'
+      ? prefs.emailEnabled && prefs.chapterReleasesEmail
+      : kind === 'promotion'
+        ? prefs.emailEnabled && prefs.promotionsEmail
+        : prefs.emailEnabled && prefs.creatorLifecycleEmail;
+
+  if (canInApp && config.notification) {
+    await pushUserNotification(db, uid, config.notification);
+  }
+
+  if (canEmail && config.email) {
+    await sendEmailToUser(uid, config.email);
+  }
+}
+
+function buildCreatorLifecycleEmail(base, payload) {
+  const profilePath = `${base}/perfil`;
+  return {
+    subject: String(payload?.subject || 'Atualizacao da sua conta').trim() || 'Atualizacao da sua conta',
+    text: `${String(payload?.message || '').trim()}\n\nAbra seu perfil: ${profilePath}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#f2f2f2;padding:28px;border-radius:10px;">
+        <h2 style="margin:0 0 12px;color:#ffcc00;">${String(payload?.title || 'Atualizacao')}</h2>
+        <p style="margin:0 0 18px;color:#d0d0d0;">${String(payload?.message || '').trim()}</p>
+        <a href="${profilePath}" style="display:inline-block;background:#ffcc00;color:#000;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700;">
+          Abrir meu perfil
+        </a>
+      </div>
+    `,
+  };
+}
+
+function normalizeReviewReason(raw, fallback = '') {
+  return String(raw || fallback || '').trim().slice(0, 500);
+}
+
+async function getMonetizableCreatorPublicProfile(db, creatorId, { requireMembershipEnabled = false } = {}) {
+  const cid = sanitizeCreatorId(creatorId);
+  if (!cid) {
+    throw new HttpsError('invalid-argument', 'creatorId invalido.');
+  }
+  const snap = await db.ref(`usuarios_publicos/${cid}`).get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Perfil publico do criador nao encontrado.');
+  }
+  const creatorPublic = snap.val() || {};
+  const creatorMonetizationStatus = String(creatorPublic.creatorMonetizationStatus || '').trim().toLowerCase();
+  if (creatorMonetizationStatus !== 'active') {
+    throw new HttpsError('failed-precondition', 'Este criador esta em modo apenas publicar e nao pode receber agora.');
+  }
+  if (requireMembershipEnabled && creatorPublic.creatorMembershipEnabled !== true) {
+    throw new HttpsError('failed-precondition', 'Este criador ainda nao ativou a membership publica.');
+  }
+  return creatorPublic;
+}
+
+export const adminListCreatorApplications = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const snap = await getDatabase().ref('usuarios').get();
+  const users = snap.val() || {};
+  const rows = await Promise.all(
+    Object.entries(users)
+      .filter(([, row]) => String(row?.signupIntent || '') === 'creator')
+      .map(([uid, row]) => buildCreatorApplicationRow(uid, row))
+  );
+  rows.sort((a, b) => {
+    const aPending = a.creatorApplicationStatus === 'requested' ? 1 : 0;
+    const bPending = b.creatorApplicationStatus === 'requested' ? 1 : 0;
+    if (aPending !== bPending) return bPending - aPending;
+    return Number(b.creatorRequestedAt || 0) - Number(a.creatorRequestedAt || 0);
+  });
+  return { ok: true, applications: rows };
+});
+
+export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const uid = request.auth.uid;
+  const db = getDatabase();
+  const ctx = await getAdminAuthContext(request.auth);
+  if (ctx?.mangaka) {
+    return { ok: true, status: 'approved', alreadyMangaka: true };
+  }
+  const userRef = db.ref(`usuarios/${uid}`);
+  const snap = await userRef.get();
+  if (!snap.exists()) {
+    throw new HttpsError('failed-precondition', 'Perfil do usuario nao encontrado.');
+  }
+  const row = snap.val() || {};
+  const now = Date.now();
+  const statusAtual = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
+  if (statusAtual === 'requested') {
+    return { ok: true, status: 'requested', alreadyPending: true };
+  }
+  const payload = request.data && typeof request.data === 'object' ? request.data : {};
+  const displayName = String(payload.displayName || row?.creatorDisplayName || row?.userName || '').trim();
+  const bioShort = String(payload.bioShort || row?.creatorBio || '').trim();
+  const instagramUrl = String(payload.instagramUrl || row?.instagramUrl || '').trim();
+  const youtubeUrl = String(payload.youtubeUrl || row?.youtubeUrl || '').trim();
+  const acceptTerms = payload.acceptTerms === true;
+  const monetizationPreferenceRaw = String(payload.monetizationPreference || row?.creatorMonetizationPreference || 'publish_only')
+    .trim()
+    .toLowerCase();
+  const monetizationPreference = monetizationPreferenceRaw === 'monetize' ? 'monetize' : 'publish_only';
+  if (displayName.length < 3) {
+    throw new HttpsError('invalid-argument', 'Informe um nome artistico com pelo menos 3 caracteres.');
+  }
+  if (bioShort.length < 20) {
+    throw new HttpsError('invalid-argument', 'Escreva uma bio curta com pelo menos 20 caracteres.');
+  }
+  if (!instagramUrl && !youtubeUrl) {
+    throw new HttpsError('invalid-argument', 'Informe pelo menos uma rede social para solicitar acesso de criador.');
+  }
+  if (!acceptTerms) {
+    throw new HttpsError('invalid-argument', 'Voce precisa aceitar os termos para solicitar acesso de criador.');
+  }
+  const creatorApplication = {
+    userId: uid,
+    displayName,
+    bioShort,
+    monetizationPreference,
+    socialLinks: {
+      instagramUrl: instagramUrl || null,
+      youtubeUrl: youtubeUrl || null,
+    },
+    status: 'pending',
+    acceptTerms: true,
+    createdAt: row?.creatorApplication?.createdAt || now,
+    updatedAt: now,
+  };
+  await db.ref().update({
+    [`usuarios/${uid}/signupIntent`]: 'creator',
+    [`usuarios/${uid}/creatorApplicationStatus`]: 'requested',
+    [`usuarios/${uid}/creatorApplication`]: creatorApplication,
+    [`usuarios/${uid}/creatorDisplayName`]: displayName,
+    [`usuarios/${uid}/creatorBio`]: bioShort,
+    [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
+    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationPreference === 'monetize' ? 'pending_review' : 'disabled',
+    [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
+    [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
+    [`usuarios/${uid}/creatorRequestedAt`]: now,
+    [`usuarios/${uid}/creatorRejectedAt`]: null,
+    [`usuarios/${uid}/creatorApprovedAt`]: null,
+    [`usuarios/${uid}/creatorReviewedBy`]: null,
+    [`usuarios/${uid}/creatorReviewReason`]: null,
+    [`usuarios/${uid}/creatorModerationAction`]: null,
+    [`usuarios/${uid}/creatorModerationBy`]: null,
+    [`usuarios/${uid}/creatorModeratedAt`]: null,
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
+    [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
+    [`usuarios_publicos/${uid}/updatedAt`]: now,
+  });
+  await pushUserNotification(db, uid, {
+    type: 'creator_application',
+    title: 'Solicitacao enviada',
+    message: monetizationPreference === 'monetize'
+      ? 'Seu pedido de criador com monetizacao foi enviado para analise.'
+      : 'Seu pedido de criador para publicar na plataforma foi enviado para analise.',
+    data: { status: 'requested', monetizationPreference },
+  });
+  return { ok: true, status: 'requested', application: creatorApplication };
+});
+
+export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const uid = String(request.data?.uid || '').trim();
+  if (!uid) {
+    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
+  }
+  const db = getDatabase();
+  const userRef = db.ref(`usuarios/${uid}`);
+  const snap = await userRef.get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Usuario nao encontrado.');
+  }
+  const row = snap.val() || {};
+  const now = Date.now();
+  const application = row?.creatorApplication && typeof row.creatorApplication === 'object'
+    ? row.creatorApplication
+    : {};
+  const displayName = String(row?.creatorDisplayName || application.displayName || row?.userName || '').trim() || 'Criador';
+  const userAvatar = String(row?.userAvatar || '').trim();
+  const bioShort = String(row?.creatorBio || application.bioShort || '').trim();
+  const bannerUrl = String(row?.creatorBannerUrl || '').trim();
+  const instagramUrl = String(row?.instagramUrl || application?.socialLinks?.instagramUrl || '').trim();
+  const youtubeUrl = String(row?.youtubeUrl || application?.socialLinks?.youtubeUrl || '').trim();
+  const monetizationPreference = String(
+    row?.creatorMonetizationPreference || application?.monetizationPreference || 'publish_only'
+  ).trim().toLowerCase() === 'monetize'
+    ? 'monetize'
+    : 'publish_only';
+  const membershipPrice = Number(row?.creatorMembershipPriceBRL);
+  const donationSuggested = Number(row?.creatorDonationSuggestedBRL);
+  const hasMonetizationConfig =
+    row?.creatorMembershipEnabled !== false &&
+    Number.isFinite(membershipPrice) &&
+    membershipPrice >= 1 &&
+    Number.isFinite(donationSuggested) &&
+    donationSuggested >= 1;
+  const age = creatorAgeFromBirthYear(row?.birthYear);
+  const isUnderage = age != null && age < 18;
+  const monetizationStatus =
+    monetizationPreference === 'monetize'
+      ? (isUnderage ? 'blocked_underage' : hasMonetizationConfig ? 'active' : 'pending_review')
+      : 'disabled';
+  const creatorUsername = slugifyCreatorUsername(displayName, uid);
+  const creatorProfile = {
+    creatorId: uid,
+    displayName,
+    username: creatorUsername,
+    bioShort,
+    bioFull: String(row?.creatorBio || '').trim(),
+    avatarUrl: userAvatar || '',
+    bannerUrl,
+    socialLinks: {
+      instagramUrl: instagramUrl || null,
+      youtubeUrl: youtubeUrl || null,
+    },
+    monetizationEnabled: monetizationStatus === 'active',
+    monetizationPreference,
+    monetizationStatus,
+    ageVerified: age != null,
+    status: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+    createdAt: row?.creatorProfile?.createdAt || now,
+    updatedAt: now,
+  };
+
+  await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).set({
+    role: 'mangaka',
+    permissions: defaultMangakaPermissions(),
+    updatedAt: now,
+    updatedBy: request.auth.uid,
+  });
+
+  const authUser = await getAuth().getUser(uid);
+  const prevClaims = { ...(authUser.customClaims || {}) };
+  delete prevClaims.admin;
+  prevClaims.panelRole = 'mangaka';
+  await getAuth().setCustomUserClaims(uid, prevClaims);
+
+  await db.ref().update({
+    [`usuarios/${uid}/role`]: 'mangaka',
+    [`usuarios/${uid}/signupIntent`]: 'creator',
+    [`usuarios/${uid}/creatorApplicationStatus`]: 'approved',
+    [`usuarios/${uid}/creatorApplication/status`]: 'approved',
+    [`usuarios/${uid}/creatorApplication/updatedAt`]: now,
+    [`usuarios/${uid}/creatorApprovedAt`]: now,
+    [`usuarios/${uid}/creatorRejectedAt`]: null,
+    [`usuarios/${uid}/creatorReviewedBy`]: request.auth.uid,
+    [`usuarios/${uid}/creatorReviewReason`]: null,
+    [`usuarios/${uid}/creatorModerationAction`]: 'approved',
+    [`usuarios/${uid}/creatorModerationBy`]: request.auth.uid,
+    [`usuarios/${uid}/creatorModeratedAt`]: now,
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
+    [`usuarios/${uid}/creatorOnboardingStartedAt`]: row?.creatorOnboardingStartedAt || now,
+    [`usuarios/${uid}/creatorOnboardingCompleted`]: row?.creatorOnboardingCompleted === true,
+    [`usuarios/${uid}/creatorProfile`]: creatorProfile,
+    [`usuarios/${uid}/creatorStatus`]: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+    [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
+    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios/${uid}/creatorMembershipEnabled`]:
+      monetizationStatus === 'active' ? row?.creatorMembershipEnabled !== false : false,
+    [`usuarios/${uid}/creatorMembershipPriceBRL`]:
+      monetizationStatus === 'active' && hasMonetizationConfig ? membershipPrice : null,
+    [`usuarios/${uid}/creatorDonationSuggestedBRL`]:
+      monetizationStatus === 'active' && hasMonetizationConfig ? donationSuggested : null,
+    [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
+    [`usuarios_publicos/${uid}/creatorDisplayName`]: displayName,
+    [`usuarios_publicos/${uid}/creatorUsername`]: creatorUsername,
+    [`usuarios_publicos/${uid}/creatorBio`]: bioShort,
+    [`usuarios_publicos/${uid}/creatorBannerUrl`]: bannerUrl || null,
+    [`usuarios_publicos/${uid}/instagramUrl`]: instagramUrl || null,
+    [`usuarios_publicos/${uid}/youtubeUrl`]: youtubeUrl || null,
+    [`usuarios_publicos/${uid}/creatorStatus`]: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]:
+      monetizationStatus === 'active' ? row?.creatorMembershipEnabled !== false : false,
+    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]:
+      monetizationStatus === 'active' && hasMonetizationConfig ? membershipPrice : null,
+    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]:
+      monetizationStatus === 'active' && hasMonetizationConfig ? donationSuggested : null,
+    [`usuarios_publicos/${uid}/creatorProfile`]: {
+      creatorId: uid,
+      userId: uid,
+      displayName,
+      username: creatorUsername,
+      bioShort,
+      bioFull: String(row?.creatorBio || '').trim(),
+      avatarUrl: userAvatar || '',
+      bannerUrl: bannerUrl || '',
+      socialLinks: {
+        instagramUrl: instagramUrl || null,
+        youtubeUrl: youtubeUrl || null,
+      },
+      stats: {
+        followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
+        totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
+        totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
+        totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
+      },
+      createdAt: row?.creatorProfile?.createdAt || now,
+      updatedAt: now,
+    },
+    [`usuarios_publicos/${uid}/stats`]: {
+      followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
+      totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
+      totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
+      totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
+    },
+    [`usuarios_publicos/${uid}/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
+    [`usuarios_publicos/${uid}/userName`]: displayName,
+    [`usuarios_publicos/${uid}/userAvatar`]: userAvatar || null,
+    [`usuarios_publicos/${uid}/accountType`]: String(row?.accountType || 'comum'),
+    [`usuarios_publicos/${uid}/updatedAt`]: now,
+  });
+
+  const approvalMessage =
+    monetizationStatus === 'blocked_underage'
+      ? 'Voce foi aprovado para publicar, mas a monetizacao ficou bloqueada por idade. Sua conta esta liberada apenas para publicacao.'
+      : monetizationStatus === 'active'
+        ? 'Voce foi aprovado como criador e sua monetizacao foi ativada.'
+        : monetizationPreference === 'monetize'
+          ? 'Voce foi aprovado como criador. Agora finalize sua configuracao de membership para concluir a monetizacao.'
+          : 'Voce foi aprovado como criador para publicar na plataforma.';
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: 'creator_application',
+      title: 'Solicitacao aprovada',
+      message: approvalMessage,
+      data: {
+        status: 'approved',
+        creatorStatus: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+        monetizationStatus,
+        monetizationPreference,
+        readPath: '/perfil',
+      },
+    },
+    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
+      title: 'Solicitacao aprovada',
+      subject: 'Sua solicitacao de criador foi aprovada',
+      message: approvalMessage,
+    }),
+  });
+
+  return { ok: true, uid, status: 'approved' };
+});
+
+export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const uid = String(request.data?.uid || '').trim();
+  if (!uid) {
+    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
+  }
+  const reason = normalizeReviewReason(request.data?.reason);
+  if (reason.length < 8) {
+    throw new HttpsError('invalid-argument', 'Informe um motivo de reprovacao com pelo menos 8 caracteres.');
+  }
+  const banUser = request.data?.banUser === true;
+  const db = getDatabase();
+  const userSnap = await db.ref(`usuarios/${uid}`).get();
+  const row = userSnap.exists() ? userSnap.val() || {} : {};
+  const now = Date.now();
+  await db.ref().update({
+    [`usuarios/${uid}/creatorApplicationStatus`]: 'rejected',
+    [`usuarios/${uid}/creatorApplication/status`]: 'rejected',
+    [`usuarios/${uid}/creatorApplication/updatedAt`]: now,
+    [`usuarios/${uid}/creatorApplication/reviewReason`]: reason,
+    [`usuarios/${uid}/creatorRejectedAt`]: now,
+    [`usuarios/${uid}/creatorReviewedBy`]: request.auth.uid,
+    [`usuarios/${uid}/role`]: 'user',
+    [`usuarios/${uid}/creatorStatus`]: banUser ? 'banned' : 'rejected',
+    [`usuarios/${uid}/creatorReviewReason`]: reason,
+    [`usuarios/${uid}/creatorModerationAction`]: banUser ? 'banned' : 'rejected',
+    [`usuarios/${uid}/creatorModerationBy`]: request.auth.uid,
+    [`usuarios/${uid}/creatorModeratedAt`]: now,
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
+    [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
+    [`usuarios/${uid}/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/status`]: banUser ? 'banido' : null,
+    [`usuarios/${uid}/banReason`]: banUser ? reason : null,
+    [`usuarios_publicos/${uid}/creatorStatus`]: banUser ? 'banned' : 'rejected',
+    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: 'disabled',
+    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: false,
+    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: null,
+    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: null,
+    [`usuarios_publicos/${uid}/status`]: banUser ? 'banido' : null,
+    [`usuarios_publicos/${uid}/updatedAt`]: now,
+  });
+  const rejectMessage = banUser
+    ? `Sua conta foi bloqueada pela equipe. Motivo: ${reason}`
+    : `Sua solicitacao de criador nao foi aprovada agora. Motivo: ${reason}`;
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: banUser ? 'account_moderation' : 'creator_application',
+      title: banUser ? 'Conta bloqueada' : 'Solicitacao rejeitada',
+      message: rejectMessage,
+      data: { status: 'rejected', reason, banUser, readPath: '/perfil' },
+    },
+    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
+      title: banUser ? 'Conta bloqueada' : 'Solicitacao rejeitada',
+      subject: banUser ? 'Sua conta foi bloqueada' : 'Sua solicitacao de criador foi rejeitada',
+      message: rejectMessage,
+    }),
+  });
+  return { ok: true, uid, status: 'rejected', banUser };
+});
+
+export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const uid = String(request.data?.uid || '').trim();
+  if (!uid) {
+    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
+  }
+  const db = getDatabase();
+  const snap = await db.ref(`usuarios/${uid}`).get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Usuario nao encontrado.');
+  }
+  const row = snap.val() || {};
+  if (String(row?.role || '').trim().toLowerCase() !== 'mangaka') {
+    throw new HttpsError('failed-precondition', 'A monetizacao so pode ser aprovada para criadores.');
+  }
+  const membershipPrice = Number(row?.creatorMembershipPriceBRL);
+  const donationSuggested = Number(row?.creatorDonationSuggestedBRL);
+  if (
+    row?.creatorMembershipEnabled === false ||
+    !Number.isFinite(membershipPrice) ||
+    membershipPrice < 1 ||
+    !Number.isFinite(donationSuggested) ||
+    donationSuggested < 1
+  ) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Configure membership ativa, valor da membership e doacao sugerida antes de liberar monetizacao.'
+    );
+  }
+  const age = creatorAgeFromBirthYear(row?.birthYear);
+  const isUnderage = age != null && age < 18;
+  const now = Date.now();
+  const monetizationStatus = isUnderage ? 'blocked_underage' : 'active';
+
+  await db.ref().update({
+    [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
+    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
+    [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
+    [`usuarios/${uid}/creatorProfile/monetizationStatus`]: monetizationStatus,
+    [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: monetizationStatus === 'active',
+    [`usuarios/${uid}/creatorProfile/ageVerified`]: age != null,
+    [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
+    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: monetizationStatus === 'active',
+    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: monetizationStatus === 'active' ? membershipPrice : null,
+    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: monetizationStatus === 'active' ? donationSuggested : null,
+    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios_publicos/${uid}/updatedAt`]: now,
+  });
+
+  const monetizationApprovalMessage =
+    monetizationStatus === 'active'
+      ? 'Sua monetizacao foi aprovada. Agora voce pode receber via membership do criador.'
+      : 'Sua conta segue liberada para publicar, mas a monetizacao permanece bloqueada por idade.';
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: 'creator_monetization',
+      title: monetizationStatus === 'active' ? 'Monetizacao aprovada' : 'Monetizacao bloqueada',
+      message: monetizationApprovalMessage,
+      data: { monetizationStatus, readPath: '/perfil' },
+    },
+    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
+      title: monetizationStatus === 'active' ? 'Monetizacao aprovada' : 'Monetizacao bloqueada',
+      subject: monetizationStatus === 'active' ? 'Sua monetizacao foi aprovada' : 'Sua monetizacao segue bloqueada',
+      message: monetizationApprovalMessage,
+    }),
+  });
+
+  return { ok: true, uid, monetizationStatus };
+});
+
+export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const uid = String(request.data?.uid || '').trim();
+  if (!uid) {
+    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
+  }
+  const db = getDatabase();
+  const snap = await db.ref(`usuarios/${uid}`).get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Usuario nao encontrado.');
+  }
+  const row = snap.val() || {};
+  if (String(row?.role || '').trim().toLowerCase() !== 'mangaka') {
+    throw new HttpsError('failed-precondition', 'A monetizacao so pode ser ajustada para criadores.');
+  }
+  const reason = normalizeReviewReason(request.data?.reason);
+  if (reason.length < 8) {
+    throw new HttpsError('invalid-argument', 'Informe um motivo com pelo menos 8 caracteres para manter so publicacao.');
+  }
+  const now = Date.now();
+
+  await db.ref().update({
+    [`usuarios/${uid}/creatorMonetizationPreference`]: 'publish_only',
+    [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: reason,
+    [`usuarios/${uid}/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'publish_only',
+    [`usuarios/${uid}/creatorProfile/monetizationStatus`]: 'disabled',
+    [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: false,
+    [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
+    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: false,
+    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: null,
+    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: null,
+    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: 'disabled',
+    [`usuarios_publicos/${uid}/updatedAt`]: now,
+  });
+
+  const monetizationRejectMessage = `Sua conta segue habilitada para publicar, mas a monetizacao nao foi liberada agora. Motivo: ${reason}`;
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: 'creator_monetization',
+      title: 'Monetizacao nao aprovada',
+      message: monetizationRejectMessage,
+      data: { monetizationStatus: 'disabled', reason, readPath: '/perfil' },
+    },
+    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
+      title: 'Monetizacao nao aprovada',
+      subject: 'Sua monetizacao nao foi liberada',
+      message: monetizationRejectMessage,
+    }),
+  });
+
+  return { ok: true, uid, monetizationStatus: 'disabled' };
+});
+
+export const markUserNotificationRead = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const uid = request.auth.uid;
+  const notificationId = String(request.data?.notificationId || '').trim();
+  const markAll = request.data?.markAll === true;
+  const db = getDatabase();
+
+  if (markAll) {
+    const snap = await db.ref(`usuarios/${uid}/notifications`).get();
+    const notifications = snap.val() || {};
+    const now = Date.now();
+    const patch = {};
+    for (const [id] of Object.entries(notifications)) {
+      patch[`usuarios/${uid}/notifications/${id}/read`] = true;
+      patch[`usuarios/${uid}/notifications/${id}/readAt`] = now;
+    }
+    if (Object.keys(patch).length) {
+      await db.ref().update(patch);
+    }
+    return { ok: true, marked: Object.keys(notifications).length };
+  }
+
+  if (!notificationId) {
+    throw new HttpsError('invalid-argument', 'notificationId obrigatorio.');
+  }
+
+  await db.ref(`usuarios/${uid}/notifications/${notificationId}`).update({
+    read: true,
+    readAt: Date.now(),
+  });
+  return { ok: true, notificationId };
+});
+
+export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const followerUid = String(request.auth.uid || '').trim();
+  const creatorId = sanitizeCreatorId(request.data?.creatorId);
+  if (!creatorId) {
+    throw new HttpsError('invalid-argument', 'creatorId obrigatorio.');
+  }
+  if (creatorId === followerUid) {
+    throw new HttpsError('failed-precondition', 'Voce nao pode seguir o proprio perfil.');
+  }
+
+  const db = getDatabase();
+  const [targetSnap, followerSnap] = await Promise.all([
+    db.ref(`usuarios_publicos/${creatorId}`).get(),
+    db.ref(`usuarios/${followerUid}`).get(),
+  ]);
+
+  if (!targetSnap.exists()) {
+    throw new HttpsError('not-found', 'Criador nao encontrado.');
+  }
+  const target = targetSnap.val() || {};
+  const creatorStatus = String(target?.creatorStatus || '').trim().toLowerCase();
+  if (creatorStatus && creatorStatus !== 'active') {
+    throw new HttpsError('failed-precondition', 'Este perfil de criador ainda nao esta publico.');
+  }
+
+  const followerRow = followerSnap.exists() ? followerSnap.val() || {} : {};
+  const followerIsCreator = String(followerRow?.role || '').trim().toLowerCase() === 'mangaka';
+
+  const followingRef = db.ref(`usuarios/${followerUid}/followingCreators/${creatorId}`);
+  const followerRef = db.ref(`usuarios_publicos/${creatorId}/followers/${followerUid}`);
+  const statsRef = db.ref(`usuarios_publicos/${creatorId}/stats/followersCount`);
+  const publicCountRef = db.ref(`usuarios_publicos/${creatorId}/followersCount`);
+  const creatorProfileCountRef = db.ref(`usuarios/${creatorId}/creatorProfile/stats/followersCount`);
+
+  const currentSnap = await followingRef.get();
+  const isFollowing = currentSnap.exists();
+  const now = Date.now();
+
+  if (isFollowing) {
+    await Promise.all([
+      followingRef.remove(),
+      followerRef.remove(),
+      statsRef.transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
+      publicCountRef.transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
+      creatorProfileCountRef.transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
+    ]);
+    return { ok: true, isFollowing: false };
+  }
+
+  await Promise.all([
+    followingRef.set({
+      creatorId,
+      followedAt: now,
+    }),
+    followerRef.set({
+      followerUserId: followerUid,
+      followerCreatorId: followerIsCreator ? followerUid : null,
+      followedAt: now,
+    }),
+    statsRef.transaction((curr) => Number(curr || 0) + 1),
+    publicCountRef.transaction((curr) => Number(curr || 0) + 1),
+    creatorProfileCountRef.transaction((curr) => Number(curr || 0) + 1),
+  ]);
+
+  return { ok: true, isFollowing: true };
+});
+
+export const upsertNotificationSubscription = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const uid = String(request.auth.uid || '').trim();
+  const type = String(request.data?.type || '').trim().toLowerCase();
+  const targetId = String(request.data?.targetId || '').trim();
+  if (!['creator', 'work'].includes(type) || !targetId) {
+    throw new HttpsError('invalid-argument', 'Envie type valido e targetId.');
+  }
+  const enabled = request.data?.enabled !== false;
+  const db = getDatabase();
+  const basePath =
+    type === 'creator'
+      ? `usuarios/${uid}/followingCreators/${sanitizeCreatorId(targetId)}`
+      : `usuarios/${uid}/subscribedWorks/${targetId}`;
+  if (!enabled) {
+    await db.ref(basePath).remove();
+    return { ok: true, enabled: false };
+  }
+  await db.ref(basePath).set({
+    targetId: type === 'creator' ? sanitizeCreatorId(targetId) : targetId,
+    type,
+    subscribedAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  return { ok: true, enabled: true };
+});
+
 export const adminListStaff = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
   requireSuperAdmin(request.auth);
-  const snap = await getDatabase().ref(ADMIN_REGISTRY_PATH).get();
+  const db = getDatabase();
+  const snap = await db.ref(ADMIN_REGISTRY_PATH).get();
   const raw = snap.val() || {};
-  const staff = await Promise.all(
-    Object.entries(raw).map(async ([uid, row]) => {
+  const registryRows = await Promise.all(
+    Object.entries(raw)
+      .filter(([, row]) => String(row?.role || '').toLowerCase() === 'admin')
+      .map(async ([uid, row]) => {
+        let email = null;
+        let name = '';
+        try {
+          const u = await getAuth().getUser(uid);
+          email = u.email || null;
+          name = String(u.displayName || '').trim();
+        } catch {
+          email = null;
+        }
+        if (!name) {
+          const userSnap = await db.ref(`usuarios/${uid}`).get();
+          const userRow = userSnap.val() || {};
+          name = String(userRow?.userName || userRow?.creatorDisplayName || '').trim();
+        }
+        return {
+          uid,
+          email,
+          name: name || null,
+          role: 'admin',
+          permissions: normalizePermissionsForRegistry(row?.permissions),
+          updatedAt: Number(row?.updatedAt || 0),
+          updatedBy: String(row?.updatedBy || ''),
+        };
+      })
+  );
+  const superAdmins = await Promise.all(
+    Array.from(SUPER_ADMIN_UIDS).map(async (uid) => {
       let email = null;
+      let name = '';
       try {
         const u = await getAuth().getUser(uid);
         email = u.email || null;
+        name = String(u.displayName || '').trim();
       } catch {
         email = null;
       }
-      return { uid, email, ...row };
+      if (!name) {
+        const userSnap = await db.ref(`usuarios/${uid}`).get();
+        const userRow = userSnap.val() || {};
+        name = String(userRow?.userName || userRow?.creatorDisplayName || '').trim();
+      }
+      return {
+        uid,
+        email,
+        name: name || null,
+        role: 'super_admin',
+        permissions: defaultPermissionsAllTrue(),
+        updatedAt: 0,
+        updatedBy: '',
+      };
     })
   );
+  const seen = new Set();
+  const staff = [...superAdmins, ...registryRows].filter((row) => {
+    if (!row?.uid || seen.has(row.uid)) return false;
+    seen.add(row.uid);
+    return true;
+  });
+  staff.sort((a, b) => {
+    if (a.role !== b.role) return a.role === 'super_admin' ? -1 : 1;
+    const labelA = String(a.name || a.email || a.uid || '').toLowerCase();
+    const labelB = String(b.name || b.email || b.uid || '').toLowerCase();
+    return labelA.localeCompare(labelB, 'pt-BR');
+  });
   return { ok: true, staff };
 });
 
@@ -2978,9 +4557,8 @@ export const adminUpsertStaff = onCall({ region: 'us-central1' }, async (request
   if (isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
     throw new HttpsError('permission-denied', 'Nao e permitido alterar admin chefe.');
   }
-  const staffRole = String(data.role || 'admin').toLowerCase() === 'mangaka' ? 'mangaka' : 'admin';
-  const permissions =
-    staffRole === 'mangaka' ? defaultMangakaPermissions() : normalizePermissionsForRegistry(data.permissions);
+  const staffRole = 'admin';
+  const permissions = normalizePermissionsForRegistry(data.permissions);
   const updatedAt = Date.now();
   const updatedBy = request.auth.uid;
   await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).set({
@@ -2991,13 +4569,7 @@ export const adminUpsertStaff = onCall({ region: 'us-central1' }, async (request
   });
   const userRecord = await getAuth().getUser(targetUid);
   const prevClaims = { ...(userRecord.customClaims || {}) };
-  if (staffRole === 'mangaka') {
-    delete prevClaims.admin;
-    prevClaims.panelRole = 'mangaka';
-  } else {
-    prevClaims.admin = true;
-    prevClaims.panelRole = 'admin';
-  }
+  prevClaims.panelRole = 'admin';
   await getAuth().setCustomUserClaims(targetUid, prevClaims);
   await getDatabase().ref(`usuarios/${targetUid}/role`).set(staffRole);
   return { ok: true, uid: targetUid, role: staffRole };
@@ -3031,10 +4603,10 @@ export const adminRemoveStaff = onCall({ region: 'us-central1' }, async (request
   }
   const regSnap = await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).get();
   const regRole = regSnap.val()?.role;
-  if (!regSnap.exists() || (regRole !== 'admin' && regRole !== 'mangaka')) {
+  if (!regSnap.exists() || regRole !== 'admin') {
     throw new HttpsError(
       'failed-precondition',
-      'So contas do registro (admin ou mangaka) podem ser removidas aqui.'
+      'So admins do registro podem ser removidos aqui.'
     );
   }
   await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).remove();
@@ -3096,6 +4668,232 @@ export const adminBackfillChapterCreatorIds = onCall({ region: 'us-central1', co
   }
   logger.info('adminBackfillChapterCreatorIds', { updated });
   return { ok: true, updated };
+});
+
+/** Garante `workId` em capítulos legados (espelha obraId / shito). Fase 1 multi-obra. */
+export const adminBackfillChapterWorkIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const db = getDatabase();
+  const snap = await db.ref('capitulos').get();
+  const caps = snap.val() || {};
+  let updated = 0;
+  const normalizeFromCap = (cap) => {
+    const raw = String(cap?.obraId || cap?.workId || 'shito')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 40);
+    return raw || 'shito';
+  };
+  for (const [id, cap] of Object.entries(caps)) {
+    if (!cap || !id) continue;
+    const w = String(cap.workId || '').trim();
+    if (w) continue;
+    const wid = normalizeFromCap(cap);
+    await db.ref(`capitulos/${id}/workId`).set(wid);
+    updated += 1;
+  }
+  logger.info('adminBackfillChapterWorkIds', { updated });
+  return { ok: true, updated };
+});
+
+/** Preenche `creatorId` em produtos da loja a partir da obra relacionada; fallback = criador legado. */
+export const adminBackfillStoreProductCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const db = getDatabase();
+  const [productsSnap, obrasSnap] = await Promise.all([db.ref('loja/produtos').get(), db.ref('obras').get()]);
+  const products = productsSnap.val() || {};
+  const obras = obrasSnap.val() || {};
+  let updated = 0;
+  let legacyFallback = 0;
+  let skippedWithoutHint = 0;
+  for (const [id, row] of Object.entries(products)) {
+    if (!row || row.creatorId || !id) continue;
+    const obraHint = String(row.obra || row.workId || row.obraId || '').trim().toLowerCase();
+    if (!obraHint) {
+      skippedWithoutHint += 1;
+      continue;
+    }
+    const obra = obras[obraHint] || null;
+    const creatorId = sanitizeCreatorId(obra?.creatorId) || PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS;
+    if (!creatorId) continue;
+    if (!sanitizeCreatorId(obra?.creatorId)) legacyFallback += 1;
+    await db.ref(`loja/produtos/${id}/creatorId`).set(creatorId);
+    updated += 1;
+  }
+  logger.info('adminBackfillStoreProductCreatorIds', { updated, legacyFallback, skippedWithoutHint });
+  return { ok: true, updated, legacyFallback, skippedWithoutHint, legacyCreatorUid: PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS };
+});
+
+/** Auditoria de pedidos antigos sem creatorId nos itens; histórico segue válido, mas sem atribuição retroativa. */
+export const adminAuditarPedidosLojaSemAtribuicao = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const ctx = await requireAdminAuth(request.auth);
+  requirePermission(ctx, 'loja');
+  const snap = await getDatabase().ref('loja/pedidos').get();
+  const orders = snap.val() || {};
+  let total = 0;
+  let withMissingCreatorItems = 0;
+  let legacyOnly = 0;
+  const sample = [];
+  for (const [orderId, row] of Object.entries(orders)) {
+    total += 1;
+    const items = Array.isArray(row?.items) ? row.items : [];
+    const missing = items.filter((item) => !sanitizeCreatorId(item?.creatorId));
+    if (!missing.length) continue;
+    withMissingCreatorItems += 1;
+    if (items.every((item) => !sanitizeCreatorId(item?.creatorId))) legacyOnly += 1;
+    if (sample.length < 20) {
+      sample.push({
+        orderId,
+        createdAt: Number(row?.createdAt || 0),
+        status: String(row?.status || ''),
+        uid: String(row?.uid || ''),
+        total: Number(row?.total || 0),
+        missingItems: missing.length,
+        totalItems: items.length,
+      });
+    }
+  }
+  return {
+    ok: true,
+    total,
+    withMissingCreatorItems,
+    legacyOnly,
+    note: 'Pedidos antigos sem creatorId continuam como historico valido; sem regra forte de retroatribuicao automatica.',
+    sample,
+  };
+});
+
+function orderItemsForCreator(order, creatorUid) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  return items.filter((item) => sanitizeCreatorId(item?.creatorId) === creatorUid);
+}
+
+function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
+  const items = orderItemsForCreator(row, viewerUid);
+  const containsForeignItems = (Array.isArray(row?.items) ? row.items : []).length > items.length;
+  const creatorSubtotal = items.reduce((sum, item) => sum + Number(item?.lineTotal || 0), 0);
+  return {
+    id: orderId,
+    uid: String(row?.uid || ''),
+    status: String(row?.status || ''),
+    createdAt: Number(row?.createdAt || 0),
+    updatedAt: Number(row?.updatedAt || 0),
+    paidAt: Number(row?.paidAt || 0) || null,
+    refundedAt: Number(row?.refundedAt || 0) || null,
+    paymentStatus: String(row?.paymentStatus || ''),
+    paymentId: row?.paymentId ?? null,
+    trackingCode: String(row?.trackingCode || row?.codigoRastreio || ''),
+    vipApplied: row?.vipApplied === true,
+    creatorSubtotal,
+    total: creatorSubtotal,
+    subtotal: creatorSubtotal,
+    containsForeignItems,
+    items,
+  };
+}
+
+export const adminListVisibleStoreOrders = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const ctx = await getAdminAuthContext(request.auth);
+  if (!ctx) {
+    throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
+  }
+  const canUseGlobal =
+    ctx.super === true ||
+    ctx.legacy === true ||
+    ctx.permissions?.canAccessLojaAdmin === true;
+  const snap = await getDatabase().ref('loja/pedidos').get();
+  const orders = snap.val() || {};
+  const list = Object.entries(orders)
+    .map(([id, row]) => ({ id, ...(row || {}) }))
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+  if (ctx.mangaka) {
+    const visible = list
+      .filter((order) => orderItemsForCreator(order, request.auth.uid).length > 0)
+      .map((order) => sanitizeStoreOrderForViewer(order.id, order, request.auth.uid));
+    return { ok: true, orders: visible, scopedToCreator: true };
+  }
+
+  if (!canUseGlobal) {
+    throw new HttpsError('permission-denied', 'Sem permissao para pedidos da loja.');
+  }
+  return { ok: true, orders: list, scopedToCreator: false };
+});
+
+export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const ctx = await getAdminAuthContext(request.auth);
+  if (!ctx) {
+    throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
+  }
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const orderId = String(body.orderId || '').trim();
+  if (!orderId) {
+    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+  }
+  const statusRaw = body.status == null ? '' : String(body.status).trim();
+  const trackingCode = body.trackingCode == null ? null : String(body.trackingCode || '').trim();
+  if (!statusRaw && trackingCode == null) {
+    throw new HttpsError('invalid-argument', 'Envie status ou trackingCode.');
+  }
+
+  const orderRef = getDatabase().ref(`loja/pedidos/${orderId}`);
+  const snap = await orderRef.get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Pedido nao encontrado.');
+  }
+  const order = snap.val() || {};
+  const patch = { updatedAt: Date.now() };
+
+  const canUseGlobal =
+    ctx.super === true ||
+    ctx.legacy === true ||
+    ctx.permissions?.canAccessLojaAdmin === true;
+
+  if (ctx.mangaka) {
+    const ownItems = orderItemsForCreator(order, request.auth.uid);
+    const hasForeignItems = (Array.isArray(order?.items) ? order.items : []).length > ownItems.length;
+    if (!ownItems.length) {
+      throw new HttpsError('permission-denied', 'Pedido fora do seu escopo.');
+    }
+    if (hasForeignItems) {
+      throw new HttpsError('failed-precondition', 'Pedido misto deve ser atualizado pelo admin.');
+    }
+  } else if (!canUseGlobal) {
+    throw new HttpsError('permission-denied', 'Sem permissao para atualizar pedido.');
+  }
+
+  if (statusRaw) {
+    const allowed = new Set(['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']);
+    if (!allowed.has(statusRaw)) {
+      throw new HttpsError('invalid-argument', 'Status invalido.');
+    }
+    patch.status = statusRaw;
+  }
+  if (trackingCode != null) {
+    if (trackingCode.length > 80) {
+      throw new HttpsError('invalid-argument', 'trackingCode muito longo.');
+    }
+    patch.trackingCode = trackingCode;
+  }
+
+  await orderRef.update(patch);
+  return { ok: true };
 });
 
 export const adminRevokeUserSessions = onCall({ region: 'us-central1' }, async (request) => {
@@ -3163,4 +4961,3 @@ export const dashboardRollupMensal = onSchedule(
     logger.info('dashboardRollupMensal ok', { months });
   }
 );
-

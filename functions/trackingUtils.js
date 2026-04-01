@@ -32,6 +32,8 @@ export function normalizeTrackingEventType(v) {
     'chapter_landing',
     'chapter_read',
     'premium_checkout_started',
+    'creator_support_click',
+    'creator_support_checkout_started',
     'home_block_impression',
     'home_block_click',
   ]);

@@ -1,11 +1,39 @@
+/**
+ * Página da obra — hero + lista de capítulos.
+ * Responsivo: telemóvel (iPhone/Android), tablet, notebook, TV (referência de UX: MANGA Plus título).
+ */
+
 .obra-page {
+  --obra-pad-x: clamp(10px, 4vw, 28px);
+  --obra-pad-bottom: max(28px, env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: clip;
+  box-sizing: border-box;
   min-height: calc(100vh - var(--header-height-desktop, 80px));
-  padding-bottom: 30px;
+  min-height: calc(100dvh - var(--header-height-desktop, 80px));
+  padding: 0 max(var(--obra-pad-x), env(safe-area-inset-left, 0px)) var(--obra-pad-bottom)
+    max(var(--obra-pad-x), env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color: rgba(255, 204, 0, 0.1);
+}
+
+.obra-page *,
+.obra-page *::before,
+.obra-page *::after {
+  box-sizing: border-box;
+}
+
+/* Largura máxima em ecrãs grandes (notebook / TV) — conteúdo centrado */
+@media (min-width: 1320px) {
+  .obra-page {
+    max-width: min(1240px, 100%);
+    margin-inline: auto;
+  }
 }
 
 .obra-hero {
-  margin: 14px;
-  border-radius: 16px;
+  margin: clamp(10px, 2vw, 16px) 0;
+  border-radius: clamp(12px, 2vw, 18px);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background-position: center;
@@ -14,63 +42,139 @@
 
 .obra-hero-content {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 16px;
-  padding: clamp(14px, 3.2vw, 30px);
+  grid-template-columns: min(220px, 32vw) 1fr;
+  gap: clamp(12px, 3vw, 22px);
+  padding: clamp(14px, 3.5vw, 32px);
   align-items: end;
+}
+
+@media (min-width: 600px) and (max-width: 900px) {
+  .obra-hero-content {
+    grid-template-columns: min(200px, 30vw) 1fr;
+    align-items: center;
+  }
+}
+
+@media (max-width: 599px) {
+  .obra-hero-content {
+    grid-template-columns: 1fr;
+    align-items: start;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .obra-info {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .obra-info h1 {
+    text-align: center;
+  }
+
+  .obra-sinopse {
+    text-align: left;
+    width: 100%;
+  }
+
+  .obra-meta {
+    justify-content: center;
+  }
+
+  .obra-actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .obra-creator-chip {
+    align-self: center;
+  }
 }
 
 .obra-cover {
   width: 100%;
+  max-width: min(280px, 72vw);
   aspect-ratio: 3 / 4;
   object-fit: cover;
-  border-radius: 10px;
+  border-radius: clamp(8px, 2vw, 12px);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .obra-info h1 {
-  font-size: clamp(1.4rem, 4vw, 2.3rem);
+  font-size: clamp(1.25rem, 4.5vw, 2.35rem);
+  line-height: 1.15;
+  margin: 0;
 }
 
 .obra-sinopse {
-  margin-top: 8px;
+  margin-top: clamp(6px, 1.5vw, 10px);
   color: #d6deec;
   max-width: 900px;
+  font-size: clamp(0.82rem, 2.4vw, 0.98rem);
+  line-height: 1.5;
 }
 
 .obra-meta {
   display: flex;
-  gap: 10px;
+  gap: clamp(6px, 1.5vw, 10px);
   flex-wrap: wrap;
-  margin-top: 10px;
+  margin-top: clamp(8px, 2vw, 12px);
 }
 
 .obra-meta span {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 999px;
-  padding: 5px 10px;
-  font-size: 0.74rem;
+  padding: 6px 12px;
+  font-size: clamp(0.68rem, 2vw, 0.76rem);
   color: #c1cee5;
   background: rgba(8, 12, 20, 0.5);
 }
 
 .obra-actions {
-  margin-top: 12px;
+  margin-top: clamp(10px, 2.5vw, 14px);
   display: flex;
-  gap: 8px;
+  gap: clamp(8px, 2vw, 10px);
   flex-wrap: wrap;
+}
+
+.obra-creator-chip {
+  margin-top: clamp(10px, 2vw, 12px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.6);
+  color: #dce6f8;
+  padding: 8px 14px 8px 8px;
+  cursor: pointer;
+  min-height: 44px;
+  font-size: clamp(0.78rem, 2.2vw, 0.88rem);
+}
+
+.obra-creator-chip img {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
 }
 
 .btn-obra-cta,
 .btn-obra-fav-page {
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid #3a4866;
   background: #16223a;
   color: #dce6f8;
-  font-size: 0.78rem;
+  font-size: clamp(0.74rem, 2.1vw, 0.82rem);
   font-weight: 800;
-  padding: 9px 12px;
+  min-height: 44px;
+  padding: 10px 14px;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .btn-obra-cta {
@@ -85,23 +189,82 @@
   color: #ffe37d;
 }
 
+.btn-obra-apoie {
+  border-radius: 8px;
+  border: 1px solid rgba(120, 200, 160, 0.45);
+  background: rgba(40, 90, 70, 0.35);
+  color: #b8f0d0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn-obra-apoie:hover {
+    border-color: rgba(140, 220, 180, 0.55);
+    color: #d4ffe8;
+  }
+}
+
+.obra-notify-box {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 12, 20, 0.55);
+}
+
+.obra-notify-box strong,
+.obra-notify-box p {
+  display: block;
+}
+
+.obra-notify-box p {
+  margin: 8px 0 0;
+  color: #c1cee5;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.obra-notify-box__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.obra-notify-box__options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #e4ecf8;
+}
+
+.obra-notify-box__options input[type="checkbox"] {
+  accent-color: #ffcc00;
+}
+
+/* —— Lista de capítulos (linhas tipo catálogo) —— */
 .obra-capitulos-section {
-  margin: 14px;
+  margin: clamp(10px, 2vw, 16px) 0;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 14px;
+  border-radius: clamp(12px, 2vw, 16px);
   background: #0d0d0d;
-  padding: 16px;
+  padding: clamp(14px, 3vw, 22px);
 }
 
 .obra-capitulos-head {
-  margin-bottom: 22px;
+  margin-bottom: clamp(16px, 3vw, 24px);
   text-align: center;
 }
 
 .obra-capitulos-title {
-  font-size: clamp(1.2rem, 3vw, 1.9rem);
+  font-size: clamp(1.05rem, 3.2vw, 1.85rem);
   font-weight: 900;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   color: #ffcc00;
   text-transform: uppercase;
   display: inline-block;
@@ -111,9 +274,9 @@
 .obra-capitulos-title::after {
   content: '';
   position: absolute;
-  left: 20%;
+  left: 15%;
   bottom: -8px;
-  width: 60%;
+  width: 70%;
   height: 2px;
   background: #ffcc00;
   box-shadow: 0 0 12px rgba(255, 204, 0, 0.4);
@@ -122,56 +285,76 @@
 .obra-capitulos-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(8px, 1.8vw, 12px);
 }
 
 .obra-cap-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  border-radius: clamp(10px, 2vw, 12px);
   background: #121212;
   overflow: hidden;
   cursor: pointer;
-  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 12px 18px;
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+  padding: clamp(10px, 2.5vw, 14px) clamp(12px, 3vw, 20px);
+  min-height: 56px;
+  touch-action: manipulation;
 }
 
-.obra-cap-item:hover {
-  border-color: #ffcc00;
-  transform: translateX(7px);
-  box-shadow: -5px 0 18px rgba(255, 204, 0, 0.14);
+@media (hover: hover) and (pointer: fine) {
+  .obra-cap-item:hover {
+    border-color: #ffcc00;
+    transform: translateX(5px);
+    box-shadow: -4px 0 16px rgba(255, 204, 0, 0.12);
+  }
+
+  .obra-cap-item:hover .shito-cap-number {
+    color: #ffcc00;
+  }
+
+  .obra-cap-item:hover .shito-cap-miniature {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@media (hover: none) {
+  .obra-cap-item:active {
+    background: #181818;
+    border-color: rgba(255, 204, 0, 0.35);
+  }
 }
 
 .cap-left-info {
   display: flex;
   align-items: center;
-  gap: 20px;
-  flex: 1;
+  gap: clamp(10px, 2.5vw, 20px);
+  min-width: 0;
 }
 
 .shito-cap-number {
-  font-size: 1.5rem;
+  font-size: clamp(1.1rem, 3.5vw, 1.5rem);
   font-weight: 900;
-  color: #292929;
-  min-width: 74px;
-  transition: 0.3s ease;
-}
-
-.obra-cap-item:hover .shito-cap-number {
-  color: #ffcc00;
+  color: #3a3a3a;
+  min-width: clamp(52px, 14vw, 74px);
+  flex-shrink: 0;
+  text-align: center;
+  transition: color 0.22s ease;
 }
 
 .cap-main-content {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: clamp(10px, 2.5vw, 16px);
   flex: 1;
+  min-width: 0;
 }
 
 .shito-cap-miniature-wrapper {
-  width: 150px;
+  width: clamp(88px, 22vw, 150px);
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   overflow: hidden;
@@ -184,42 +367,44 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.84;
-  transition: 0.3s ease;
-}
-
-.obra-cap-item:hover .shito-cap-miniature {
-  opacity: 1;
-  transform: scale(1.08);
+  opacity: 0.88;
+  transition: opacity 0.22s ease, transform 0.22s ease;
 }
 
 .cap-text-details {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .shito-cap-title {
-  font-size: 1rem;
+  font-size: clamp(0.82rem, 2.6vw, 1rem);
   font-weight: 700;
   color: #f1f1f1;
   text-transform: uppercase;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .obra-cap-access {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .cap-stats-row {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .stat-item {
-  font-size: 0.74rem;
+  font-size: clamp(0.68rem, 2vw, 0.74rem);
   color: #969696;
   font-weight: 600;
 }
@@ -227,42 +412,48 @@
 .cap-right-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .shito-cap-date {
-  font-size: 0.8rem;
+  font-size: clamp(0.72rem, 2.1vw, 0.82rem);
   font-weight: 800;
   color: #808080;
+  white-space: nowrap;
 }
 
 .arrow-mobile {
   color: #ffcc00;
-  font-size: 1rem;
+  font-size: clamp(0.95rem, 2.5vw, 1.1rem);
   font-weight: 900;
+  line-height: 1;
 }
 
 .shito-cap-row--bloqueado {
-  opacity: 0.9;
+  opacity: 0.92;
   border-style: dashed;
 }
 
-.shito-cap-row--bloqueado:hover {
-  transform: translateX(4px);
+@media (hover: hover) and (pointer: fine) {
+  .shito-cap-row--bloqueado:hover {
+    transform: translateX(3px);
+  }
 }
 
 .cap-badge-em-breve {
   display: inline-block;
-  font-size: 0.69rem;
+  font-size: clamp(0.62rem, 1.8vw, 0.69rem);
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: #ffcc00;
+  line-height: 1.3;
 }
 
 .pill {
   border-radius: 999px;
-  font-size: 0.66rem;
+  font-size: clamp(0.6rem, 1.7vw, 0.66rem);
   font-weight: 900;
   padding: 4px 8px;
   border: 1px solid transparent;
@@ -288,46 +479,53 @@
 
 .obra-capitulos-empty {
   color: #9f9f9f;
-  font-size: 0.82rem;
+  font-size: clamp(0.8rem, 2.2vw, 0.9rem);
+  text-align: center;
+  padding: 12px 8px;
 }
 
 .obra-not-found {
-  margin: 16px;
+  margin: clamp(12px, 3vw, 20px) 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: rgba(10, 13, 22, 0.9);
-  padding: 20px;
+  padding: clamp(18px, 4vw, 28px);
   text-align: center;
 }
 
 .obra-not-found p {
   color: #a8b7d5;
   margin: 6px 0 12px;
+  font-size: clamp(0.85rem, 2.3vw, 0.95rem);
 }
 
 .obra-not-found button {
   border: 1px solid rgba(255, 204, 0, 0.5);
   background: rgba(255, 204, 0, 0.14);
   color: #ffe692;
-  border-radius: 8px;
-  padding: 9px 12px;
-  font-size: 0.78rem;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.8rem;
   font-weight: 800;
   cursor: pointer;
+  min-height: 44px;
 }
 
-@media (max-width: 760px) {
-  .obra-hero-content {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .obra-cover {
-    width: min(260px, 100%);
-  }
-
+/* Telemóveis estreitos: data por baixo do bloco principal */
+@media (max-width: 520px) {
   .obra-cap-item {
-    padding: 12px;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    min-height: 0;
+    padding-bottom: 12px;
+  }
+
+  .cap-right-info {
+    grid-column: 1;
+    justify-content: space-between;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   .shito-cap-number {
@@ -335,15 +533,60 @@
   }
 
   .shito-cap-miniature-wrapper {
-    width: 92px;
+    width: clamp(76px, 26vw, 100px);
   }
 
-  .shito-cap-title {
-    font-size: 0.9rem;
-  }
-
-  .cap-right-info {
-    gap: 8px;
+  .cap-main-content {
+    align-items: flex-start;
   }
 }
 
+/* Tablet retrato: número compacto */
+@media (min-width: 521px) and (max-width: 760px) {
+  .shito-cap-number {
+    min-width: 48px;
+    font-size: 1rem;
+  }
+
+  .shito-cap-miniature-wrapper {
+    width: clamp(100px, 24vw, 130px);
+  }
+}
+
+/* Paisagem baixa em telemóvel */
+@media (max-height: 480px) and (orientation: landscape) {
+  .obra-hero-content {
+    grid-template-columns: min(140px, 28vw) 1fr;
+    align-items: center;
+    padding: 12px 16px;
+  }
+
+  .obra-cover {
+    max-width: 140px;
+  }
+
+  .obra-sinopse {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+.obra-cap-item:focus-visible {
+  outline: 2px solid rgba(255, 204, 0, 0.85);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .obra-cap-item,
+  .shito-cap-miniature,
+  .shito-cap-number {
+    transition: none;
+  }
+
+  .obra-cap-item:hover,
+  .shito-cap-row--bloqueado:hover {
+    transform: none;
+  }
+}

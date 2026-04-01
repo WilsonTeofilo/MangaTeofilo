@@ -1,6 +1,6 @@
 // src/pages/Auth/Login.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -14,6 +14,7 @@ import { ref, get, onValue } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
 import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants';
 import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSync';
+import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
 import './Login.css';
 
 // ── Chaves de sessionStorage ───────────────────────────────────────────────
@@ -62,6 +63,9 @@ async function carregarStatusConta(uid) {
 // ── Componente ─────────────────────────────────────────────────────────────
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const irParaAposLogin = () =>
+    navigate(resolveSafeInternalRedirect(searchParams.get('redirect')), { replace: true });
   // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');
   /** Após código: usuário tem senha no site e também Google — mostrar alternativa */
@@ -158,7 +162,7 @@ export default function Login() {
         const av = listaAvatares[0] || AVATAR_FALLBACK;
         await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
         await ativarContaUsuario(googleUser.uid);
-        navigate('/', { replace: true });
+        irParaAposLogin();
         return;
       }
 
@@ -179,7 +183,7 @@ export default function Login() {
       await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
       await ativarContaUsuario(googleUser.uid);
 
-      navigate('/', { replace: true });
+      irParaAposLogin();
     } catch (err) {
       const msgs = {
         'auth/popup-closed-by-user':                     'Popup fechado. Tente novamente.',
@@ -393,7 +397,7 @@ export default function Login() {
 
       registerAttemptResult('registerPassword', true);
       setInfo('Conta criada! Bem-vindo à Tempestade.');
-      navigate('/', { replace: true });
+      irParaAposLogin();
     } catch (err) {
       registerAttemptResult('registerPassword', false);
       const msgs = {
@@ -440,7 +444,7 @@ export default function Login() {
         );
         await ativarContaUsuario(cred.user.uid);
         registerAttemptResult('loginPassword', true);
-        navigate('/', { replace: true });
+        irParaAposLogin();
         return;
       }
 
@@ -465,7 +469,7 @@ export default function Login() {
       }
 
       registerAttemptResult('loginPassword', true);
-      navigate('/', { replace: true });
+      irParaAposLogin();
     } catch (err) {
       registerAttemptResult('loginPassword', false);
       const base = {

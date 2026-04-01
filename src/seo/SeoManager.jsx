@@ -48,11 +48,21 @@ function buildSeo(pathname) {
     type: 'website',
   };
 
-  if (pathname === '/mangas') {
+  if (pathname === '/mangas' || pathname === '/works') {
     return {
       ...defs,
-      title: `Lista de Mangás | ${SITE_NAME}`,
-      description: 'Explore o catálogo de obras autorais, veja status, novidades e favorite seus mangás.',
+      title: `Obras | ${SITE_NAME}`,
+      description: 'Explore o catálogo de mangás autorais, veja status, novidades e favorite por obra.',
+    };
+  }
+
+  if (pathname.startsWith('/work/')) {
+    const slugWork = decodeURIComponent(pathname.split('/')[2] || '').trim() || 'Obra';
+    return {
+      ...defs,
+      type: 'article',
+      title: `${slugWork} | ${SITE_NAME}`,
+      description: `Leia capítulos, sinopse e novidades desta obra no ${SITE_NAME}.`,
     };
   }
 
@@ -135,12 +145,12 @@ export default function SeoManager() {
       url: SITE_URL,
       potentialAction: {
         '@type': 'SearchAction',
-        target: `${SITE_URL}/mangas`,
+        target: `${SITE_URL}/works`,
         'query-input': 'required name=query',
       },
     });
 
-    if (cleanPath.startsWith('/obra/')) {
+    if (cleanPath.startsWith('/obra/') || cleanPath.startsWith('/work/')) {
       const obraNome = decodeURIComponent(cleanPath.split('/')[2] || 'obra');
       upsertJsonLd('obra', {
         '@context': 'https://schema.org',

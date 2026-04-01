@@ -37,6 +37,12 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Drawer mobile: conteúdo da página fica explicitamente abaixo do header (Safari/iOS) */
+body.mobile-menu-open main.shito-main-content {
+  position: relative;
+  z-index: 0;
+}
+
 img,
 video {
   max-width: 100%;

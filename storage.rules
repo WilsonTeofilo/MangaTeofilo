@@ -6,13 +6,22 @@ service firebase.storage {
           || request.auth.uid == "QayqN0MpBTQK6je44JwAXWapoQU2"
           || request.auth.uid == "20kR47W8PfTGIvGxGOGRsB2JiFA3"
           || request.auth.token.email == "wilsonteofilosouza@live.com"
-          || request.auth.token.email == "drakenteofilo@gmail.com");
+          || request.auth.token.email == "drakenteofilo@gmail.com"
+          || request.auth.token.admin == true);
+  }
+
+  function isMangaka() {
+    return request.auth != null && request.auth.token.panelRole == "mangaka";
+  }
+
+  function canUploadMangaAssets() {
+    return isShitoAdmin() || isMangaka();
   }
 
   match /b/{bucket}/o {
     match /capas/{fileName} {
       allow read: if true;
-      allow write: if isShitoAdmin()
+      allow write: if canUploadMangaAssets()
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
                    && fileName.matches('.*\\.(jpe?g|png|webp)$')));
@@ -20,7 +29,7 @@ service firebase.storage {
 
     match /manga/{obra}/{fileName} {
       allow read: if true;
-      allow write: if isShitoAdmin()
+      allow write: if canUploadMangaAssets()
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
                    && fileName.matches('.*\\.(jpe?g|png|webp)$')));
@@ -28,7 +37,7 @@ service firebase.storage {
 
     match /obras/{obra}/{fileName} {
       allow read: if true;
-      allow write: if isShitoAdmin()
+      allow write: if canUploadMangaAssets()
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
                    && fileName.matches('.*\\.(jpe?g|png|webp)$')));

@@ -6,13 +6,16 @@ import {
   Route,
   Navigate,
   useLocation,
+  useSearchParams,
 } from 'react-router-dom';
+import { buildLoginUrlWithRedirect, resolveSafeInternalRedirect } from './utils/loginRedirectPath';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 
 import { auth, db } from './services/firebase';
 import { isAdminUser } from './constants';
 import { emptyAdminAccess, resolveAdminAccess } from './auth/adminAccess';
+import { canAccessAdminPath, getDefaultAdminRedirect } from './auth/adminPermissions';
 import { cleanupDeprecatedUsuarioFields } from './userProfileSync';
 
 import Header from './components/Header.jsx';
@@ -39,8 +42,25 @@ import AvatarAdmin from './pages/Admin/AvatarAdmin.jsx';
 import DashboardAdmin from './pages/Admin/DashboardAdmin.jsx';
 import FinanceiroAdmin from './pages/Admin/FinanceiroAdmin.jsx';
 import LojaAdmin from './pages/Admin/LojaAdmin.jsx';
+import AdminLojaPedidos from './pages/Admin/AdminLojaPedidos.jsx';
+import EquipeAdmin from './pages/Admin/EquipeAdmin.jsx';
+import SessoesAdmin from './pages/Admin/SessoesAdmin.jsx';
+import MangakaFinanceiroAdmin from './pages/Admin/MangakaFinanceiroAdmin.jsx';
 
 import './index.css';
+
+function RedirectToLogin() {
+  const loc = useLocation();
+  return <Navigate to={buildLoginUrlWithRedirect(loc.pathname, loc.search)} replace />;
+}
+
+function LoginRoute({ podeAcessarApp }) {
+  const [sp] = useSearchParams();
+  if (podeAcessarApp) {
+    return <Navigate to={resolveSafeInternalRedirect(sp.get('redirect'))} replace />;
+  }
+  return <Login />;
+}
 
 function computePodeAcessarApp(usuario, perfilUsuario) {
   if (!usuario) return false;
@@ -108,12 +128,7 @@ function AppRoutes() {
       })
       .catch(() => {
         if (!ativo) return;
-        setAdminAccess({
-          byClaim: false,
-          byAllowlist: isAdminUser(usuario),
-          canAccessAdmin: isAdminUser(usuario),
-          claimChecked: false,
-        });
+        setAdminAccess({ ...emptyAdminAccess(), byAllowlist: isAdminUser(usuario), canAccessAdmin: isAdminUser(usuario) });
       });
     return () => {
       ativo = false;
@@ -138,14 +153,16 @@ function AppRoutes() {
     !podeAcessarApp;
 
   if (sessaoInvalida && location.pathname !== '/login') {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={buildLoginUrlWithRedirect(location.pathname, location.search)} replace />;
   }
 
   const isAdmin = adminAccess.canAccessAdmin;
+  const adminPathOk = (path) => canAccessAdminPath(path, adminAccess);
   const qs = new URLSearchParams(location.search || '');
   const trafficSource = String(qs.get('src') || '').toLowerCase();
   const cameFromPromoTracking =
     trafficSource === 'promo_email' ||
+    trafficSource === 'promo_admin' ||
     trafficSource === 'chapter_email';
 
   // Segurança UX: se o tracking abrir na home, empurra para /apoie mantendo query.
@@ -170,8 +187,21 @@ function AppRoutes() {
             element={<HomeAdaptive user={podeAcessarApp ? usuario : null} />}
           />
           <Route
+            path="/works"
+            element={<ListaMangas user={podeAcessarApp ? usuario : null} />}
+          />
+          <Route
             path="/mangas"
             element={<ListaMangas user={podeAcessarApp ? usuario : null} />}
+          />
+          <Route
+            path="/work/:slug"
+            element={
+              <ObraDetalhe
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+              />
+            }
           />
           <Route
             path="/obra/:obraId"
@@ -191,7 +221,7 @@ function AppRoutes() {
                   perfil={perfilUsuario}
                 />
               ) : (
-                <Navigate to="/login" replace />
+                <RedirectToLogin />
               )
             }
           />
@@ -232,7 +262,7 @@ function AppRoutes() {
           />
           <Route
             path="/capitulos"
-            element={<Navigate to="/mangas" replace />}
+            element={<Navigate to="/works" replace />}
           />
           <Route
             path="/ler/:id"
@@ -254,29 +284,18 @@ function AppRoutes() {
             }
           />
 
-          <Route
-            path="/login"
-            element={
-              !podeAcessarApp ? <Login /> : <Navigate to="/" replace />
-            }
-          />
+          <Route path="/login" element={<LoginRoute podeAcessarApp={podeAcessarApp} />} />
 
           <Route
             path="/perfil"
-            element={
-              podeAcessarApp ? (
-                <Perfil user={usuario} />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
+            element={podeAcessarApp ? <Perfil user={usuario} /> : <RedirectToLogin />}
           />
 
           <Route
             path="/admin"
             element={
               isAdmin ? (
-                <Navigate to="/admin/capitulos" replace />
+                <Navigate to={getDefaultAdminRedirect(adminAccess)} replace />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -285,8 +304,8 @@ function AppRoutes() {
           <Route
             path="/admin/capitulos"
             element={
-              isAdmin ? (
-                <CapitulosAdminHub />
+              adminPathOk('/admin/capitulos') ? (
+                <CapitulosAdminHub adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -295,8 +314,8 @@ function AppRoutes() {
           <Route
             path="/admin/manga"
             element={
-              isAdmin ? (
-                <AdminPanel user={usuario} />
+              adminPathOk('/admin/manga') ? (
+                <AdminPanel adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -305,8 +324,8 @@ function AppRoutes() {
           <Route
             path="/admin/obras"
             element={
-              isAdmin ? (
-                <ObrasAdmin />
+              adminPathOk('/admin/obras') ? (
+                <ObrasAdmin adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -315,7 +334,7 @@ function AppRoutes() {
           <Route
             path="/admin/avatares"
             element={
-              isAdmin ? (
+              adminPathOk('/admin/avatares') ? (
                 <AvatarAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -325,7 +344,7 @@ function AppRoutes() {
           <Route
             path="/admin/dashboard"
             element={
-              isAdmin ? (
+              adminPathOk('/admin/dashboard') ? (
                 <DashboardAdmin />
               ) : (
                 <Navigate to="/" replace />
@@ -335,8 +354,12 @@ function AppRoutes() {
           <Route
             path="/admin/financeiro"
             element={
-              isAdmin ? (
-                <FinanceiroAdmin />
+              adminPathOk('/admin/financeiro') ? (
+                adminAccess?.isMangaka ? (
+                  <MangakaFinanceiroAdmin user={usuario} />
+                ) : (
+                  <FinanceiroAdmin />
+                )
               ) : (
                 <Navigate to="/" replace />
               )
@@ -345,8 +368,38 @@ function AppRoutes() {
           <Route
             path="/admin/loja"
             element={
-              isAdmin ? (
+              adminPathOk('/admin/loja') ? (
                 <LojaAdmin />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/pedidos"
+            element={
+              adminPathOk('/admin/pedidos') ? (
+                <AdminLojaPedidos />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/sessoes"
+            element={
+              adminPathOk('/admin/sessoes') ? (
+                <SessoesAdmin adminAccess={adminAccess} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/equipe"
+            element={
+              adminPathOk('/admin/equipe') ? (
+                <EquipeAdmin />
               ) : (
                 <Navigate to="/" replace />
               )

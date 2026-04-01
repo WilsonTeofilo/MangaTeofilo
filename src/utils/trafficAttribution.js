@@ -13,7 +13,7 @@ function clean(value, maxLen = 120) {
 function normalizeSource(raw) {
   const s = clean(raw, 40);
   if (!s) return null;
-  const allowed = new Set(['promo_email', 'chapter_email', 'normal', 'direct', 'unknown']);
+  const allowed = new Set(['promo_email', 'promo_admin', 'chapter_email', 'normal', 'direct', 'unknown']);
   return allowed.has(s) ? s : 'unknown';
 }
 

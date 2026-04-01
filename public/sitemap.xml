@@ -2,51 +2,63 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://mangateofilo.com/</loc>
-    <lastmod>2026-03-31T01:03:22.980Z</lastmod>
+    <lastmod>2026-04-01T07:21:25.285Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/mangas</loc>
-    <lastmod>2026-03-31T01:03:22.982Z</lastmod>
+    <loc>https://mangateofilo.com/works</loc>
+    <lastmod>2026-04-01T07:21:25.286Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/capitulos</loc>
-    <lastmod>2026-03-31T01:03:22.982Z</lastmod>
+    <loc>https://mangateofilo.com/mangas</loc>
+    <lastmod>2026-04-01T07:21:25.286Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/sobre-autor</loc>
-    <lastmod>2026-03-31T01:03:22.982Z</lastmod>
+    <lastmod>2026-04-01T07:21:25.286Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/apoie</loc>
-    <lastmod>2026-03-31T01:03:22.982Z</lastmod>
+    <lastmod>2026-04-01T07:21:25.286Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/loja</loc>
-    <lastmod>2026-03-31T01:03:22.982Z</lastmod>
+    <lastmod>2026-04-01T07:21:25.286Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://mangateofilo.com/work/salgado-de-pao</loc>
+    <lastmod>2026-03-31T00:19:26.457Z</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>https://mangateofilo.com/obra/salgado-de-pao</loc>
     <lastmod>2026-03-31T00:19:26.457Z</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>
+  <url>
+    <loc>https://mangateofilo.com/work/shito</loc>
+    <lastmod>2026-03-30T19:55:21.491Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/obra/shito</loc>
     <lastmod>2026-03-30T19:55:21.491Z</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>0.9</priority>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/ler/-OozTjoChEqoBx1XM0Pu</loc>

@@ -49,17 +49,4 @@ export function msParaDatetimeLocal(ms) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function formatarDataLancamento(ms) {
-  if (ms == null || Number.isNaN(Number(ms))) return '';
-  try {
-    return new Date(Number(ms)).toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return '';
-  }
-}
+export { formatarDataLancamentoCapitulo as formatarDataLancamento } from './datasBr';

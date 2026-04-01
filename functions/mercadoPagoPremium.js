@@ -59,6 +59,7 @@ export async function criarPreferenciaPremium(
       trafficSource: attributionMeta?.source ? String(attributionMeta.source) : null,
       trafficCampaign: attributionMeta?.campaignId ? String(attributionMeta.campaignId) : null,
       trafficClickId: attributionMeta?.clickId ? String(attributionMeta.clickId) : null,
+      attributionCreatorId: attributionMeta?.creatorId ? String(attributionMeta.creatorId).trim() : null,
     },
     back_urls: {
       success: `${base}/apoie?mp=ok&tipo=premium`,

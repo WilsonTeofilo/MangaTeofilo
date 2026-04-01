@@ -3,12 +3,12 @@ import { onValue, ref as dbRef } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { auth, db } from '../../services/firebase';
-import { isAdminUser } from '../../constants';
 import {
   OBRA_PADRAO_ID,
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
+  obraCreatorId,
 } from '../../config/obras';
 import './CapitulosAdminHub.css';
 
@@ -20,25 +20,30 @@ function toSortedObras(raw) {
   return list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
 }
 
-export default function CapitulosAdminHub() {
+export default function CapitulosAdminHub({ adminAccess }) {
   const navigate = useNavigate();
   const user = auth.currentUser;
+  const isMangaka = Boolean(adminAccess?.isMangaka);
   const [loading, setLoading] = useState(true);
   const [obras, setObras] = useState([]);
-  const [capitulos, setCapitulos] = useState([]);
+  const [allCapitulos, setAllCapitulos] = useState([]);
   const [obraId, setObraId] = useState(OBRA_PADRAO_ID);
 
   useEffect(() => {
-    if (!isAdminUser(user)) {
+    if (!adminAccess?.canAccessAdmin) {
       navigate('/');
       return;
     }
     const unsubObras = onValue(dbRef(db, 'obras'), (snapshot) => {
       const list = toSortedObras(snapshot.exists() ? snapshot.val() : {});
-      setObras(list);
+      const visivel =
+        isMangaka && user?.uid
+          ? list.filter((o) => obraCreatorId(o) === user.uid)
+          : list;
+      setObras(visivel);
       setObraId((curr) => {
-        if (list.some((o) => o.id === curr)) return curr;
-        return list[0]?.id || OBRA_PADRAO_ID;
+        if (visivel.some((o) => o.id === curr)) return curr;
+        return visivel[0]?.id || OBRA_PADRAO_ID;
       });
       setLoading(false);
     });
@@ -46,13 +51,23 @@ export default function CapitulosAdminHub() {
       const list = snapshot.exists()
         ? Object.entries(snapshot.val() || {}).map(([id, data]) => ({ id, ...(data || {}) }))
         : [];
-      setCapitulos(list);
+      setAllCapitulos(list);
     });
     return () => {
       unsubObras();
       unsubCaps();
     };
-  }, [navigate, user]);
+  }, [navigate, user, adminAccess?.canAccessAdmin, isMangaka]);
+
+  const capitulos = useMemo(() => {
+    if (!isMangaka || !user?.uid) return allCapitulos;
+    const mineObraIds = new Set(obras.map((o) => o.id));
+    return allCapitulos.filter((cap) => {
+      if (String(cap.creatorId || '') === user.uid) return true;
+      const oid = obterObraIdCapitulo(cap);
+      return mineObraIds.has(oid);
+    });
+  }, [isMangaka, user?.uid, allCapitulos, obras]);
 
   const obraAtual = useMemo(
     () => obras.find((o) => o.id === obraId) || { ...OBRA_SHITO_DEFAULT, id: obraId },
@@ -71,7 +86,7 @@ export default function CapitulosAdminHub() {
     <main className="capitulos-admin-hub">
       <header className="capitulos-admin-hub__head">
         <div>
-          <h1>Capítulos</h1>
+          <h1>{isMangaka ? 'Meus capítulos' : 'Capítulos'}</h1>
           <p>Selecione a obra primeiro. Depois crie ou edite capítulos dela.</p>
         </div>
       </header>

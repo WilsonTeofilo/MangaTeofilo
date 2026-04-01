@@ -12,6 +12,7 @@ export function normalizeTrackingSource(v) {
   if (!s) return null;
   const allowed = new Set([
     'promo_email',
+    'promo_admin',
     'chapter_email',
     'home_multi',
     'normal',

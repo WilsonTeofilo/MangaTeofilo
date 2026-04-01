@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, ref, remove } from 'firebase/database';
+import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
@@ -10,7 +10,17 @@ import {
   obterObraIdCapitulo,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario } from '../../utils/capituloLancamento';
+import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
+import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth } from '../../utils/workFavorites';
 import './BibliotecaFavoritos.css';
+
+function pathObraPublica(obra, obraIdFallback) {
+  const o = obra && typeof obra === 'object' ? obra : null;
+  const id = String(o?.id || obraIdFallback || '').toLowerCase();
+  const slug = String(o?.slug || '').trim();
+  const key = slug || id;
+  return `/work/${encodeURIComponent(key)}`;
+}
 
 function toList(snapshotVal) {
   if (!snapshotVal || typeof snapshotVal !== 'object') return [];
@@ -26,30 +36,47 @@ function capSortDesc(a, b) {
   return (Number.isFinite(dB) ? dB : 0) - (Number.isFinite(dA) ? dA : 0);
 }
 
-function formatarDataCurta(iso) {
-  const ms = Date.parse(iso || '');
-  if (!Number.isFinite(ms)) return 'Sem data';
-  return new Date(ms).toLocaleDateString('pt-BR');
-}
-
 export default function BibliotecaFavoritos({ user, perfil }) {
   const navigate = useNavigate();
   const [loadingFavs, setLoadingFavs] = useState(true);
   const [loadingObras, setLoadingObras] = useState(true);
   const [loadingCaps, setLoadingCaps] = useState(true);
-  const [favoritosMap, setFavoritosMap] = useState({});
+  const [favoritosLegacy, setFavoritosLegacy] = useState({});
+  const [favoritosCanon, setFavoritosCanon] = useState({});
   const [obras, setObras] = useState([]);
   const [capitulos, setCapitulos] = useState([]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    const favRef = ref(db, `usuarios/${user.uid}/favoritosObras`);
-    const unsub = onValue(favRef, (snapshot) => {
-      setFavoritosMap(snapshot.exists() ? snapshot.val() || {} : {});
+    if (!user?.uid) {
+      setFavoritosLegacy({});
+      setFavoritosCanon({});
       setLoadingFavs(false);
+      return () => {};
+    }
+    setLoadingFavs(true);
+    let pending = 2;
+    const done = () => {
+      pending -= 1;
+      if (pending <= 0) setLoadingFavs(false);
+    };
+    const u1 = onValue(ref(db, `usuarios/${user.uid}/favoritosObras`), (snapshot) => {
+      setFavoritosLegacy(snapshot.exists() ? snapshot.val() || {} : {});
+      done();
     });
-    return () => unsub();
+    const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
+      setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
+      done();
+    });
+    return () => {
+      u1();
+      u2();
+    };
   }, [user?.uid]);
+
+  const favoritosMap = useMemo(
+    () => mergeWorkFavoriteMaps(favoritosLegacy, favoritosCanon),
+    [favoritosLegacy, favoritosCanon]
+  );
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
@@ -117,7 +144,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
   const desfavoritarObra = async (obraId) => {
     if (!user?.uid || !obraId) return;
     try {
-      await remove(ref(db, `usuarios/${user.uid}/favoritosObras/${obraId}`));
+      await removeWorkFavoriteBoth(db, user.uid, obraId);
     } catch {
       // silencioso: o listener já sincroniza o estado
     }
@@ -136,7 +163,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
         <section className="biblioteca-empty">
           <h2>Você ainda não favoritou nenhuma obra</h2>
           <p>Abra a Lista de Mangás e favorite obras para montar sua biblioteca.</p>
-          <button type="button" onClick={() => navigate('/mangas')}>Ir para Lista de Mangás</button>
+          <button type="button" onClick={() => navigate('/works')}>Ver obras</button>
         </section>
       ) : (
         <section className="biblioteca-grid">
@@ -163,7 +190,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
                     <p>{item.totalCapitulos} capítulos</p>
                     {item.capUltimo ? (
                       <p className="biblioteca-last">
-                        Último: #{item.capUltimo.numero} · {formatarDataCurta(item.capUltimo.dataUpload)}
+                        Último: #{item.capUltimo.numero} · {formatarDataBrPartirIsoOuMs(item.capUltimo.dataUpload)}
                       </p>
                     ) : (
                       <p className="biblioteca-last">Sem capítulos ainda</p>
@@ -176,7 +203,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
                     type="button"
                     className="btn-biblioteca-sec"
                     disabled={item.obraExcluida}
-                    onClick={() => navigate(`/obra/${encodeURIComponent(item.obraId)}`)}
+                    onClick={() => navigate(pathObraPublica(item.obra, item.obraId))}
                   >
                     {item.obraExcluida ? 'Obra excluída' : 'Ver obra'}
                   </button>

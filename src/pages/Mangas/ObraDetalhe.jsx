@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, ref, remove, set } from 'firebase/database';
+import { onValue, ref } from 'firebase/database';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import {
   OBRA_PADRAO_ID,
   OBRA_SHITO_DEFAULT,
+  ensureLegacyShitoObra,
   normalizarObraId,
   obterObraIdCapitulo,
+  resolverObraIdPorSlugOuId,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
+import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
+import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import './ObraDetalhe.css';
 
 function toList(snapshotVal) {
@@ -27,16 +31,15 @@ function chapterSort(a, b) {
   return (Number.isFinite(dB) ? dB : 0) - (Number.isFinite(dA) ? dA : 0);
 }
 
-function formatarDataBR(iso) {
-  const ms = Date.parse(iso || '');
-  if (!Number.isFinite(ms)) return 'Sem data';
-  return new Date(ms).toLocaleDateString('pt-BR');
-}
-
+/** Rota `/obra/:obraId` ou `/work/:slug` (slug ou id). */
 export default function ObraDetalhe({ user, perfil }) {
-  const { obraId: obraIdRaw } = useParams();
-  const obraId = normalizarObraId(obraIdRaw);
+  const params = useParams();
+  const routeObraId = params.obraId;
+  const routeSlug = params.slug;
   const navigate = useNavigate();
+
+  const [obraId, setObraId] = useState(null);
+  const [idResolvido, setIdResolvido] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [obra, setObra] = useState(null);
@@ -44,6 +47,32 @@ export default function ObraDetalhe({ user, perfil }) {
   const [isFavorito, setIsFavorito] = useState(false);
 
   useEffect(() => {
+    if (routeObraId) {
+      setObraId(normalizarObraId(routeObraId));
+      setIdResolvido(true);
+      return;
+    }
+    if (routeSlug) {
+      setIdResolvido(false);
+      const raw = decodeURIComponent(String(routeSlug || ''));
+      const unsub = onValue(ref(db, 'obras'), (snapshot) => {
+        const list = snapshot.exists() ? ensureLegacyShitoObra(toList(snapshot.val())) : [];
+        const resolved = resolverObraIdPorSlugOuId(list, raw);
+        setObraId(resolved);
+        setIdResolvido(true);
+      });
+      return () => unsub();
+    }
+    setObraId(null);
+    setIdResolvido(true);
+  }, [routeObraId, routeSlug]);
+
+  useEffect(() => {
+    if (!idResolvido || !obraId) {
+      setLoading(!idResolvido);
+      return () => {};
+    }
+
     let loadingObra = true;
     let loadingCap = true;
 
@@ -79,16 +108,29 @@ export default function ObraDetalhe({ user, perfil }) {
       unsubObra();
       unsubCap();
     };
-  }, [obraId]);
+  }, [idResolvido, obraId]);
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!user?.uid || !obraId) {
       setIsFavorito(false);
       return () => {};
     }
-    const favRef = ref(db, `usuarios/${user.uid}/favoritosObras/${obraId}`);
-    const unsub = onValue(favRef, (snapshot) => setIsFavorito(snapshot.exists()));
-    return () => unsub();
+    const base = `usuarios/${user.uid}`;
+    let leg = false;
+    let mod = false;
+    const sync = () => setIsFavorito(leg || mod);
+    const u1 = onValue(ref(db, `${base}/favoritosObras/${obraId}`), (s) => {
+      leg = s.exists();
+      sync();
+    });
+    const u2 = onValue(ref(db, `${base}/favorites/${obraId}`), (s) => {
+      mod = s.exists();
+      sync();
+    });
+    return () => {
+      u1();
+      u2();
+    };
   }, [user?.uid, obraId]);
 
   const capituloCTA = useMemo(
@@ -101,22 +143,39 @@ export default function ObraDetalhe({ user, perfil }) {
       navigate('/login');
       return;
     }
-    const favRef = ref(db, `usuarios/${user.uid}/favoritosObras/${obraId}`);
-    if (isFavorito) {
-      await remove(favRef);
-      return;
-    }
-    await set(favRef, {
+    if (!obraId) return;
+    const payload = {
       obraId,
+      workId: obraId,
       titulo: obra?.titulo || obraId,
       savedAt: Date.now(),
-    });
+    };
+    if (isFavorito) {
+      await removeWorkFavoriteBoth(db, user.uid, obraId);
+      return;
+    }
+    await saveWorkFavoriteBoth(db, user.uid, obraId, payload);
   };
 
   const abrirCTA = () => {
     if (!capituloCTA) return;
     navigate(`/ler/${capituloCTA.id}`);
   };
+
+  if (!idResolvido) return <div className="shito-app-splash" aria-hidden="true" />;
+  if (idResolvido && !obraId) {
+    return (
+      <main className="obra-page">
+        <section className="obra-not-found">
+          <h1>Obra não encontrada</h1>
+          <p>Confira o link ou volte ao catálogo.</p>
+          <button type="button" onClick={() => navigate('/works')}>
+            Ver obras
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   if (loading) return <div className="shito-app-splash" aria-hidden="true" />;
 
@@ -126,7 +185,9 @@ export default function ObraDetalhe({ user, perfil }) {
         <section className="obra-not-found">
           <h1>Obra não encontrada</h1>
           <p>Essa obra não existe ou ainda não foi publicada.</p>
-          <button type="button" onClick={() => navigate('/mangas')}>Voltar para Lista de Mangás</button>
+          <button type="button" onClick={() => navigate('/works')}>
+            Ver obras
+          </button>
         </section>
       </main>
     );
@@ -179,7 +240,7 @@ export default function ObraDetalhe({ user, perfil }) {
               if (!cap) return null;
               const liberado = capituloLiberadoParaUsuario(cap, user, perfil);
               const agendado = Number(cap?.publicReleaseAt || 0) > Date.now();
-              return ( 
+              return (
                 <article
                   key={cap.id}
                   className={`obra-cap-item shito-cap-row ${liberado ? '' : 'shito-cap-row--bloqueado'}`}
@@ -222,7 +283,7 @@ export default function ObraDetalhe({ user, perfil }) {
                     </div>
                   </div>
                   <div className="cap-right-info">
-                    <time className="shito-cap-date">{formatarDataBR(cap.dataUpload)}</time>
+                    <time className="shito-cap-date">{formatarDataBrPartirIsoOuMs(cap.dataUpload)}</time>
                     <span className="arrow-mobile">›</span>
                   </div>
                 </article>
@@ -234,4 +295,3 @@ export default function ObraDetalhe({ user, perfil }) {
     </main>
   );
 }
-

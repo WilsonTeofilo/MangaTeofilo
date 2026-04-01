@@ -1,12 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// 1. CSS LOCAL (Certifique-se que o arquivo SobreAutor.css está na mesma pasta pages/Home)
-import './SobreAutor.css'; 
+import './SobreAutor.css';
 
 export default function SobreAutor() {
   const navigate = useNavigate();
   const [isPhotoHovered, setIsPhotoHovered] = useState(false);
+  const [revelarPorToque, setRevelarPorToque] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(hover: none), (pointer: coarse)');
+    const apply = () => setRevelarPorToque(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+
+  const handleFotoClick = useCallback(() => {
+    if (!revelarPorToque) return;
+    setIsPhotoHovered((v) => !v);
+  }, [revelarPorToque]);
 
   return (
     <div className="sobre-autor-page">
@@ -19,9 +32,22 @@ export default function SobreAutor() {
           <section className="foto-section">
             <div
               className={`foto-container ${isPhotoHovered ? 'hovered' : ''}`}
-              onMouseEnter={() => setIsPhotoHovered(true)}
-              onMouseLeave={() => setIsPhotoHovered(false)}
-              role="presentation"
+              onMouseEnter={() => {
+                if (!revelarPorToque) setIsPhotoHovered(true);
+              }}
+              onMouseLeave={() => {
+                if (!revelarPorToque) setIsPhotoHovered(false);
+              }}
+              onClick={handleFotoClick}
+              role={revelarPorToque ? 'button' : 'presentation'}
+              tabIndex={revelarPorToque ? 0 : undefined}
+              onKeyDown={(e) => {
+                if (!revelarPorToque) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setIsPhotoHovered((v) => !v);
+                }
+              }}
             >
               {/* Imagem Real do Autor */}
               <img
@@ -41,6 +67,11 @@ export default function SobreAutor() {
               />
             </div>
             <p className="foto-caption">Wilson Teofilo</p>
+            {revelarPorToque && (
+              <p className="foto-tap-hint" aria-live="polite">
+                {isPhotoHovered ? 'Toque de novo para voltar à foto real' : 'Toque na foto para ver a versão mangá'}
+              </p>
+            )}
             <div className="autor-badge">AUTOR & DEV</div>
           </section>
 
@@ -71,7 +102,7 @@ export default function SobreAutor() {
             </div>
 
             <div className="bio-cta">
-              <button className="hn-cta" onClick={() => navigate('/capitulos')}>
+              <button className="hn-cta" onClick={() => navigate('/works')}>
                 LER SHITO AGORA
               </button>
             </div>

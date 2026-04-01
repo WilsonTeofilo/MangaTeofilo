@@ -3,15 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 
-import { db, storage, auth } from '../../services/firebase'; 
-import { isAdminUser } from '../../constants';
+import { db, storage, auth } from '../../services/firebase';
 import {
   OBRA_PADRAO_ID,
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
   normalizarObraId,
   obterObraIdCapitulo,
+  obraCreatorId,
 } from '../../config/obras';
+import { formatarDataHora24Br, formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -289,26 +290,6 @@ function parseBrDateTimeToMs(br) {
   return dt.getTime();
 }
 
-function msParaBrDateTime(ms) {
-  if (!ms || !Number.isFinite(Number(ms))) return '';
-  try {
-    const fmt = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    const parts = fmt.formatToParts(new Date(Number(ms)));
-    const get = (type) => parts.find((p) => p.type === type)?.value || '';
-    return `${get('day')}/${get('month')}/${get('year')} ${get('hour')}:${get('minute')}`;
-  } catch {
-    return '';
-  }
-}
-
 // --- COMPONENTE: MODAL DE ERRO ---
 function ModalErro({ mensagem, aoFechar }) {
   if (!mensagem) return null;
@@ -549,7 +530,7 @@ function ModalPreviewPagina({ aberto, itens, indiceInicial = 0, aoFechar }) {
 }
 
 // --- COMPONENTE PRINCIPAL ---
-export default function AdminPanel() {
+export default function AdminPanel({ adminAccess }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const user = auth.currentUser;
@@ -582,7 +563,7 @@ export default function AdminPanel() {
   const [antecipadoMembros, setAntecipadoMembros] = useState(false);
 
   useEffect(() => {
-    if (!isAdminUser(user)) {
+    if (!adminAccess?.canAccessAdmin) {
       navigate('/');
       return;
     }
@@ -613,7 +594,7 @@ export default function AdminPanel() {
       unsubscribe();
       unsubObras();
     };
-  }, [user, navigate]);
+  }, [user, navigate, adminAccess?.canAccessAdmin]);
 
   const previewsPaginasSelecionadas = useMemo(
     () =>
@@ -637,6 +618,15 @@ export default function AdminPanel() {
     const obra = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
     return obra || { ...OBRA_SHITO_DEFAULT, id: obraIdSelecionada, slug: obraIdSelecionada };
   }, [obras, obraIdSelecionada]);
+
+  useEffect(() => {
+    if (!adminAccess?.isMangaka || !user?.uid) return;
+    const own = obraCreatorId(obraSelecionada) === user.uid;
+    if (!own) {
+      navigate('/admin/capitulos');
+    }
+  }, [adminAccess?.isMangaka, user?.uid, obraSelecionada, navigate]);
+
   const capitulosDaObra = useMemo(
     () =>
       capitulos
@@ -719,9 +709,14 @@ export default function AdminPanel() {
   useEffect(() => {
     let ativo = true;
     let objectUrl = '';
-    if (!capaPreviewUrl) {
-      setCapaPreviewFinalUrl('');
-      return () => {};
+    if (!capaFonteEditavel) {
+      setCapaPreviewFinalUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+      return () => {
+        ativo = false;
+      };
     }
     const img = new Image();
     img.onload = () => {
@@ -735,20 +730,26 @@ export default function AdminPanel() {
       canvas.toBlob((blob) => {
         if (!ativo || !blob) return;
         objectUrl = URL.createObjectURL(blob);
-        setCapaPreviewFinalUrl(objectUrl);
+        setCapaPreviewFinalUrl((prev) => {
+          if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
       }, 'image/webp', 0.9);
     };
     img.onerror = () => {
       if (!ativo) return;
-      setCapaPreviewFinalUrl('');
+      setCapaPreviewFinalUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
     };
-    img.src = capaPreviewUrl;
+    img.src = capaFonteEditavel;
 
     return () => {
       ativo = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [capaPreviewUrl, capaAjuste]);
+  }, [capaFonteEditavel, capaAjuste]);
 
   useEffect(() => {
     if (!capituloEditQueryId) return;
@@ -764,7 +765,7 @@ export default function AdminPanel() {
     setCapaAjuste(ajusteExistente);
     setCapaAjusteInicial(ajusteExistente);
     setEtapaAtiva(2);
-    setPublicReleaseAtInput(msParaBrDateTime(cap.publicReleaseAt));
+    setPublicReleaseAtInput(formatarDataHora24Br(cap.publicReleaseAt));
     setAntecipadoMembros(Boolean(cap.antecipadoMembros));
   }, [capituloEditQueryId, capitulosDaObra, editandoId]);
 
@@ -993,8 +994,10 @@ export default function AdminPanel() {
         titulo,
         numero: numeroNormalizado,
         obraId: obraIdSelecionada,
+        workId: obraIdSelecionada,
         obraTitulo: String(obraSelecionada?.tituloCurto || obraSelecionada?.titulo || obraIdSelecionada),
         dataUpload: new Date().toISOString(),
+        creatorId: obraCreatorId(obraSelecionada),
       };
 
       let publicMs = null;
@@ -1053,7 +1056,7 @@ export default function AdminPanel() {
     setCapaAjuste(ajusteExistente);
     setCapaAjusteInicial(ajusteExistente);
     setEtapaAtiva(2);
-    setPublicReleaseAtInput(msParaBrDateTime(cap.publicReleaseAt));
+    setPublicReleaseAtInput(formatarDataHora24Br(cap.publicReleaseAt));
     setAntecipadoMembros(Boolean(cap.antecipadoMembros));
     window.scrollTo(0, 0);
   };
@@ -1467,7 +1470,7 @@ export default function AdminPanel() {
               const ehRascunho = !cap.capaUrl || !Array.isArray(cap.paginas) || cap.paginas.length === 0;
               const status = ehRascunho ? 'Rascunho' : (ehAgendado ? 'Agendado' : 'Publicado');
               const dataLabel = cap.dataUpload
-                ? new Date(cap.dataUpload).toLocaleDateString('pt-BR')
+                ? formatarDataBrPartirIsoOuMs(cap.dataUpload)
                 : 'Sem data';
               const views = Number(cap.visualizacoes || 0);
               return (

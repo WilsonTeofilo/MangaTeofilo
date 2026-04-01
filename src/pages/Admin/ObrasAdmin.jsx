@@ -4,8 +4,9 @@ import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage
 import { useNavigate } from 'react-router-dom';
 
 import { auth, db, storage } from '../../services/firebase';
-import { isAdminUser } from '../../constants';
-import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, ensureLegacyShitoObra } from '../../config/obras';
+import { PLATFORM_LEGACY_CREATOR_UID } from '../../constants';
+import { formatarDataHoraBr } from '../../utils/datasBr';
+import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, ensureLegacyShitoObra, obraCreatorId } from '../../config/obras';
 import './ObrasAdmin.css';
 
 const STATUS_OPTIONS = [
@@ -35,12 +36,6 @@ function normalizarAjusteObra(raw) {
     x: Math.min(100, Math.max(-100, Number(raw?.x ?? 0))),
     y: Math.min(100, Math.max(-100, Number(raw?.y ?? 0))),
   };
-}
-
-function formatDateTimeBr(value) {
-  const n = Number(value || 0);
-  if (!Number.isFinite(n) || n <= 0) return 'Sem data';
-  return new Date(n).toLocaleString('pt-BR');
 }
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -265,9 +260,10 @@ function emptyForm() {
   };
 }
 
-export default function ObrasAdmin() {
+export default function ObrasAdmin({ adminAccess }) {
   const navigate = useNavigate();
   const user = auth.currentUser;
+  const isMangaka = Boolean(adminAccess?.isMangaka);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [obras, setObras] = useState([]);
@@ -294,7 +290,7 @@ export default function ObrasAdmin() {
   const legacyShitoSeedRef = useRef(false);
 
   useEffect(() => {
-    if (!isAdminUser(user)) {
+    if (!adminAccess?.canAccessAdmin) {
       navigate('/');
       return;
     }
@@ -307,7 +303,7 @@ export default function ObrasAdmin() {
         return;
       }
       const raw = snapshot.val() || {};
-      if (!raw?.[OBRA_PADRAO_ID] && !legacyShitoSeedRef.current) {
+      if (!isMangaka && !raw?.[OBRA_PADRAO_ID] && !legacyShitoSeedRef.current) {
         legacyShitoSeedRef.current = true;
         set(dbRef(db, `obras/${OBRA_PADRAO_ID}`), {
           ...OBRA_SHITO_DEFAULT,
@@ -316,6 +312,7 @@ export default function ObrasAdmin() {
           isPublished: true,
           createdAt: Number(raw?.[OBRA_PADRAO_ID]?.createdAt || 0),
           updatedAt: nowMs(),
+          creatorId: OBRA_SHITO_DEFAULT.creatorId,
         }).catch(() => {
           legacyShitoSeedRef.current = false;
         });
@@ -327,7 +324,11 @@ export default function ObrasAdmin() {
         }))
       );
       lista.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-      setObras(lista);
+      const visivel =
+        isMangaka && user?.uid
+          ? lista.filter((o) => obraCreatorId(o) === user.uid)
+          : lista;
+      setObras(visivel);
       setObraSelecionadaId((curr) => {
         if (!curr) return '';
         if (lista.some((obra) => obra.id === curr)) return curr;
@@ -336,7 +337,7 @@ export default function ObrasAdmin() {
       setLoading(false);
     });
     return () => unsub();
-  }, [navigate, user]);
+  }, [navigate, user, adminAccess?.canAccessAdmin, isMangaka]);
 
   const obrasMap = useMemo(() => {
     const map = new Map();
@@ -407,6 +408,10 @@ export default function ObrasAdmin() {
     clearMsgs();
     const obra = obrasMap.get(obraId);
     if (!obra) return;
+    if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
+      setErro('Você só pode editar obras que você criou.');
+      return;
+    }
     setEditandoId(obraId);
     setObraSelecionadaId(obraId);
     setSlugAuto(false);
@@ -465,6 +470,16 @@ export default function ObrasAdmin() {
       return;
     }
     const slug = slugify(form.slug || form.id || form.titulo);
+    if (isMangaka && user?.uid && editandoId && obraCreatorId(obrasMap.get(editandoId)) !== user.uid) {
+      setErro('Sem permissão para alterar esta obra.');
+      return;
+    }
+    const creatorIdResolved =
+      editandoId && obrasMap.has(editandoId)
+        ? obraCreatorId(obrasMap.get(editandoId))
+        : isMangaka && user?.uid
+          ? user.uid
+          : PLATFORM_LEGACY_CREATOR_UID;
     const payload = {
       titulo: String(form.titulo || '').trim(),
       tituloCurto: String(form.tituloCurto || '').trim() || String(form.titulo || '').trim(),
@@ -481,6 +496,7 @@ export default function ObrasAdmin() {
       capaAjuste: normalizarAjusteObra(capaAjuste),
       bannerAjuste: normalizarAjusteObra(bannerAjuste),
       updatedAt: nowMs(),
+      creatorId: creatorIdResolved,
     };
 
     setSaving(true);
@@ -708,9 +724,14 @@ export default function ObrasAdmin() {
   useEffect(() => {
     let ativo = true;
     let objectUrl = '';
-    if (!capaPreviewUrl) {
-      setCapaPreviewFinalUrl('');
-      return () => {};
+    if (!capaFonteEditavel) {
+      setCapaPreviewFinalUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+      return () => {
+        ativo = false;
+      };
     }
     const img = new Image();
     img.onload = () => {
@@ -724,22 +745,37 @@ export default function ObrasAdmin() {
       canvas.toBlob((blob) => {
         if (!ativo || !blob) return;
         objectUrl = URL.createObjectURL(blob);
-        setCapaPreviewFinalUrl(objectUrl);
+        setCapaPreviewFinalUrl((prev) => {
+          if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
       }, 'image/webp', 0.9);
     };
-    img.src = capaPreviewUrl;
+    img.onerror = () => {
+      if (!ativo) return;
+      setCapaPreviewFinalUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+    img.src = capaFonteEditavel;
     return () => {
       ativo = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [capaPreviewUrl, capaAjuste]);
+  }, [capaFonteEditavel, capaAjuste]);
 
   useEffect(() => {
     let ativo = true;
     let objectUrl = '';
-    if (!bannerPreviewUrl) {
-      setBannerPreviewFinalUrl('');
-      return () => {};
+    if (!bannerFonteEditavel) {
+      setBannerPreviewFinalUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+      return () => {
+        ativo = false;
+      };
     }
     const img = new Image();
     img.onload = () => {
@@ -753,18 +789,32 @@ export default function ObrasAdmin() {
       canvas.toBlob((blob) => {
         if (!ativo || !blob) return;
         objectUrl = URL.createObjectURL(blob);
-        setBannerPreviewFinalUrl(objectUrl);
+        setBannerPreviewFinalUrl((prev) => {
+          if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
       }, 'image/webp', 0.9);
     };
-    img.src = bannerPreviewUrl;
+    img.onerror = () => {
+      if (!ativo) return;
+      setBannerPreviewFinalUrl((prev) => {
+        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+        return '';
+      });
+    };
+    img.src = bannerFonteEditavel;
     return () => {
       ativo = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [bannerPreviewUrl, bannerAjuste]);
+  }, [bannerFonteEditavel, bannerAjuste]);
 
   const togglePublish = async (obra) => {
     clearMsgs();
+    if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
+      setErro('Sem permissão.');
+      return;
+    }
     try {
       await update(dbRef(db, `obras/${obra.id}`), {
         isPublished: !(obra.isPublished === true),
@@ -777,6 +827,10 @@ export default function ObrasAdmin() {
 
   const apagarObra = async (obra) => {
     clearMsgs();
+    if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
+      setErro('Sem permissão para apagar esta obra.');
+      return;
+    }
     if (obra.id === OBRA_PADRAO_ID) {
       setErro('A obra padrão (shito) não pode ser apagada por segurança.');
       return;
@@ -802,8 +856,12 @@ export default function ObrasAdmin() {
     <main className="obras-admin-page">
       <header className="obras-admin-head">
         <div>
-          <h1>Editor de Obras</h1>
-          <p>Gerencie dados, mídia, SEO e publicação com preview em tempo real.</p>
+          <h1>{isMangaka ? 'Minhas obras' : 'Editor de Obras'}</h1>
+          <p>
+            {isMangaka
+              ? 'CRUD apenas das suas obras (multi-tenant).'
+              : 'Gerencie dados, mídia, SEO e publicação com preview em tempo real.'}
+          </p>
         </div>
         <div className="obras-admin-head-actions">
           <button type="button" className="btn-sec" onClick={iniciarNovo}>Nova obra</button>
@@ -903,7 +961,7 @@ export default function ObrasAdmin() {
                   )}
                 </div>
                 <small className="field-help">
-                  URL final: <code>/obra/{form.slug || 'slug-da-obra'}</code>
+                  URL pública: <code>/work/{form.slug || 'slug-da-obra'}</code> (legado: <code>/obra/…</code>)
                 </small>
                 {editandoId ? (
                   <small className="field-help">
@@ -1174,7 +1232,7 @@ export default function ObrasAdmin() {
                   {STATUS_OPTIONS.find((s) => s.id === obra.status)?.label || 'Em lançamento'} ·{' '}
                   {obra.isPublished ? 'Publicado' : 'Oculto'}
                 </span>
-                <span>Atualizado em {formatDateTimeBr(obra.updatedAt)}</span>
+                <span>Atualizado em {formatarDataHoraBr(obra.updatedAt, { seVazio: 'Sem data' })}</span>
               </div>
               <div className="obra-list-actions">
                 <button type="button" className="btn-inline" onClick={() => editarObra(obra.id)}>Editar</button>

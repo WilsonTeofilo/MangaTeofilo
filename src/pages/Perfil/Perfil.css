@@ -343,6 +343,24 @@ select.perfil-input {
   color: #ffcc00;
 }
 
+.perfil-premium-tempo {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  background: rgba(255, 204, 0, 0.08);
+  color: #ffe7a0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.perfil-premium-msg--foot {
+  margin-top: 10px !important;
+  font-size: 0.88rem !important;
+  color: #a8a8a8 !important;
+}
+
 @media (max-width: 500px) {
   .perfil-card { padding: 30px 20px; }
   .avatar-options-grid {

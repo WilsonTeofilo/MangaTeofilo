@@ -22,6 +22,9 @@ export const isAdminUser = (user) => {
   return ADMIN_UIDS.includes(user.uid) || ADMIN_EMAILS.includes(email);
 };
 
+/** Dono legado de obras/capítulos sem `creatorId` no RTDB (primeiro super-admin). */
+export const PLATFORM_LEGACY_CREATOR_UID = ADMIN_UIDS[0];
+
 export const LISTA_AVATARES = Array.from(
   { length: 17 },
   (_, i) => `/assets/avatares/ava${i + 1}.webp`

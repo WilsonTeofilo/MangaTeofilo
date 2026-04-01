@@ -38,6 +38,23 @@ import {
   normalizePromoHistoryItem,
   getPremiumOfferAt,
 } from './promoUtils.js';
+import {
+  ADMIN_REGISTRY_PATH,
+  defaultMangakaPermissions,
+  getAdminAuthContext,
+  requireAdminAuth,
+  requirePermission,
+  requireSuperAdmin,
+  isTargetSuperAdmin,
+  normalizePermissionsForRegistry,
+  resolveTargetUidByEmail,
+  SUPER_ADMIN_UIDS,
+} from './adminRbac.js';
+import {
+  sanitizeCreatorId,
+  recordCreatorPayment,
+  recordCreatorAttributedPremium,
+} from './creatorDataLedger.js';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
@@ -114,30 +131,48 @@ function getSmtpFrom() {
 
 const PREMIUM_PROMO_PATH = 'financas/promocoes/premiumAtual';
 const PREMIUM_PROMO_HISTORY_PATH = 'financas/promocoes/premiumHistorico';
+const PREMIUM_PROMO_LOG_PATH = 'financas/promocoes/premiumLog';
+
+async function appendPremiumPromoLog(db, entry) {
+  await db.ref(PREMIUM_PROMO_LOG_PATH).push({
+    at: Date.now(),
+    ...entry,
+  });
+}
 
 async function enviarEmailPromocaoPremium(db, promo) {
   const usersSnap = await db.ref('usuarios').get();
-  if (!usersSnap.exists()) return { sent: 0, skipped: 0, failed: 0 };
+  if (!usersSnap.exists()) {
+    return {
+      sent: 0,
+      failed: 0,
+      skippedNoOptIn: 0,
+      skippedOptInNoEmail: 0,
+      optInAtivos: 0,
+      skipped: 0,
+    };
+  }
   const users = usersSnap.val() || {};
   const transporter = getTransporter();
   const from = getSmtpFrom();
   const base = APP_BASE_URL.value().replace(/\/$/, '');
   let sent = 0;
-  let skipped = 0;
   let failed = 0;
+  let skippedNoOptIn = 0;
+  let skippedOptInNoEmail = 0;
 
   for (const [uid, profile] of Object.entries(users)) {
     const appStatus = profile?.status;
     const optIn = profile?.notifyPromotions === true;
     if (appStatus !== 'ativo' || !optIn) {
-      skipped += 1;
+      skippedNoOptIn += 1;
       continue;
     }
     try {
       const authUser = await getAuth().getUser(uid);
       const to = authUser?.email;
       if (!to || authUser.disabled) {
-        skipped += 1;
+        skippedOptInNoEmail += 1;
         continue;
       }
       const clickId = buildTrackingClickId('promo', uid);
@@ -174,7 +209,16 @@ async function enviarEmailPromocaoPremium(db, promo) {
       logger.error('Promo premium: erro ao enviar email', { uid, error: err?.message });
     }
   }
-  return { sent, skipped, failed };
+  const optInAtivos = sent + failed + skippedOptInNoEmail;
+  return {
+    sent,
+    failed,
+    skippedNoOptIn,
+    skippedOptInNoEmail,
+    optInAtivos,
+    /** @deprecated compat: quem não entra no envio (sem opt-in ou sem e-mail) */
+    skipped: skippedNoOptIn + skippedOptInNoEmail,
+  };
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
@@ -218,19 +262,6 @@ async function pushMarketingEvent(db, event) {
   } catch (err) {
     logger.error('pushMarketingEvent falhou', { error: err?.message });
   }
-}
-
-function isShitoAdminAuth(auth) {
-  if (!auth?.uid) return false;
-  const uid = auth.uid;
-  const email = String(auth.token?.email || '').toLowerCase();
-  return (
-    uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' ||
-    uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' ||
-    uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' ||
-    email === 'wilsonteofilosouza@live.com' ||
-    email === 'drakenteofilo@gmail.com'
-  );
 }
 
 async function deleteUserEverywhere(uid) {
@@ -405,7 +436,8 @@ async function aplicarPremiumAprovado(
   promoName,
   trafficSource,
   trafficCampaign,
-  trafficClickId
+  trafficClickId,
+  attributionCreatorId = null
 ) {
   const now = Date.now();
   const snap = await db.ref(`usuarios/${uid}`).get();
@@ -495,6 +527,27 @@ async function aplicarPremiumAprovado(
   }
 
   logger.info('Premium aplicado', { uid, paymentId, newUntil });
+
+  const attrC = sanitizeCreatorId(attributionCreatorId);
+  if (attrC) {
+    await recordCreatorAttributedPremium(db, {
+      creatorId: attrC,
+      subscriberUid: uid,
+      paymentId,
+      amount: paymentAmount,
+      memberUntil: newUntil,
+    });
+    await recordCreatorPayment(db, {
+      creatorId: attrC,
+      amount: paymentAmount,
+      currency: paymentCurrency,
+      type: 'premium_attribution',
+      buyerUid: uid,
+      paymentId,
+      extra: { planId: PREMIUM_PLAN_ID },
+    });
+  }
+
   return { applied: true, newUntil };
 }
 
@@ -526,13 +579,35 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       metadata.promoName ? String(metadata.promoName) : null,
       metadata.trafficSource ? String(metadata.trafficSource) : null,
       metadata.trafficCampaign ? String(metadata.trafficCampaign) : null,
-      metadata.trafficClickId ? String(metadata.trafficClickId) : null
+      metadata.trafficClickId ? String(metadata.trafficClickId) : null,
+      metadata.attributionCreatorId ? String(metadata.attributionCreatorId).trim() : null
     );
     return;
   }
 
   const storeRef = parseStoreExternalRef(pay.external_reference);
   if (storeRef) {
+    const orderSnapPre = await db.ref(`loja/pedidos/${storeRef.orderId}`).get();
+    if (!orderSnapPre.exists()) {
+      logger.error('Loja: pedido nao encontrado para pagamento aprovado', {
+        paymentId,
+        orderId: storeRef.orderId,
+      });
+      return;
+    }
+    const orderPre = orderSnapPre.val() || {};
+    const amount = Number(pay.transaction_amount);
+    const expected = Number(orderPre.total || 0);
+    if (!Number.isFinite(amount) || !Number.isFinite(expected) || Math.abs(amount - expected) > 0.05) {
+      logger.error('Loja: valor MP divergente do pedido', {
+        paymentId,
+        orderId: storeRef.orderId,
+        amount,
+        expected,
+      });
+      return;
+    }
+
     const procRef = db.ref(`financas/mp_processed/${paymentId}`);
     const procTx = await procRef.transaction((curr) => {
       if (curr) return;
@@ -550,7 +625,7 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
 
     const orderSnap = await db.ref(`loja/pedidos/${storeRef.orderId}`).get();
     if (!orderSnap.exists()) {
-      logger.error('Loja: pedido nao encontrado para pagamento aprovado', {
+      logger.error('Loja: pedido sumiu apos lock de pagamento', {
         paymentId,
         orderId: storeRef.orderId,
       });
@@ -595,6 +670,41 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       orderId: storeRef.orderId,
       uid: storeRef.uid,
     });
+
+    try {
+      await db.ref(`usuarios/${storeRef.uid}/ultimaCompraLoja`).set({
+        orderId: storeRef.orderId,
+        at: now,
+        total: expected,
+      });
+    } catch (e) {
+      logger.warn('Loja: falha ao registrar ultimaCompraLoja', { uid: storeRef.uid, error: e?.message });
+    }
+
+    try {
+      const byCreator = new Map();
+      for (const item of orderItems) {
+        const cid = sanitizeCreatorId(item?.creatorId);
+        if (!cid) continue;
+        const lt = round2(item?.lineTotal);
+        if (!Number.isFinite(lt) || lt <= 0) continue;
+        byCreator.set(cid, (byCreator.get(cid) || 0) + lt);
+      }
+      for (const [cid, amt] of byCreator) {
+        await recordCreatorPayment(db, {
+          creatorId: cid,
+          amount: round2(amt),
+          currency: String(pay?.currency_id || 'BRL'),
+          type: 'loja',
+          buyerUid: storeRef.uid,
+          paymentId,
+          orderId: storeRef.orderId,
+          extra: { source: 'checkout_store' },
+        });
+      }
+    } catch (e) {
+      logger.warn('Loja: falha ao registrar creatorData', { orderId: storeRef.orderId, error: e?.message });
+    }
     return;
   }
 
@@ -657,6 +767,19 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     origem,
     at: now,
   });
+
+  const apoioAttr = sanitizeCreatorId(metadata.attributionCreatorId);
+  if (apoioAttr && Number.isFinite(amount) && amount > 0) {
+    await recordCreatorPayment(db, {
+      creatorId: apoioAttr,
+      amount,
+      currency,
+      type: 'apoio',
+      buyerUid: apoioUid,
+      paymentId,
+      extra: { origem },
+    });
+  }
 
   logger.info('Apoio registrado', { uid: apoioUid, paymentId, amount, origem });
 }
@@ -866,7 +989,7 @@ export const notifyNewChapter = onValueCreated(
     const obraId   = String(capitulo?.obraId || 'shito').toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'shito';
     const obraNome = String(capitulo?.obraTitulo || capitulo?.obraName || 'Shito');
     const titulo   = capitulo?.titulo || `Capitulo ${capitulo?.numero || ''}`.trim();
-    const url      = `${APP_BASE_URL.value()}/ler/${capId}`;
+    const baseRoot = APP_BASE_URL.value().replace(/\/$/, '');
     const chapterCampaignId = `chapter_${obraId}_${capId}`;
 
     const db           = getDatabase();
@@ -901,22 +1024,30 @@ export const notifyNewChapter = onValueCreated(
           continue;
         }
         const clickId = buildTrackingClickId('chapter', uid);
-        const trackedUrl = `${url}?src=chapter_email&camp=${encodeURIComponent(
-          chapterCampaignId
-        )}&cid=${encodeURIComponent(clickId)}`;
+        const qs = new URLSearchParams({
+          src: 'chapter_email',
+          camp: chapterCampaignId,
+          cid: clickId,
+          capId: String(capId),
+        });
+        const trackedUrl = `${baseRoot}/apoie?${qs.toString()}`;
+        const lerUrl = `${baseRoot}/ler/${encodeURIComponent(String(capId))}?${qs.toString()}`;
 
         await transporter.sendMail({
           from,
           to:      userEmail,
           subject: `Novo capitulo em ${obraNome}: ${titulo}`,
-          text:    `Novo capitulo lancado!\n\nTitulo: ${titulo}\nLink: ${trackedUrl}\n\nPara parar, desative em Perfil > Notificacoes.`,
+          text:    `Novo capitulo lancado!\n\nTitulo: ${titulo}\n\nApoiar a obra (checkout): ${trackedUrl}\n\nLer o capitulo: ${lerUrl}\n\nPara parar, desative em Perfil > Notificacoes.`,
           html:    `
             <div style="font-family:Arial,sans-serif;background:#0a0a0a;color:#fff;padding:32px;border-radius:8px;">
               <h2 style="color:#ffcc00;margin:0 0 16px;">Novo capitulo em ${obraNome}</h2>
               <p style="color:#ccc;margin:0 0 24px;"><strong style="color:#fff">${titulo}</strong></p>
               <a href="${trackedUrl}" style="background:#ffcc00;color:#000;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;display:inline-block;">
-                Ler agora
+                Apoiar a obra
               </a>
+              <p style="margin:20px 0 0;font-size:13px;color:#aaa;">
+                <a href="${lerUrl}" style="color:#ffcc00;">Ler o capitulo agora</a>
+              </p>
               <p style="font-size:11px;color:#444;margin-top:32px;">Para parar de receber, desative em Perfil &gt; Notificacoes.</p>
             </div>
           `,
@@ -954,9 +1085,8 @@ export const adminMigrateDeprecatedUserFields = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Faca login.');
     }
-    if (!isShitoAdminAuth(request.auth)) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctx = await requireAdminAuth(request.auth);
+    requirePermission(ctx, 'migrateUsers');
 
     const hasPriv = USUARIOS_DEPRECATED_KEYS.length > 0;
     const hasPub = USUARIOS_PUBLICOS_DEPRECATED_KEYS.length > 0;
@@ -1059,6 +1189,7 @@ export const criarCheckoutApoio = onCall(
 
     const payload =
       request.data && typeof request.data === 'object' ? request.data : {};
+    const attributionCreatorId = sanitizeCreatorId(payload.attributionCreatorId);
     const planRaw = payload.planId;
     const customTry = tryParseApoioCustomAmount(payload.customAmount);
     const planNorm = normalizeApoioPlanId(planRaw);
@@ -1131,7 +1262,8 @@ export const criarCheckoutApoio = onCall(
           customTry.value,
           APP_BASE_URL.value(),
           request.auth.uid,
-          notificationUrl
+          notificationUrl,
+          attributionCreatorId
         );
       } else {
         url = await criarPreferenciaApoio(
@@ -1139,7 +1271,8 @@ export const criarCheckoutApoio = onCall(
           planNorm,
           APP_BASE_URL.value(),
           request.auth.uid,
-          notificationUrl
+          notificationUrl,
+          attributionCreatorId
         );
       }
       return { ok: true, url };
@@ -1208,6 +1341,8 @@ export const criarCheckoutLoja = onCall(
       throw new HttpsError('failed-precondition', 'Loja nao esta aceitando pedidos agora.');
     }
 
+    const fixedShippingBrl = round2(Math.max(0, Number(config.fixedShippingBrl || 0)));
+
     const profile = userSnap.exists() ? userSnap.val() || {} : {};
     const now = Date.now();
     const vip =
@@ -1217,7 +1352,7 @@ export const criarCheckoutLoja = onCall(
 
     const products = productsSnap.exists() ? productsSnap.val() || {} : {};
     const orderItems = [];
-    let total = 0;
+    let subtotal = 0;
     for (const item of rawItems) {
       const productId = String(item?.productId || '').trim();
       const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
@@ -1227,6 +1362,17 @@ export const criarCheckoutLoja = onCall(
       if (product.isActive === false) throw new HttpsError('failed-precondition', `Produto ${productId} indisponivel.`);
       const stock = Math.max(0, Number(product.stock || 0));
       if (quantity > stock) throw new HttpsError('failed-precondition', `Estoque insuficiente para ${product.title || productId}.`);
+
+      const type = String(product.type || 'manga').toLowerCase();
+      const sizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
+      let size = String(item?.size || '').trim();
+      if (type === 'roupa' && sizes.length) {
+        if (!size || !sizes.includes(size)) {
+          throw new HttpsError('invalid-argument', `Informe um tamanho valido para ${product.title || productId}.`);
+        }
+      } else {
+        size = '';
+      }
 
       const basePrice = Number(
         product.isOnSale === true && Number(product.promoPrice) > 0
@@ -1241,18 +1387,26 @@ export const criarCheckoutLoja = onCall(
         unitPrice = round2(basePrice * (1 - vipDiscountPct / 100));
       }
       const lineTotal = round2(unitPrice * quantity);
-      total += lineTotal;
+      subtotal += lineTotal;
+      const baseTitle = String(product.title || productId);
+      const productCreatorId = sanitizeCreatorId(product?.creatorId) || null;
       orderItems.push({
         productId,
-        title: String(product.title || productId),
+        title: size ? `${baseTitle} (${size})` : baseTitle,
         description: String(product.description || ''),
         quantity,
         unitPrice,
         lineTotal,
+        size: size || null,
+        type: type || 'manga',
+        creatorId: productCreatorId,
       });
     }
 
-    total = round2(total);
+    subtotal = round2(subtotal);
+    if (subtotal <= 0) throw new HttpsError('failed-precondition', 'Subtotal invalido para checkout.');
+
+    const total = round2(subtotal + fixedShippingBrl);
     if (total <= 0) throw new HttpsError('failed-precondition', 'Total invalido para checkout.');
 
     const orderRef = db.ref('loja/pedidos').push();
@@ -1263,6 +1417,8 @@ export const criarCheckoutLoja = onCall(
       uid: request.auth.uid,
       status: 'pending',
       items: orderItems,
+      subtotal,
+      shippingBrl: fixedShippingBrl,
       total,
       currency: 'BRL',
       vipApplied: vip,
@@ -1275,9 +1431,33 @@ export const criarCheckoutLoja = onCall(
 
     const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
     const notificationUrl = `${baseFn}/mercadopagowebhook`;
+    const mpOrder = {
+      ...order,
+      orderId,
+      uid: request.auth.uid,
+      items: [
+        ...orderItems.map((i) => ({
+          title: i.title,
+          description: i.description || '',
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+        })),
+        ...(fixedShippingBrl > 0
+          ? [
+              {
+                title: 'Frete fixo',
+                description: 'Envio',
+                quantity: 1,
+                unitPrice: fixedShippingBrl,
+              },
+            ]
+          : []),
+      ],
+      total,
+    };
     const url = await criarPreferenciaLoja(
       token,
-      { ...order, orderId, uid: request.auth.uid },
+      mpOrder,
       APP_BASE_URL.value(),
       notificationUrl
     );
@@ -1390,10 +1570,12 @@ export const criarCheckoutPremium = onCall(
       payload.attribution && typeof payload.attribution === 'object'
         ? payload.attribution
         : {};
+    const attributionCreatorId = sanitizeCreatorId(payload.attributionCreatorId);
     const attribution = {
       source: normalizeTrackingSource(attributionRaw.source) || 'direct',
       campaignId: sanitizeTrackingValue(attributionRaw.campaignId, 100),
       clickId: sanitizeTrackingValue(attributionRaw.clickId, 120),
+      creatorId: attributionCreatorId || null,
     };
 
     try {
@@ -1508,15 +1690,15 @@ export const adminObterPromocaoPremium = onCall(
   { region: 'us-central1' },
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctx = await requireAdminAuth(request.auth);
+    requirePermission(ctx, 'financeiro');
     const db = getDatabase();
-    const [snap, historySnap, financeSnap, marketingSnap] = await Promise.all([
+    const [snap, historySnap, financeSnap, marketingSnap, logSnap] = await Promise.all([
       db.ref(PREMIUM_PROMO_PATH).get(),
       db.ref(PREMIUM_PROMO_HISTORY_PATH).get(),
       db.ref('financas/eventos').get(),
       db.ref('marketing/eventos').get(),
+      db.ref(PREMIUM_PROMO_LOG_PATH).orderByKey().limitToLast(40).get(),
     ]);
     const raw = snap.val() || null;
     const parsed = parsePromoConfig(raw);
@@ -1579,6 +1761,14 @@ export const adminObterPromocaoPremium = onCall(
     }));
     const lastCampaign = historyWithPerformance[0] || null;
 
+    const promoActivityLog = [];
+    if (logSnap.exists()) {
+      logSnap.forEach((c) => {
+        promoActivityLog.push({ id: c.key, ...(c.val() || {}) });
+      });
+    }
+    promoActivityLog.reverse();
+
     return {
       ok: true,
       promo: raw,
@@ -1589,6 +1779,7 @@ export const adminObterPromocaoPremium = onCall(
           ? performanceByCampaign[parsed.promoId]
           : null,
       lastCampaign,
+      promoActivityLog,
     };
   }
 );
@@ -1600,9 +1791,8 @@ export const adminSalvarPromocaoPremium = onCall(
   },
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctxPromo = await requireAdminAuth(request.auth);
+    requirePermission(ctxPromo, 'financeiro');
     const body = request.data && typeof request.data === 'object' ? request.data : {};
     const enabled = body.enabled === true;
     const now = Date.now();
@@ -1621,6 +1811,12 @@ export const adminSalvarPromocaoPremium = onCall(
           updatedBy: request.auth.uid,
         });
       }
+      await appendPremiumPromoLog(db, {
+        action: 'disable',
+        uid: request.auth.uid,
+        promoId: promoAtualParsed?.promoId || null,
+        detail: { name: promoAtualParsed?.name || null },
+      });
       await db.ref(PREMIUM_PROMO_PATH).set({
         enabled: false,
         updatedAt: now,
@@ -1659,7 +1855,14 @@ export const adminSalvarPromocaoPremium = onCall(
     }
     await db.ref(PREMIUM_PROMO_PATH).set(promo);
 
-    let emailStats = { sent: 0, skipped: 0, failed: 0 };
+    let emailStats = {
+      sent: 0,
+      failed: 0,
+      skippedNoOptIn: 0,
+      skippedOptInNoEmail: 0,
+      optInAtivos: 0,
+      skipped: 0,
+    };
     if (body.notifyUsers === true) {
       emailStats = await enviarEmailPromocaoPremium(db, promo);
     }
@@ -1683,6 +1886,19 @@ export const adminSalvarPromocaoPremium = onCall(
       emailStats,
     });
 
+    await appendPremiumPromoLog(db, {
+      action: 'publish',
+      uid: request.auth.uid,
+      promoId: promo.promoId,
+      detail: {
+        name: promo.name,
+        priceBRL: promo.priceBRL,
+        startsAt: promo.startsAt,
+        endsAt: promo.endsAt,
+        notifyUsers: body.notifyUsers === true,
+      },
+    });
+
     return {
       ok: true,
       promo,
@@ -1696,9 +1912,8 @@ export const adminIncrementarDuracaoPromocaoPremium = onCall(
   { region: 'us-central1' },
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctxInc = await requireAdminAuth(request.auth);
+    requirePermission(ctxInc, 'financeiro');
 
     const body = request.data && typeof request.data === 'object' ? request.data : {};
     const days = Math.max(0, Math.floor(Number(body.days || 0)));
@@ -1724,7 +1939,15 @@ export const adminIncrementarDuracaoPromocaoPremium = onCall(
       throw new HttpsError('failed-precondition', 'So e possivel incrementar a duracao de uma promocao ativa.');
     }
 
-    const newEndsAt = Number(promo.endsAt) + extraMs;
+    const currentEnd = Number(promo.endsAt);
+    if (!Number.isFinite(currentEnd) || currentEnd <= now) {
+      throw new HttpsError('failed-precondition', 'Data de termino da promocao invalida ou ja expirada.');
+    }
+    // Sempre soma ao termino atual — nunca substitui pela duracao do incremento.
+    const newEndsAt = currentEnd + extraMs;
+    if (!Number.isFinite(newEndsAt) || newEndsAt <= currentEnd) {
+      throw new HttpsError('internal', 'Falha ao calcular novo termino da promocao.');
+    }
     await db.ref(PREMIUM_PROMO_PATH).update({
       endsAt: newEndsAt,
       updatedAt: now,
@@ -1737,6 +1960,17 @@ export const adminIncrementarDuracaoPromocaoPremium = onCall(
       status: 'ativa',
     });
 
+    await appendPremiumPromoLog(db, {
+      action: 'extend',
+      uid: request.auth.uid,
+      promoId: promo.promoId,
+      detail: {
+        added: { days, hours, minutes },
+        endsAtBefore: currentEnd,
+        endsAtAfter: newEndsAt,
+      },
+    });
+
     return {
       ok: true,
       promoId: promo.promoId,
@@ -1745,6 +1979,49 @@ export const adminIncrementarDuracaoPromocaoPremium = onCall(
     };
   }
 );
+
+export const adminDefinirMetaPromocaoPremium = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+  const ctxMeta = await requireAdminAuth(request.auth);
+  requirePermission(ctxMeta, 'financeiro');
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const rawGoal = body.goalPayments;
+  let goalPayments = null;
+  if (rawGoal !== undefined && rawGoal !== null && rawGoal !== '') {
+    const g = Math.floor(Number(rawGoal));
+    if (!Number.isFinite(g) || g < 0) {
+      throw new HttpsError('invalid-argument', 'Meta invalida: use um inteiro >= 0 ou vazio para limpar.');
+    }
+    if (g > 0) goalPayments = g;
+  }
+  const db = getDatabase();
+  const now = Date.now();
+  const snap = await db.ref(PREMIUM_PROMO_PATH).get();
+  const promo = parsePromoConfig(snap.val());
+  if (!promo) {
+    throw new HttpsError('failed-precondition', 'Nao ha promocao premium ativa para associar a meta.');
+  }
+  const aoVivo =
+    now >= Number(promo.startsAt || 0) && now <= Number(promo.endsAt || 0);
+  if (!aoVivo) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Meta so pode ser definida com a promocao ao vivo (nao em campanha apenas agendada).'
+    );
+  }
+  const patch =
+    goalPayments == null
+      ? { goalPayments: null, goalUpdatedAt: now, goalUpdatedBy: request.auth.uid }
+      : { goalPayments, goalUpdatedAt: now, goalUpdatedBy: request.auth.uid };
+  await db.ref(`${PREMIUM_PROMO_HISTORY_PATH}/${promo.promoId}`).update(patch);
+  await appendPremiumPromoLog(db, {
+    action: 'meta',
+    uid: request.auth.uid,
+    promoId: promo.promoId,
+    detail: { goalPayments },
+  });
+  return { ok: true, promoId: promo.promoId, goalPayments };
+});
 
 /** Lembrete e-mail ~5 dias antes do fim + downgrade automático ao vencer. */
 export const assinaturasPremiumDiario = onSchedule(
@@ -1949,6 +2226,7 @@ function buildAdvancedAnalytics(events, usuarios, usuariosPublicos, period, nowM
       };
       curr.totalSpent += amount;
       curr.count += 1;
+      // KPI do filtro do dashboard: N * 30d — não é saldo restante (isso vem de usuarios/*/memberUntil).
       curr.totalDays += daysPerSubscription;
       curr.lastAt = Math.max(curr.lastAt, at);
       curr.memberUntil = memberUntil || null;
@@ -2391,9 +2669,8 @@ export const adminDashboardResumo = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Faca login.');
     }
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctxDash = await requireAdminAuth(request.auth);
+    requirePermission(ctxDash, 'dashboard');
 
     const now = Date.now();
     const period = ensurePeriod(request.data || {}, now);
@@ -2432,6 +2709,7 @@ export const adminDashboardResumo = onCall(
     const current = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, period);
     const compare = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, comparePeriod);
     const crescimentoPremium = buildCrescimentoPremium(rawEvents, period);
+    const crescimentoPremiumCompare = buildCrescimentoPremium(rawEvents, comparePeriod);
     const integrity = buildIntegrityReport(rawEvents);
     const analyticsBase = buildAdvancedAnalytics(rawEvents, usuarios, usuariosPublicos, period, now);
     const acquisition = buildAcquisitionAnalytics(rawEvents, rawMarketingEvents, period);
@@ -2454,6 +2732,7 @@ export const adminDashboardResumo = onCall(
       current,
       compare,
       crescimentoPremium,
+      crescimentoPremiumCompare,
       comparativo: {
         deltaAmount: Math.round(deltaAmount * 100) / 100,
         deltaPercent:
@@ -2472,9 +2751,8 @@ export const adminDashboardIntegridade = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Faca login.');
     }
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctxInt = await requireAdminAuth(request.auth);
+    requirePermission(ctxInt, 'dashboard');
     const db = getDatabase();
     const eventsSnap = await db.ref('financas/eventos').get();
     const rawEvents = eventsSnap.exists()
@@ -2494,9 +2772,8 @@ export const adminBackfillEventosLegados = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Faca login.');
     }
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctxBf = await requireAdminAuth(request.auth);
+    requirePermission(ctxBf, 'dashboard');
 
     const db = getDatabase();
     const [processedSnap, eventsSnap] = await Promise.all([
@@ -2628,11 +2905,249 @@ export const adminDashboardRebuildRollup = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'Faca login.');
     }
-    if (!isShitoAdminAuth(request.auth) && request.auth.token?.admin !== true) {
-      throw new HttpsError('permission-denied', 'Apenas administradores.');
-    }
+    const ctxRoll = await requireAdminAuth(request.auth);
+    requirePermission(ctxRoll, 'dashboard');
     const months = await gerarRollupMensalFinancas();
     return { ok: true, months };
+  }
+);
+
+export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    return { ok: true, admin: false };
+  }
+  const ctx = await getAdminAuthContext(request.auth);
+  if (!ctx) {
+    return { ok: true, admin: false };
+  }
+  const panelRole = ctx.mangaka ? 'mangaka' : ctx.super ? 'super_admin' : 'admin';
+  return {
+    ok: true,
+    admin: true,
+    super: ctx.super,
+    legacy: ctx.legacy,
+    mangaka: ctx.mangaka === true,
+    panelRole,
+    permissions: ctx.permissions,
+  };
+});
+
+export const adminListStaff = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const snap = await getDatabase().ref(ADMIN_REGISTRY_PATH).get();
+  const raw = snap.val() || {};
+  const staff = await Promise.all(
+    Object.entries(raw).map(async ([uid, row]) => {
+      let email = null;
+      try {
+        const u = await getAuth().getUser(uid);
+        email = u.email || null;
+      } catch {
+        email = null;
+      }
+      return { uid, email, ...row };
+    })
+  );
+  return { ok: true, staff };
+});
+
+export const adminUpsertStaff = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const data = request.data || {};
+  const email = String(data.email || '').trim();
+  if (!email) {
+    throw new HttpsError('invalid-argument', 'Email obrigatorio.');
+  }
+  const targetUid = await resolveTargetUidByEmail(email);
+  if (!targetUid) {
+    throw new HttpsError('not-found', 'Usuario nao encontrado com este email.');
+  }
+  let targetEmailLower = email.toLowerCase();
+  try {
+    const tu = await getAuth().getUser(targetUid);
+    if (tu.email) targetEmailLower = tu.email.toLowerCase();
+  } catch {
+    /* ignore */
+  }
+  if (isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
+    throw new HttpsError('permission-denied', 'Nao e permitido alterar admin chefe.');
+  }
+  const staffRole = String(data.role || 'admin').toLowerCase() === 'mangaka' ? 'mangaka' : 'admin';
+  const permissions =
+    staffRole === 'mangaka' ? defaultMangakaPermissions() : normalizePermissionsForRegistry(data.permissions);
+  const updatedAt = Date.now();
+  const updatedBy = request.auth.uid;
+  await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).set({
+    role: staffRole,
+    permissions,
+    updatedAt,
+    updatedBy,
+  });
+  const userRecord = await getAuth().getUser(targetUid);
+  const prevClaims = { ...(userRecord.customClaims || {}) };
+  if (staffRole === 'mangaka') {
+    delete prevClaims.admin;
+    prevClaims.panelRole = 'mangaka';
+  } else {
+    prevClaims.admin = true;
+    prevClaims.panelRole = 'admin';
+  }
+  await getAuth().setCustomUserClaims(targetUid, prevClaims);
+  await getDatabase().ref(`usuarios/${targetUid}/role`).set(staffRole);
+  return { ok: true, uid: targetUid, role: staffRole };
+});
+
+export const adminRemoveStaff = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const data = request.data || {};
+  let targetUid = String(data.uid || '').trim();
+  if (!targetUid && data.email) {
+    targetUid = (await resolveTargetUidByEmail(String(data.email).trim())) || '';
+  }
+  if (!targetUid) {
+    throw new HttpsError('invalid-argument', 'Informe uid ou email.');
+  }
+  let targetEmailLower = '';
+  try {
+    const tu = await getAuth().getUser(targetUid);
+    if (tu.email) targetEmailLower = tu.email.toLowerCase();
+  } catch (e) {
+    if (e?.code === 'auth/user-not-found') {
+      throw new HttpsError('not-found', 'Usuario nao encontrado.');
+    }
+    throw e;
+  }
+  if (isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
+    throw new HttpsError('permission-denied', 'Nao e permitido remover admin chefe.');
+  }
+  const regSnap = await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).get();
+  const regRole = regSnap.val()?.role;
+  if (!regSnap.exists() || (regRole !== 'admin' && regRole !== 'mangaka')) {
+    throw new HttpsError(
+      'failed-precondition',
+      'So contas do registro (admin ou mangaka) podem ser removidas aqui.'
+    );
+  }
+  await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).remove();
+  const userRecord = await getAuth().getUser(targetUid);
+  const prevClaims = { ...(userRecord.customClaims || {}) };
+  delete prevClaims.admin;
+  delete prevClaims.panelRole;
+  await getAuth().setCustomUserClaims(
+    targetUid,
+    Object.keys(prevClaims).length ? prevClaims : null
+  );
+  await getDatabase().ref(`usuarios/${targetUid}/role`).set('user');
+  return { ok: true };
+});
+
+/** Preenche `creatorId` em obras sem o campo (UID legado = primeiro super-admin). */
+export const adminBackfillObraCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const db = getDatabase();
+  const legacy = Array.from(SUPER_ADMIN_UIDS)[0];
+  const snap = await db.ref('obras').get();
+  let updated = 0;
+  for (const [id, row] of Object.entries(snap.val() || {})) {
+    if (row && !row.creatorId && id) {
+      await db.ref(`obras/${id}/creatorId`).set(legacy);
+      updated += 1;
+    }
+  }
+  logger.info('adminBackfillObraCreatorIds', { updated });
+  return { ok: true, updated };
+});
+
+/** Preenche `creatorId` em capítulos sem o campo, a partir da obra. */
+export const adminBackfillChapterCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const db = getDatabase();
+  const legacy = Array.from(SUPER_ADMIN_UIDS)[0];
+  const [capsSnap, obrasSnap] = await Promise.all([db.ref('capitulos').get(), db.ref('obras').get()]);
+  const obras = obrasSnap.val() || {};
+  let updated = 0;
+  for (const [id, cap] of Object.entries(capsSnap.val() || {})) {
+    if (!cap || cap.creatorId || !id) continue;
+    const raw = String(cap.workId || cap.obraId || 'shito')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '')
+      .slice(0, 40);
+    const oid = raw || 'shito';
+    const obra = obras[oid] || {};
+    const cid = obra.creatorId || legacy;
+    await db.ref(`capitulos/${id}/creatorId`).set(String(cid));
+    updated += 1;
+  }
+  logger.info('adminBackfillChapterCreatorIds', { updated });
+  return { ok: true, updated };
+});
+
+export const adminRevokeUserSessions = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const ctx = await requireAdminAuth(request.auth);
+  requirePermission(ctx, 'revokeSessions');
+  const data = request.data || {};
+  let targetUid = String(data.uid || '').trim();
+  if (!targetUid && data.email) {
+    targetUid = (await resolveTargetUidByEmail(String(data.email).trim())) || '';
+  }
+  if (!targetUid) {
+    throw new HttpsError('invalid-argument', 'Informe uid ou email.');
+  }
+  let targetEmailLower = '';
+  try {
+    const tu = await getAuth().getUser(targetUid);
+    if (tu.email) targetEmailLower = tu.email.toLowerCase();
+  } catch (e) {
+    if (e?.code === 'auth/user-not-found') {
+      throw new HttpsError('not-found', 'Usuario nao encontrado.');
+    }
+    throw e;
+  }
+  if (!ctx.super && !ctx.legacy && isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
+    throw new HttpsError('permission-denied', 'Sem permissao para revogar sessoes deste usuario.');
+  }
+  await getAuth().revokeRefreshTokens(targetUid);
+  return { ok: true };
+});
+
+export const adminRevokeAllSessions = onCall(
+  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Faca login.');
+    }
+    requireSuperAdmin(request.auth);
+    let nextPageToken;
+    let revoked = 0;
+    do {
+      const page = await getAuth().listUsers(1000, nextPageToken);
+      for (const u of page.users) {
+        await getAuth().revokeRefreshTokens(u.uid);
+        revoked += 1;
+      }
+      nextPageToken = page.pageToken;
+    } while (nextPageToken);
+    logger.info('adminRevokeAllSessions ok', { revoked });
+    return { ok: true, revoked };
   }
 );
 

@@ -360,6 +360,39 @@ body.apoie-scroll-safe::-webkit-scrollbar-thumb {
   font-weight: 700;
 }
 
+.apoie-cap-email-banner {
+  max-width: 800px;
+  margin: -2rem auto 2.5rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  background: rgba(255, 204, 0, 0.08);
+  text-align: center;
+}
+
+.apoie-cap-email-banner p {
+  margin: 0 0 0.85rem;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.apoie-cap-email-banner-btn {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 204, 0, 0.5);
+  background: rgba(255, 204, 0, 0.18);
+  color: #fff4cc;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.apoie-cap-email-banner-btn:hover {
+  background: rgba(255, 204, 0, 0.28);
+}
+
 /* Grid de opções de apoio */
 .apoie-opcoes {
   display: grid;

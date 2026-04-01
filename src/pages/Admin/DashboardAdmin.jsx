@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../services/firebase';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
+import { formatarTempoRestanteAssinatura } from '../../utils/assinaturaTempoRestante';
+import { formatarDataHoraBr } from '../../utils/datasBr';
 import './DashboardAdmin.css';
 
 const adminDashboardResumo = httpsCallable(functions, 'adminDashboardResumo');
@@ -62,22 +64,6 @@ function brl(v) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function formatDateBr(ms) {
-  if (!ms) return '--';
-  try {
-    return new Date(ms).toLocaleString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
-  } catch {
-    return '--';
-  }
-}
-
 function formatMonthKeyBr(key) {
   const m = String(key || '').match(/^(\d{4})-(\d{2})$/);
   if (!m) return key;
@@ -128,6 +114,53 @@ function parseTab(value) {
   return DASHBOARD_TABS.includes(t) ? t : 'visao-geral';
 }
 
+/** Só exibe dd/mm/aaaa no texto; calendário nativo fica oculto (evita MM/DD do Chrome no Windows). */
+function DashboardDateInput({ brValue, isoValue, onBrInputChange, onIsoPicked, id, ariaLabelCalendar }) {
+  const dateRef = useRef(null);
+  const openCalendar = () => {
+    const el = dateRef.current;
+    if (!el) return;
+    try {
+      el.showPicker?.();
+    } catch {
+      el.focus();
+      el.click();
+    }
+  };
+  return (
+    <div className="dashboard-date-row">
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        placeholder="dd/mm/aaaa"
+        autoComplete="off"
+        value={brValue}
+        onChange={onBrInputChange}
+        lang="pt-BR"
+      />
+      <input
+        ref={dateRef}
+        type="date"
+        className="dashboard-date-native-hidden"
+        value={isoValue || ''}
+        onChange={(e) => onIsoPicked(e.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+      <button
+        type="button"
+        className="dashboard-date-calendar-btn"
+        onClick={openCalendar}
+        aria-label={ariaLabelCalendar}
+        title="Abrir calendário"
+      >
+        <span aria-hidden="true">📅</span>
+      </button>
+    </div>
+  );
+}
+
 function paginate(rows, page, size = PAGE_SIZE) {
   const totalPages = Math.max(1, Math.ceil(rows.length / size));
   const safePage = Math.min(Math.max(1, page), totalPages);
@@ -147,6 +180,17 @@ function formatTempoAssinatura(totalDays) {
   return `${m} meses (${days} dias)`;
 }
 
+/** Texto curto: N pagamentos no filtro × 30d (KPI do período — não espelha memberUntil). */
+function textoEstimativaPagamentosNoFiltro(row) {
+  const n = Number(row?.count || 0);
+  const d = Number(row?.totalDays || 0);
+  if (!n) return '—';
+  return `${n} pg · ~${d}d`;
+}
+
+const TITLE_COL_ESTIMATIVA =
+  'Soma 30 dias por cada pagamento Premium entre as datas do filtro. Não é o tempo restante da assinatura — use «Restante agora» e a data de expiração.';
+
 function rankBadge(rank) {
   if (rank === 1) return '🥇';
   if (rank === 2) return '🥈';
@@ -159,6 +203,39 @@ function percentOf(part, total) {
   const t = Number(total || 0);
   if (!t || t <= 0) return 0;
   return Math.max(0, Math.min(100, Math.round((p / t) * 1000) / 10));
+}
+
+function sumNovosVip(rows) {
+  return (rows || []).reduce((s, r) => s + Number(r?.novosVip || 0), 0);
+}
+
+/** Distribuição por sexo usando receita (amount) ou volume (count). */
+function distribuicaoSexoReceita(map) {
+  const entries = Object.entries(map || {});
+  const total = entries.reduce((s, [, v]) => s + Number(v?.amount || 0), 0);
+  return entries
+    .map(([key, v]) => ({
+      key,
+      label: formatGender(key),
+      amount: Number(v?.amount || 0),
+      count: Number(v?.count || 0),
+      pct: total > 0 ? (Number(v?.amount || 0) / total) * 100 : 0,
+    }))
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+}
+
+function sexoBarClass(key) {
+  const k = String(key || '');
+  if (k === 'masculino') return 'dash-sexo-seg--m';
+  if (k === 'feminino') return 'dash-sexo-seg--f';
+  if (k === 'outro') return 'dash-sexo-seg--o';
+  return 'dash-sexo-seg--ni';
+}
+
+function formatPct0(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  return `${Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`;
 }
 
 function scoreFromPercent(percent) {
@@ -248,6 +325,13 @@ export default function DashboardAdmin() {
     setIso(iso || '');
   };
 
+  const handleCalendarPick = (iso, setBr, setIso) => {
+    if (!iso) return;
+    setIso(iso);
+    setBr(toBrDate(iso));
+    setPreset('custom');
+  };
+
   const carregar = async () => {
     setErro('');
     setOpsMsg('');
@@ -283,16 +367,6 @@ export default function DashboardAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const topSexDoa = useMemo(() => {
-    const map = dados?.current?.demografia?.doacaoPorSexo || {};
-    return Object.entries(map).sort((a, b) => (b[1]?.amount || 0) - (a[1]?.amount || 0))[0]?.[0] || '--';
-  }, [dados]);
-
-  const topSexAssina = useMemo(() => {
-    const map = dados?.current?.demografia?.assinaturaPorSexo || {};
-    return Object.entries(map).sort((a, b) => (b[1]?.amount || 0) - (a[1]?.amount || 0))[0]?.[0] || '--';
-  }, [dados]);
-
   const lineChart = useMemo(() => {
     const currentRows = dados?.current?.monthlySeries || [];
     const compareRows = dados?.compare?.monthlySeries || [];
@@ -316,9 +390,76 @@ export default function DashboardAdmin() {
   const pieShare = useMemo(() => {
     const ass = Number(dados?.current?.assinaturaVsDoacao?.assinatura || 0);
     const doa = Number(dados?.current?.assinaturaVsDoacao?.doacao || 0);
-    const total = Math.max(ass + doa, 1);
-    const assPct = Math.round((ass / total) * 100);
-    return { ass, doa, assPct };
+    const total = ass + doa;
+    if (total <= 0) {
+      return { ass, doa, assPct: 0, doaPct: 0, total: 0 };
+    }
+    const assPct = Math.round((ass / total) * 1000) / 10;
+    const doaPct = Math.round((doa / total) * 1000) / 10;
+    return { ass, doa, assPct, doaPct, total };
+  }, [dados]);
+
+  const distAssinaSexo = useMemo(
+    () => distribuicaoSexoReceita(dados?.current?.demografia?.assinaturaPorSexo),
+    [dados]
+  );
+  const distDoaSexo = useMemo(
+    () => distribuicaoSexoReceita(dados?.current?.demografia?.doacaoPorSexo),
+    [dados]
+  );
+
+  const novosVipStats = useMemo(() => {
+    const atual = sumNovosVip(dados?.crescimentoPremium);
+    const prev = sumNovosVip(dados?.crescimentoPremiumCompare);
+    let vsPct = null;
+    if (prev > 0) vsPct = Math.round(((atual - prev) / prev) * 1000) / 10;
+    else if (atual > 0) vsPct = 100;
+    return { atual, prev, vsPct };
+  }, [dados]);
+
+  const dashboardInsights = useMemo(() => {
+    const lines = [];
+    if (!dados?.current) return lines;
+    const t = dados.current.totals || {};
+    const total = Number(t.totalAmount || 0);
+    const prem = Number(t.premiumAmount || 0);
+    const apoio = Number(t.apoioAmount || 0);
+    if (total <= 0) {
+      lines.push('Nenhuma receita no período: amplie as datas ou confira se os pagamentos estão gerando eventos em Finanças.');
+      return lines;
+    }
+    const pPrem = (prem / total) * 100;
+    const pApoio = (apoio / total) * 100;
+    lines.push(
+      `Assinaturas representam ${formatPct0(pPrem)} da receita; doações, ${formatPct0(pApoio)} — fica claro quem puxa o caixa.`
+    );
+    if (apoio <= 0) {
+      lines.push('Nenhuma doação registrada no período. Experimente metas na Apoie, brindes ou menções aos doadores.');
+    } else if (pApoio < 12) {
+      lines.push('Doações são uma fatia pequena: há espaço para campanhas pontuais sem competir com o Premium.');
+    }
+    const dp = dados.comparativo?.deltaPercent;
+    if (dp != null) {
+      if (dp < -8) {
+        lines.push(`Receita total caiu ${Math.abs(dp).toFixed(1)}% vs período comparado — vale revisar promoções (Financeiro) e e-mails de aquisição.`);
+      } else if (dp > 12) {
+        lines.push(`Receita total subiu ${dp.toFixed(1)}% vs comparado — identifique o que mudou (preço, tráfego, campanha) para repetir.`);
+      }
+    }
+    const { atual, vsPct } = novosVipStats;
+    if (atual === 0) {
+      lines.push('Nenhum novo assinante (primeira compra) no período: foque em tráfego novo ou remarketing.');
+    } else if (vsPct != null && vsPct < -25) {
+      lines.push(`Novos assinantes desaceleraram (${pct(vsPct)} vs período comparado).`);
+    } else if (vsPct != null && vsPct > 30) {
+      lines.push(`Novos assinantes aceleraram (${pct(vsPct)} vs período comparado).`);
+    }
+    return lines.slice(0, 7);
+  }, [dados, novosVipStats]);
+
+  const ultimosMesesReceita = useMemo(() => {
+    const series = dados?.current?.monthlySeries || [];
+    return series.slice(-6);
   }, [dados]);
 
   const analytics = dados?.analytics || {};
@@ -431,7 +572,7 @@ export default function DashboardAdmin() {
       const { data } = await adminDashboardIntegridade();
       const r = data?.integrity || {};
       setOpsMsg(
-        `Integridade: ${r.totalEvents || 0} eventos, duplicados: ${r.duplicatePaymentIdsCount || 0}, sem uid: ${r.withoutUid || 0}, sem amount: ${r.withoutAmount || 0}.`
+        `Verificação concluída: ${r.totalEvents || 0} lançamentos analisados. Possíveis problemas: ${r.duplicatePaymentIdsCount || 0} duplicados, ${r.withoutUid || 0} sem usuário, ${r.withoutAmount || 0} sem valor.`
       );
     } catch (e) {
       setOpsMsg(mensagemErroCallable(e));
@@ -442,7 +583,7 @@ export default function DashboardAdmin() {
     setOpsMsg('');
     try {
       const { data } = await adminDashboardRebuildRollup();
-      setOpsMsg(`Rollup mensal recalculado para ${data?.months || 0} meses.`);
+      setOpsMsg(`Métricas mensais recalculadas (${data?.months || 0} meses). O gráfico e o resumo por mês devem refletir isso após atualizar a página.`);
     } catch (e) {
       setOpsMsg(mensagemErroCallable(e));
     }
@@ -453,7 +594,7 @@ export default function DashboardAdmin() {
     try {
       const { data } = await adminBackfillEventosLegados();
       setOpsMsg(
-        `Backfill finalizado: ${data?.created || 0} evento(s) criado(s) (${data?.createdPremium || 0} premium, ${data?.createdApoio || 0} apoio).`
+        `Histórico corrigido: ${data?.created || 0} lançamento(s) recuperados (${data?.createdPremium || 0} Premium, ${data?.createdApoio || 0} Apoie).`
       );
       await carregar();
     } catch (e) {
@@ -477,7 +618,7 @@ export default function DashboardAdmin() {
             <p>
               Controle total das assinaturas, receita e crescimento do Shito.
               {dados?.period?.startAt && dados?.period?.endAt
-                ? ` Período: ${formatDateBr(dados.period.startAt)} até ${formatDateBr(dados.period.endAt)}.`
+                ? ` Período: ${formatarDataHoraBr(dados.period.startAt, { seVazio: '--' })} até ${formatarDataHoraBr(dados.period.endAt, { seVazio: '--' })}.`
                 : ''}
             </p>
           </div>
@@ -502,43 +643,47 @@ export default function DashboardAdmin() {
             </select>
           </div>
           <div className="dashboard-filtro-item">
-            <label>Início</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="dd/mm/aaaa"
-              value={startDateBr}
-              onChange={(e) => handleDateInput(e.target.value, setStartDateBr, setStartDate)}
+            <label htmlFor="dash-date-ini">Início</label>
+            <DashboardDateInput
+              id="dash-date-ini"
+              brValue={startDateBr}
+              isoValue={startDate}
+              onBrInputChange={(e) => handleDateInput(e.target.value, setStartDateBr, setStartDate)}
+              onIsoPicked={(iso) => handleCalendarPick(iso, setStartDateBr, setStartDate)}
+              ariaLabelCalendar="Data início — abrir calendário"
             />
           </div>
           <div className="dashboard-filtro-item">
-            <label>Fim</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="dd/mm/aaaa"
-              value={endDateBr}
-              onChange={(e) => handleDateInput(e.target.value, setEndDateBr, setEndDate)}
+            <label htmlFor="dash-date-fim">Fim</label>
+            <DashboardDateInput
+              id="dash-date-fim"
+              brValue={endDateBr}
+              isoValue={endDate}
+              onBrInputChange={(e) => handleDateInput(e.target.value, setEndDateBr, setEndDate)}
+              onIsoPicked={(iso) => handleCalendarPick(iso, setEndDateBr, setEndDate)}
+              ariaLabelCalendar="Data fim — abrir calendário"
             />
           </div>
           <div className="dashboard-filtro-item">
-            <label>Comparar início (opcional)</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="dd/mm/aaaa"
-              value={compareStartBr}
-              onChange={(e) => handleDateInput(e.target.value, setCompareStartBr, setCompareStart)}
+            <label htmlFor="dash-date-cmp-ini">Comparar início (opcional)</label>
+            <DashboardDateInput
+              id="dash-date-cmp-ini"
+              brValue={compareStartBr}
+              isoValue={compareStart}
+              onBrInputChange={(e) => handleDateInput(e.target.value, setCompareStartBr, setCompareStart)}
+              onIsoPicked={(iso) => handleCalendarPick(iso, setCompareStartBr, setCompareStart)}
+              ariaLabelCalendar="Comparar início — abrir calendário"
             />
           </div>
           <div className="dashboard-filtro-item">
-            <label>Comparar fim (opcional)</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="dd/mm/aaaa"
-              value={compareEndBr}
-              onChange={(e) => handleDateInput(e.target.value, setCompareEndBr, setCompareEnd)}
+            <label htmlFor="dash-date-cmp-fim">Comparar fim (opcional)</label>
+            <DashboardDateInput
+              id="dash-date-cmp-fim"
+              brValue={compareEndBr}
+              isoValue={compareEnd}
+              onBrInputChange={(e) => handleDateInput(e.target.value, setCompareEndBr, setCompareEnd)}
+              onIsoPicked={(iso) => handleCalendarPick(iso, setCompareEndBr, setCompareEnd)}
+              ariaLabelCalendar="Comparar fim — abrir calendário"
             />
           </div>
           <button type="button" className="dashboard-btn dashboard-btn-primary" onClick={carregar} disabled={loading}>
@@ -612,80 +757,212 @@ export default function DashboardAdmin() {
               )}
             </section>
 
-            <div className="dashboard-sessoes-grid dashboard-sessoes-grid--three">
-              <article className="kpi-card">
-                <h3>Sexo que mais doa</h3>
-                <strong>{topSexDoa}</strong>
-                <small>Base: doações aprovadas no período</small>
+            <section className="dashboard-sec dashboard-sec--insights">
+              <div className="dashboard-sec-head">
+                <h2>Insights automáticos</h2>
+                <small>Traduz números em decisão — o que está puxando receita e onde agir.</small>
+              </div>
+              <ul className="dashboard-insights-list">
+                {dashboardInsights.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+                {!dashboardInsights.length && (
+                  <li className="dashboard-insights-muted">Aplique os filtros e carregue o período para gerar insights.</li>
+                )}
+              </ul>
+            </section>
+
+            <section className="dashboard-sec dashboard-sec--teaser">
+              <div className="dashboard-sec-head">
+                <h2>Impacto rápido · aquisição por e-mail</h2>
+                <small>Pagamentos ligados a promo e a aviso de capítulo (período filtrado)</small>
+              </div>
+              <div className="dashboard-teaser-kpis">
+                <article>
+                  <h3>Promoção</h3>
+                  <strong>{acquisition.promo?.premiumPaymentsFromPromoEmail || 0}</strong>
+                  <small>{brl(acquisition.promo?.premiumRevenueFromPromoEmail || 0)}</small>
+                </article>
+                <article>
+                  <h3>Capítulo</h3>
+                  <strong>{acquisition.chapter?.premiumPaymentsFromChapterEmail || 0}</strong>
+                  <small>{brl(acquisition.chapter?.premiumRevenueFromChapterEmail || 0)}</small>
+                </article>
+              </div>
+              <button type="button" className="dashboard-btn dashboard-btn-primary" onClick={() => handleTabChange('aquisicao')}>
+                Abrir funil completo
+              </button>
+            </section>
+
+            <div className="dashboard-sessoes-grid dashboard-sessoes-grid--insights">
+              <article className="dashboard-sec dashboard-sec--demografia">
+                <h2>Receita Premium por sexo (distribuição)</h2>
+                <p className="dash-demografia-hint">% sobre o valor de assinaturas aprovadas no período — perfil com sexo preenchido.</p>
+                {!distAssinaSexo.length ? (
+                  <p className="dashboard-empty">Sem dados de sexo para assinaturas neste recorte.</p>
+                ) : (
+                  <>
+                    <div className="dash-sexo-stack" role="img" aria-label="Distribuição por sexo nas assinaturas">
+                      {distAssinaSexo.map((r) => (
+                        <div
+                          key={r.key}
+                          className={`dash-sexo-seg ${sexoBarClass(r.key)}`}
+                          style={{ flex: `0 0 ${Math.max(3, r.pct)}%` }}
+                          title={`${r.label}: ${r.pct.toFixed(1)}% · ${brl(r.amount)}`}
+                        />
+                      ))}
+                    </div>
+                    <ul className="dash-sexo-list">
+                      {distAssinaSexo.map((r) => (
+                        <li key={r.key}>
+                          <span className={`dash-sexo-dot ${sexoBarClass(r.key)}`} />
+                          <span className="dash-sexo-list-label">{r.label}</span>
+                          <strong>{r.pct.toFixed(1)}%</strong>
+                          <small>{brl(r.amount)}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </article>
-              <article className="kpi-card">
-                <h3>Sexo que mais assina</h3>
-                <strong>{topSexAssina}</strong>
-                <small>Base: assinatura premium aprovada</small>
+
+              <article className="dashboard-sec dashboard-sec--demografia">
+                <h2>Doações por sexo (distribuição)</h2>
+                <p className="dash-demografia-hint">% sobre o valor doado no período.</p>
+                {!distDoaSexo.length ? (
+                  <p className="dashboard-empty">Nenhuma doação com sexo rastreado — ou ainda não houve doações.</p>
+                ) : (
+                  <>
+                    <div className="dash-sexo-stack" role="img" aria-label="Distribuição por sexo nas doações">
+                      {distDoaSexo.map((r) => (
+                        <div
+                          key={r.key}
+                          className={`dash-sexo-seg ${sexoBarClass(r.key)}`}
+                          style={{ flex: `0 0 ${Math.max(3, r.pct)}%` }}
+                          title={`${r.label}: ${r.pct.toFixed(1)}% · ${brl(r.amount)}`}
+                        />
+                      ))}
+                    </div>
+                    <ul className="dash-sexo-list">
+                      {distDoaSexo.map((r) => (
+                        <li key={r.key}>
+                          <span className={`dash-sexo-dot ${sexoBarClass(r.key)}`} />
+                          <span className="dash-sexo-list-label">{r.label}</span>
+                          <strong>{r.pct.toFixed(1)}%</strong>
+                          <small>{brl(r.amount)}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </article>
-              <article className="kpi-card">
+
+              <article className="kpi-card kpi-card--idade">
                 <h3>Média de idade</h3>
                 <strong>
-                  {dados?.current?.demografia?.mediaIdadeAssinantes ?? '--'} / {dados?.current?.demografia?.mediaIdadeDoadores ?? '--'}
+                  {dados?.current?.demografia?.mediaIdadeAssinantes ?? '—'} <span className="dash-idade-sep">/</span>{' '}
+                  {dados?.current?.demografia?.mediaIdadeDoadores ?? '—'}
                 </strong>
-                <small>Assinantes / Doadores</small>
+                <small>Assinantes · Doadores (quando há ano de nascimento no perfil)</small>
               </article>
-              <section className="dashboard-sec">
-                <h2>Assinatura vs Doação</h2>
-                <div className="pie-wrap">
-                  <div
-                    className="pie-chart"
-                    style={{
-                      background: `conic-gradient(#ffcc00 ${pieShare.assPct}%, #5aa7ff ${pieShare.assPct}% 100%)`,
-                    }}
-                    aria-label="Pizza assinatura versus doacao"
-                  />
-                  <div className="pie-legend">
-                    <p><span className="legend-box legend-ass" /> Assinatura: {brl(pieShare.ass)}</p>
-                    <p><span className="legend-box legend-doa" /> Doação: {brl(pieShare.doa)}</p>
+
+              <section className="dashboard-sec dashboard-sec--pizza">
+                <h2>Quem domina a receita</h2>
+                <p className="dash-demografia-hint">Assinatura recorrente vs doações avulsas no período.</p>
+                {pieShare.total <= 0 ? (
+                  <p className="dashboard-empty">Sem receita classificada neste período.</p>
+                ) : (
+                  <div className="pie-wrap pie-wrap--lg">
+                    <div
+                      className="pie-chart pie-chart--lg"
+                      style={{
+                        background: `conic-gradient(#ffcc00 0% ${pieShare.assPct}%, #5aa7ff ${pieShare.assPct}% 100%)`,
+                      }}
+                      aria-label="Distribuição assinatura versus doação"
+                    />
+                    <div className="pie-legend pie-legend--lg">
+                      <p>
+                        <span className="legend-box legend-ass" />
+                        <span>
+                          Assinatura: <strong>{brl(pieShare.ass)}</strong>
+                          <em>({pieShare.assPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</em>
+                        </span>
+                      </p>
+                      <p>
+                        <span className="legend-box legend-doa" />
+                        <span>
+                          Doação: <strong>{brl(pieShare.doa)}</strong>
+                          <em>({pieShare.doaPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</em>
+                        </span>
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </section>
 
-              <section className="dashboard-sec">
-                <h2>Crescimento de base Premium</h2>
+              <section className="dashboard-sec dashboard-sec--crescimento">
+                <h2>Novos assinantes (primeira compra)</h2>
+                <p className="dash-crescimento-lead">
+                  <strong className="dash-crescimento-num">+{novosVipStats.atual}</strong>
+                  <span> novos no período</span>
+                  {novosVipStats.vsPct != null && Number.isFinite(novosVipStats.vsPct) && (
+                    <span className={`dash-crescimento-vs ${novosVipStats.vsPct >= 0 ? 'dash-delta--up' : 'dash-delta--down'}`}>
+                      {' '}· {pct(novosVipStats.vsPct)} vs período de comparação automático
+                    </span>
+                  )}
+                </p>
                 <ul className="lista-mensal lista-mensal--bars">
-                  {(dados?.crescimentoPremium || []).map((row) => (
-                    <li key={row.month}>
-                      <span>{formatMonthKeyBr(row.month)}</span>
-                      <div className="bar-inline">
-                        <i style={{ width: `${Math.max(8, Math.min(100, row.novosVip * 10))}%` }} />
-                      </div>
-                      <strong>{row.novosVip}</strong>
-                    </li>
-                  ))}
-                  {!dados?.crescimentoPremium?.length && <li>Sem dados no período.</li>}
+                  {(dados?.crescimentoPremium || []).map((row) => {
+                    const maxV = Math.max(1, ...((dados?.crescimentoPremium || []).map((x) => Number(x.novosVip || 0))));
+                    const w = Math.round((Number(row.novosVip || 0) / maxV) * 100);
+                    return (
+                      <li key={row.month}>
+                        <span>{formatMonthKeyBr(row.month)}</span>
+                        <div className="bar-inline">
+                          <i style={{ width: `${Math.max(10, w)}%` }} />
+                        </div>
+                        <strong>{row.novosVip}</strong>
+                      </li>
+                    );
+                  })}
+                  {!dados?.crescimentoPremium?.length && <li className="dashboard-empty">Sem novos assinantes rastreados mês a mês neste recorte.</li>}
                 </ul>
               </section>
-              <section className="dashboard-sec">
-                <h2>Arrecadação mensal (resumo)</h2>
-                <div className="top-table top-table--compact">
-                  {(dados?.current?.monthlySeries || []).slice(-6).map((m) => (
-                    <div key={m.key} className="top-row">
-                      <span>{formatMonthKeyBr(m.key)}</span>
-                      <span>Premium: {brl(m.premiumAmount || 0)}</span>
-                      <span>Doação: {brl(m.apoioAmount || 0)}</span>
-                      <strong>{brl(m.totalAmount || 0)}</strong>
-                    </div>
-                  ))}
-                  {!dados?.current?.monthlySeries?.length && <p>Sem meses no período.</p>}
+
+              <section className="dashboard-sec dashboard-sec--mensal-destaque">
+                <div className="dashboard-sec-head">
+                  <h2>Arrecadação mensal</h2>
+                  <small>Total, Premium e doações — últimos meses do período</small>
                 </div>
+                <div className="dash-mensal-cards">
+                  {ultimosMesesReceita.map((m) => (
+                    <article key={m.key} className="dash-mensal-card">
+                      <h3>{formatMonthKeyBr(m.key)}</h3>
+                      <p className="dash-mensal-total">{brl(m.totalAmount || 0)}</p>
+                      <p className="dash-mensal-line">
+                        Premium <strong>{brl(m.premiumAmount || 0)}</strong>
+                      </p>
+                      <p className="dash-mensal-line">
+                        Doações <strong>{brl(m.apoioAmount || 0)}</strong>
+                      </p>
+                    </article>
+                  ))}
+                </div>
+                {!ultimosMesesReceita.length && <p className="dashboard-empty">Nenhum mês com movimento no período selecionado.</p>}
               </section>
             </div>
 
-            <section className="dashboard-sec">
-              <h2>Top Doadores</h2>
+            <section className="dashboard-sec dashboard-sec--top-doadores">
+              <div className="dashboard-sec-head">
+                <h2>Top doadores</h2>
+                <small>Quem mais contribuiu com doações (Apoie) no período</small>
+              </div>
               <div className="top-table">
                 <div className="top-row top-row--head">
                   <span>#</span>
                   <span>Nome</span>
                   <span>Sexo</span>
-                  <strong>Total gasto</strong>
+                  <strong>Total</strong>
                 </div>
                 {(dados?.current?.topDoadores || []).map((u, idx) => (
                   <div key={u.uid} className={`top-row ${idx === 0 ? 'top-row--winner' : ''}`}>
@@ -695,36 +972,48 @@ export default function DashboardAdmin() {
                     <strong>{brl(u.amount || 0)}</strong>
                   </div>
                 ))}
-                {!dados?.current?.topDoadores?.length && <p>Sem doadores no período selecionado.</p>}
               </div>
+              {!dados?.current?.topDoadores?.length && (
+                <div className="dashboard-empty-state">
+                  <p className="dashboard-empty-title">Nenhum doador ainda neste período</p>
+                  <p className="dashboard-empty-text">
+                    Isso é normal em recortes curtos ou quando o público ainda não usa a Apoie. Experimente metas visíveis, recompensas exclusivas
+                    ou menção aos apoiadores no final dos capítulos.
+                  </p>
+                </div>
+              )}
             </section>
 
-            <section className="dashboard-sec">
-              <h2>Segurança e Escala</h2>
+            <details className="dashboard-sec dashboard-sec--sistema">
+              <summary className="dashboard-sistema-summary">
+                Sistema e manutenção <span className="dashboard-sistema-tag">avançado</span>
+              </summary>
+              <p className="dashboard-sistema-lead">
+                Ferramentas para conferir consistência dos dados e recalcular agregados. Use só se souber o efeito em cada botão.
+              </p>
               <div className="dashboard-actions-inline">
                 <button type="button" className="dashboard-btn" onClick={runIntegridade}>
-                  Rodar checagem de integridade
+                  Verificar dados
                 </button>
                 <button type="button" className="dashboard-btn" onClick={runRollup}>
-                  Recalcular rollup mensal
+                  Recalcular métricas
                 </button>
                 <button type="button" className="dashboard-btn" onClick={runBackfillLegado}>
-                  Backfill de eventos legados
+                  Corrigir histórico antigo
                 </button>
                 <button type="button" className="dashboard-btn" onClick={() => navigate('/admin/financeiro')}>
                   Ir para Financeiro
                 </button>
                 <button type="button" className="dashboard-btn" onClick={() => navigate('/')}>
-                  Voltar para início
+                  Voltar ao site
                 </button>
               </div>
               {opsMsg && <p className="dashboard-ops-msg">{opsMsg}</p>}
               <p className="dashboard-integrity-resumo">
-                Integridade atual: eventos {dados?.integrity?.totalEvents || 0}, duplicados{' '}
-                {dados?.integrity?.duplicatePaymentIdsCount || 0}, sem uid {dados?.integrity?.withoutUid || 0}, sem amount{' '}
-                {dados?.integrity?.withoutAmount || 0}.
+                Última leitura: {dados?.integrity?.totalEvents || 0} eventos no banco · {dados?.integrity?.duplicatePaymentIdsCount || 0} IDs
+                duplicados · {dados?.integrity?.withoutUid || 0} sem usuário · {dados?.integrity?.withoutAmount || 0} sem valor.
               </p>
-            </section>
+            </details>
           </>
         )}
 
@@ -756,12 +1045,13 @@ export default function DashboardAdmin() {
                 <span>Usuário</span>
                 <span>Total gasto</span>
                 <span>Qtd.</span>
-                <span>Tempo ativo</span>
+                <span title={rankingMode === 'assinaturas' ? TITLE_COL_ESTIMATIVA : undefined}>
+                  {rankingMode === 'assinaturas' ? 'Est. no filtro' : '—'}
+                </span>
                 <span>Última atividade</span>
               </div>
               {rankingPaginated.rows.map((row) => {
                 const subRef = subsByUid[row.uid] || null;
-                const totalDays = subRef?.totalDays || 0;
                 return (
                   <button
                     type="button"
@@ -773,8 +1063,10 @@ export default function DashboardAdmin() {
                     <span>{row.userName || 'Guerreiro'}</span>
                     <span>{brl(row.totalSpent || 0)}</span>
                     <span>{row.count || 0}</span>
-                    <span>{formatTempoAssinatura(totalDays)}</span>
-                    <span>{formatDateBr(row.lastAt)}</span>
+                    <span title={rankingMode === 'assinaturas' ? TITLE_COL_ESTIMATIVA : undefined}>
+                      {rankingMode === 'assinaturas' ? textoEstimativaPagamentosNoFiltro(subRef) : '—'}
+                    </span>
+                    <span>{formatarDataHoraBr(row.lastAt, { seVazio: '--' })}</span>
                   </button>
                 );
               })}
@@ -796,7 +1088,10 @@ export default function DashboardAdmin() {
           <section className="dashboard-sec">
             <div className="dashboard-sec-head">
               <h2>Assinaturas por usuário</h2>
-              <small>Recorrência, valor médio, tempo acumulado e status</small>
+              <small>
+                «Restante agora» e a data de expiração vêm do cadastro (renovações somam 30 em 30 dias). A coluna de estimativa só conta pagamentos
+                dentro do período filtrado — não é o saldo de tempo.
+              </small>
             </div>
             <div className="analytics-toolbar">
               <input
@@ -812,24 +1107,36 @@ export default function DashboardAdmin() {
                 <span>Nº assinaturas</span>
                 <span>Total gasto</span>
                 <span>Preço médio</span>
-                <span>Tempo total</span>
+                <span title={TITLE_COL_ESTIMATIVA}>No período (~30d/pg)</span>
+                <span>Restante agora</span>
                 <span>Status</span>
                 <span>Última compra</span>
               </div>
-              {subsPaginated.rows.map((row) => (
+              {subsPaginated.rows.map((row) => {
+                const rest = formatarTempoRestanteAssinatura(row.memberUntil, Date.now());
+                const restTxt = row.status === 'ativo' && rest.ativo ? rest.texto : '—';
+                return (
                 <button type="button" key={row.uid} className="analytics-row analytics-row--subs analytics-row--click" onClick={() => setSelectedUid(row.uid)}>
                   <span>{row.userName || 'Guerreiro'}</span>
                   <span>{row.count || 0}</span>
                   <span>{brl(row.totalSpent || 0)}</span>
                   <span>{brl(row.averagePrice || 0)}</span>
-                  <span>{formatTempoAssinatura(row.totalDays)}</span>
+                  <span title={TITLE_COL_ESTIMATIVA}>{textoEstimativaPagamentosNoFiltro(row)}</span>
+                  <span className="analytics-cell-muted analytics-cell-stack">
+                    <span>{restTxt}</span>
+                    {row.status === 'ativo' && row.memberUntil && rest.ativo && (
+                      <small className="analytics-expira">
+                        até {formatarDataHoraBr(row.memberUntil, { seVazio: '' })}
+                      </small>
+                    )}
+                  </span>
                   <span>
                     <i className={`status-dot ${row.status === 'ativo' ? 'active' : 'expired'}`} />
                     {row.status === 'ativo' ? 'Ativo' : 'Expirado'}
                   </span>
-                  <span>{formatDateBr(row.lastAt)}</span>
+                  <span>{formatarDataHoraBr(row.lastAt, { seVazio: '--' })}</span>
                 </button>
-              ))}
+              );})}
               {!subsPaginated.rows.length && <p className="dashboard-empty">Sem assinaturas para este recorte.</p>}
             </div>
             <div className="analytics-pagination">
@@ -872,7 +1179,7 @@ export default function DashboardAdmin() {
                   <span>{row.count || 0}</span>
                   <span>{brl(row.totalSpent || 0)}</span>
                   <span>{brl(row.averageDonation || 0)}</span>
-                  <span>{formatDateBr(row.lastAt)}</span>
+                  <span>{formatarDataHoraBr(row.lastAt, { seVazio: '--' })}</span>
                 </button>
               ))}
               {!doaPaginated.rows.length && <p className="dashboard-empty">Sem doações para este recorte.</p>}
@@ -1070,7 +1377,7 @@ export default function DashboardAdmin() {
                 <ul>
                   {(selectedHistory?.subscriptions || []).map((item) => (
                     <li key={`sub-${item.at}-${item.amount}`}>
-                      <span>{formatDateBr(item.at)}</span>
+                      <span>{formatarDataHoraBr(item.at, { seVazio: '--' })}</span>
                       <strong>{brl(item.amount)}</strong>
                       <em>{item.isPromotion ? `Promoção${item.promoName ? `: ${item.promoName}` : ''}` : 'Preço base'}</em>
                     </li>
@@ -1083,7 +1390,7 @@ export default function DashboardAdmin() {
                 <ul>
                   {(selectedHistory?.donations || []).map((item) => (
                     <li key={`doa-${item.at}-${item.amount}`}>
-                      <span>{formatDateBr(item.at)}</span>
+                      <span>{formatarDataHoraBr(item.at, { seVazio: '--' })}</span>
                       <strong>{brl(item.amount)}</strong>
                       <em>{item.origem || 'Doação'}</em>
                     </li>

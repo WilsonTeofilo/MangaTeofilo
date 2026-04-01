@@ -54,13 +54,32 @@ export function normalizePromoHistoryItem(raw) {
     updatedBy: raw.updatedBy ? String(raw.updatedBy) : null,
     status: String(raw.status || 'scheduled'),
     disabledAt: Number(raw.disabledAt || 0) || null,
-    emailStats: raw.emailStats && typeof raw.emailStats === 'object'
-      ? {
-          sent: toNum(raw.emailStats.sent, 0),
-          skipped: toNum(raw.emailStats.skipped, 0),
-          failed: toNum(raw.emailStats.failed, 0),
-        }
-      : { sent: 0, skipped: 0, failed: 0 },
+    emailStats: (() => {
+      const es = raw.emailStats;
+      if (!es || typeof es !== 'object') {
+        return {
+          sent: 0,
+          failed: 0,
+          skipped: 0,
+          skippedNoOptIn: null,
+          skippedOptInNoEmail: null,
+          optInAtivos: null,
+        };
+      }
+      const v2 = es.optInAtivos !== undefined && es.optInAtivos !== null;
+      return {
+        sent: toNum(es.sent, 0),
+        failed: toNum(es.failed, 0),
+        skipped: toNum(es.skipped, 0),
+        skippedNoOptIn: v2 ? toNum(es.skippedNoOptIn, 0) : null,
+        skippedOptInNoEmail: v2 ? toNum(es.skippedOptInNoEmail, 0) : null,
+        optInAtivos: v2 ? toNum(es.optInAtivos, 0) : null,
+      };
+    })(),
+    goalPayments: (() => {
+      const g = Number(raw.goalPayments);
+      return Number.isFinite(g) && g > 0 ? Math.floor(g) : null;
+    })(),
   };
 }
 

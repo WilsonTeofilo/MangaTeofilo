@@ -8,10 +8,18 @@
       ".write": false
     },
 
+    "admins": {
+      "registry": {
+        ".read": false,
+        ".write": false
+      }
+    },
+
     "capitulos": {
       ".read": true,
-      ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')",
+      ".write": false,
       "$capId": {
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
         "obraId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
         },
@@ -31,7 +39,7 @@
         "comentarios": {
           ".read": true,
           "$comentId": {
-            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && ((!data.exists() && newData.hasChildren(['texto','userId','data','likes']) && newData.child('userId').val() === auth.uid && newData.child('texto').isString() && newData.child('texto').val().length > 0 && newData.child('texto').val().length <= 500 && newData.child('likes').isNumber() && newData.child('likes').val() === 0) || (data.exists() && ((auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com') || (newData.child('texto').val() === data.child('texto').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('data').val() === data.child('data').val() && newData.child('likes').isNumber() && newData.child('likes').val() >= 0))))",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && ((!data.exists() && newData.hasChildren(['texto','userId','data','likes']) && newData.child('userId').val() === auth.uid && newData.child('texto').isString() && newData.child('texto').val().length > 0 && newData.child('texto').val().length <= 500 && newData.child('likes').isNumber() && newData.child('likes').val() === 0) || (data.exists() && ((auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true) || (newData.child('texto').val() === data.child('texto').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('data').val() === data.child('data').val() && newData.child('likes').isNumber() && newData.child('likes').val() >= 0))))",
             "likes": {
               ".write": "auth != null && data.isNumber() && newData.isNumber() && newData.val() >= 0 && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
             },
@@ -47,9 +55,10 @@
 
     "obras": {
       ".read": true,
-      ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')",
+      ".write": false,
       "$obraId": {
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
         "titulo": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 140"
         },
@@ -67,23 +76,53 @@
         },
         "updatedAt": {
           ".validate": "!newData.exists() || newData.isNumber()"
+        },
+        "creatorId": {
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
+        }
+      }
+    },
+
+    "creatorData": {
+      "$creatorUid": {
+        "payments": {
+          ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+          ".write": false,
+          "$paymentId": {
+            ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+            ".write": false
+          }
+        },
+        "subscriptions": {
+          ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+          ".write": false,
+          "$subscriptionId": {
+            ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+            ".write": false
+          }
+        },
+        "promotions": {
+          "$promoId": {
+            ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+            ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.uid === $creatorUid && auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists()) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))"
+          }
         }
       }
     },
 
     "avatares": {
       ".read": true,
-      ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+      ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
     },
 
     "loja": {
       "config": {
         ".read": true,
-        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
       },
       "produtos": {
         ".read": true,
-        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
       },
       "carrinhos": {
         "$uid": {
@@ -93,8 +132,8 @@
       },
       "pedidos": {
         "$pedidoId": {
-          ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')",
-          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com')"
+          ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
         }
       }
     },
@@ -106,10 +145,10 @@
 
     "usuarios": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')",
+        ".read": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
         ".write": "auth != null && auth.uid === $uid",
         "userName":          { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
-        "email":             { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
+        "email":             { ".validate": "!newData.exists() || (auth.token.email != null && newData.isString() && newData.val() === auth.token.email && newData.val().length <= 100)" },
         "userAvatar":        { ".validate": "newData.isString()" },
         "uid":               { ".validate": "newData.val() === auth.uid" },
         "notifyNewChapter":  { ".validate": "newData.isBoolean()" },
@@ -123,32 +162,32 @@
         "sourceAcquisition": { ".validate": "newData.isString() && newData.val().length > 0 && (!data.exists() || newData.val() === data.val())" },
         "accountType": {
           ".read": "auth != null",
-          ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((!data.exists() && newData.val() === 'comum') || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))"
+          ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((!data.exists() && newData.val() === 'comum') || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))"
         },
         "role": {
-          ".validate": "(newData.val() === 'user' || newData.val() === 'admin' || newData.val() === 'membro') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))"
+          ".validate": "(newData.val() === 'user' || newData.val() === 'admin' || newData.val() === 'mangaka' || newData.val() === 'super_admin' || newData.val() === 'membro') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))"
         },
         "status": {
-          ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
+          ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && ((root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true) || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
         },
         "membershipStatus": {
-          ".validate": "(newData.val() === 'inativo' || newData.val() === 'ativo' || newData.val() === 'vencido' || newData.val() === 'cancelado') && ((!data.exists() && newData.val() === 'inativo') || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))"
+          ".validate": "(newData.val() === 'inativo' || newData.val() === 'ativo' || newData.val() === 'vencido' || newData.val() === 'cancelado') && ((!data.exists() && newData.val() === 'inativo') || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))"
         },
-        "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" },
-        "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" },
-        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" },
-        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')))" }
+        "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
+        "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
+        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" },
+        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))))" }
       }
     },
 
     "usuarios_publicos": {
       "$uid": {
         ".read": true,
-        ".write": "auth != null && (auth.uid === $uid || root.child('usuarios').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
         "uid":         { ".validate": "newData.val() === $uid" },
         "userName":    { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userAvatar":  { ".validate": "newData.isString() && newData.val().length > 0" },
-        "accountType": { ".validate": "newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin'" },
+        "accountType": { ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true) || newData.val() === root.child('usuarios').child($uid).child('accountType').val() || (auth.uid === $uid && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)))" },
         "updatedAt":   { ".validate": "newData.isNumber()" }
       }
     },
@@ -156,7 +195,7 @@
     "stats": {
       ".read": true,
       "contador": {
-        ".write": "newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+        ".write": "auth != null && newData.isNumber() && ((!data.exists() && newData.val() === 1) || (data.exists() && newData.val() === data.val() + 1))"
       }
     }
   }

@@ -1,0 +1,185 @@
+/* Equipe + Sessões — mesma linguagem visual do Financeiro (financeiro-card, financeiro-migracao, etc.) */
+
+.financeiro-msg {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.financeiro-msg--erro {
+  color: #ffc9c9;
+  background: rgba(190, 45, 45, 0.2);
+  border: 1px solid rgba(230, 75, 75, 0.4);
+}
+
+.financeiro-msg--ok {
+  color: #d4f0d4;
+  background: rgba(45, 120, 65, 0.22);
+  border: 1px solid rgba(80, 180, 100, 0.38);
+}
+
+.admin-staff-stack {
+  display: grid;
+  gap: 22px;
+}
+
+.admin-staff-perms {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 8, 8, 0.55);
+}
+
+.admin-staff-perms legend {
+  padding: 0 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #c9c9c9;
+}
+
+.admin-staff-perms-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (min-width: 640px) {
+  .admin-staff-perms-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.admin-staff-perm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.86rem;
+  color: #d8d8d8;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.admin-staff-perm-label input {
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: #ffcc00;
+  width: 18px;
+  height: 18px;
+}
+
+.admin-staff-submit-row {
+  margin-top: 16px;
+}
+
+.admin-staff-member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.admin-staff-member-card {
+  border-radius: 14px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: grid;
+  gap: 10px;
+}
+
+.admin-staff-member-email {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #f0f0f0;
+  word-break: break-all;
+}
+
+.admin-staff-member-uid {
+  font-size: 0.78rem;
+  color: #8e8e8e;
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+
+.admin-staff-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-staff-empty {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #9a9a9a;
+  line-height: 1.5;
+}
+
+.admin-staff-empty code {
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffe08a;
+}
+
+.admin-staff-loading {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #b0b0b0;
+}
+
+.admin-staff-sessoes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.admin-staff-sessoes-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+.admin-staff-sessoes-row .financeiro-grid {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+}
+
+.admin-staff-danger-block {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 95, 95, 0.2);
+}
+
+.admin-staff-danger-block h2 {
+  color: #ffb0b0;
+}
+
+.admin-staff-danger-block > p {
+  color: #b89898 !important;
+}
+
+.admin-staff-role-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(255, 204, 0, 0.15);
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  color: #ffdd77;
+}

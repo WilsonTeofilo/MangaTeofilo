@@ -14,6 +14,12 @@ import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import ShitoManga from './ShitoManga';
 import './HomeAdaptive.css';
 
+function pathObraPublica(obra) {
+  const id = String(obra?.id || '').toLowerCase();
+  const slug = String(obra?.slug || '').trim();
+  return `/work/${encodeURIComponent(slug || id)}`;
+}
+
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
 function toList(snapshotVal) {
@@ -206,7 +212,7 @@ export default function HomeAdaptive({ user }) {
     const obra = obrasPublicadas[0];
     const obraId = String(obra?.id || '').toLowerCase();
     if (obraId === OBRA_PADRAO_ID) {
-      return <ShitoManga />;
+      return <ShitoManga user={user} />;
     }
     return (
       <section className="home-single-alt">
@@ -219,7 +225,7 @@ export default function HomeAdaptive({ user }) {
           <span className="home-single-alt-pill">Obra em destaque</span>
           <h1>{obra?.titulo || 'Nova obra'}</h1>
           <p>{obra?.sinopse || 'Acompanhe os lançamentos desta obra.'}</p>
-          <button type="button" className="btn-read-now" onClick={() => navigate('/capitulos')}>
+          <button type="button" className="btn-read-now" onClick={() => navigate(pathObraPublica(obra))}>
             Ler agora
           </button>
         </div>
@@ -264,7 +270,7 @@ export default function HomeAdaptive({ user }) {
                   const obraId = dadosMulti.hero[heroIndex]?.id;
                   if (!obraId) return;
                   registrarEventoHome('home_block_click', 'hero', String(obraId));
-                  navigate(`/obra/${encodeURIComponent(String(obraId))}`);
+                  navigate(pathObraPublica(dadosMulti.hero[heroIndex]));
                 }}
               >
                 Ver obra
@@ -274,7 +280,7 @@ export default function HomeAdaptive({ user }) {
                 className="btn-hero-sec"
                 onClick={() => {
                   registrarEventoHome('home_block_click', 'hero', 'lista');
-                  navigate('/mangas');
+                  navigate('/works');
                 }}
               >
                 Explorar catálogo
@@ -300,7 +306,7 @@ export default function HomeAdaptive({ user }) {
               type="button"
               onClick={() => {
                 registrarEventoHome('home_block_click', 'trending', 'ver_todos');
-                navigate('/mangas');
+                navigate('/works');
               }}
             >
               Ver todos
@@ -313,11 +319,11 @@ export default function HomeAdaptive({ user }) {
                 className="home-rank-item"
                 onClick={() => {
                   registrarEventoHome('home_block_click', 'trending', String(obra.id));
-                  navigate(`/obra/${encodeURIComponent(String(obra.id))}`);
+                  navigate(pathObraPublica(obra));
                 }}
                 role="button"
                 tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && navigate(`/obra/${encodeURIComponent(String(obra.id))}`)}
+                onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
               >
                 <span className="home-rank-pos">{idx + 1}</span>
                 <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
@@ -334,7 +340,7 @@ export default function HomeAdaptive({ user }) {
       <section className="home-multi-section">
         <div className="home-multi-section-head">
           <h2>Updates recentes</h2>
-          <button type="button" onClick={() => navigate('/mangas')}>Ver tudo</button>
+          <button type="button" onClick={() => navigate('/works')}>Ver tudo</button>
         </div>
         {dadosMulti.updates.length > 0 ? (
           <div className="home-updates-grid">
@@ -381,11 +387,11 @@ export default function HomeAdaptive({ user }) {
               className="home-obra-card"
               onClick={() => {
                 registrarEventoHome('home_block_click', 'trending', String(obra.id));
-                navigate(`/obra/${encodeURIComponent(String(obra.id))}`);
+                navigate(pathObraPublica(obra));
               }}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate(`/obra/${encodeURIComponent(String(obra.id))}`)}
+              onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
             >
               <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
               <div className="home-obra-card-body">
@@ -423,11 +429,11 @@ export default function HomeAdaptive({ user }) {
               className="home-obra-card"
               onClick={() => {
                 registrarEventoHome('home_block_click', 'categorias', String(obra.id));
-                navigate(`/obra/${encodeURIComponent(String(obra.id))}`);
+                navigate(pathObraPublica(obra));
               }}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate(`/obra/${encodeURIComponent(String(obra.id))}`)}
+              onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
             >
               <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
               <div className="home-obra-card-body">
@@ -450,11 +456,11 @@ export default function HomeAdaptive({ user }) {
               className="home-obra-card"
               onClick={() => {
                 registrarEventoHome('home_block_click', 'recomendados', String(obra.id));
-                navigate(`/obra/${encodeURIComponent(String(obra.id))}`);
+                navigate(pathObraPublica(obra));
               }}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate(`/obra/${encodeURIComponent(String(obra.id))}`)}
+              onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
             >
               <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
               <div className="home-obra-card-body">

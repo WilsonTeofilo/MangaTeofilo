@@ -148,8 +148,9 @@
   transition: transform 0.4s ease;
 }
 
-.foto-container:hover {
-  transform: scale(1.035);
+.foto-container[role='button'] {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .foto-real,
@@ -175,18 +176,22 @@
               opacity 0.6s ease;
 }
 
-.foto-container:hover .foto-manga {
+.foto-container.hovered {
+  transform: scale(1.035);
+}
+
+.foto-container.hovered .foto-manga {
   clip-path: circle(150% at 50% 50%);
   opacity: 1;
   transition: clip-path var(--transition-circle),
               opacity 0.5s ease;
 }
 
-.foto-container:hover {
+.foto-container.hovered {
   animation: tremor 0.5s infinite alternate ease-in-out;
 }
 
-.foto-container:not(:hover) {
+.foto-container:not(.hovered) {
   animation: none;
 }
 
@@ -205,6 +210,16 @@
   font-weight: 700;
   color: var(--text-pure);
   text-shadow: 0 3px 12px rgba(0,0,0,0.7);
+}
+
+.foto-tap-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--naraa-gold);
+  text-align: center;
+  max-width: 320px;
+  line-height: 1.35;
 }
 
 /* ── Bio ─────────────────────────────────────── */

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../../services/firebase';
@@ -18,6 +18,8 @@ import {
   parseAttributionFromSearch,
   persistAttribution,
 } from '../../utils/trafficAttribution';
+import { formatarDataLongaBr, formatarHoraBr } from '../../utils/datasBr';
+import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
@@ -25,23 +27,24 @@ const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
-function formatarDataFimAssinatura(ms) {
-  if (typeof ms !== 'number') return '';
-  try {
-    return new Date(ms).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      timeZone: 'America/Sao_Paulo',
-    });
-  } catch {
-    return '';
-  }
+/** Inclui dias completos; antes usávamos só (seg % 86400)/3600 e promoções >24h pareciam ter ~1h. */
+function textoCountdownPromoSegundos(totalSegundos) {
+  const s = Math.max(0, Math.floor(Number(totalSegundos) || 0));
+  const dd = Math.floor(s / 86400);
+  const hh = Math.floor((s % 86400) / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const p2 = (n) => String(n).padStart(2, '0');
+  if (dd > 0) return `${dd}d ${p2(hh)}:${p2(mm)}:${p2(sec)}`;
+  return `${p2(hh)}:${p2(mm)}:${p2(sec)}`;
 }
 
 export default function Apoie({ user, perfil }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const irLoginComRetorno = () =>
+    navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
   const mpRetorno = searchParams.get('mp');
   const [carregandoId, setCarregandoId] = useState(null);
   const [valorLivre, setValorLivre] = useState('');
@@ -144,6 +147,16 @@ export default function Apoie({ user, perfil }) {
         source: fromUrl.source,
         campaignId: fromUrl.campaignId || null,
         clickId: fromUrl.clickId || null,
+      }).catch(() => {});
+    }
+    if (fromUrl.source === 'chapter_email') {
+      const capId = searchParams.get('capId');
+      registrarAttributionEvento({
+        eventType: 'chapter_landing',
+        source: fromUrl.source,
+        campaignId: fromUrl.campaignId || null,
+        clickId: fromUrl.clickId || null,
+        chapterId: capId || null,
       }).catch(() => {});
     }
   }, [searchParams]);
@@ -297,14 +310,19 @@ export default function Apoie({ user, perfil }) {
 
   const abrirPagamento = async (plano) => {
     if (!user?.uid) {
-      navigate('/login');
+      irLoginComRetorno();
       return;
     }
     setErroCheckoutPlanos('');
     setCarregandoId(plano.id);
     let abriuPelaApi = false;
     try {
-      const { data } = await criarCheckoutApoio({ planId: plano.id });
+      const { data } = await criarCheckoutApoio({
+        planId: plano.id,
+        ...(attributionCreatorIdParaCheckout
+          ? { attributionCreatorId: attributionCreatorIdParaCheckout }
+          : {}),
+      });
       if (data?.url) {
         window.open(data.url, '_blank', 'noopener,noreferrer');
         abriuPelaApi = true;
@@ -322,7 +340,7 @@ export default function Apoie({ user, perfil }) {
 
   const abrirDoacaoLivre = async () => {
     if (!user?.uid) {
-      navigate('/login');
+      irLoginComRetorno();
       return;
     }
     setErroValorLivre('');
@@ -339,7 +357,12 @@ export default function Apoie({ user, perfil }) {
 
     setCarregandoId('livre');
     try {
-      const { data } = await criarCheckoutApoio({ customAmount: n });
+      const { data } = await criarCheckoutApoio({
+        customAmount: n,
+        ...(attributionCreatorIdParaCheckout
+          ? { attributionCreatorId: attributionCreatorIdParaCheckout }
+          : {}),
+      });
       if (data?.url) {
         window.open(data.url, '_blank', 'noopener,noreferrer');
         return;
@@ -353,7 +376,7 @@ export default function Apoie({ user, perfil }) {
   };
 
   const premiumAtivo = assinaturaPremiumAtiva(perfil);
-  const fimPremium = formatarDataFimAssinatura(perfil?.memberUntil);
+  const fimPremium = formatarDataLongaBr(perfil?.memberUntil);
   const precoBase = Number.isFinite(ofertaPremium.basePriceBRL) ? ofertaPremium.basePriceBRL : null;
   const precoAtual = Number.isFinite(ofertaPremium.currentPriceBRL) ? ofertaPremium.currentPriceBRL : null;
   const precoSeguro = Number.isFinite(precoAtual) && precoAtual > 0
@@ -369,17 +392,28 @@ export default function Apoie({ user, perfil }) {
     ofertaPremium.isPromoActive && promoEndsAt > ofertaPremium.now
       ? Math.floor((promoEndsAt - ofertaPremium.now) / 1000)
       : 0;
-  const hs = String(Math.floor((segundosAteInicio % 86400) / 3600)).padStart(2, '0');
-  const ms = String(Math.floor((segundosAteInicio % 3600) / 60)).padStart(2, '0');
-  const ssStart = String(segundosAteInicio % 60).padStart(2, '0');
-  const hh = String(Math.floor((segundosRestantes % 86400) / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((segundosRestantes % 3600) / 60)).padStart(2, '0');
-  const ss = String(segundosRestantes % 60).padStart(2, '0');
+  const textoAteInicioPromo = textoCountdownPromoSegundos(segundosAteInicio);
+  const textoTerminaPromo = textoCountdownPromoSegundos(segundosRestantes);
+
+  /** Atribuição de apoio/premium a um mangaká (links: ?creatorId=UID ou ?criador=UID). */
+  const attributionCreatorIdParaCheckout = useMemo(() => {
+    const c = String(searchParams.get('creatorId') || searchParams.get('criador') || '').trim();
+    if (c.length < 10 || c.length > 128) return null;
+    if (!/^[a-zA-Z0-9_-]+$/.test(c)) return null;
+    return c;
+  }, [searchParams]);
+
+  const capIdFromEmail = searchParams.get('capId');
+  const fromChapterEmail =
+    String(searchParams.get('src') || '').toLowerCase() === 'chapter_email' && Boolean(capIdFromEmail);
+  const hrefLerCapEmail = fromChapterEmail
+    ? `/ler/${encodeURIComponent(capIdFromEmail)}?${searchParams.toString()}`
+    : '';
 
   const abrirAssinaturaPremium = async () => {
     setErroPremium('');
     if (!user?.uid) {
-      navigate('/login');
+      irLoginComRetorno();
       return;
     }
     const baselineUntil = typeof perfil?.memberUntil === 'number' ? perfil.memberUntil : 0;
@@ -394,6 +428,9 @@ export default function Apoie({ user, perfil }) {
               clickId: attribution.clickId || null,
             }
           : null,
+        ...(attributionCreatorIdParaCheckout
+          ? { attributionCreatorId: attributionCreatorIdParaCheckout }
+          : {}),
       });
       if (data?.url) {
         setAcompanhamentoPremium({
@@ -432,7 +469,7 @@ export default function Apoie({ user, perfil }) {
                 </h2>
                 <p>
                   {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
-                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai até ${formatarDataFimAssinatura(acompanhamentoPremium.novoUntil)}.`
+                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai até ${formatarDataLongaBr(acompanhamentoPremium.novoUntil)}.`
                     : 'Seus poderes Premium foram liberados. Bem-vindo à Elite da Tempestade.'}
                 </p>
                 <button
@@ -493,6 +530,22 @@ export default function Apoie({ user, perfil }) {
             <strong>Obrigado por acreditar na história e na tempestade!</strong>
           </p>
 
+          {fromChapterEmail && (
+            <div className="apoie-cap-email-banner" role="region" aria-label="Novo capítulo por e-mail">
+              <p>
+                Você abriu o link do aviso de capítulo novo. Esta página é o <strong>checkout</strong> para
+                apoiar a obra; se preferir ler antes, use o botão abaixo (o rastreio do e-mail continua igual).
+              </p>
+              <button
+                type="button"
+                className="apoie-cap-email-banner-btn"
+                onClick={() => navigate(hrefLerCapEmail)}
+              >
+                Ir ler o capítulo
+              </button>
+            </div>
+          )}
+
           <div className="apoie-premium-card">
             <div className="apoie-premium-badge">MEMBRO SHITO</div>
             {ofertaPremium.loading ? (
@@ -516,8 +569,11 @@ export default function Apoie({ user, perfil }) {
                         De <span>{labelPrecoPremium(precoBase)}</span> por <strong>{labelPrecoPremium(precoAtual)}</strong>
                       </p>
                     )}
-                    <p className="apoie-premium-timer">
-                      Termina em: <strong>{hh}:{mm}:{ss}</strong>
+                    <p
+                      className="apoie-premium-timer"
+                      title="Dias (quando houver), depois horas:minutos:segundos. Ex.: 1d 01:00:00 = um dia e uma hora."
+                    >
+                      Termina em: <strong>{textoTerminaPromo}</strong>
                     </p>
                   </div>
                 )}
@@ -527,7 +583,7 @@ export default function Apoie({ user, perfil }) {
                       <strong>{ofertaPremium?.promo?.name || 'Promoção relâmpago'}</strong> programada.
                     </p>
                     <p>
-                      Entrará em: <strong>{hs}:{ms}:{ssStart}</strong>
+                      Entrará em: <strong>{textoAteInicioPromo}</strong>
                     </p>
                     <p>
                       Quando iniciar, o valor muda automaticamente para{' '}
@@ -565,7 +621,7 @@ export default function Apoie({ user, perfil }) {
             )}
             {!user && (
               <p className="apoie-premium-login-hint">
-                <button type="button" className="apoie-link-login" onClick={() => navigate('/login')}>
+                <button type="button" className="apoie-link-login" onClick={irLoginComRetorno}>
                   Entre na sua conta
                 </button>{' '}
                 para assinar — precisamos saber quem é você para liberar o Premium.
@@ -598,15 +654,12 @@ export default function Apoie({ user, perfil }) {
                 ) : (
                   <p>
                     {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
-                      ? `Renovacao confirmada (+${acompanhamentoPremium.diasGanho || 30} dias). Novo prazo: ${formatarDataFimAssinatura(acompanhamentoPremium.novoUntil)}.`
+                      ? `Renovacao confirmada (+${acompanhamentoPremium.diasGanho || 30} dias). Novo prazo: ${formatarDataLongaBr(acompanhamentoPremium.novoUntil)}.`
                       : (
                         <>
                           Assinatura detectada com sucesso em{' '}
                           <strong>
-                            {new Date(acompanhamentoPremium.confirmadoAt).toLocaleTimeString('pt-BR', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
+                            {formatarHoraBr(acompanhamentoPremium.confirmadoAt, { seVazio: '' })}
                           </strong>
                           . Pode fechar com segurança.
                         </>
@@ -661,7 +714,7 @@ export default function Apoie({ user, perfil }) {
             </p>
             {!user && (
               <p className="apoie-premium-login-hint">
-                <button type="button" className="apoie-link-login" onClick={() => navigate('/login')}>
+                <button type="button" className="apoie-link-login" onClick={irLoginComRetorno}>
                   Entre na sua conta
                 </button>{' '}
                 para doar. Assim o sistema registra quem ajudou no ranking e no dashboard.

@@ -6,7 +6,7 @@ import { db } from '../../services/firebase';
 
 import './ShitoManga.css';
 
-export default function ShitoManga() {
+export default function ShitoManga({ user }) {
   const [visitas, setVisitas] = useState(0);
   const [mostrarSetaScroll, setMostrarSetaScroll] = useState(() => {
     const vh = window.visualViewport?.height ?? window.innerHeight;
@@ -33,13 +33,6 @@ export default function ShitoManga() {
   }, [atualizarVisibilidadeSeta]);
 
   useEffect(() => {
-    if (!hasIncremented.current) {
-      const statsRef = ref(db, 'stats');
-      update(statsRef, { contador: increment(1) })
-        .catch((err) => console.error('Erro ao atualizar stats:', err));
-      hasIncremented.current = true;
-    }
-
     const contadorRef = ref(db, 'stats/contador');
     const unsubVisitas = onValue(contadorRef, (snapshot) => {
       setVisitas(snapshot.val() || 0);
@@ -49,6 +42,16 @@ export default function ShitoManga() {
       unsubVisitas();
     };
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid || hasIncremented.current) return;
+    hasIncremented.current = true;
+    const statsRef = ref(db, 'stats');
+    update(statsRef, { contador: increment(1) }).catch((err) => {
+      console.error('Erro ao atualizar stats:', err);
+      hasIncremented.current = false;
+    });
+  }, [user?.uid]);
 
   useEffect(() => {
     window.addEventListener('scroll', onScrollOrResize, { passive: true });
@@ -149,7 +152,7 @@ export default function ShitoManga() {
               <p>Visualizações Totais: <span>{visitas}</span></p>
               <p>Status: <span>Em Lançamento</span></p>
             </div>
-            <button className="btn-read-now" onClick={() => navigate('/capitulos')}>
+            <button className="btn-read-now" onClick={() => navigate('/works')}>
               COMEÇAR LEITURA
             </button>
           </div>

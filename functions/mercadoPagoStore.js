@@ -41,7 +41,7 @@ export async function criarPreferenciaLoja(
     },
     back_urls: {
       success: `${base}/loja/pedidos?mp=ok`,
-      failure: `${base}/loja/carrinho?mp=erro`,
+      failure: `${base}/loja?mp=erro`,
       pending: `${base}/loja/pedidos?mp=pending`,
     },
     auto_return: 'approved',

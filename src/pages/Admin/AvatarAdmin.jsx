@@ -7,6 +7,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, storage } from '../../services/firebase';
 import { isAdminUser } from '../../constants';
 import './AdminPanel.css';
+import './AvatarAdmin.css';
 
 function ModalErro({ mensagem, aoFechar }) {
   if (!mensagem) return null;

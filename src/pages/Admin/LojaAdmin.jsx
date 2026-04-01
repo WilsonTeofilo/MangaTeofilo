@@ -1,29 +1,72 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, push, ref, remove, set, update } from 'firebase/database';
+import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
-import { normalizeStoreConfig, STORE_DEFAULT_CONFIG } from '../../config/store';
+import {
+  normalizeProductCategory,
+  normalizeStoreConfig,
+  STORE_CATEGORY_KEYS,
+  STORE_CATEGORY_LABELS,
+  STORE_DEFAULT_CONFIG,
+  STORE_TYPE_KEYS,
+} from '../../config/store';
 import './LojaAdmin.css';
 
 const EMPTY_PRODUCT = {
+  customId: '',
   title: '',
   description: '',
   price: 0,
   stock: 0,
-  image: '',
+  imagesText: '',
   isActive: true,
   isOnSale: false,
   promoPrice: 0,
   isVIPDiscountEnabled: true,
+  type: STORE_TYPE_KEYS.MANGA,
+  category: STORE_CATEGORY_KEYS.MANGA,
+  obra: '',
+  collection: '',
+  dropLabel: '',
+  creatorId: '',
+  sizesText: '',
+  isNew: false,
 };
 
+const PRODUCT_TABS = [
+  { id: 'dados', label: 'Dados' },
+  { id: 'midia', label: 'Mídia' },
+  { id: 'preco', label: 'Preço' },
+  { id: 'estoque', label: 'Estoque' },
+  { id: 'categoria', label: 'Categoria' },
+];
+
+function parseImages(text) {
+  return String(text || '')
+    .split(/\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function parseSizes(text) {
+  return String(text || '')
+    .split(/[,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export default function LojaAdmin() {
+  const navigate = useNavigate();
   const [config, setConfig] = useState(STORE_DEFAULT_CONFIG);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [form, setForm] = useState(EMPTY_PRODUCT);
   const [editingId, setEditingId] = useState('');
   const [ok, setOk] = useState('');
+  const [productTab, setProductTab] = useState('dados');
+  const [shipIn, setShipIn] = useState(0);
+  const [thanksIn, setThanksIn] = useState('');
 
   useEffect(() => {
     const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {
@@ -44,11 +87,18 @@ export default function LojaAdmin() {
     };
   }, []);
 
+  useEffect(() => {
+    setShipIn(config.fixedShippingBrl);
+    setThanksIn(config.postPurchaseThanks || '');
+  }, [config.fixedShippingBrl, config.postPurchaseThanks]);
+
   const totals = useMemo(() => {
     return orders.reduce(
       (acc, order) => {
         acc.total += Number(order.total || 0);
-        if (order.status === 'paid') acc.paid += Number(order.total || 0);
+        if (order.status === 'paid' || order.status === 'processing' || order.status === 'shipped' || order.status === 'delivered') {
+          acc.paid += Number(order.total || 0);
+        }
         if (order.status === 'pending') acc.pending += 1;
         return acc;
       },
@@ -58,57 +108,172 @@ export default function LojaAdmin() {
 
   async function saveConfig(patch) {
     await update(ref(db, 'loja/config'), { ...patch, updatedAt: Date.now() });
-    setOk('Configuração da loja salva.');
+    setOk('Configuração salva.');
     setTimeout(() => setOk(''), 2200);
+  }
+
+  const [heroEyebrowIn, setHeroEyebrowIn] = useState('');
+  const [heroTitleIn, setHeroTitleIn] = useState('');
+  const [heroSubtitleIn, setHeroSubtitleIn] = useState('');
+
+  useEffect(() => {
+    setHeroEyebrowIn(config.heroEyebrow || '');
+    setHeroTitleIn(config.heroTitle || '');
+    setHeroSubtitleIn(config.heroSubtitle || '');
+  }, [config.heroEyebrow, config.heroTitle, config.heroSubtitle]);
+
+  async function saveShippingBlock() {
+    await saveConfig({
+      fixedShippingBrl: Math.max(0, Number(shipIn || 0)),
+      postPurchaseThanks: String(thanksIn || '').trim(),
+    });
+  }
+
+  async function saveHeroBlock() {
+    await saveConfig({
+      heroEyebrow: String(heroEyebrowIn || '').trim(),
+      heroTitle: String(heroTitleIn || '').trim(),
+      heroSubtitle: String(heroSubtitleIn || '').trim(),
+    });
   }
 
   async function saveProduct() {
     const now = Date.now();
+    const images = parseImages(form.imagesText);
+    const sizes = parseSizes(form.sizesText);
+    const type = String(form.type || STORE_TYPE_KEYS.MANGA).toLowerCase();
+    const category = normalizeProductCategory({ category: form.category });
+
     const payload = {
       title: String(form.title || '').trim(),
       description: String(form.description || '').trim(),
       price: Number(form.price || 0),
       stock: Math.max(0, Number(form.stock || 0)),
-      images: form.image ? [String(form.image).trim()] : [],
+      images,
       isActive: form.isActive === true,
       isOnSale: form.isOnSale === true,
       promoPrice: Number(form.promoPrice || 0),
       isVIPDiscountEnabled: form.isVIPDiscountEnabled === true,
+      type: type === STORE_TYPE_KEYS.ROUPA ? STORE_TYPE_KEYS.ROUPA : STORE_TYPE_KEYS.MANGA,
+      category,
+      obra: String(form.obra || '').trim(),
+      collection: String(form.collection || '').trim(),
+      dropLabel: String(form.dropLabel || '').trim(),
+      creatorId: String(form.creatorId || '').trim() || null,
+      sizes: type === STORE_TYPE_KEYS.ROUPA ? sizes : [],
+      isNew: form.isNew === true,
       updatedAt: now,
     };
-    if (!payload.title || payload.price <= 0) return;
-    if (editingId) {
-      await update(ref(db, `loja/produtos/${editingId}`), payload);
-    } else {
-      const newRef = push(ref(db, 'loja/produtos'));
-      await set(newRef, { ...payload, createdAt: now });
+
+    if (!payload.title || payload.price <= 0) {
+      setOk('Preencha nome e preço válidos.');
+      setTimeout(() => setOk(''), 2500);
+      return;
     }
-    setForm(EMPTY_PRODUCT);
-    setEditingId('');
-    setOk('Produto salvo.');
-    setTimeout(() => setOk(''), 2200);
+
+    const slug = String(form.customId || '').trim().toLowerCase();
+    const slugOk = /^[a-z0-9_-]{2,40}$/.test(slug);
+
+    try {
+      if (editingId) {
+        await update(ref(db, `loja/produtos/${editingId}`), payload);
+      } else if (slugOk) {
+        await set(ref(db, `loja/produtos/${slug}`), { ...payload, createdAt: now });
+      } else {
+        const newRef = push(ref(db, 'loja/produtos'));
+        await set(newRef, { ...payload, createdAt: now });
+      }
+      setForm(EMPTY_PRODUCT);
+      setEditingId('');
+      setProductTab('dados');
+      setOk('Produto salvo.');
+      setTimeout(() => setOk(''), 2200);
+    } catch (e) {
+      setOk(e?.message || 'Erro ao salvar.');
+      setTimeout(() => setOk(''), 4000);
+    }
+  }
+
+  function loadProductIntoForm(p) {
+    setEditingId(p.id);
+    setForm({
+      customId: p.id,
+      title: p.title || '',
+      description: p.description || '',
+      price: Number(p.price || 0),
+      stock: Number(p.stock || 0),
+      imagesText: Array.isArray(p.images) ? p.images.join('\n') : '',
+      isActive: p.isActive !== false,
+      isOnSale: p.isOnSale === true,
+      promoPrice: Number(p.promoPrice || 0),
+      isVIPDiscountEnabled: p.isVIPDiscountEnabled !== false,
+      type: String(p.type || STORE_TYPE_KEYS.MANGA).toLowerCase() === STORE_TYPE_KEYS.ROUPA ? STORE_TYPE_KEYS.ROUPA : STORE_TYPE_KEYS.MANGA,
+      category: normalizeProductCategory(p),
+      obra: String(p.obra || ''),
+      collection: String(p.collection || ''),
+      dropLabel: String(p.dropLabel || ''),
+      creatorId: String(p.creatorId || ''),
+      sizesText: Array.isArray(p.sizes) ? p.sizes.join(', ') : '',
+      isNew: p.isNew === true,
+    });
+    setProductTab('dados');
   }
 
   return (
     <main className="loja-admin-page">
       <header className="loja-admin-head">
-        <h1>Loja - Admin</h1>
-        {ok ? <p>{ok}</p> : null}
+        <div>
+          <h1>Loja — Admin</h1>
+          {ok ? <p>{ok}</p> : null}
+        </div>
+        <button type="button" className="loja-admin-link-pedidos" onClick={() => navigate('/admin/pedidos')}>
+          Pedidos da loja →
+        </button>
       </header>
 
       <section className="loja-admin-kpis">
-        <article><span>Pedidos pendentes</span><strong>{totals.pending}</strong></article>
-        <article><span>Receita total</span><strong>R$ {totals.total.toFixed(2)}</strong></article>
-        <article><span>Receita paga</span><strong>R$ {totals.paid.toFixed(2)}</strong></article>
+        <article>
+          <span>Pedidos aguardando pagamento</span>
+          <strong>{totals.pending}</strong>
+        </article>
+        <article>
+          <span>Volume (todos)</span>
+          <strong>R$ {totals.total.toFixed(2)}</strong>
+        </article>
+        <article>
+          <span>Volume pago / em curso</span>
+          <strong>R$ {totals.paid.toFixed(2)}</strong>
+        </article>
       </section>
 
-      <section className="loja-admin-grid">
-        <article className="loja-admin-card">
-          <h2>Configuração da loja</h2>
-          <label><input type="checkbox" checked={config.storeEnabled} onChange={(e) => saveConfig({ storeEnabled: e.target.checked })} /> Loja ativa</label>
-          <label><input type="checkbox" checked={config.storeVisibleToUsers} onChange={(e) => saveConfig({ storeVisibleToUsers: e.target.checked })} /> Visível ao público</label>
-          <label><input type="checkbox" checked={config.acceptingOrders} onChange={(e) => saveConfig({ acceptingOrders: e.target.checked })} /> Aceitando pedidos</label>
+      <section className="loja-admin-card loja-admin-card--wide">
+        <h2>Configuração</h2>
+        <div className="loja-admin-config-grid">
           <label>
+            <input
+              type="checkbox"
+              checked={config.storeEnabled}
+              onChange={(e) => saveConfig({ storeEnabled: e.target.checked })}
+            />{' '}
+            Loja ativa
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={config.storeVisibleToUsers}
+              onChange={(e) => saveConfig({ storeVisibleToUsers: e.target.checked })}
+            />{' '}
+            Visível ao público
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={config.acceptingOrders}
+              onChange={(e) => saveConfig({ acceptingOrders: e.target.checked })}
+            />{' '}
+            Aceitando pedidos
+          </label>
+          <label className="loja-admin-field">
             Desconto VIP (%)
             <input
               type="number"
@@ -118,76 +283,289 @@ export default function LojaAdmin() {
               onChange={(e) => saveConfig({ vipDiscountPct: Number(e.target.value || 0) })}
             />
           </label>
-        </article>
+        </div>
+        <div className="loja-admin-shipping-block">
+          <h3>Hero da loja (vitrine)</h3>
+          <label className="loja-admin-field">
+            Eyebrow (linha pequena acima do título)
+            <input value={heroEyebrowIn} onChange={(e) => setHeroEyebrowIn(e.target.value)} placeholder="Shito Project" />
+          </label>
+          <label className="loja-admin-field">
+            Título principal
+            <input value={heroTitleIn} onChange={(e) => setHeroTitleIn(e.target.value)} placeholder="SHITO COLLECTION" />
+          </label>
+          <label className="loja-admin-field">
+            Subtítulo
+            <textarea
+              rows={2}
+              value={heroSubtitleIn}
+              onChange={(e) => setHeroSubtitleIn(e.target.value)}
+              placeholder="Peças do universo..."
+            />
+          </label>
+          <button type="button" className="loja-admin-btn-primary" onClick={saveHeroBlock}>
+            Salvar hero
+          </button>
+        </div>
 
-        <article className="loja-admin-card">
-          <h2>{editingId ? 'Editar produto' : 'Novo produto'}</h2>
-          <input placeholder="Nome" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
-          <textarea placeholder="Descrição" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-          <input type="number" placeholder="Preço" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value || 0) }))} />
-          <input type="number" placeholder="Estoque" value={form.stock} onChange={(e) => setForm((f) => ({ ...f, stock: Number(e.target.value || 0) }))} />
-          <input placeholder="URL da imagem" value={form.image} onChange={(e) => setForm((f) => ({ ...f, image: e.target.value }))} />
-          <label><input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} /> Ativo</label>
-          <label><input type="checkbox" checked={form.isOnSale} onChange={(e) => setForm((f) => ({ ...f, isOnSale: e.target.checked }))} /> Em promoção</label>
-          <input type="number" placeholder="Preço promocional" value={form.promoPrice} onChange={(e) => setForm((f) => ({ ...f, promoPrice: Number(e.target.value || 0) }))} />
-          <label><input type="checkbox" checked={form.isVIPDiscountEnabled} onChange={(e) => setForm((f) => ({ ...f, isVIPDiscountEnabled: e.target.checked }))} /> Aceita desconto VIP</label>
-          <div className="loja-admin-actions">
-            <button type="button" onClick={saveProduct}>Salvar produto</button>
-            <button type="button" onClick={() => { setForm(EMPTY_PRODUCT); setEditingId(''); }}>Limpar</button>
-          </div>
-        </article>
-      </section>
-
-      <section className="loja-admin-card">
-        <h2>Produtos cadastrados</h2>
-        <div className="loja-admin-list">
-          {products.map((p) => (
-            <article key={p.id}>
-              <div>
-                <strong>{p.title}</strong>
-                <span>R$ {Number(p.price || 0).toFixed(2)} | estoque {Number(p.stock || 0)}</span>
-              </div>
-              <div>
-                <button type="button" onClick={() => {
-                  setEditingId(p.id);
-                  setForm({
-                    title: p.title || '',
-                    description: p.description || '',
-                    price: Number(p.price || 0),
-                    stock: Number(p.stock || 0),
-                    image: Array.isArray(p.images) ? p.images[0] || '' : '',
-                    isActive: p.isActive !== false,
-                    isOnSale: p.isOnSale === true,
-                    promoPrice: Number(p.promoPrice || 0),
-                    isVIPDiscountEnabled: p.isVIPDiscountEnabled !== false,
-                  });
-                }}>Editar</button>
-                <button type="button" onClick={() => remove(ref(db, `loja/produtos/${p.id}`))}>Excluir</button>
-              </div>
-            </article>
-          ))}
+        <div className="loja-admin-shipping-block">
+          <h3>Frete fixo e pós-compra</h3>
+          <label className="loja-admin-field">
+            Frete fixo (R$)
+            <input type="number" min={0} step={0.01} value={shipIn} onChange={(e) => setShipIn(Number(e.target.value || 0))} />
+          </label>
+          <label className="loja-admin-field">
+            Mensagem após pagamento (site)
+            <textarea
+              rows={3}
+              value={thanksIn}
+              onChange={(e) => setThanksIn(e.target.value)}
+              placeholder="Ex.: Obrigado! Você apoia o Shito — benefício X liberado em breve."
+            />
+          </label>
+          <button type="button" className="loja-admin-btn-primary" onClick={saveShippingBlock}>
+            Salvar frete e mensagem
+          </button>
         </div>
       </section>
 
-      <section className="loja-admin-card">
-        <h2>Pedidos</h2>
-        <div className="loja-admin-list">
-          {orders.map((o) => (
-            <article key={o.id}>
-              <div>
-                <strong>#{o.id.slice(-8).toUpperCase()}</strong>
-                <span>{o.uid} | R$ {Number(o.total || 0).toFixed(2)} | {o.status || 'pending'}</span>
-              </div>
-              <div>
-                <button type="button" onClick={() => update(ref(db, `loja/pedidos/${o.id}`), { status: 'processing', updatedAt: Date.now() })}>Separando</button>
-                <button type="button" onClick={() => update(ref(db, `loja/pedidos/${o.id}`), { status: 'shipped', updatedAt: Date.now() })}>Enviado</button>
-                <button type="button" onClick={() => update(ref(db, `loja/pedidos/${o.id}`), { status: 'delivered', updatedAt: Date.now() })}>Entregue</button>
-              </div>
-            </article>
+      <section className="loja-admin-card loja-admin-card--wide loja-admin-product-editor">
+        <h2>{editingId ? `Editar: ${editingId}` : 'Novo produto'}</h2>
+
+        <div className="loja-admin-tabs">
+          {PRODUCT_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={productTab === t.id ? 'active' : ''}
+              onClick={() => setProductTab(t.id)}
+            >
+              {t.label}
+            </button>
           ))}
+        </div>
+
+        {productTab === 'dados' && (
+          <div className="loja-admin-tab-panel">
+            {!editingId ? (
+              <label className="loja-admin-field">
+                ID do produto (opcional, a-z 0-9 _ - , 2–40 chars)
+                <input
+                  value={form.customId}
+                  onChange={(e) => setForm((f) => ({ ...f, customId: e.target.value }))}
+                  placeholder="ex.: shito-vol1"
+                />
+              </label>
+            ) : (
+              <p className="loja-admin-hint">ID fixo: {editingId}</p>
+            )}
+            <label className="loja-admin-field">
+              Nome
+              <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
+            </label>
+            <label className="loja-admin-field">
+              Descrição
+              <textarea rows={5} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+            </label>
+            <label className="loja-admin-field">
+              Coleção / drop (agrupa na vitrine)
+              <input
+                value={form.collection}
+                onChange={(e) => setForm((f) => ({ ...f, collection: e.target.value }))}
+                placeholder='Ex.: DROP 01 — TEMPESTUA'
+              />
+            </label>
+            <label className="loja-admin-field">
+              Selo extra (opcional, ex.: Limited edition)
+              <input
+                value={form.dropLabel}
+                onChange={(e) => setForm((f) => ({ ...f, dropLabel: e.target.value }))}
+                placeholder="Limited edition"
+              />
+            </label>
+            <label className="loja-admin-field">
+              UID do criador (opcional — repasse no painel do mangaká após venda)
+              <input
+                value={form.creatorId}
+                onChange={(e) => setForm((f) => ({ ...f, creatorId: e.target.value }))}
+                placeholder="UID Firebase do mangaká"
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        )}
+
+        {productTab === 'midia' && (
+          <div className="loja-admin-tab-panel">
+            <label className="loja-admin-field">
+              URLs das imagens (uma por linha)
+              <textarea
+                rows={6}
+                value={form.imagesText}
+                onChange={(e) => setForm((f) => ({ ...f, imagesText: e.target.value }))}
+                placeholder="https://..."
+              />
+            </label>
+          </div>
+        )}
+
+        {productTab === 'preco' && (
+          <div className="loja-admin-tab-panel">
+            <label className="loja-admin-field">
+              Preço (R$)
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={form.price}
+                onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value || 0) }))}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.isOnSale}
+                onChange={(e) => setForm((f) => ({ ...f, isOnSale: e.target.checked }))}
+              />{' '}
+              Em promoção
+            </label>
+            <label className="loja-admin-field">
+              Preço promocional (R$)
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={form.promoPrice}
+                onChange={(e) => setForm((f) => ({ ...f, promoPrice: Number(e.target.value || 0) }))}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.isVIPDiscountEnabled}
+                onChange={(e) => setForm((f) => ({ ...f, isVIPDiscountEnabled: e.target.checked }))}
+              />{' '}
+              Elegível a desconto VIP
+            </label>
+          </div>
+        )}
+
+        {productTab === 'estoque' && (
+          <div className="loja-admin-tab-panel">
+            <label className="loja-admin-field">
+              Estoque
+              <input
+                type="number"
+                min={0}
+                value={form.stock}
+                onChange={(e) => setForm((f) => ({ ...f, stock: Number(e.target.value || 0) }))}
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+              />{' '}
+              Ativo (visível na loja)
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.isNew}
+                onChange={(e) => setForm((f) => ({ ...f, isNew: e.target.checked }))}
+              />{' '}
+              Badge &quot;Novo&quot; forçado
+            </label>
+          </div>
+        )}
+
+        {productTab === 'categoria' && (
+          <div className="loja-admin-tab-panel">
+            <label className="loja-admin-field">
+              Tipo
+              <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+                <option value={STORE_TYPE_KEYS.MANGA}>Mangá / produto físico</option>
+                <option value={STORE_TYPE_KEYS.ROUPA}>Vestuário (tamanhos)</option>
+              </select>
+            </label>
+            <label className="loja-admin-field">
+              Categoria (vitrine)
+              <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}>
+                <option value={STORE_CATEGORY_KEYS.MANGA}>{STORE_CATEGORY_LABELS[STORE_CATEGORY_KEYS.MANGA]}</option>
+                <option value={STORE_CATEGORY_KEYS.VESTUARIO}>{STORE_CATEGORY_LABELS[STORE_CATEGORY_KEYS.VESTUARIO]}</option>
+                <option value={STORE_CATEGORY_KEYS.EXTRAS}>{STORE_CATEGORY_LABELS[STORE_CATEGORY_KEYS.EXTRAS]}</option>
+              </select>
+            </label>
+            <label className="loja-admin-field">
+              Obra relacionada (slug/texto livre)
+              <input value={form.obra} onChange={(e) => setForm((f) => ({ ...f, obra: e.target.value }))} placeholder="shito" />
+            </label>
+            {form.type === STORE_TYPE_KEYS.ROUPA ? (
+              <label className="loja-admin-field">
+                Tamanhos (separados por vírgula)
+                <input
+                  value={form.sizesText}
+                  onChange={(e) => setForm((f) => ({ ...f, sizesText: e.target.value }))}
+                  placeholder="P, M, G, GG"
+                />
+              </label>
+            ) : null}
+          </div>
+        )}
+
+        <div className="loja-admin-actions">
+          <button type="button" className="loja-admin-btn-primary" onClick={saveProduct}>
+            Salvar produto
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setForm(EMPTY_PRODUCT);
+              setEditingId('');
+              setProductTab('dados');
+            }}
+          >
+            Limpar formulário
+          </button>
+        </div>
+      </section>
+
+      <section className="loja-admin-card loja-admin-card--wide">
+        <h2>Produtos cadastrados</h2>
+        <div className="loja-admin-list loja-admin-list--products">
+          {products.map((p) => {
+            const img = (Array.isArray(p.images) && p.images[0]) || '/assets/fotos/shito.jpg';
+            const cat = normalizeProductCategory(p);
+            return (
+              <article key={p.id}>
+                <img src={img} alt="" className="loja-admin-thumb" />
+                <div>
+                  <strong>{p.title}</strong>
+                  <span>
+                    R$ {Number(p.price || 0).toFixed(2)} · estoque {Number(p.stock || 0)} ·{' '}
+                    {STORE_CATEGORY_LABELS[cat] || cat} · {p.isActive === false ? 'inativo' : 'ativo'}
+                  </span>
+                </div>
+                <div>
+                  <button type="button" onClick={() => loadProductIntoForm(p)}>
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => update(ref(db, `loja/produtos/${p.id}`), { isActive: false, updatedAt: Date.now() })}
+                  >
+                    Desativar
+                  </button>
+                  <button type="button" onClick={() => remove(ref(db, `loja/produtos/${p.id}`))}>
+                    Excluir
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
     </main>
   );
 }
-

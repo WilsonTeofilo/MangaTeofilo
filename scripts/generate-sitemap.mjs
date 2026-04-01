@@ -5,7 +5,7 @@ import process from 'node:process';
 const SITE_URL = (process.env.SITE_URL || 'https://mangateofilo.com').replace(/\/+$/, '');
 const DATABASE_URL = process.env.FIREBASE_DATABASE_URL || 'https://shitoproject-ed649-default-rtdb.firebaseio.com';
 
-const STATIC_ROUTES = ['/', '/mangas', '/capitulos', '/sobre-autor', '/apoie', '/loja'];
+const STATIC_ROUTES = ['/', '/works', '/mangas', '/sobre-autor', '/apoie', '/loja'];
 
 function toIso(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return new Date().toISOString();
@@ -56,7 +56,7 @@ async function main() {
   const capitulos = Object.entries(capsRaw || {}).map(([id, data]) => ({ id, ...(data || {}) }));
   const obraIds = new Set(obras.map((o) => String(o.id || '').toLowerCase()));
   const capitulosPublicos = capitulos.filter((cap) => {
-    const obraId = String(cap?.obraId || 'shito').toLowerCase();
+    const obraId = String(cap?.workId || cap?.obraId || 'shito').toLowerCase();
     return obraIds.has(obraId);
   });
 
@@ -72,11 +72,18 @@ async function main() {
   });
 
   obras.forEach((obra) => {
+    const slug = encodeURIComponent(String(obra.slug || obra.id || '').trim() || obra.id);
     urls.push({
-      loc: `${SITE_URL}/obra/${encodeURIComponent(obra.id)}`,
+      loc: `${SITE_URL}/work/${slug}`,
       lastmod: toIso(Number(obra?.updatedAt || obra?.createdAt || Date.now())),
       changefreq: 'daily',
       priority: '0.9',
+    });
+    urls.push({
+      loc: `${SITE_URL}/obra/${encodeURIComponent(obra.id)}`,
+      lastmod: toIso(Number(obra?.updatedAt || obra?.createdAt || Date.now())),
+      changefreq: 'weekly',
+      priority: '0.75',
     });
   });
 

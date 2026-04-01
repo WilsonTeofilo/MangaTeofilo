@@ -1,0 +1,252 @@
+.admin-loja-pedidos {
+  width: min(1280px, 96%);
+  margin: 24px auto 72px;
+  color: #ececec;
+}
+
+.admin-loja-pedidos__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.admin-loja-pedidos__head h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+}
+
+.admin-loja-pedidos__sub {
+  margin: 6px 0 0;
+  color: #9a9a9a;
+  font-size: 0.9rem;
+  max-width: 520px;
+}
+
+.admin-loja-pedidos__actions button {
+  border: 1px solid #444;
+  background: #1a1a1a;
+  color: #eee;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.admin-loja-pedidos__msg {
+  color: #9fe28e;
+  margin: 0 0 12px;
+}
+
+.admin-loja-pedidos__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .admin-loja-pedidos__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-loja-pedidos__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-loja-pedidos__empty {
+  color: #888;
+  padding: 20px;
+  border: 1px dashed #333;
+  border-radius: 12px;
+}
+
+.admin-loja-pedidos__row {
+  border: 1px solid #2c2c2c;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #121212;
+}
+
+.admin-loja-pedidos__row--active {
+  border-color: rgba(255, 204, 0, 0.45);
+}
+
+.admin-loja-pedidos__row-hit {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-loja-pedidos__row-hit strong {
+  display: block;
+  color: #ffcc00;
+}
+
+.admin-loja-pedidos__buyer {
+  display: block;
+  font-size: 0.86rem;
+  color: #c8c8c8;
+  margin-top: 4px;
+}
+
+.admin-loja-pedidos__status {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #9ab8ff;
+}
+
+.admin-loja-pedidos__row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: #999;
+}
+
+.admin-loja-pedidos__row-meta strong {
+  color: #fff;
+  font-size: 1rem;
+}
+
+.admin-loja-pedidos__detail {
+  position: sticky;
+  top: 88px;
+  border: 1px solid #2f2f2f;
+  border-radius: 14px;
+  padding: 16px;
+  background: #131313;
+}
+
+.admin-loja-pedidos__detail h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.admin-loja-pedidos__detail h3 {
+  margin: 16px 0 8px;
+  font-size: 0.95rem;
+}
+
+.admin-loja-pedidos__detail p {
+  margin: 6px 0;
+  font-size: 0.86rem;
+  color: #c4c4c4;
+}
+
+.admin-loja-pedidos__detail code {
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.admin-loja-pedidos__hint {
+  color: #888;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.admin-loja-pedidos__money {
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.88rem;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-loja-pedidos__total {
+  font-weight: 800;
+  color: #ffcc00;
+  margin-top: 4px;
+}
+
+.admin-loja-pedidos__vip {
+  font-size: 0.78rem;
+  color: #9fe28e;
+}
+
+.admin-loja-pedidos__items {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.86rem;
+  color: #bdbdbd;
+}
+
+.admin-loja-pedidos__status-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-loja-pedidos__status-btns button {
+  border: 1px solid #3a3a3a;
+  background: #1c1c1c;
+  color: #e4e4e4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.admin-loja-pedidos__btn-cancel {
+  border-color: rgba(255, 100, 100, 0.45) !important;
+  color: #ffb4b4 !important;
+}
+
+.admin-loja-pedidos__hint-small {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: #888;
+  line-height: 1.4;
+}
+
+.admin-loja-pedidos__tracking-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.admin-loja-pedidos__tracking-input {
+  flex: 1;
+  min-width: 160px;
+  background: #0f0f0f;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #eee;
+  font-size: 0.86rem;
+}
+
+.admin-loja-pedidos__tracking-row button {
+  border: 1px solid #444;
+  background: #222;
+  color: #eee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.82rem;
+}

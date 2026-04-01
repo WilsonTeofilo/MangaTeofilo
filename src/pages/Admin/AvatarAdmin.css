@@ -1,0 +1,114 @@
+/* Avatar admin — alinhado ao dark neutro + dourado (Capítulos / site), sem azulado */
+
+.avatar-admin-section {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(16, 16, 16, 0.95) !important;
+}
+
+.avatar-upload-form {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: #141414 !important;
+}
+
+.avatar-upload-row {
+  border-color: #303030 !important;
+  background: #0f0f0f !important;
+}
+
+.avatar-upload-row-top strong {
+  color: #f1f1f1 !important;
+}
+
+.avatar-upload-row-top span {
+  color: #a8a8a8 !important;
+}
+
+.avatar-upload-row-progress {
+  background: #0a0a0a !important;
+  border-color: #2a2a2a !important;
+}
+
+.avatar-upload-row-progress div {
+  background: linear-gradient(90deg, rgba(255, 204, 0, 0.85), rgba(255, 180, 0, 0.65)) !important;
+}
+
+.avatar-upload-row small {
+  color: #9a9a9a !important;
+}
+
+.avatar-upload-form label {
+  color: #bdbdbd !important;
+}
+
+.avatar-tier-fieldset {
+  border-color: rgba(255, 204, 0, 0.35) !important;
+  background: rgba(255, 204, 0, 0.06) !important;
+}
+
+.avatar-tier-title {
+  color: #ffcc00 !important;
+}
+
+.avatar-tier-chip {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: #171717 !important;
+  color: #ececec !important;
+}
+
+.avatar-tier-chip.active {
+  border-color: rgba(255, 204, 0, 0.55) !important;
+  background: rgba(255, 204, 0, 0.14) !important;
+  color: #ffe7a0 !important;
+}
+
+.avatar-admin-toolbar {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(12, 12, 12, 0.9) !important;
+}
+
+.avatar-admin-toolbar p {
+  color: #c4c4c4 !important;
+}
+
+.avatar-filter-chip {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: #171717 !important;
+  color: #e0e0e0 !important;
+}
+
+.avatar-filter-chip.active {
+  border-color: rgba(255, 204, 0, 0.5) !important;
+  background: rgba(255, 204, 0, 0.16) !important;
+  color: #ffcc00 !important;
+}
+
+.avatar-admin-grid {
+  gap: 12px !important;
+}
+
+.avatar-admin-card {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: #141414 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+
+.avatar-admin-card.dragging {
+  border-color: rgba(255, 204, 0, 0.45) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55) !important;
+}
+
+.avatar-access-badge.publico {
+  background: rgba(80, 80, 80, 0.35) !important;
+  color: #ddd !important;
+}
+
+.avatar-access-badge.premium {
+  background: rgba(255, 204, 0, 0.2) !important;
+  color: #ffcc00 !important;
+}
+
+.avatar-access-select select {
+  border-color: #303030 !important;
+  background: #0f0f0f !important;
+  color: #f1f1f1 !important;
+}

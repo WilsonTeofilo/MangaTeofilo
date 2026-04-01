@@ -523,7 +523,7 @@ body.mobile-menu-open {
     right: 12px;
     top: 50%;
     transform: translateY(-50%);
-    z-index: 9300;
+    z-index: 50002;
   }
 
   .mobile-menu-overlay {
@@ -531,7 +531,8 @@ body.mobile-menu-open {
     inset: 0;
     border: none;
     background: rgba(0, 0, 0, 0.45);
-    z-index: 9100;
+    /* Acima de cards da home (ex.: z-index internos + compositor iOS) */
+    z-index: 50000;
     cursor: default;
   }
 
@@ -549,11 +550,14 @@ body.mobile-menu-open {
     background: linear-gradient(170deg, #0d0f15, #08090d);
     border-left: 1px solid rgba(255, 204, 0, 0.35);
     box-shadow: -18px 0 35px rgba(0, 0, 0, 0.6);
-    z-index: 9200;
+    z-index: 50001;
     transform: translateX(100%);
     transition: transform var(--transition-smooth);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    /* Camada própria no compositor (evita drawer “por baixo” no WebKit) */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
 
   .nav-menu.active {
@@ -848,6 +852,29 @@ body.mobile-menu-open {
 
   .reader-header.reader-header--logged .user-info-header {
     max-width: 108px !important;
+  }
+}
+
+/*
+ * iOS Safari: position:fixed dentro de ancestor sticky (header) quebra ordem de pintura.
+ * Com menu aberto, isola o header numa camada acima de todo o <main> (cards com transform/z-index).
+ */
+@media (max-width: 1360px) {
+  .reader-header.menu-open {
+    z-index: 999999 !important;
+    isolation: isolate;
+  }
+
+  .reader-header.menu-open .mobile-menu-overlay {
+    z-index: 1000000 !important;
+  }
+
+  .reader-header.menu-open ul.nav-menu {
+    z-index: 1000001 !important;
+  }
+
+  .reader-header.menu-open .mobile-menu-icon {
+    z-index: 1000002 !important;
   }
 }
 

@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../../services/firebase';
 import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // ✅ centralizado
 import { assinaturaPremiumAtiva } from '../../utils/capituloLancamento';
+import { formatarTempoRestanteAssinatura } from '../../utils/assinaturaTempoRestante';
+import { formatarDataLongaBr } from '../../utils/datasBr';
 import './Perfil.css';
 
 // ✅ Recebe `user` via prop (consistente com App.jsx)
@@ -258,23 +260,27 @@ export default function Perfil({ user }) {
             </div>
           </div>
 
-          {assinaturaPremiumAtiva(perfilDb) && typeof perfilDb?.memberUntil === 'number' && (
+          {assinaturaPremiumAtiva(perfilDb) && typeof perfilDb?.memberUntil === 'number' && (() => {
+            const tempo = formatarTempoRestanteAssinatura(perfilDb.memberUntil);
+            return (
             <div className="input-group perfil-premium-linha">
               <label>ASSINATURA PREMIUM</label>
               <p className="perfil-premium-msg">
                 Ativa até{' '}
                 <strong>
-                  {new Date(perfilDb.memberUntil).toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: 'long',
-                    year: 'numeric',
-                    timeZone: 'America/Sao_Paulo',
-                  })}
+                  {formatarDataLongaBr(perfilDb.memberUntil, { seVazio: '—' })}
                 </strong>
-                . Renove em <strong>Apoie a Obra</strong> para somar mais 30 dias.
+                .
+              </p>
+              {tempo.ativo && (
+                <p className="perfil-premium-tempo">{tempo.texto}</p>
+              )}
+              <p className="perfil-premium-msg perfil-premium-msg--foot">
+                Renove em <strong>Apoie a Obra</strong> para somar mais 30 dias ao período atual.
               </p>
             </div>
-          )}
+            );
+          })()}
 
           <div className="avatar-selection-section">
             <label>ESCOLHA SEU NOVO VISUAL</label>

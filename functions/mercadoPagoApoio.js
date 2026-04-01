@@ -45,7 +45,8 @@ export async function criarPreferenciaApoio(
   planId,
   appBaseUrl,
   uid,
-  notificationUrl
+  notificationUrl,
+  attributionCreatorId = null
 ) {
   const plan = APOIO_PLANOS_MP[planId];
   if (!plan) throw new Error(`Plano desconhecido: ${planId}`);
@@ -75,6 +76,7 @@ export async function criarPreferenciaApoio(
       uid: String(uid),
       tipo: 'apoio',
       planId: String(planId),
+      attributionCreatorId: attributionCreatorId ? String(attributionCreatorId).trim() : null,
     };
   }
   if (notificationUrl) {
@@ -114,7 +116,8 @@ export async function criarPreferenciaApoioValorLivre(
   valorBruto,
   appBaseUrl,
   uid,
-  notificationUrl
+  notificationUrl,
+  attributionCreatorId = null
 ) {
   const v = arredondarBrl(Number(valorBruto));
   if (!Number.isFinite(v) || v < VALOR_MIN || v > VALOR_MAX) {
@@ -148,6 +151,7 @@ export async function criarPreferenciaApoioValorLivre(
       uid: String(uid),
       tipo: 'apoio_custom',
       customAmount: v,
+      attributionCreatorId: attributionCreatorId ? String(attributionCreatorId).trim() : null,
     };
   }
   if (notificationUrl) {

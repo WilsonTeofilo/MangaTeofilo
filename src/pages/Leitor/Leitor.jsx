@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 
@@ -8,6 +8,7 @@ import { AVATAR_FALLBACK } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
 import { OBRA_PADRAO_ID, buildChapterCampaignId, obterObraIdCapitulo } from '../../config/obras';
+import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import LoadingScreen from '../../components/LoadingScreen';
 import './Leitor.css';
 
@@ -22,6 +23,7 @@ const isContaPremium = (perfilPublico) => {
 export default function Leitor({ user, perfil }) {
   const { id }   = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   const [capitulo, setCapitulo]            = useState(null);
@@ -242,7 +244,10 @@ export default function Leitor({ user, perfil }) {
 
   // ✅ Qualquer usuário logado pode curtir — sem restrição de status
   const handleLike = (comentId) => {
-    if (!user) { navigate('/login'); return; }
+    if (!user) {
+      navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
+      return;
+    }
     runTransaction(ref(db, `capitulos/${id}/comentarios/${comentId}`), (post) => {
       if (!post) return post;
       if (!post.usuariosQueCurtiram) post.usuariosQueCurtiram = {};
@@ -301,7 +306,7 @@ export default function Leitor({ user, perfil }) {
           <button
             type="button"
             className="leitor-lancamento-voltar"
-            onClick={() => navigate('/capitulos')}
+            onClick={() => navigate('/works')}
           >
             Voltar à biblioteca
           </button>
@@ -380,7 +385,7 @@ export default function Leitor({ user, perfil }) {
       )}
 
       <footer className="leitor-footer">
-        <button onClick={() => navigate('/capitulos')}>Voltar ao mangá</button>
+        <button onClick={() => navigate('/works')}>Voltar às obras</button>
       </footer>
 
       {/* ── COMENTÁRIOS ── */}
@@ -518,7 +523,7 @@ export default function Leitor({ user, perfil }) {
                 className="leitor-modal-btn leitor-modal-btn--primario"
                 onClick={() => {
                   setModalLoginComentario(false);
-                  navigate('/login');
+                  navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
                 }}
               >
                 Sim, entrar

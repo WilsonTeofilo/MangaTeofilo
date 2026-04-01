@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from '../constants'; // ✅ centralizado
+import { canAccessAdminPath } from '../auth/adminPermissions';
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
 import './Header.css';
 
@@ -81,10 +82,11 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, [menuAberto]);
 
   const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
+  const isMangakaPanel = Boolean(adminAccess?.isMangaka);
   /** Coroa só com assinatura Premium paga ativa (mesma regra do leitor). */
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
   const navItems = [
-    { label: 'Lista de Mangás', path: '/mangas' },
+    { label: 'Obras', path: '/works' },
     { label: 'Loja', path: '/loja' },
     ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
     { label: 'Sobre o Autor', path: '/sobre-autor' },
@@ -150,16 +152,37 @@ export default function Header({ usuario, perfil, adminAccess }) {
                 onClick={() => setAdminMenuOpen((prev) => !prev)}
                 onFocus={abrirMenuAdmin}
               >
-                <span className="admin-label-long">ADMINISTRATIVO</span>
-                <span className="admin-label-short">ADMIN</span>
+                <span className="admin-label-long">{isMangakaPanel ? 'PAINEL DO CRIADOR' : 'ADMINISTRATIVO'}</span>
+                <span className="admin-label-short">{isMangakaPanel ? 'CRIADOR' : 'ADMIN'}</span>
               </button>
               <div className="admin-dropdown">
-                <button type="button" onClick={() => pushRoute('/admin/capitulos')}>Capítulos</button>
-                <button type="button" onClick={() => pushRoute('/admin/obras')}>CRUD de Obras</button>
-                <button type="button" onClick={() => pushRoute('/admin/avatares')}>CRUD de Avatares</button>
-                <button type="button" onClick={() => pushRoute('/admin/dashboard')}>Dashboard</button>
-                <button type="button" onClick={() => pushRoute('/admin/financeiro')}>Financeiro & Promos</button>
-                <button type="button" onClick={() => pushRoute('/admin/loja')}>Loja Física</button>
+                {canAccessAdminPath('/admin/capitulos', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/capitulos')}>Capítulos</button>
+                ) : null}
+                {canAccessAdminPath('/admin/obras', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/obras')}>CRUD de Obras</button>
+                ) : null}
+                {canAccessAdminPath('/admin/avatares', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/avatares')}>CRUD de Avatares</button>
+                ) : null}
+                {canAccessAdminPath('/admin/dashboard', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/dashboard')}>Dashboard</button>
+                ) : null}
+                {canAccessAdminPath('/admin/financeiro', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/financeiro')}>Financeiro & Promos</button>
+                ) : null}
+                {canAccessAdminPath('/admin/loja', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/loja')}>Loja Física</button>
+                ) : null}
+                {canAccessAdminPath('/admin/pedidos', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/pedidos')}>Pedidos loja</button>
+                ) : null}
+                {canAccessAdminPath('/admin/sessoes', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/sessoes')}>Sessões</button>
+                ) : null}
+                {canAccessAdminPath('/admin/equipe', adminAccess) ? (
+                  <button type="button" onClick={() => pushRoute('/admin/equipe')}>Equipe (admins)</button>
+                ) : null}
               </div>
             </li>
           )}

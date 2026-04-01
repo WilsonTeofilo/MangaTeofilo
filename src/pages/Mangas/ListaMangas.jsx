@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, ref, remove, set } from 'firebase/database';
+import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
@@ -9,7 +9,15 @@ import {
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
 } from '../../config/obras';
+import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import './ListaMangas.css';
+
+function pathObraPublica(obra) {
+  const id = String(obra?.id || obra?.obraId || '').toLowerCase();
+  const slug = String(obra?.slug || '').trim();
+  const key = slug || id;
+  return `/work/${encodeURIComponent(key)}`;
+}
 
 function toList(snapshotVal) {
   if (!snapshotVal || typeof snapshotVal !== 'object') return [];
@@ -38,7 +46,8 @@ export default function ListaMangas({ user }) {
   const [loadingCaps, setLoadingCaps] = useState(true);
   const [obras, setObras] = useState([]);
   const [capitulos, setCapitulos] = useState([]);
-  const [favoritosMap, setFavoritosMap] = useState({});
+  const [favoritosLegacy, setFavoritosLegacy] = useState({});
+  const [favoritosCanon, setFavoritosCanon] = useState({});
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
@@ -69,15 +78,26 @@ export default function ListaMangas({ user }) {
 
   useEffect(() => {
     if (!user?.uid) {
-      setFavoritosMap({});
+      setFavoritosLegacy({});
+      setFavoritosCanon({});
       return () => {};
     }
-    const favRef = ref(db, `usuarios/${user.uid}/favoritosObras`);
-    const unsub = onValue(favRef, (snapshot) => {
-      setFavoritosMap(snapshot.exists() ? snapshot.val() || {} : {});
+    const u1 = onValue(ref(db, `usuarios/${user.uid}/favoritosObras`), (snapshot) => {
+      setFavoritosLegacy(snapshot.exists() ? snapshot.val() || {} : {});
     });
-    return () => unsub();
+    const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
+      setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
+    });
+    return () => {
+      u1();
+      u2();
+    };
   }, [user?.uid]);
+
+  const favoritosMap = useMemo(
+    () => mergeWorkFavoriteMaps(favoritosLegacy, favoritosCanon),
+    [favoritosLegacy, favoritosCanon]
+  );
 
   const obrasCards = useMemo(() => {
     const agrupado = new Map();
@@ -115,14 +135,15 @@ export default function ListaMangas({ user }) {
       navigate('/login');
       return;
     }
-    const favPath = `usuarios/${user.uid}/favoritosObras/${obra.obraId}`;
+    const wid = obra.obraId;
     if (obra.isFavorito) {
-      await remove(ref(db, favPath));
+      await removeWorkFavoriteBoth(db, user.uid, wid);
       return;
     }
-    await set(ref(db, favPath), {
-      obraId: obra.obraId,
-      titulo: obra.titulo || obra.obraId,
+    await saveWorkFavoriteBoth(db, user.uid, wid, {
+      obraId: wid,
+      workId: wid,
+      titulo: obra.titulo || wid,
       savedAt: Date.now(),
     });
   };
@@ -134,8 +155,8 @@ export default function ListaMangas({ user }) {
   return (
     <main className="lista-mangas-page">
       <header className="lista-mangas-header">
-        <h1>Lista de Mangás</h1>
-        <p>Descubra as obras publicadas e acompanhe as atualizações.</p>
+        <h1>Obras</h1>
+        <p>Catálogo MangaTeofilo — mangás autorais, atualizações e favoritos por obra.</p>
       </header>
 
       {obrasCards.length === 0 ? (
@@ -151,11 +172,11 @@ export default function ListaMangas({ user }) {
               className="manga-card"
               role="button"
               tabIndex={0}
-              onClick={() => navigate(`/obra/${encodeURIComponent(obra.obraId)}`)}
+              onClick={() => navigate(pathObraPublica(obra))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  navigate(`/obra/${encodeURIComponent(obra.obraId)}`);
+                  navigate(pathObraPublica(obra));
                 }
               }}
             >
@@ -182,7 +203,7 @@ export default function ListaMangas({ user }) {
                     className="btn-obra-abrir"
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/obra/${encodeURIComponent(obra.obraId)}`);
+                      navigate(pathObraPublica(obra));
                     }}
                   >
                     Ver obra

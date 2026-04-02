@@ -56,6 +56,7 @@ export default function LojaProduto({ user, perfil }) {
     if (!product) return;
     const sizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
     if (sizes.length && !sizes.includes(size)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSize(sizes[0]);
     }
   }, [product, size]);
@@ -66,6 +67,7 @@ export default function LojaProduto({ user, perfil }) {
   }, [product]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setImgIdx(0);
   }, [id, images.length]);
 
@@ -115,7 +117,7 @@ export default function LojaProduto({ user, perfil }) {
       const item = { productId: product.id, quantity: Math.min(qty, stock) };
       if (type === 'roupa' && size) item.size = size;
       const url = await openStoreCheckout(functions, [item]);
-      window.location.href = url;
+      window.location.assign(url);
     } catch (e) {
       setErr(mensagemErroCallable(e));
       setLoadingCheckout(false);

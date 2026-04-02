@@ -13,6 +13,15 @@ import {
   obraCreatorId,
 } from '../../config/obras';
 import { formatarDataHora24Br, formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
+import {
+  applyResponsiveDragDelta,
+  buildResponsiveCropStyle,
+  createResponsiveDragSnapshot,
+  drawResponsiveCropToCanvas,
+  getFullCropLayout,
+  getResponsiveCropZoomBounds,
+  normalizeResponsiveCropAdjustment,
+} from '../../utils/responsiveCrop';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -24,37 +33,9 @@ const CAPA_ASPECT_W = 16;
 const CAPA_ASPECT_H = 9;
 const CAPA_OUTPUT_WIDTH = 1600;
 const CAPA_OUTPUT_HEIGHT = Math.round((CAPA_OUTPUT_WIDTH * CAPA_ASPECT_H) / CAPA_ASPECT_W);
-const CAPA_PAN_MARGIN_RATIO = 0.06;
-const CAPA_DRAG_SENSITIVITY = 1.65;
 
 function normalizarCapaAjuste(raw) {
-  const zoom = Math.min(3, Math.max(1, Number(raw?.zoom ?? 1)));
-  const x = Math.min(100, Math.max(-100, Number(raw?.x ?? 0)));
-  const y = Math.min(100, Math.max(-100, Number(raw?.y ?? 0)));
-  return { zoom, x, y };
-}
-
-function calcularGeometriaCapa(imgW, imgH, frameW, frameH, ajuste = { zoom: 1, x: 0, y: 0 }) {
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
-
-  const coverScale = Math.max(frameW / imgW, frameH / imgH);
-  const minScalePanX = (frameW * (1 + CAPA_PAN_MARGIN_RATIO * 2)) / imgW;
-  const minScalePanY = (frameH * (1 + CAPA_PAN_MARGIN_RATIO * 2)) / imgH;
-  const baseScale = Math.max(coverScale, minScalePanX, minScalePanY);
-  const scale = baseScale * zoom;
-
-  const drawW = imgW * scale;
-  const drawH = imgH * scale;
-  const limiteX = Math.max(0, (drawW - frameW) / 2);
-  const limiteY = Math.max(0, (drawH - frameH) / 2);
-  const shiftX = (eixoX / 100) * limiteX;
-  const shiftY = (eixoY / 100) * limiteY;
-  const drawX = (frameW - drawW) / 2 + shiftX;
-  const drawY = (frameH - drawH) / 2 + shiftY;
-
-  return { drawW, drawH, drawX, drawY };
+  return normalizeResponsiveCropAdjustment(raw);
 }
 
 function validarImagemUpload(file, label = 'arquivo') {
@@ -80,6 +61,17 @@ function nomeArquivoComExtensao(name, novaExt) {
     .replace(/\.[^/.]+$/, '')
     .replace(/[^a-zA-Z0-9_-]/g, '_');
   return `${base}${novaExt}`;
+}
+
+function sanitizarSegmentoStorage(valor, fallback = 'item') {
+  const limpo = String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return limpo || fallback;
 }
 
 function carregarImagem(file) {
@@ -175,9 +167,7 @@ async function comprimirImagemParaUpload(file) {
 async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
   const otimizada = await comprimirImagemParaUpload(file);
   const img = await carregarImagem(otimizada);
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
+  const ajusteNormalizado = normalizarCapaAjuste(ajuste);
 
   let targetW = CAPA_OUTPUT_WIDTH;
   let targetH = CAPA_OUTPUT_HEIGHT;
@@ -189,7 +179,7 @@ async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
     canvas.height = targetH;
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Falha ao processar recorte da capa.');
-    desenharCapaNoCanvas(ctx, img, targetW, targetH, { zoom, x: eixoX, y: eixoY });
+    desenharCapaNoCanvas(ctx, img, targetW, targetH, ajusteNormalizado);
 
     blob = await blobWebpComLimite(canvas, MAX_COMPRESSED_IMAGE_SIZE_BYTES);
     if (blob && blob.size <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) break;
@@ -209,44 +199,18 @@ async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
 }
 
 function desenharCapaNoCanvas(ctx, img, targetW, targetH, ajuste = { zoom: 1, x: 0, y: 0 }) {
-  const { drawW, drawH, drawX, drawY } = calcularGeometriaCapa(
-    Number(img.width || 0),
-    Number(img.height || 0),
-    targetW,
-    targetH,
-    ajuste
-  );
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.fillStyle = '#0b0d16';
-  ctx.fillRect(0, 0, targetW, targetH);
-  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+  drawResponsiveCropToCanvas(ctx, img, targetW, targetH, ajuste, {
+    backgroundColor: '#0b0d16',
+    backgroundAlpha: 0.35,
+  });
 }
 
 function capaEditorLayout() {
-  return {
-    leftPct: 0,
-    topPct: 0,
-    widthPct: 100,
-    heightPct: 100,
-  };
+  return getFullCropLayout();
 }
 
 function estiloEditorCapa(dim, ajuste = { zoom: 1, x: 0, y: 0 }) {
-  const w = Number(dim?.w || 0);
-  const h = Number(dim?.h || 0);
-  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return {};
-  const frameW = CAPA_ASPECT_W;
-  const frameH = CAPA_ASPECT_H;
-  const { drawW, drawH, drawX, drawY } = calcularGeometriaCapa(w, h, frameW, frameH, ajuste);
-
-  return {
-    width: `${(drawW / frameW) * 100}%`,
-    height: `${(drawH / frameH) * 100}%`,
-    left: `${(drawX / frameW) * 100}%`,
-    top: `${(drawY / frameH) * 100}%`,
-  };
+  return buildResponsiveCropStyle(dim, ajuste, CAPA_OUTPUT_WIDTH, CAPA_OUTPUT_HEIGHT);
 }
 
 function maskBrDateTime(raw) {
@@ -544,7 +508,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const [numeroCapitulo, setNumeroCapitulo] = useState('');
   const [capaCapitulo, setCapaCapitulo] = useState(null);
   const [capaAjuste, setCapaAjuste] = useState(normalizarCapaAjuste());
-  const [capaAjusteInicial, setCapaAjusteInicial] = useState(normalizarCapaAjuste());
+  const [_capaAjusteInicial, setCapaAjusteInicial] = useState(normalizarCapaAjuste());
   const [capaDimensoes, setCapaDimensoes] = useState(null);
   const [capaPreviewFinalUrl, setCapaPreviewFinalUrl] = useState('');
   const capaEditorRef = useRef(null);
@@ -621,6 +585,17 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     const obra = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
     return obra || { ...OBRA_SHITO_DEFAULT, id: obraIdSelecionada, slug: obraIdSelecionada };
   }, [obras, obraIdSelecionada]);
+  const ownerUidStorage = useMemo(
+    () => sanitizarSegmentoStorage(obraCreatorId(obraSelecionada) || user?.uid, 'shared'),
+    [obraSelecionada, user?.uid]
+  );
+  const obraStorageSegment = useMemo(
+    () => sanitizarSegmentoStorage(
+      obraSelecionada?.slug || obraSelecionada?.id || obraSelecionada?.tituloCurto || titulo,
+      'obra'
+    ),
+    [obraSelecionada, titulo]
+  );
 
   useEffect(() => {
     if (!adminAccess?.isMangaka || !user?.uid) return;
@@ -643,6 +618,10 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const capaEditorImageStyle = useMemo(
     () => estiloEditorCapa(capaDimensoes, capaAjuste),
     [capaDimensoes, capaAjuste]
+  );
+  const capaZoomBounds = useMemo(
+    () => getResponsiveCropZoomBounds(capaDimensoes, CAPA_OUTPUT_WIDTH, CAPA_OUTPUT_HEIGHT),
+    [capaDimensoes]
   );
   const capaCrop = useMemo(() => capaEditorLayout(), []);
   const itensPreviewNovas = useMemo(
@@ -804,7 +783,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     try {
       setProgressoMsg(`Otimizando página ${index + 1}...`);
       const arquivoOtimizado = await comprimirImagemParaUpload(arquivoNovo);
-      const pathStorage = `manga/${titulo || 'edit'}/pg_${index}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
+      const pathStorage = `manga/${ownerUidStorage}/${obraStorageSegment}/pg_${index}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
       const fileRef = storageRef(storage, pathStorage);
       await uploadBytes(fileRef, arquivoOtimizado);
       const urlNova = await getDownloadURL(fileRef);
@@ -822,7 +801,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     }
   };
 
-  const handleUploadManga = async (arquivos, tituloObra) => {
+  const handleUploadManga = async (arquivos) => {
     const urls = [];
     for (let i = 0; i < arquivos.length; i++) {
       const erroArquivo = validarImagemUpload(arquivos[i], `Pagina ${i + 1}`);
@@ -831,7 +810,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
       setProgressoMsg(`Otimizando página ${i + 1}/${arquivos.length}...`);
       const arquivoOtimizado = await comprimirImagemParaUpload(arquivos[i]);
-      const pathStorage = `manga/${tituloObra}/p_${i}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
+      const pathStorage = `manga/${ownerUidStorage}/${obraStorageSegment}/p_${i}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
       const fileRef = storageRef(storage, pathStorage);
       const uploadTask = uploadBytesResumable(fileRef, arquivoOtimizado);
       
@@ -878,18 +857,24 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   };
 
   const iniciarArrasteCapa = (event) => {
-    if (!capaEditavel || !capaEditorRef.current) return;
+    if (!capaEditavel || !capaEditorRef.current || !capaDimensoes) return;
     event.preventDefault();
     const clientX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
     const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
     const box = capaEditorRef.current.getBoundingClientRect();
+    const dragSnapshot = createResponsiveDragSnapshot(
+      capaDimensoes.w,
+      capaDimensoes.h,
+      Math.max(1, box.width),
+      Math.max(1, box.height),
+      capaAjuste,
+      { maxZoomCap: capaZoomBounds.maxZoom }
+    );
     dragCapaRef.current = {
       startX: clientX,
       startY: clientY,
-      eixoX: capaAjuste.x,
-      eixoY: capaAjuste.y,
-      largura: Math.max(1, box.width),
-      altura: Math.max(1, box.height),
+      ajuste: capaAjuste,
+      dragSnapshot,
     };
     document.body.style.userSelect = 'none';
   };
@@ -903,13 +888,11 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
       const deltaX = clientX - drag.startX;
       const deltaY = clientY - drag.startY;
-      const novoX = drag.eixoX + ((deltaX / (drag.largura * 0.5)) * 100 * CAPA_DRAG_SENSITIVITY);
-      const novoY = drag.eixoY + ((deltaY / (drag.altura * 0.5)) * 100 * CAPA_DRAG_SENSITIVITY);
-      setCapaAjuste((prev) => ({
-        ...prev,
-        x: Math.max(-100, Math.min(100, novoX)),
-        y: Math.max(-100, Math.min(100, novoY)),
-      }));
+      setCapaAjuste(
+        applyResponsiveDragDelta(drag.ajuste, drag.dragSnapshot, deltaX, deltaY, {
+          maxZoomCap: capaZoomBounds.maxZoom,
+        })
+      );
     };
 
     const onUp = () => {
@@ -929,7 +912,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       window.removeEventListener('touchend', onUp);
       document.body.style.userSelect = '';
     };
-  }, []);
+  }, [capaZoomBounds.maxZoom]);
 
   const handleReordenarSelecionada = (indexAntigo, indexNovo) => {
     if (indexNovo < 0 || indexNovo >= arquivosPaginas.length) return;
@@ -980,7 +963,10 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         }
         setProgressoMsg('Otimizando e ajustando capa...');
         const capaOtimizada = await processarCapaParaUpload(capaCapitulo, capaAjuste);
-        const capaRef = storageRef(storage, `capas/${Date.now()}_${capaOtimizada.name}`);
+        const capaRef = storageRef(
+          storage,
+          `capas/${ownerUidStorage}/${Date.now()}_${nomeArquivoComExtensao(capaOtimizada.name, '.webp')}`
+        );
         await uploadBytes(capaRef, capaOtimizada);
         urlCapa = await getDownloadURL(capaRef);
       }
@@ -990,7 +976,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
           const erro = validarImagemUpload(file, `Pagina ${idx + 1}`);
           if (erro) throw new Error(erro);
         });
-        urlsPaginas = await handleUploadManga(arquivosPaginas, titulo);
+        urlsPaginas = await handleUploadManga(arquivosPaginas);
       }
 
       const dados = {
@@ -1286,8 +1272,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                     >
                       <img
                         src={capaVisualSrc}
+                        alt=""
+                        aria-hidden="true"
+                        className="capa-preview-img capa-preview-img--background"
+                      />
+                      <img
+                        src={capaVisualSrc}
                         alt={capaEditavel ? 'Prévia da capa ajustada' : 'Prévia da capa atual'}
-                        className={`capa-preview-img${capaEditavel ? '' : ' capa-preview-img--faded'}`}
+                        className={`capa-preview-img capa-preview-img--foreground${capaEditavel ? '' : ' capa-preview-img--faded'}`}
                         style={capaEditavel ? capaEditorImageStyle : undefined}
                       />
                       <div className="capa-editor-outside-mask" aria-hidden="true">
@@ -1324,13 +1316,13 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                       Zoom ({capaAjuste.zoom.toFixed(2)}x)
                       <input
                         type="range"
-                        min="1"
-                        max="3"
+                        min={capaZoomBounds.minZoom}
+                        max={capaZoomBounds.maxZoom}
                         step="0.01"
                         value={capaAjuste.zoom}
                         disabled={!capaEditavel}
                         onChange={(e) =>
-                          setCapaAjuste((prev) => ({ ...prev, zoom: Number(e.target.value) }))
+                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, zoom: Number(e.target.value) }))
                         }
                       />
                     </label>
@@ -1344,7 +1336,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                         value={capaAjuste.x}
                         disabled={!capaEditavel}
                         onChange={(e) =>
-                          setCapaAjuste((prev) => ({ ...prev, x: Number(e.target.value) }))
+                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, x: Number(e.target.value) }))
                         }
                       />
                     </label>
@@ -1358,7 +1350,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                         value={capaAjuste.y}
                         disabled={!capaEditavel}
                         onChange={(e) =>
-                          setCapaAjuste((prev) => ({ ...prev, y: Number(e.target.value) }))
+                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, y: Number(e.target.value) }))
                         }
                       />
                     </label>

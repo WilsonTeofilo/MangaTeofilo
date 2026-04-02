@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import CreatorMonetizationDashboard from './CreatorMonetizationDashboard.jsx';
@@ -23,7 +23,11 @@ export default function CreatorMonetizationPage({ user }) {
             <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/perfil')}>
               Configurar apoio
             </button>
-            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/dashboard')}>
+            <button
+              type="button"
+              className="creator-frame-btn is-primary"
+              onClick={() => navigate('/creator/dashboard')}
+            >
               Voltar ao workspace
             </button>
           </div>

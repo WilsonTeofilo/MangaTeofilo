@@ -73,8 +73,8 @@ export default function ShitoManga({ user }) {
         {/* BANNER PRINCIPAL — ocupa a viewport; seta convida a rolar */}
         <header className="main-banner">
           <div className="banner-content">
-            <h1 className="game-logo shito-glitch">SHITO</h1>
-            <h2 className="game-sublogo">FRAGMENTOS DA TEMPESTADE</h2>
+            <h1 className="game-logo shito-glitch">KOKUIN</h1>
+            <h2 className="game-sublogo">HERANCA DO ABISMO</h2>
           </div>
           <div
             className={`hero-scroll-cue ${mostrarSetaScroll ? '' : 'hero-scroll-cue--hidden'}`}
@@ -87,10 +87,10 @@ export default function ShitoManga({ user }) {
 
         {/* SINOPSE DETALHADA */}
         <section className="lore-summary">
-          <span className="lore-date">Shito - Antes do cataclismo</span>
+          <span className="lore-date">Kokuin - Heranca do Abismo</span>
           <h3>A CICATRIZ DOS DEUSES</h3>
           <p>
-            Antes das feridas que retalharam o mundo, Shito era uma massa única regida pelas linhagens Kiraya e Moshiki.
+            Antes das feridas que retalharam o mundo, Kokuin era uma massa única regida pelas linhagens Kiraya e Moshiki.
            A guerra entre divindades, Yukio , Orochi e Matatabi trouxeram o cataclismo
             que fragmentou o planeta, danddo origem aos continentes e as novas formas de vidas. A humanidade, antes subjugada, emergiu como a raça dominante, mas as cicatrizes da guerra divina ainda ecoam em cada canto do mundo.
           </p>
@@ -99,7 +99,7 @@ export default function ShitoManga({ user }) {
             <img src="/assets/fotos/shito.jpg" alt="A Grande Guerra" />
           </div>
           <p className="lore-highlight">
-                <span className="lore-date">DEPOIS DO CATACLISMO (D.C) - SHITO, BRAJIRU.</span>
+                <span className="lore-date">DEPOIS DO CATACLISMO (D.C) - KOKUIN, BRAJIRU.</span>
             Na densa selva de Brajiru, a caçadora <strong>Miomya Inpachi</strong> resgata do gelo
             um homem de 350 D.C, que estava a 400 anos congelado. <strong>Naraa</strong> Desperta em um futuro quebrado, portando memórias fragmentadas, sem se lembrar de seu nome ou passado, mas com um poder latente que o torna uma peça-chave em um mundo onde a luta por sobrevivência é constante. Juntos, eles enfrentam as ameaças do mundo repleto por guerras, monstros e segredos antigos, em uma jornada que os levará a confrontar as forças misteriosas.
      
@@ -156,7 +156,7 @@ export default function ShitoManga({ user }) {
               COMEÇAR LEITURA
             </button>
           </div>
-          <p className="copyright">© 2026 Shito: Fragmentos da Tempestade - Todos os direitos reservados para Wilson Teofilo.</p>
+          <p className="copyright">© 2026 Kokuin : Heranca do Abismo - Todos os direitos reservados para Wilson Teofilo.</p>
         </footer>
   </div>
   );

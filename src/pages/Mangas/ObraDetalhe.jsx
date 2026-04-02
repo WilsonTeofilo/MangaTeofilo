@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 
 import { db, functions } from '../../services/firebase';
 import { isAdminUser } from '../../constants';
@@ -13,14 +14,16 @@ import {
   normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
+  obraSegmentoUrlPublica,
   resolverObraIdPorSlugOuId,
+  slugifyObraSlug,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada } from '../../utils/obraCatalogo';
-import { applyObraPageSeo, defaultSiteTitle } from '../../seo/applyObraPageSeo';
+import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
 import './ObraDetalhe.css';
 
 function usuarioPodeVerObraArquivada(user, adminAccess, obra) {
@@ -74,13 +77,41 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return obra;
   }, [obra, user, adminAccess]);
 
+  const obraSeo = useMemo(() => {
+    if (!obraParaExibir) return null;
+    return buildObraPageSeo({ obra: obraParaExibir });
+  }, [obraParaExibir]);
+
+  /** Redireciona `/obra/shito`, `/work/shito`, `/work/kokuin` → `/work/{slug-canônico}` (SEO) sem mudar `obras/shito` no RTDB. */
   useEffect(() => {
-    if (!obraParaExibir) return () => {};
-    applyObraPageSeo({ pathname: location.pathname, obra: obraParaExibir });
-    return () => {
-      document.title = defaultSiteTitle();
-    };
-  }, [obraParaExibir, location.pathname]);
+    if (loading || !obraParaExibir) return;
+    const canon = obraSegmentoUrlPublica(obraParaExibir);
+    const target = `/work/${encodeURIComponent(canon)}${location.search || ''}${location.hash || ''}`;
+    const parts = String(location.pathname || '').split('/').filter(Boolean);
+    if (parts[0] === 'work' && parts[1]) {
+      try {
+        const curSeg = decodeURIComponent(parts[1]);
+        if (slugifyObraSlug(curSeg) === slugifyObraSlug(canon)) return;
+      } catch {
+        /* segue para redirect */
+      }
+      navigate(target, { replace: true });
+      return;
+    }
+    if (parts[0] === 'obra' && parts[1]) {
+      const legacyId = normalizarObraId(decodeURIComponent(parts[1]));
+      if (legacyId === normalizarObraId(obraParaExibir.id)) {
+        navigate(target, { replace: true });
+      }
+    }
+  }, [
+    loading,
+    obraParaExibir,
+    location.pathname,
+    location.search,
+    location.hash,
+    navigate,
+  ]);
 
   useEffect(() => {
     if (routeObraId) {
@@ -127,6 +158,14 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       }
       loadingObra = false;
       concluir();
+    }, () => {
+      if (obraId === OBRA_PADRAO_ID) {
+        setObra({ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID });
+      } else {
+        setObra(null);
+      }
+      loadingObra = false;
+      concluir();
     });
 
     const capRef = ref(db, 'capitulos');
@@ -136,6 +175,10 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
         .filter((cap) => obterObraIdCapitulo(cap) === obraId)
         .sort(chapterSort);
       setCapitulos(filtrados);
+      loadingCap = false;
+      concluir();
+    }, () => {
+      setCapitulos([]);
       loadingCap = false;
       concluir();
     });
@@ -304,23 +347,43 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     );
   }
 
+  const creatorUidObra = obraCreatorId(obraParaExibir);
+
   return (
     <main className="obra-page">
-      <section
-        className="obra-hero"
-        style={{
-          backgroundImage: `linear-gradient(180deg, rgba(6,9,16,0.25), rgba(6,9,16,0.92)), url('${obraParaExibir.bannerUrl || obraParaExibir.capaUrl || '/assets/fotos/shito.jpg'}')`,
-        }}
-      >
+      {obraSeo ? (
+        <Helmet prioritizeSeoTags>
+          <title>{obraSeo.title}</title>
+          <meta name="description" content={obraSeo.description} />
+          <meta property="og:type" content="article" />
+          <meta property="og:title" content={obraSeo.title} />
+          <meta property="og:description" content={obraSeo.description} />
+          <meta property="og:image" content={obraSeo.image} />
+          <meta property="og:url" content={obraSeo.canonical} />
+          <meta name="twitter:title" content={obraSeo.title} />
+          <meta name="twitter:description" content={obraSeo.description} />
+          <meta name="twitter:image" content={obraSeo.image} />
+          <link rel="canonical" href={obraSeo.canonical} />
+          <script type="application/ld+json">{JSON.stringify(obraSeo.jsonLd)}</script>
+        </Helmet>
+      ) : null}
+      <section className="obra-hero">
+        <div
+          className="obra-hero-bg"
+          style={{
+            backgroundImage: `url('${obraParaExibir.bannerUrl || obraParaExibir.capaUrl || '/assets/fotos/shito.jpg'}')`,
+          }}
+          aria-hidden="true"
+        />
+        <div className="obra-hero-scrim" aria-hidden="true" />
         <div className="obra-hero-content">
           <img
             className="obra-cover"
             src={obraParaExibir.capaUrl || obraParaExibir.bannerUrl || '/assets/fotos/shito.jpg'}
-            alt={obraParaExibir.titulo || obraId}
+            alt={`Capa do mangá ${obraParaExibir.titulo || obraId}`}
           />
           <div className="obra-info">
             <h1>{obraParaExibir.titulo || obraId}</h1>
-            <p className="obra-sinopse">{obraParaExibir.sinopse || 'Sinopse em breve.'}</p>
             <div className="obra-meta">
               <span>Status: {obraParaExibir.status || 'ongoing'}</span>
               <span>Público: {obraParaExibir.publicoAlvo || 'Geral'}</span>
@@ -333,6 +396,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
               />
               <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
             </button>
+            <p className="obra-sinopse-label">Sinopse</p>
+            <p className="obra-sinopse">{obraParaExibir.sinopse || 'Sinopse em breve.'}</p>
             <div className="obra-actions">
               <button type="button" className="btn-obra-cta" onClick={abrirCTA} disabled={!capituloCTA}>
                 Ler agora
@@ -340,10 +405,15 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
               <button type="button" className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`} onClick={toggleFavorito}>
                 {isFavorito ? '★ Desfavoritar' : '☆ Favoritar'}
               </button>
-              <button type="button" className="btn-obra-fav-page" onClick={abrirCriador}>
+              <Link className="btn-obra-fav-page" to={`/criador/${encodeURIComponent(creatorUidObra)}`}>
                 Ver criador
-              </button>
+              </Link>
             </div>
+            <nav className="obra-seo-nav" aria-label="Navegação do catálogo">
+              <Link to="/works">Mais mangás para ler online</Link>
+              <span aria-hidden="true"> · </span>
+              <Link to={`/criador/${encodeURIComponent(creatorUidObra)}`}>Página do autor</Link>
+            </nav>
             {user?.uid ? (
               <div className="obra-notify-box">
                 <strong>Acompanhar esta obra</strong>

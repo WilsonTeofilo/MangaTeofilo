@@ -172,14 +172,6 @@ function paginate(rows, page, size = PAGE_SIZE) {
   };
 }
 
-function formatTempoAssinatura(totalDays) {
-  const days = Number(totalDays || 0);
-  if (!days) return '--';
-  const months = days / 30;
-  const m = months.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  return `${m} meses (${days} dias)`;
-}
-
 /** Texto curto: N pagamentos no filtro × 30d (KPI do período — não espelha memberUntil). */
 function textoEstimativaPagamentosNoFiltro(row) {
   const n = Number(row?.count || 0);
@@ -616,7 +608,7 @@ export default function DashboardAdmin() {
           <div>
             <h1>Dashboard de Monetização</h1>
             <p>
-              Controle total das assinaturas, receita e crescimento do Shito.
+              Controle total das assinaturas, receita e crescimento de Kokuin.
               {dados?.period?.startAt && dados?.period?.endAt
                 ? ` Período: ${formatarDataHoraBr(dados.period.startAt, { seVazio: '--' })} até ${formatarDataHoraBr(dados.period.endAt, { seVazio: '--' })}.`
                 : ''}

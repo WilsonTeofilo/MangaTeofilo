@@ -1,10 +1,11 @@
 import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { HelmetProvider } from 'react-helmet-async';
 
 // 1. CSS GLOBAL (Reset, Tokens de Cores, Scrollbar e Body)
-// Esse cara precisa vir ANTES do App para garantir que o fundo 
+// Esse cara precisa vir ANTES do App para garantir que o fundo
 // seja sempre o "Preto Profundo" (#0a0a0a) em todas as rotas.
-import './index.css'; 
+import './index.css';
 
 // 2. COMPONENTE PRINCIPAL
 import App from './App.jsx';
@@ -18,6 +19,8 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <HelmetProvider>
+      <App />
+    </HelmetProvider>
   </StrictMode>
 );

@@ -22,6 +22,12 @@ function capTimestamp(cap) {
   return 0;
 }
 
+function chapterIsPublicNow(cap, nowTs = Date.now()) {
+  const release = Number(cap?.publicReleaseAt);
+  if (!Number.isFinite(release) || release <= 0) return true;
+  return release <= nowTs;
+}
+
 function countEntries(value) {
   if (!value || typeof value !== 'object') return 0;
   return Object.keys(value).length;
@@ -36,6 +42,18 @@ function commentsCount(value) {
   if (Array.isArray(value)) return value.length;
   if (value && typeof value === 'object') return Object.keys(value).length;
   return numeric(value, 0);
+}
+
+function chapterLikesCount(cap) {
+  return numeric(cap?.likesCount) || countEntries(cap?.usuariosQueCurtiram) || countEntries(cap?.likes);
+}
+
+function chapterCommentsCount(cap) {
+  return numeric(cap?.commentsCount) || commentsCount(cap?.comentarios) || commentsCount(cap?.comments);
+}
+
+function chapterViewsCount(cap) {
+  return numeric(cap?.viewsCount) || numeric(cap?.visualizacoes);
 }
 
 function recentBoost(timestamp) {
@@ -71,11 +89,13 @@ function computeCreatorScore({ followers, likes, views, comments, worksCount, re
 }
 
 export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap = {} }) {
+  const nowTs = Date.now();
   const obraIds = new Set(obras.map((obra) => String(obra?.id || '').toLowerCase()));
   const capitulosValidos = capitulos
     .filter((cap) => obraIds.has(obterObraIdCapitulo(cap)))
     .map((cap) => ({ ...cap, _ts: capTimestamp(cap) }))
     .sort((a, b) => b._ts - a._ts);
+  const capitulosPublicos = capitulosValidos.filter((cap) => chapterIsPublicNow(cap, nowTs));
 
   const chaptersByWork = new Map();
   for (const cap of capitulosValidos) {
@@ -85,29 +105,39 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
     chaptersByWork.set(obraId, current);
   }
 
+  const publicChaptersByWork = new Map();
+  for (const cap of capitulosPublicos) {
+    const obraId = obterObraIdCapitulo(cap);
+    const current = publicChaptersByWork.get(obraId) || [];
+    current.push(cap);
+    publicChaptersByWork.set(obraId, current);
+  }
+
   const works = obras.map((obra) => {
     const obraId = String(obra?.id || '').toLowerCase();
     const creatorId = obraCreatorId(obra);
     const caps = chaptersByWork.get(obraId) || [];
-    const ultimoCap = caps[0] || null;
-    const chapterViews = caps.reduce((sum, cap) => sum + numeric(cap?.visualizacoes), 0);
-    const chapterComments = caps.reduce(
-      (sum, cap) => sum + commentsCount(cap?.comments) + numeric(cap?.commentsCount),
-      0
-    );
-    const likes =
-      numeric(obra?.likesCount) ||
-      numeric(obra?.curtidas) ||
-      numeric(obra?.favoritosCount) ||
+    const publicCaps = publicChaptersByWork.get(obraId) || [];
+    const ultimoCap = publicCaps[0] || null;
+    const chapterViews = caps.reduce((sum, cap) => sum + chapterViewsCount(cap), 0);
+    const chapterComments = caps.reduce((sum, cap) => sum + chapterCommentsCount(cap), 0);
+    const chapterLikes = caps.reduce((sum, cap) => sum + chapterLikesCount(cap), 0);
+    const rawWorkLikes = numeric(obra?.likesCount) || numeric(obra?.curtidas) || countEntries(obra?.likes);
+    const rawWorkViews = numeric(obra?.viewsCount) || numeric(obra?.visualizacoes) || 0;
+    const rawWorkComments =
+      numeric(obra?.commentsCount) + commentsCount(obra?.comentarios) + commentsCount(obra?.comments);
+    const workFollowers =
       numeric(obra?.favoritesCount) ||
-      countEntries(obra?.likes) ||
-      countEntries(obra?.favoritos);
-    const views = numeric(obra?.viewsCount) || numeric(obra?.visualizacoes) || 0;
-    const comments = commentsCount(obra?.comments) + numeric(obra?.commentsCount) + chapterComments;
-    const followers =
+      numeric(obra?.favoritosCount) ||
+      countEntries(obra?.favoritos) ||
+      countEntries(obra?.favorites);
+    const creatorFollowers =
       numeric(creatorsMap?.[creatorId]?.creatorProfile?.stats?.followersCount) ||
       numeric(creatorsMap?.[creatorId]?.stats?.followersCount) ||
       numeric(creatorsMap?.[creatorId]?.followersCount);
+    const likes = Math.max(chapterLikes, rawWorkLikes);
+    const views = Math.max(chapterViews, rawWorkViews);
+    const comments = Math.max(chapterComments, rawWorkComments);
     const lastUpdateTs = ultimoCap?._ts || numeric(obra?.updatedAt);
     const chaptersCount = caps.length;
     return {
@@ -115,19 +145,20 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
       obraId,
       creatorId,
       genres: parseGenres(obra),
-      totalViews: views + chapterViews,
+      totalViews: views,
       totalLikes: likes,
       totalComments: comments,
-      creatorFollowers: followers,
+      followersCount: workFollowers,
+      creatorFollowers,
       chaptersCount,
       lastChapterNumber: ultimoCap?.numero ?? null,
       lastUpdateTs,
       latestChapterId: ultimoCap?.id || null,
       discoveryScore: computeWorkScore({
         likes,
-        views: views + chapterViews,
+        views,
         comments,
-        followers,
+        followers: workFollowers,
         chaptersCount,
         lastUpdateTs,
       }),
@@ -188,18 +219,35 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
   return {
     works,
     creators,
-    updates: capitulosValidos.slice(0, 16),
-    trendingWorks: [...works].sort((a, b) => b.discoveryScore - a.discoveryScore).slice(0, 12),
-    popularCreators: [...creators].sort((a, b) => b.discoveryScore - a.discoveryScore).slice(0, 8),
+    updates: capitulosPublicos.slice(0, 16),
+    trendingWorks: [...works]
+      .sort((a, b) => (
+        b.discoveryScore - a.discoveryScore ||
+        b.followersCount - a.followersCount ||
+        b.totalLikes - a.totalLikes ||
+        b.lastUpdateTs - a.lastUpdateTs
+      ))
+      .slice(0, 12),
+    popularCreators: [...creators]
+      .sort((a, b) => (
+        b.discoveryScore - a.discoveryScore ||
+        b.followersCount - a.followersCount ||
+        b.totalLikes - a.totalLikes ||
+        b.totalViews - a.totalViews
+      ))
+      .slice(0, 8),
     recommendedWorks: [...works]
       .sort((a, b) => {
+        if (b.discoveryScore !== a.discoveryScore) return b.discoveryScore - a.discoveryScore;
+        if (b.followersCount !== a.followersCount) return b.followersCount - a.followersCount;
         if (b.chaptersCount !== a.chaptersCount) return b.chaptersCount - a.chaptersCount;
-        return b.discoveryScore - a.discoveryScore;
+        return b.lastUpdateTs - a.lastUpdateTs;
       })
       .slice(0, 12),
     heroWorks: [...works]
       .sort((a, b) => {
         if (b.discoveryScore !== a.discoveryScore) return b.discoveryScore - a.discoveryScore;
+        if (b.followersCount !== a.followersCount) return b.followersCount - a.followersCount;
         return b.lastUpdateTs - a.lastUpdateTs;
       })
       .slice(0, 5),

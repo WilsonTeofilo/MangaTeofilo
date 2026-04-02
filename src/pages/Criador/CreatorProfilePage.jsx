@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import Perfil from '../Perfil/Perfil.jsx';
@@ -20,10 +20,18 @@ export default function CreatorProfilePage({ user, adminAccess }) {
             </p>
           </div>
           <div className="creator-frame-actions">
-            <button type="button" className="creator-frame-btn" onClick={() => navigate(`/criador/${encodeURIComponent(user?.uid || '')}`)}>
+            <button
+              type="button"
+              className="creator-frame-btn"
+              onClick={() => navigate(`/criador/${encodeURIComponent(user?.uid || '')}`)}
+            >
               Ver página pública
             </button>
-            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/dashboard')}>
+            <button
+              type="button"
+              className="creator-frame-btn is-primary"
+              onClick={() => navigate('/creator/dashboard')}
+            >
               Voltar ao workspace
             </button>
           </div>

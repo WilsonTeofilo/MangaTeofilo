@@ -9,6 +9,7 @@ import {
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
   obraCreatorId,
+  obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
@@ -17,11 +18,8 @@ import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './BibliotecaFavoritos.css';
 
 function pathObraPublica(obra, obraIdFallback) {
-  const o = obra && typeof obra === 'object' ? obra : null;
-  const id = String(o?.id || obraIdFallback || '').toLowerCase();
-  const slug = String(o?.slug || '').trim();
-  const key = slug || id;
-  return `/work/${encodeURIComponent(key)}`;
+  const o = obra && typeof obra === 'object' ? obra : { id: obraIdFallback };
+  return `/work/${encodeURIComponent(obraSegmentoUrlPublica(o))}`;
 }
 
 function toList(snapshotVal) {
@@ -50,8 +48,11 @@ export default function BibliotecaFavoritos({ user, perfil }) {
 
   useEffect(() => {
     if (!user?.uid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFavoritosLegacy({});
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFavoritosCanon({});
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoadingFavs(false);
       return () => {};
     }
@@ -64,9 +65,15 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     const u1 = onValue(ref(db, `usuarios/${user.uid}/favoritosObras`), (snapshot) => {
       setFavoritosLegacy(snapshot.exists() ? snapshot.val() || {} : {});
       done();
+    }, () => {
+      setFavoritosLegacy({});
+      done();
     });
     const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
       setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
+      done();
+    }, () => {
+      setFavoritosCanon({});
       done();
     });
     return () => {
@@ -91,6 +98,9 @@ export default function BibliotecaFavoritos({ user, perfil }) {
       const lista = ensureLegacyShitoObra(toList(snapshot.val())).filter((obra) => obraVisivelNoCatalogoPublico(obra));
       setObras(lista);
       setLoadingObras(false);
+    }, () => {
+      setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+      setLoadingObras(false);
     });
     return () => unsub();
   }, []);
@@ -100,6 +110,9 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     const unsub = onValue(capsRef, (snapshot) => {
       const lista = snapshot.exists() ? toList(snapshot.val()) : [];
       setCapitulos(lista);
+      setLoadingCaps(false);
+    }, () => {
+      setCapitulos([]);
       setLoadingCaps(false);
     });
     return () => unsub();
@@ -241,4 +254,3 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     </main>
   );
 }
-

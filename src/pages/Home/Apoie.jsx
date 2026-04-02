@@ -570,7 +570,7 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="apoie-title-discord">Apoie Shito: Fragmentos da Tempestade</h1>
+          <h1 className="apoie-title-discord">Apoie Kokuin : Heranca do Abismo</h1>
 
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="status">
@@ -995,4 +995,3 @@ export default function Apoie({ user, perfil }) {
     </div>
   );
 }
-

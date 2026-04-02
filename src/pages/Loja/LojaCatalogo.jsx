@@ -64,10 +64,15 @@ export default function LojaCatalogo({ user, perfil }) {
   useEffect(() => {
     const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {
       setConfig(normalizeStoreConfig(snap.exists() ? snap.val() : STORE_DEFAULT_CONFIG));
+    }, () => {
+      setConfig(STORE_DEFAULT_CONFIG);
     });
     const unsubProd = onValue(ref(db, 'loja/produtos'), (snap) => {
       const list = snap.exists() ? toList(snap.val()) : [];
       setProducts(list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
+      setLoading(false);
+    }, () => {
+      setProducts([]);
       setLoading(false);
     });
     return () => {

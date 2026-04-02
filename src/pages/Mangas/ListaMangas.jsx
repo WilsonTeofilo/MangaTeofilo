@@ -9,6 +9,7 @@ import {
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
   obraCreatorId,
+  obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
@@ -16,10 +17,7 @@ import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './ListaMangas.css';
 
 function pathObraPublica(obra) {
-  const id = String(obra?.id || obra?.obraId || '').toLowerCase();
-  const slug = String(obra?.slug || '').trim();
-  const key = slug || id;
-  return `/work/${encodeURIComponent(key)}`;
+  return `/work/${encodeURIComponent(obraSegmentoUrlPublica(obra))}`;
 }
 
 function toList(snapshotVal) {
@@ -45,6 +43,7 @@ function formatarAtualizacaoRelativa(ts) {
 
 export default function ListaMangas({ user }) {
   const navigate = useNavigate();
+  const [catalogSnapshotNow] = useState(() => Date.now());
   const [loadingObras, setLoadingObras] = useState(true);
   const [loadingCaps, setLoadingCaps] = useState(true);
   const [obras, setObras] = useState([]);
@@ -66,6 +65,9 @@ export default function ListaMangas({ user }) {
         .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
       setObras(lista);
       setLoadingObras(false);
+    }, () => {
+      setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+      setLoadingObras(false);
     });
     return () => unsub();
   }, []);
@@ -75,6 +77,9 @@ export default function ListaMangas({ user }) {
     const unsub = onValue(capsRef, (snapshot) => {
       const lista = snapshot.exists() ? toList(snapshot.val()) : [];
       setCapitulos(lista);
+      setLoadingCaps(false);
+    }, () => {
+      setCapitulos([]);
       setLoadingCaps(false);
     });
     return () => unsub();
@@ -89,6 +94,7 @@ export default function ListaMangas({ user }) {
 
   useEffect(() => {
     if (!user?.uid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFavoritosLegacy({});
       setFavoritosCanon({});
       return () => {};
@@ -125,7 +131,7 @@ export default function ListaMangas({ user }) {
     return obras.map((obra) => {
       const obraId = String(obra?.id || '').toLowerCase();
       const stats = agrupado.get(obraId) || { total: 0, lastUpdateTs: Number(obra?.updatedAt || 0) };
-      const dias = Math.floor((Date.now() - Number(stats.lastUpdateTs || 0)) / (1000 * 60 * 60 * 24));
+      const dias = Math.floor((catalogSnapshotNow - Number(stats.lastUpdateTs || 0)) / (1000 * 60 * 60 * 24));
       const badgeNovo = Number.isFinite(dias) && dias >= 0 && dias <= 7;
       const status = String(obra?.status || 'ongoing').toLowerCase();
       return {
@@ -139,12 +145,13 @@ export default function ListaMangas({ user }) {
         status,
       };
     });
-  }, [obras, capitulos, favoritosMap]);
+  }, [obras, capitulos, favoritosMap, catalogSnapshotNow]);
 
   const discovery = useMemo(
     () => buildDiscoveryRanking({ obras, capitulos, creatorsMap }),
     [obras, capitulos, creatorsMap]
   );
+  const heroWork = discovery.trendingWorks[0] || obrasCards[0] || null;
 
   const creatorName = (obra) => {
     const profile = creatorsMap?.[obraCreatorId(obra)] || null;
@@ -189,6 +196,37 @@ export default function ListaMangas({ user }) {
             obra.
           </p>
         </header>
+
+        {heroWork ? (
+          <section
+            className="hero-banner"
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate(pathObraPublica(heroWork))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                navigate(pathObraPublica(heroWork));
+              }
+            }}
+          >
+            <img
+              src={heroWork.bannerUrl || heroWork.capaUrl || '/assets/fotos/shito.jpg'}
+              alt={heroWork.titulo || heroWork.id || 'Obra em destaque'}
+              className="hero-banner-image"
+            />
+            <div className="hero-content">
+              <span className="hero-kicker">Em destaque</span>
+              <h2>{heroWork.titulo || heroWork.id}</h2>
+              <p className="hero-creator">por {creatorName(heroWork)}</p>
+              <div className="hero-stats">
+                <span>{Math.round(heroWork.totalViews || 0)} views</span>
+                <span>{heroWork.totalLikes || 0} likes</span>
+                <span>{heroWork.followersCount || 0} seguidores</span>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {discovery.trendingWorks.length > 0 ? (
           <section className="lista-discovery-section">

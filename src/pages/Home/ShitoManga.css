@@ -247,11 +247,11 @@
 }
 
 .lore-banner-image {
-  width: 100vw;
+  width: 100%;
   position: relative;
-  left: 50%;
-  right: 50%;
-  margin: clamp(48px, 9vw, 110px) -50vw;
+  left: 0;
+  right: 0;
+  margin: clamp(48px, 9vw, 110px) 0;
   background: #000;
   display: flex;
   justify-content: center;

@@ -35,7 +35,7 @@ export const STORE_DEFAULT_CONFIG = {
   postPurchaseThanks: '',
   /** Hero da loja (vitrine marca). */
   heroEyebrow: 'MangaTeofilo · Loja do universo',
-  heroTitle: 'SHITO COLLECTION',
+  heroTitle: 'KOKUIN COLLECTION',
   heroSubtitle: 'Peças e edições do universo — streetwear, minimal e identidade de marca.',
   updatedAt: Date.now(),
 };

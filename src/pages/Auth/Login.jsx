@@ -10,14 +10,14 @@ import {
   signOut,
   fetchSignInMethodsForEmail,
 } from 'firebase/auth';
-import { ref, get, onValue } from 'firebase/database';
+import { ref, get, onValue, update } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
 import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants';
-import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSync';
+import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSyncV2';
 import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
 import './Login.css';
 
-// â”€â”€ Chaves de sessionStorage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Chaves de sessionStorage ───────────────────────────────────────────────
 const FORGOT_KEY         = 'shito_forgot_until';
 const ATTEMPT_LIMITS_KEY = 'shito_attempt_limits';
 const ATTEMPT_RULES = {
@@ -27,7 +27,7 @@ const ATTEMPT_RULES = {
   registerPassword: { max: 4, windowMs: 60 * 60 * 1000, blockMs: 45 * 60 * 1000 },
 };
 
-// â”€â”€ Rate limiting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Rate limiting ──────────────────────────────────────────────────────────
 function getAttemptState(action) {
   const now    = Date.now();
   const parsed = JSON.parse(localStorage.getItem(ATTEMPT_LIMITS_KEY) || '{}');
@@ -60,7 +60,7 @@ async function carregarStatusConta(uid) {
   return snap.exists() ? snap.val() : null;
 }
 
-// â”€â”€ Componente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Componente ─────────────────────────────────────────────────────────────
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -68,7 +68,7 @@ export default function Login() {
     navigate(resolveSafeInternalRedirect(searchParams.get('redirect')), { replace: true });
   // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');
-  /** ApÃ³s cÃ³digo: usuÃ¡rio tem senha no site e tambÃ©m Google â€” mostrar alternativa */
+  /** Após código: usuário tem senha no site e também Google — mostrar alternativa */
   const [mostrarGoogleComoAlternativa, setMostrarGoogleComoAlternativa] = useState(false);
   const [email,           setEmail]           = useState('');
   const [code,            setCode]            = useState('');
@@ -94,7 +94,7 @@ export default function Login() {
 
   const validarEmailComDica = (rawEmail) => {
     const norm = normalizeLoginEmail(rawEmail);
-    if (!norm) return { ok: false, message: 'Informe um e-mail vÃ¡lido.' };
+    if (!norm) return { ok: false, message: 'Informe um e-mail válido.' };
     if (norm.includes('@gmail') && !norm.endsWith('@gmail.com')) {
       return {
         ok: false,
@@ -103,12 +103,12 @@ export default function Login() {
     }
     const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(norm)) {
-      return { ok: false, message: 'Informe um e-mail vÃ¡lido (ex: usuario@email.com).' };
+      return { ok: false, message: 'Informe um e-mail válido (ex: usuario@email.com).' };
     }
     return { ok: true, email: norm };
   };
 
-  // â”€â”€ Cooldowns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- Cooldowns ──────────────────────────────────────────────────────────
   useEffect(() => {
     const now = Date.now();
     const fu  = Number(sessionStorage.getItem(FORGOT_KEY) || 0);
@@ -130,7 +130,7 @@ export default function Login() {
     return () => clearInterval(t);
   }, [resendCooldown]);
 
-  // â”€â”€ Avatares dinÃ¢micos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- Avatares dinâmicos ─────────────────────────────────────────────────
   useEffect(() => {
     const unsub = onValue(ref(db, 'avatares'), (snap) => {
       if (!snap.exists()) return;
@@ -150,7 +150,7 @@ export default function Login() {
     return () => unsub();
   }, []);
 
-  // â”€â”€ LOGIN COM GOOGLE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- LOGIN COM GOOGLE ───────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
@@ -188,7 +188,7 @@ export default function Login() {
     } catch (err) {
       const msgs = {
         'auth/popup-closed-by-user':                     'Popup fechado. Tente novamente.',
-        'auth/account-exists-with-different-credential': 'Essa conta jÃ¡ existe com outro mÃ©todo de login.',
+        'auth/account-exists-with-different-credential': 'Essa conta já existe com outro método de login.',
       };
       setError(msgs[err.code] || `Falha ao conectar com Google: ${err.message}`);
     } finally {
@@ -196,7 +196,7 @@ export default function Login() {
     }
   };
 
-  /** Envia cÃ³digo por e-mail (primeira vez ou reenvio). Retorna true se ok. */
+  /** Envia código por e-mail (primeira vez ou reenvio). Retorna true se ok. */
   const enviarCodigoLogin = async () => {
     const attempt = getAttemptState('sendCode');
     if (attempt.blocked) {
@@ -227,12 +227,12 @@ export default function Login() {
         }
 
         if (methods.length === 0) {
-          setInfo('Este Gmail ainda nÃ£o tem conta. Envie o cÃ³digo para cadastrar.');
+          setInfo('Este Gmail ainda não tem conta. Envie o código para cadastrar.');
         } else if (temGoogle && temSenhaSite) {
-          setInfo('Este Gmail tem Google e senha no site. VocÃª pode usar qualquer um dos dois.');
+          setInfo('Este Gmail tem Google e senha no site. Você pode usar qualquer um dos dois.');
         }
       } catch {
-        // Se a checagem falhar, seguimos com o fluxo padrÃ£o de cÃ³digo.
+        // Se a checagem falhar, seguimos com o fluxo padrão de código.
       }
     }
 
@@ -247,16 +247,16 @@ export default function Login() {
 
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
-        throw new Error(data.error || 'NÃ£o foi possÃ­vel enviar o cÃ³digo.');
+        throw new Error(data.error || 'Não foi possível enviar o código.');
       }
 
       registerAttemptResult('sendCode', true);
-      setInfo('CÃ³digo enviado! Confira seu e-mail (e spam) e digite abaixo.');
+      setInfo('Código enviado! Confira seu e-mail (e spam) e digite abaixo.');
       setResendCooldown(45);
       return true;
     } catch (err) {
       registerAttemptResult('sendCode', false);
-      setError(err.message || 'Falha ao enviar cÃ³digo. Tente novamente.');
+      setError(err.message || 'Falha ao enviar código. Tente novamente.');
       return false;
     } finally {
       setLoading(false);
@@ -276,7 +276,7 @@ export default function Login() {
     await enviarCodigoLogin();
   };
 
-  // â”€â”€ FLUXO: 2) VALIDAR CÃ“DIGO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- FLUXO: 2) VALIDAR CÓDIGO ────────────────────────────────────────────
   const handleVerifyCode = async (e) => {
     e.preventDefault();
     setError('');
@@ -289,7 +289,7 @@ export default function Login() {
     }
 
     if (!email.trim() || code.trim().length !== 6) {
-      setError('Digite o e-mail e o cÃ³digo de 6 dÃ­gitos.');
+      setError('Digite o e-mail e o código de 6 dígitos.');
       return;
     }
 
@@ -303,7 +303,7 @@ export default function Login() {
 
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
-        throw new Error(data.error || 'CÃ³digo invÃ¡lido.');
+        throw new Error(data.error || 'Código inválido.');
       }
 
       registerAttemptResult('verifyCode', true);
@@ -331,8 +331,8 @@ export default function Login() {
         setMostrarGoogleComoAlternativa(temGoogle);
         setInfo(
           temGoogle
-            ? 'Digite a senha que vocÃª cadastrou neste site. Ela nÃ£o Ã© a mesma da conta Google â€” ou use Conectar com Google abaixo.'
-            : 'Bem-vindo de volta! Digite a senha que vocÃª cadastrou no site.'
+            ? 'Digite a senha que você cadastrou neste site. Ela não é a mesma da conta Google — ou use Conectar com Google abaixo.'
+            : 'Bem-vindo de volta! Digite a senha que você cadastrou no site.'
         );
         return;
       }
@@ -347,17 +347,17 @@ export default function Login() {
       setPassword('');
       setMostrarGoogleComoAlternativa(false);
       setInfo(
-        'Digite a senha cadastrada neste site, se vocÃª criou uma. Se entra sÃ³ com Google, use o botÃ£o Conectar com Google na primeira tela â€” a senha do Gmail nÃ£o Ã© usada aqui.'
+        'Digite a senha cadastrada neste site, se você criou uma. Se entra só com Google, use o botão Conectar com Google na primeira tela — a senha do Gmail não é usada aqui.'
       );
     } catch (err) {
       registerAttemptResult('verifyCode', false);
-      setError(err.message || 'Falha ao validar cÃ³digo. Tente novamente.');
+      setError(err.message || 'Falha ao validar código. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
-  // â”€â”€ FLUXO: 3) NOVO USUÃRIO (NOME + AVATAR + SENHA) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- FLUXO: 3) NOVO USUÁRIO (NOME + AVATAR + SENHA) ──────────────────────
   const handleRegisterWithPassword = async (e) => {
     e.preventDefault();
     setError('');
@@ -370,9 +370,9 @@ export default function Login() {
     }
 
     if (!displayName.trim()) { setError('Escolha um nome para sua alma.'); return; }
-    if (password !== confirmPassword) { setError('As senhas nÃ£o coincidem.'); return; }
+    if (password !== confirmPassword) { setError('As senhas não coincidem.'); return; }
     if (!hasUpper || !hasNumber || !hasSpecial || !hasLength) {
-      setError('A senha nÃ£o atende aos requisitos.');
+      setError('A senha não atende aos requisitos.');
       return;
     }
 
@@ -412,14 +412,14 @@ export default function Login() {
       setInfo(
         signupIntent === 'creator'
           ? 'Conta criada! Complete sua solicitacao de criador no perfil para entrar em analise.'
-          : 'Conta criada! Bem-vindo Ã  Tempestade.'
+          : 'Conta criada! Bem-vindo à Tempestade.'
       );
       irParaAposLogin();
     } catch (err) {
       registerAttemptResult('registerPassword', false);
       const msgs = {
-        'auth/invalid-email':        'E-mail invÃ¡lido.',
-        'auth/email-already-in-use': 'Este e-mail jÃ¡ estÃ¡ em uso.',
+        'auth/invalid-email':        'E-mail inválido.',
+        'auth/email-already-in-use': 'Este e-mail já está em uso.',
         'auth/weak-password':        'Senha muito fraca.',
       };
       setError(msgs[err.code] || `Erro ao criar conta: ${err.code || err.message}`);
@@ -428,7 +428,7 @@ export default function Login() {
     }
   };
 
-  // â”€â”€ FLUXO: 4) USUÃRIO EXISTENTE (SENHA) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- FLUXO: 4) USUÁRIO EXISTENTE (SENHA) ─────────────────────────────────
   const handleExistingPasswordLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -490,7 +490,7 @@ export default function Login() {
     } catch (err) {
       registerAttemptResult('loginPassword', false);
       const base = {
-        'auth/invalid-email':      'E-mail invÃ¡lido.',
+        'auth/invalid-email':      'E-mail inválido.',
         'auth/user-not-found':     'E-mail ou senha incorretos.',
         'auth/wrong-password':     'E-mail ou senha incorretos.',
         'auth/invalid-credential': 'E-mail ou senha incorretos.',
@@ -498,7 +498,7 @@ export default function Login() {
       let msg = base[err.code] || `Erro ao entrar: ${err.code || err.message}`;
       if (['auth/wrong-password', 'auth/invalid-credential', 'auth/user-not-found'].includes(err.code)) {
         msg +=
-          ' Se vocÃª criou a conta com Google, a senha do Gmail nÃ£o funciona aqui â€” volte e use Conectar com Google.';
+          ' Se você criou a conta com Google, a senha do Gmail não funciona aqui — volte e use Conectar com Google.';
       }
       setError(msg);
     } finally {
@@ -506,7 +506,7 @@ export default function Login() {
     }
   };
 
-  // â”€â”€ ESQUECI A SENHA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- ESQUECI A SENHA ────────────────────────────────────────────────────
   const handleForgotPassword = async () => {
     setError(''); setInfo('');
     if (forgotCooldown > 0) { setError(`Aguarde ${forgotCooldown}s.`); return; }
@@ -517,25 +517,25 @@ export default function Login() {
       await sendPasswordResetEmail(auth, email.trim());
       sessionStorage.setItem(FORGOT_KEY, String(Date.now() + 45_000));
       setForgotCooldown(45);
-      setInfo('Link de redefiniÃ§Ã£o enviado para seu e-mail.');
+      setInfo('Link de redefinição enviado para seu e-mail.');
     } catch (err) {
       const msgs = {
-        'auth/invalid-email':     'E-mail invÃ¡lido.',
+        'auth/invalid-email':     'E-mail inválido.',
         'auth/user-not-found':    'Nenhuma conta com esse e-mail.',
         'auth/too-many-requests': 'Muitas tentativas. Aguarde.',
       };
-      setError(msgs[err.code] || 'NÃ£o foi possÃ­vel enviar o e-mail.');
+      setError(msgs[err.code] || 'Não foi possível enviar o e-mail.');
     } finally { setLoading(false); }
   };
 
-  // â”€â”€ RENDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // --- RENDER ─────────────────────────────────────────────────────────────
   return (
     <main className="login-content">
       <div className="login-card">
         <h1 className="login-title shito-glitch">Bem vindo de volta!</h1>
         <p className="login-subtitle">
           {step === 'email' && 'ENTRAR NA TEMPESTADE'}
-          {step === 'code' && 'INSIRA O CÃ“DIGO ENVIADO'}
+          {step === 'code' && 'INSIRA O CÓDIGO ENVIADO'}
           {step === 'new-user' && 'DESPERTAR NOVA ALMA'}
           {step === 'existing-password' && 'DIGITE SUA SENHA'}
           {step === 'existing-google' && 'ENTRE COM GOOGLE'}
@@ -557,7 +557,7 @@ export default function Login() {
                 />
               </div>
               <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENVIAR CÃ“DIGO'}
+                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENVIAR CÓDIGO'}
               </button>
             </form>
 
@@ -569,8 +569,8 @@ export default function Login() {
             </button>
 
             <p className="login-google-hint">
-              Conta criada com Google? Use o botÃ£o acima. A senha do Gmail <strong>nÃ£o</strong> Ã© usada neste
-              site â€” sÃ³ o login oficial do Google.
+              Conta criada com Google? Use o botão acima. A senha do Gmail <strong>não</strong> é usada neste
+              site — só o login oficial do Google.
             </p>
 
             <button
@@ -584,7 +584,7 @@ export default function Login() {
           </>
         )}
 
-        {/* STEP 2: CÃ“DIGO */}
+        {/* STEP 2: CÓDIGO */}
         {step === 'code' && (
           <>
             <form onSubmit={handleVerifyCode} className="login-form">
@@ -603,7 +603,7 @@ export default function Login() {
                 <i className="fa-solid fa-hashtag" />
                 <input
                   type="text"
-                  placeholder="CÃ³digo de 6 dÃ­gitos"
+                  placeholder="Código de 6 dígitos"
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   required
@@ -611,7 +611,7 @@ export default function Login() {
                 />
               </div>
               <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'VALIDAR CÃ“DIGO'}
+                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'VALIDAR CÓDIGO'}
               </button>
             </form>
 
@@ -622,7 +622,7 @@ export default function Login() {
                 onClick={handleResendCode}
                 disabled={loading || resendCooldown > 0}
               >
-                {resendCooldown > 0 ? `Reenviar cÃ³digo (${resendCooldown}s)` : 'Reenviar cÃ³digo'}
+                {resendCooldown > 0 ? `Reenviar código (${resendCooldown}s)` : 'Reenviar código'}
               </button>
               <button
                 type="button"
@@ -642,7 +642,7 @@ export default function Login() {
           </>
         )}
 
-        {/* STEP 3: NOVO USUÃRIO */}
+        {/* STEP 3: NOVO USUÁRIO */}
         {step === 'new-user' && (
           <>
             <div className="avatar-preview-container" onClick={() => setShowAvatarModal(true)}>
@@ -656,7 +656,7 @@ export default function Login() {
 
             <form onSubmit={handleRegisterWithPassword} className="login-form">
               <div className="signup-intent-picker">
-                <span className="signup-intent-picker__label">Como vocÃª quer entrar?</span>
+                <span className="signup-intent-picker__label">Como você quer entrar?</span>
                 <div className="signup-intent-picker__options">
                   <button
                     type="button"
@@ -672,7 +672,7 @@ export default function Login() {
                     onClick={() => setSignupIntent('creator')}
                   >
                     <strong>Autor independente</strong>
-                    <span>Conta preparada para publicar obras e ativar perfil pÃºblico de criador depois.</span>
+                    <span>Conta preparada para publicar obras e ativar perfil público de criador depois.</span>
                   </button>
                 </div>
               </div>
@@ -681,7 +681,7 @@ export default function Login() {
                 <i className="fa-solid fa-user" />
                 <input
                   type="text"
-                  placeholder="Nome do UsuÃ¡rio"
+                  placeholder="Nome do Usuário"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   maxLength={DISPLAY_NAME_MAX_LENGTH}
@@ -726,9 +726,9 @@ export default function Login() {
               <div className="password-requirements" style={{ marginBottom: '20px', paddingLeft: '5px' }}>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.82rem', textAlign: 'left' }}>
                   {[
-                    { ok: hasLength,  label: 'MÃ­nimo 8 caracteres' },
-                    { ok: hasUpper,   label: 'Uma letra maiÃºscula' },
-                    { ok: hasNumber,  label: 'Um nÃºmero' },
+                    { ok: hasLength,  label: 'Mínimo 8 caracteres' },
+                    { ok: hasUpper,   label: 'Uma letra maiúscula' },
+                    { ok: hasNumber,  label: 'Um número' },
                     { ok: hasSpecial, label: 'Caractere especial (@$!%*?)' },
                   ].map(({ ok, label }) => (
                     <li key={label} style={{ color: ok ? '#4caf50' : '#ff4444', transition: '0.3s' }}>
@@ -756,17 +756,17 @@ export default function Login() {
               }}
               disabled={loading}
             >
-              JÃ¡ tenho conta
+              Já tenho conta
             </button>
           </>
         )}
 
-        {/* Conta existente sÃ³ com Google (sem senha no Firebase) */}
+        {/* Conta existente só com Google (sem senha no Firebase) */}
         {step === 'existing-google' && (
           <>
             <p className="login-google-hint login-google-hint--block">
-              Este e-mail foi cadastrado com <strong>Conectar com Google</strong>. O site nÃ£o guarda a senha da
-              sua conta Google â€” por isso digitar o e-mail e a senha do Gmail aqui nÃ£o funciona.
+              Este e-mail foi cadastrado com <strong>Conectar com Google</strong>. O site não guarda a senha da
+              sua conta Google — por isso digitar o e-mail e a senha do Gmail aqui não funciona.
             </p>
             <button type="button" className="btn-google-shito" onClick={handleGoogleSignIn} disabled={loading}>
               <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
@@ -789,7 +789,7 @@ export default function Login() {
           </>
         )}
 
-        {/* STEP 4: USUÃRIO EXISTENTE (SENHA) */}
+        {/* STEP 4: USUÁRIO EXISTENTE (SENHA) */}
         {step === 'existing-password' && (
           <>
             <form onSubmit={handleExistingPasswordLogin} className="login-form">
@@ -842,7 +842,7 @@ export default function Login() {
               }}
               disabled={loading}
             >
-              Voltar para cÃ³digo
+              Voltar para código
             </button>
           </>
         )}
@@ -851,7 +851,7 @@ export default function Login() {
         {info  && <div className="info-banner"><i className="fa-solid fa-circle-check" /> {info}</div>}
       </div>
 
-      {/* Modal de seleÃ§Ã£o de avatar */}
+      {/* Modal de seleção de avatar */}
       {showAvatarModal && (
         <div className="avatar-modal-overlay">
           <div className="avatar-modal-card">

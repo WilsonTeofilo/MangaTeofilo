@@ -1,13 +1,12 @@
 .shito-loading-overlay {
   background-color: var(--charcoal-dark, #0a0a0a);
-  height: 100vh;
-  width: 100vw;
+  inset: 0;
+  height: 100dvh;
+  width: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
   position: fixed;
-  top: 0;
-  left: 0;
   z-index: 9999;
   overflow: hidden;
 }
@@ -31,7 +30,7 @@
 
 .shito-glitch::before,
 .shito-glitch::after {
-  content: "SHITO";
+  content: "KOKUIN";
   position: absolute;
   top: 0;
   left: 0;

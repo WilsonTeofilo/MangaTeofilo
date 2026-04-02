@@ -106,7 +106,7 @@ const PROMO_TEMPLATES = [
     nome: 'Flash 24h',
     tag: 'Alta urgência',
     hint: 'Boa para picos de conversão em janela curta.',
-    mensagem: 'Oferta relâmpago para virar Membro Shito nas próximas 24h.',
+    mensagem: 'Oferta relâmpago para virar Membro Kokuin nas próximas 24h.',
     dias: 0,
     horas: 24,
     minutos: 0,
@@ -252,7 +252,7 @@ export default function FinanceiroAdmin() {
   const [currentPerformance, setCurrentPerformance] = useState(null);
   const [templateAtivo, setTemplateAtivo] = useState('');
 
-  const [promoNome, setPromoNome] = useState('Promoção Membro Shito');
+  const [promoNome, setPromoNome] = useState('Promoção Membro Kokuin');
   const [promoMensagem, setPromoMensagem] = useState('');
   const [promoPreco, setPromoPreco] = useState('19.90');
   const [promoInicio, setPromoInicio] = useState(() => toDatetimeLocal(Date.now()));
@@ -371,7 +371,7 @@ export default function FinanceiroAdmin() {
       setLastCampaign(data?.lastCampaign || null);
       setCurrentPerformance(data?.currentPerformance || null);
       if (promo) {
-        setPromoNome(promo.name || 'Promoção Membro Shito');
+        setPromoNome(promo.name || 'Promoção Membro Kokuin');
         setPromoMensagem(promo.message || '');
         setPromoPreco(String(promo.priceBRL));
         setPromoInicio(toDatetimeLocal(promo.startsAt || Date.now()));
@@ -1401,7 +1401,7 @@ export default function FinanceiroAdmin() {
               <div className="financeiro-email-preview">
                 <span className="financeiro-email-preview-label">Prévia do e-mail</span>
                 <p className="financeiro-email-preview-subject">
-                  Assunto: <strong>{promoNome || 'Campanha Premium Shito'}</strong>
+                  Assunto: <strong>{promoNome || 'Campanha Premium Kokuin'}</strong>
                 </p>
                 <div className="financeiro-email-preview-body">
                   {promoMensagem?.trim()

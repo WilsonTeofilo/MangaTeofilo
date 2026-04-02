@@ -345,7 +345,7 @@ export default function AvatarAdmin() {
     <div className="admin-panel">
       <ModalErro mensagem={erroModal} aoFechar={() => setErroModal('')} />
       <header className="admin-header">
-        <h1>SHITO - FORJA DE AVATARES</h1>
+        <h1>KOKUIN - FORJA DE AVATARES</h1>
         <button className="btn-voltar" onClick={() => navigate('/')}>Sair</button>
       </header>
 

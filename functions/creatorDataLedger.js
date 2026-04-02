@@ -42,6 +42,62 @@ export function buildCreatorLedgerEntryKey(rec, fallbackPrefix = 'entry') {
   return `${type}_${Date.now()}`;
 }
 
+function audienceDateKey(timestamp = Date.now()) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return fmt.format(new Date(timestamp));
+}
+
+async function incrementPath(db, path, amount) {
+  if (!path || !Number.isFinite(Number(amount)) || Number(amount) === 0) return;
+  await db.ref(path).transaction((current) => {
+    const next = Number(current || 0) + Number(amount);
+    return next < 0 ? 0 : next;
+  });
+}
+
+async function incrementCreatorDaily(db, creatorId, field, amount, timestamp = Date.now()) {
+  if (!creatorId || !field || !amount) return;
+  const key = audienceDateKey(timestamp);
+  await incrementPath(db, `creatorStatsDaily/${creatorId}/${key}/${field}`, amount);
+  await db.ref(`creatorStatsDaily/${creatorId}/${key}/updatedAt`).set(Date.now());
+}
+
+async function registerCreatorRevenue(db, creatorId, amount, timestamp = Date.now()) {
+  if (!creatorId || !amount) return;
+  await Promise.all([
+    incrementPath(db, `creators/${creatorId}/stats/revenueTotal`, amount),
+    incrementCreatorDaily(db, creatorId, 'revenueTotal', amount, timestamp),
+  ]);
+}
+
+async function registerCreatorMembershipIndex(db, creatorId, subscriberUid, memberUntil, amount, timestamp = Date.now()) {
+  if (!creatorId || !subscriberUid) return;
+  const memberRef = db.ref(`creators/${creatorId}/membersIndex/${subscriberUid}`);
+  const snap = await memberRef.get();
+  const current = snap.exists() ? snap.val() || {} : {};
+  const prevUntil = Number(current?.memberUntil || 0);
+  const now = Date.now();
+  const wasActive = prevUntil > now;
+  const nextUntil = Number.isFinite(Number(memberUntil)) ? Number(memberUntil) : prevUntil;
+  await memberRef.set({
+    userId: subscriberUid,
+    memberUntil: nextUntil || null,
+    lifetimeValue: round2(Number(current?.lifetimeValue || 0) + Number(amount || 0)),
+    updatedAt: now,
+  });
+  if (!wasActive && nextUntil > now) {
+    await Promise.all([
+      incrementPath(db, `creators/${creatorId}/stats/membersCount`, 1),
+      incrementCreatorDaily(db, creatorId, 'membersAdded', 1, timestamp),
+    ]);
+  }
+}
+
 /**
  * @param {import('firebase-admin/database').Database} db
  */
@@ -63,6 +119,7 @@ export async function recordCreatorPayment(db, rec) {
       status: rec.status ? String(rec.status) : 'approved',
       ...(rec.extra && typeof rec.extra === 'object' ? rec.extra : {}),
     });
+    await registerCreatorRevenue(db, cid, amount, Date.now());
   } catch (e) {
     logger.error('creatorDataLedger recordCreatorPayment', { cid, error: e?.message });
   }
@@ -111,6 +168,14 @@ export async function recordCreatorMembershipSubscription(db, rec) {
       createdAt: Date.now(),
       status: rec.status ? String(rec.status) : 'approved',
     });
+    await registerCreatorMembershipIndex(
+      db,
+      cid,
+      String(rec.subscriberUid),
+      Number.isFinite(Number(rec.memberUntil)) ? Number(rec.memberUntil) : null,
+      round2(rec.amount),
+      Date.now()
+    );
   } catch (e) {
     logger.error('creatorDataLedger recordCreatorMembershipSubscription', { cid, error: e?.message });
   }

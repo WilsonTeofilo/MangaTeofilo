@@ -120,11 +120,57 @@ top:0;
 z-index:20;
 }
 
+.leitor-header-main{
+display:flex;
+align-items:center;
+gap:16px;
+flex-wrap:wrap;
+justify-content:center;
+}
+
 .leitor-header h1{
 font-size:20px;
 font-weight:600;
 letter-spacing:1px;
 color:#fff;
+}
+
+.leitor-chapter-like{
+display:inline-flex;
+align-items:center;
+gap:10px;
+padding:10px 14px;
+border-radius:999px;
+border:1px solid rgba(255,204,0,0.22);
+background:rgba(255,204,0,0.08);
+color:#ffe8a3;
+cursor:pointer;
+font-weight:700;
+transition:transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.leitor-chapter-like:hover{
+transform:translateY(-1px);
+background:rgba(255,204,0,0.14);
+border-color:rgba(255,204,0,0.4);
+box-shadow:0 10px 24px rgba(255,204,0,0.12);
+}
+
+.leitor-chapter-like.is-liked{
+background:rgba(255,204,0,0.18);
+border-color:rgba(255,204,0,0.55);
+color:#ffcc00;
+}
+
+.leitor-chapter-like-icon{
+font-size:15px;
+line-height:1;
+}
+
+.leitor-chapter-like-text,
+.leitor-chapter-like-count{
+font-size:13px;
+letter-spacing:0.04em;
 }
 
 .btn-config{
@@ -151,6 +197,7 @@ color:#fff;
 .filtro-comentarios button:focus-visible,
 .comentarios-section form button:focus-visible,
 .btn-like:focus-visible,
+.leitor-chapter-like:focus-visible,
 .leitor-footer button:focus-visible,
 .leitor-modal-fechar:focus-visible,
 .leitor-modal-btn:focus-visible {
@@ -405,6 +452,18 @@ background:#ffd93d;
 
 }
 
+.leitor-footer .leitor-footer-obra-link {
+  color: #ffcc00;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+  padding: 8px 12px;
+}
+
+.leitor-footer .leitor-footer-obra-link:hover {
+  color: #ffd93d;
+}
+
 .leitor-footer .leitor-footer-apoie {
   background: rgba(40, 90, 70, 0.55);
   color: #d4ffe8;
@@ -464,13 +523,11 @@ padding:50px 20px;
 border-top:1px solid rgba(255,255,255,0.05);
 }
 
-.comentarios-section h3{
-
-margin-bottom:20px;
-
-font-size:20px;
-font-weight:600;
-
+.comentarios-section h2.leitor-comentarios-heading,
+.comentarios-section h3 {
+  margin-bottom: 20px;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 /* Formulário: avatar não pode herdar max-width:100% do body (fica largura da seção) */
@@ -808,9 +865,24 @@ padding:14px 52px 14px 14px;
 justify-content:flex-start;
 }
 
+.leitor-header-main{
+padding-right:10px;
+justify-content:flex-start;
+}
+
 .leitor-header h1{
 font-size:14px;
 line-height:1.3;
+}
+
+.leitor-chapter-like{
+padding:8px 11px;
+gap:8px;
+}
+
+.leitor-chapter-like-text,
+.leitor-chapter-like-count{
+font-size:11px;
 }
 
 .btn-config{

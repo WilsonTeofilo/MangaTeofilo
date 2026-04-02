@@ -96,7 +96,7 @@ export function capituloLiberadoParaUsuario(cap, user, perfil, options = {}) {
   return podeLerCapituloAntecipado(user, perfil, resolved);
 }
 
-export function podeUsarAvataresPremiumDaLoja(user, perfil, accountTypeExibicao) {
+export function podeUsarAvataresPremiumDaLoja(user, perfil) {
   if (usuarioTemPapelAdminPlataforma(user, perfil)) return true;
   return assinaturaPlataformaPremiumAtiva(perfil);
 }

@@ -32,6 +32,7 @@ export default function CreatorWorkspace({ user, perfil }) {
   const [obrasVal, setObrasVal] = useState({});
   const [capsVal, setCapsVal] = useState({});
   const [produtosVal, setProdutosVal] = useState({});
+  const [audienceStats, setAudienceStats] = useState({});
 
   useEffect(() => {
     if (!user?.uid) return () => {};
@@ -44,10 +45,14 @@ export default function CreatorWorkspace({ user, perfil }) {
     const unsubProdutos = onValue(ref(db, 'loja/produtos'), (snap) => {
       setProdutosVal(snap.exists() ? snap.val() : {});
     });
+    const unsubAudience = onValue(ref(db, `creators/${user.uid}/stats`), (snap) => {
+      setAudienceStats(snap.exists() ? snap.val() || {} : {});
+    });
     return () => {
       unsubObras();
       unsubCaps();
       unsubProdutos();
+      unsubAudience();
     };
   }, [user?.uid]);
 
@@ -113,6 +118,9 @@ export default function CreatorWorkspace({ user, perfil }) {
             </p>
           </div>
           <div className="creator-workspace-actions">
+            <button type="button" className="creator-workspace-btn" onClick={() => navigate('/creator/audience')}>
+              Ver audiência
+            </button>
             <button type="button" className="creator-workspace-btn" onClick={() => navigate('/perfil?onboarding=creator')}>
               Editar perfil
             </button>
@@ -138,6 +146,30 @@ export default function CreatorWorkspace({ user, perfil }) {
           <article className="creator-workspace-stat">
             <span>Monetizacao</span>
             <strong>{monetizationLabel}</strong>
+          </article>
+        </section>
+
+        <section className="creator-workspace-overview creator-workspace-overview--audience">
+          <article className="creator-workspace-stat">
+            <span>Seguidores</span>
+            <strong>{Number(audienceStats?.followersCount || 0)}</strong>
+          </article>
+          <article className="creator-workspace-stat">
+            <span>Views totais</span>
+            <strong>{Number(audienceStats?.totalViews || 0)}</strong>
+          </article>
+          <article className="creator-workspace-stat">
+            <span>Membros</span>
+            <strong>{Number(audienceStats?.membersCount || 0)}</strong>
+          </article>
+          <article className="creator-workspace-stat">
+            <span>Receita</span>
+            <strong>
+              {new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              }).format(Number(audienceStats?.revenueTotal || 0))}
+            </strong>
           </article>
         </section>
 
@@ -245,6 +277,24 @@ export default function CreatorWorkspace({ user, perfil }) {
                 {monetizationPrimaryLabel}
               </button>
             </div>
+          </article>
+
+          <article className="creator-pillar-card">
+            <div className="creator-pillar-card-head">
+              <p>Audiência</p>
+              <strong>Leitura e retenção</strong>
+            </div>
+            <p className="creator-pillar-copy">
+              Veja seguidores, views, conversão em membros e retenção entre capítulos sem depender de leitura manual.
+            </p>
+            <ul className="creator-pillar-list">
+              <li>Seguidores e alcance consolidados</li>
+              <li>Engajamento por capítulo e retenção por progressão</li>
+              <li>Leitura separada entre audiência e monetização</li>
+            </ul>
+            <button type="button" className="creator-workspace-btn" onClick={() => navigate('/creator/audience')}>
+              Abrir audiência
+            </button>
           </article>
 
           <article className="creator-pillar-card">

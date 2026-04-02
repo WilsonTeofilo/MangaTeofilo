@@ -97,6 +97,9 @@ export function canAccessCreatorPath(pathname, access) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/dashboard', access) || canAccessAdminPath('/admin/financeiro', access);
   }
+  if (pathname.startsWith('/creator/audience')) {
+    return access?.isMangaka === true;
+  }
   if (pathname.startsWith('/creator/obras')) {
     return canAccessAdminPath('/admin/obras', access);
   }
@@ -140,6 +143,7 @@ export function getDefaultAdminRedirect(access) {
 
 const CREATOR_HOME_CANDIDATES = [
   '/creator/dashboard',
+  '/creator/audience',
   '/creator/perfil',
   '/creator/obras',
   '/creator/capitulos',

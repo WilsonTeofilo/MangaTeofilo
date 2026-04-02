@@ -37,8 +37,8 @@ const EMPTY_PRODUCT = {
 
 const PRODUCT_TABS = [
   { id: 'dados', label: 'Dados' },
-  { id: 'midia', label: 'MÃ­dia' },
-  { id: 'preco', label: 'PreÃ§o' },
+  { id: 'midia', label: 'Mídia' },
+  { id: 'preco', label: 'Preço' },
   { id: 'estoque', label: 'Estoque' },
   { id: 'categoria', label: 'Categoria' },
 ];
@@ -152,7 +152,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
       return;
     }
     await update(ref(db, 'loja/config'), { ...patch, updatedAt: Date.now() });
-    setOk('ConfiguraÃ§Ã£o salva.');
+    setOk('Configuração salva.');
     setTimeout(() => setOk(''), 2200);
   }
 
@@ -204,7 +204,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
     };
 
     if (!payload.title || payload.price <= 0) {
-      setOk('Preencha nome e preÃ§o vÃ¡lidos.');
+      setOk('Preencha nome e preço válidos.');
       setTimeout(() => setOk(''), 2500);
       return;
     }
@@ -266,13 +266,13 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
     <main className="loja-admin-page">
       <header className="loja-admin-head">
         <div>
-          <h1>{isMangaka ? 'Loja do criador' : workspace === 'creator' ? 'Operacao da loja' : 'Loja â€” Admin'}</h1>
+          <h1>{isMangaka ? 'Loja do criador' : workspace === 'creator' ? 'Operacao da loja' : 'Loja — Admin'}</h1>
           {ok ? <p>{ok}</p> : null}
           {!ok && isMangaka ? <p>Gerencie produtos e acompanhe apenas os pedidos ligados ao seu creatorId.</p> : null}
           {!ok && !isMangaka && isCreatorWorkspace ? <p>Contexto de loja dentro do workspace creator.</p> : null}
         </div>
         <button type="button" className="loja-admin-link-pedidos" onClick={() => navigate(ordersPath)}>
-          {isMangaka ? 'Pedidos e operacao â†’' : 'Pedidos da loja â†’'}
+          {isMangaka ? 'Pedidos e operacao →' : 'Pedidos da loja →'}
         </button>
       </header>
 
@@ -292,7 +292,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
       </section>
 
       <section className="loja-admin-card loja-admin-card--wide">
-        <h2>{isMangaka ? 'Resumo da sua operacao' : 'ConfiguraÃ§Ã£o'}</h2>
+        <h2>{isMangaka ? 'Resumo da sua operacao' : 'Configuração'}</h2>
         {isMangaka ? (
           <p>
             A vitrine global continua com a plataforma. Aqui voce foca no que e seu: produtos, estoque e pedidos
@@ -316,7 +316,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
               checked={config.storeVisibleToUsers}
               onChange={(e) => saveConfig({ storeVisibleToUsers: e.target.checked })}
             />{' '}
-            VisÃ­vel ao pÃºblico
+            Visível ao público
           </label>
           <label>
             <input
@@ -340,20 +340,20 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
         <div className="loja-admin-shipping-block">
           <h3>Hero da loja (vitrine)</h3>
           <label className="loja-admin-field">
-            Eyebrow (linha pequena acima do tÃ­tulo)
-            <input value={heroEyebrowIn ?? config.heroEyebrow ?? ''} onChange={(e) => setHeroEyebrowIn(e.target.value)} placeholder="Shito Project" />
+            Eyebrow (linha pequena acima do título)
+            <input value={heroEyebrowIn ?? config.heroEyebrow ?? ''} onChange={(e) => setHeroEyebrowIn(e.target.value)} placeholder="Kokuin Project" />
           </label>
           <label className="loja-admin-field">
-            TÃ­tulo principal
-            <input value={heroTitleIn ?? config.heroTitle ?? ''} onChange={(e) => setHeroTitleIn(e.target.value)} placeholder="SHITO COLLECTION" />
+            Título principal
+            <input value={heroTitleIn ?? config.heroTitle ?? ''} onChange={(e) => setHeroTitleIn(e.target.value)} placeholder="KOKUIN COLLECTION" />
           </label>
           <label className="loja-admin-field">
-            SubtÃ­tulo
+            Subtítulo
             <textarea
               rows={2}
               value={heroSubtitleIn ?? config.heroSubtitle ?? ''}
               onChange={(e) => setHeroSubtitleIn(e.target.value)}
-              placeholder="PeÃ§as do universo..."
+              placeholder="Peças do universo..."
             />
           </label>
           <button type="button" className="loja-admin-btn-primary" onClick={saveHeroBlock}>
@@ -362,18 +362,18 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
         </div>
 
         <div className="loja-admin-shipping-block">
-          <h3>Frete fixo e pÃ³s-compra</h3>
+          <h3>Frete fixo e pós-compra</h3>
           <label className="loja-admin-field">
             Frete fixo (R$)
             <input type="number" min={0} step={0.01} value={shipIn ?? config.fixedShippingBrl ?? 0} onChange={(e) => setShipIn(Number(e.target.value || 0))} />
           </label>
           <label className="loja-admin-field">
-            Mensagem apÃ³s pagamento (site)
+            Mensagem após pagamento (site)
             <textarea
               rows={3}
               value={thanksIn ?? config.postPurchaseThanks ?? ''}
               onChange={(e) => setThanksIn(e.target.value)}
-              placeholder="Ex.: Obrigado! VocÃª apoia o Shito â€” benefÃ­cio X liberado em breve."
+              placeholder="Ex.: Obrigado! Você apoia o Shito — benefício X liberado em breve."
             />
           </label>
           <button type="button" className="loja-admin-btn-primary" onClick={saveShippingBlock}>
@@ -404,11 +404,11 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
           <div className="loja-admin-tab-panel">
             {!editingId ? (
               <label className="loja-admin-field">
-                ID do produto (opcional, a-z 0-9 _ - , 2â€“40 chars)
+                ID do produto (opcional, a-z 0-9 _ - , 2–40 chars)
                 <input
                   value={form.customId}
                   onChange={(e) => setForm((f) => ({ ...f, customId: e.target.value }))}
-                  placeholder="ex.: shito-vol1"
+                  placeholder="ex.: kokuin-vol1"
                 />
               </label>
             ) : (
@@ -419,15 +419,15 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
               <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
             </label>
             <label className="loja-admin-field">
-              DescriÃ§Ã£o
+              Descrição
               <textarea rows={5} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
             </label>
             <label className="loja-admin-field">
-              ColeÃ§Ã£o / drop (agrupa na vitrine)
+              Coleção / drop (agrupa na vitrine)
               <input
                 value={form.collection}
                 onChange={(e) => setForm((f) => ({ ...f, collection: e.target.value }))}
-                placeholder='Ex.: DROP 01 â€” TEMPESTUA'
+                placeholder='Ex.: DROP 01 — TEMPESTUA'
               />
             </label>
             <label className="loja-admin-field">
@@ -439,11 +439,11 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
               />
             </label>
             <label className="loja-admin-field">
-              UID do criador (opcional â€” repasse no painel do mangakÃ¡ apÃ³s venda)
+              UID do criador (opcional — repasse no painel do mangaká após venda)
               <input
                 value={form.creatorId}
                 onChange={(e) => setForm((f) => ({ ...f, creatorId: e.target.value }))}
-                placeholder="UID Firebase do mangakÃ¡"
+                placeholder="UID Firebase do mangaká"
                 autoComplete="off"
               />
             </label>
@@ -467,7 +467,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
         {productTab === 'preco' && (
           <div className="loja-admin-tab-panel">
             <label className="loja-admin-field">
-              PreÃ§o (R$)
+              Preço (R$)
               <input
                 type="number"
                 min={0}
@@ -482,10 +482,10 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
                 checked={form.isOnSale}
                 onChange={(e) => setForm((f) => ({ ...f, isOnSale: e.target.checked }))}
               />{' '}
-              Em promoÃ§Ã£o
+              Em promoção
             </label>
             <label className="loja-admin-field">
-              PreÃ§o promocional (R$)
+              Preço promocional (R$)
               <input
                 type="number"
                 min={0}
@@ -500,7 +500,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
                 checked={form.isVIPDiscountEnabled}
                 onChange={(e) => setForm((f) => ({ ...f, isVIPDiscountEnabled: e.target.checked }))}
               />{' '}
-              ElegÃ­vel a desconto VIP
+              Elegível a desconto VIP
             </label>
           </div>
         )}
@@ -522,7 +522,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
                 checked={form.isActive}
                 onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
               />{' '}
-              Ativo (visÃ­vel na loja)
+              Ativo (visível na loja)
             </label>
             <label>
               <input
@@ -530,7 +530,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
                 checked={form.isNew}
                 onChange={(e) => setForm((f) => ({ ...f, isNew: e.target.checked }))}
               />{' '}
-              Badge &quot;Novo&quot; forÃ§ado
+              Badge &quot;Novo&quot; forçado
             </label>
           </div>
         )}
@@ -540,8 +540,8 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
             <label className="loja-admin-field">
               Tipo
               <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
-                <option value={STORE_TYPE_KEYS.MANGA}>MangÃ¡ / produto fÃ­sico</option>
-                <option value={STORE_TYPE_KEYS.ROUPA}>VestuÃ¡rio (tamanhos)</option>
+                <option value={STORE_TYPE_KEYS.MANGA}>Mangá / produto físico</option>
+                <option value={STORE_TYPE_KEYS.ROUPA}>Vestuário (tamanhos)</option>
               </select>
             </label>
             <label className="loja-admin-field">
@@ -554,11 +554,11 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
             </label>
             <label className="loja-admin-field">
               Obra relacionada (slug/texto livre)
-              <input value={form.obra} onChange={(e) => setForm((f) => ({ ...f, obra: e.target.value }))} placeholder="shito" />
+              <input value={form.obra} onChange={(e) => setForm((f) => ({ ...f, obra: e.target.value }))} placeholder="kokuin" />
             </label>
             {form.type === STORE_TYPE_KEYS.ROUPA ? (
               <label className="loja-admin-field">
-                Tamanhos (separados por vÃ­rgula)
+                Tamanhos (separados por vírgula)
                 <input
                   value={form.sizesText}
                   onChange={(e) => setForm((f) => ({ ...f, sizesText: e.target.value }))}
@@ -581,7 +581,7 @@ export default function LojaAdmin({ user, adminAccess, workspace = 'admin' }) {
               setProductTab('dados');
             }}
           >
-            Limpar formulÃ¡rio
+            Limpar formulário
           </button>
         </div>
       </section>

@@ -319,6 +319,101 @@
   gap: 10px;
 }
 
+.creator-panel-card--wide {
+  padding: 20px;
+}
+
+.creator-audience-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.creator-metric-card small {
+  display: block;
+  margin-top: 8px;
+  color: rgba(232, 238, 247, 0.7);
+  font-size: 0.8rem;
+}
+
+.creator-audience-chart-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.creator-audience-chart {
+  width: 100%;
+  min-height: 240px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.creator-audience-chart-grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.creator-audience-line {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.creator-audience-line.followers {
+  stroke: #ffcc00;
+}
+
+.creator-audience-line.views {
+  stroke: #4cc9f0;
+}
+
+.creator-audience-line.revenue {
+  stroke: #4ade80;
+}
+
+.creator-audience-legend,
+.creator-audience-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.creator-audience-legend span,
+.creator-audience-chart-labels small {
+  color: rgba(232, 238, 247, 0.7);
+}
+
+.creator-audience-legend i {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
+.creator-audience-legend i.followers {
+  background: #ffcc00;
+}
+
+.creator-audience-legend i.views {
+  background: #4cc9f0;
+}
+
+.creator-audience-legend i.revenue {
+  background: #4ade80;
+}
+
+.creator-insights-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: rgba(232, 238, 247, 0.8);
+}
+
 .creator-inline-form input,
 .creator-inline-form textarea,
 .creator-order-form input,

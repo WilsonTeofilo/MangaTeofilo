@@ -1,6 +1,6 @@
-﻿/**
- * Leitura / liberaÃ§Ã£o de capÃ­tulos e re-export de entitlements.
- * A regra de negÃ³cio vive em `auth/entitlementsClean.js`; mantemos este arquivo para imports legados.
+/**
+ * Leitura / liberação de capítulos e re-export de entitlements.
+ * A regra de negócio vive em `auth/entitlementsClean.js`.
  */
 
 export {

@@ -8,6 +8,11 @@
       ".write": false
     },
 
+    "rateLimits": {
+      ".read": false,
+      ".write": false
+    },
+
     "admins": {
       "registry": {
         ".read": false,
@@ -37,7 +42,20 @@
         },
         "visualizacoes": {
           ".read": true,
-          ".write": "auth != null && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+          ".write": "newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+        },
+        "viewsCount": {
+          ".read": true,
+          ".write": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() === data.val() + 1)"
+        },
+        "likesCount": {
+          ".read": true,
+          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && newData.val() >= 0 && ((!data.exists() && newData.val() === 1) || (data.isNumber() && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)))"
+        },
+        "usuariosQueCurtiram": {
+          "$userUid": {
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && auth.uid === $userUid"
+          }
         },
         "comentarios": {
           ".read": true,
@@ -63,10 +81,29 @@
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
         ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
         "titulo": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 140"
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
         },
         "slug": {
           ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/)"
+        },
+        "sinopse": {
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().length >= 50 && newData.val().length <= 600)"
+        },
+        "seoDescription": {
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 160)"
+        },
+        "mainGenre": {
+          ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^(acao|aventura|fantasia|terror|romance|drama|comedia|sci\\-fi|sobrenatural|esporte|misterio)$/))"
+        },
+        "genres": {
+          "$i": {
+            ".validate": "$i.matches(/^[0-2]$/) && newData.isString() && newData.val().matches(/^(acao|aventura|fantasia|terror|romance|drama|comedia|sci\\-fi|sobrenatural|esporte|misterio)$/)"
+          }
+        },
+        "tags": {
+          "$i": {
+            ".validate": "$i.matches(/^[0-4]$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 32"
+          }
         },
         "status": {
           ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'ongoing' || newData.val() === 'hiatus' || newData.val() === 'completed' || newData.val() === 'draft'))"
@@ -85,6 +122,22 @@
         },
         "archivedAt": {
           ".validate": "!newData.exists() || newData.val() === null || newData.isNumber()"
+        },
+        "viewsCount": {
+          ".read": true,
+          ".write": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() === data.val() + 1)"
+        },
+        "likesCount": {
+          ".read": true,
+          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && newData.val() >= 0 && ((!data.exists() && newData.val() === 1) || (data.isNumber() && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)))"
+        },
+        "commentsCount": {
+          ".read": true,
+          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && newData.val() >= 0 && ((!data.exists() && newData.val() === 1) || (data.isNumber() && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)))"
+        },
+        "visualizacoes": {
+          ".read": true,
+          ".write": "newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
         }
       }
     },
@@ -197,6 +250,18 @@
         "creatorMemberships": {
           ".read": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
           ".write": "false"
+        },
+        "userEntitlements": {
+          ".write": false
+        },
+        "notifications": {
+          ".write": false
+        },
+        "followingCreators": {
+          ".write": false
+        },
+        "subscribedWorks": {
+          ".write": false
         }
       }
     },
@@ -216,7 +281,10 @@
         "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
         "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
-        "updatedAt":   { ".validate": "newData.isNumber()" }
+        "updatedAt":   { ".validate": "newData.isNumber()" },
+        "followers": {
+          ".write": false
+        }
       }
     },
 
@@ -225,7 +293,137 @@
       "contador": {
         ".write": "auth != null && newData.isNumber() && ((!data.exists() && newData.val() === 1) || (data.exists() && newData.val() === data.val() + 1))"
       }
+    },
+
+    "creators": {
+      "$creatorId": {
+        "stats": {
+          ".read": "auth != null && auth.uid === $creatorId",
+          "$field": {
+            ".validate": "newData.isNumber()",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
+          }
+        },
+        "membersIndex": {
+          ".read": "auth != null && auth.uid === $creatorId",
+          ".write": false
+        }
+      }
+    },
+
+    "creatorStatsDaily": {
+      "$creatorId": {
+        ".read": "auth != null && auth.uid === $creatorId",
+        "$dateKey": {
+          "updatedAt": {
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+          },
+          "$metric": {
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
+          }
+        }
+      }
+    },
+
+    "creatorAudienceSeen": {
+      "$creatorId": {
+        "allReaders": {
+          "$viewerUid": {
+            ".read": "auth != null && auth.uid === $viewerUid",
+            ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+          }
+        },
+        "dailyReaders": {
+          "$day": {
+            "$viewerUid": {
+              ".read": "auth != null && auth.uid === $viewerUid",
+              ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+            }
+          }
+        }
+      }
+    },
+
+    "workRetention": {
+      "$workId": {
+        ".read": "auth != null && (auth.token.admin === true || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        "chapters": {
+          "$chapterId": {
+            "readersCount": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+            },
+            "chapterId": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString()"
+            },
+            "chapterNumber": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+            },
+            "chapterTitle": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString() && newData.val().length <= 200"
+            }
+          }
+        },
+        "updatedAt": {
+          ".read": true,
+          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+        },
+        "transitions": {
+          "$transitionId": {
+            "retainedReaders": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+            },
+            "fromChapterId": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString()"
+            },
+            "toChapterId": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString()"
+            },
+            "fromChapterNumber": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+            },
+            "toChapterNumber": {
+              ".read": true,
+              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+            }
+          }
+        }
+      }
+    },
+
+    "workRetentionRaw": {
+      "$workId": {
+        ".read": "auth != null && (auth.token.admin === true || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        "chapterReaders": {
+          "$chapterId": {
+            "$viewerUid": {
+              ".read": "auth != null && auth.uid === $viewerUid",
+              ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+            }
+          }
+        },
+        "lastReadByUser": {
+          "$viewerUid": {
+            ".read": "auth != null && auth.uid === $viewerUid",
+            ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+          }
+        },
+        "transitionsSeen": {
+          "$transitionId": {
+            "$viewerUid": {
+              ".read": "auth != null && auth.uid === $viewerUid",
+              ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+            }
+          }
+        }
+      }
     }
   }
 }
-

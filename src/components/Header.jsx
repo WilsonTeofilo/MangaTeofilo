@@ -7,7 +7,7 @@ import { auth, db, functions } from '../services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from '../constants';
 import { canAccessAdminPath, canAccessCreatorPath } from '../auth/adminPermissions';
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
-import './Header.css';
+import './HeaderV2.css';
 
 const MOBILE_BREAKPOINT = 1360;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
@@ -84,6 +84,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
         items: [
           canAccessCreatorPath('/creator/perfil', adminAccess) ? { label: 'Perfil', path: '/creator/perfil' } : null,
           canAccessCreatorPath('/creator/dashboard', adminAccess) ? { label: 'Dashboard', path: '/creator/dashboard' } : null,
+          canAccessCreatorPath('/creator/audience', adminAccess) ? { label: 'Audience', path: '/creator/audience' } : null,
           canAccessCreatorPath('/creator/obras', adminAccess) ? { label: isMangakaPanel ? 'Minhas obras' : 'Obras', path: '/creator/obras' } : null,
           canAccessCreatorPath('/creator/capitulos', adminAccess) ? { label: 'Capitulos', path: '/creator/capitulos' } : null,
           canAccessCreatorPath('/creator/promocoes', adminAccess) ? { label: 'Promocoes', path: '/creator/promocoes' } : null,
@@ -147,9 +148,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, []);
 
   useEffect(() => {
+    // Fechamos os menus ao trocar de rota para evitar overlays presos em navegacao SPA.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMenuAberto(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWorkspaceOpen(null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNotificationsOpen(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAccountMenuOpen(false);
     if (location.pathname.startsWith('/admin') && canSeeAdminWorkspace) {
       persistWorkspace('admin');
@@ -197,6 +203,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   useEffect(() => {
     const next = getInitialWorkspace(location.pathname, canSeeAdminWorkspace, canSeeCreatorWorkspace);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPreferredWorkspace((prev) => {
       if (prev === 'admin' && !canSeeAdminWorkspace) return next;
       if (prev === 'creator' && !canSeeCreatorWorkspace) return next;
@@ -206,6 +213,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   useEffect(() => {
     if (!usuario?.uid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHeaderNotifications([]);
       notificationIdsSeenRef.current = new Set();
       notificationsInitializedRef.current = false;

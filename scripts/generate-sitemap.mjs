@@ -27,6 +27,28 @@ async function getJson(endpoint) {
   return res.json();
 }
 
+function slugifyObraSlug(input) {
+  return String(input || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+const OBRA_PADRAO_ID = 'shito';
+
+/** Espelha `obraSegmentoUrlPublica` em `src/config/obras.js` para URLs do sitemap. */
+function obraSegmentoUrlPublica(obra) {
+  const id = String(obra?.id || '').trim().toLowerCase();
+  const slugS = slugifyObraSlug(String(obra?.slug || '').trim());
+  const titleS = slugifyObraSlug(String(obra?.titulo || '').trim());
+  if (id === OBRA_PADRAO_ID) return titleS || slugS || id;
+  if (slugS && slugS !== id) return slugS;
+  return titleS || slugS || id || OBRA_PADRAO_ID;
+}
+
 function chapterLastmod(cap) {
   const a = Number(cap?.publicReleaseAt);
   if (Number.isFinite(a) && a > 0) return a;
@@ -36,9 +58,10 @@ function chapterLastmod(cap) {
 }
 
 async function main() {
-  const [obrasRaw, capsRaw] = await Promise.all([
+  const [obrasRaw, capsRaw, publicosRaw] = await Promise.all([
     getJson('obras').catch(() => null),
     getJson('capitulos').catch(() => null),
+    getJson('usuarios_publicos').catch(() => null),
   ]);
 
   const obras = Object.entries(obrasRaw || {})
@@ -47,7 +70,8 @@ async function main() {
   if (obras.length === 0) {
     obras.push({
       id: 'shito',
-      titulo: 'Shito: Fragmentos da Tempestade',
+      slug: 'kokuin-heranca-do-abismo',
+      titulo: 'Kokuin : Heranca do Abismo',
       updatedAt: Date.now(),
       isPublished: true,
     });
@@ -72,18 +96,12 @@ async function main() {
   });
 
   obras.forEach((obra) => {
-    const slug = encodeURIComponent(String(obra.slug || obra.id || '').trim() || obra.id);
+    const seg = encodeURIComponent(obraSegmentoUrlPublica(obra));
     urls.push({
-      loc: `${SITE_URL}/work/${slug}`,
+      loc: `${SITE_URL}/work/${seg}`,
       lastmod: toIso(Number(obra?.updatedAt || obra?.createdAt || Date.now())),
       changefreq: 'daily',
       priority: '0.9',
-    });
-    urls.push({
-      loc: `${SITE_URL}/obra/${encodeURIComponent(obra.id)}`,
-      lastmod: toIso(Number(obra?.updatedAt || obra?.createdAt || Date.now())),
-      changefreq: 'weekly',
-      priority: '0.75',
     });
   });
 
@@ -95,6 +113,23 @@ async function main() {
       priority: '0.8',
     });
   });
+
+  const perfisPublicos = Object.entries(publicosRaw || {});
+  let criadoresNoMapa = 0;
+  const maxCriadoresSitemap = 200;
+  for (const [uid, row] of perfisPublicos) {
+    if (criadoresNoMapa >= maxCriadoresSitemap) break;
+    const u = String(uid || '').trim();
+    if (!u || u.length < 8) continue;
+    if (String(row?.creatorStatus || '').trim().toLowerCase() !== 'active') continue;
+    urls.push({
+      loc: `${SITE_URL}/criador/${encodeURIComponent(u)}`,
+      lastmod: toIso(Number(row?.updatedAt || Date.now())),
+      changefreq: 'weekly',
+      priority: '0.65',
+    });
+    criadoresNoMapa += 1;
+  }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

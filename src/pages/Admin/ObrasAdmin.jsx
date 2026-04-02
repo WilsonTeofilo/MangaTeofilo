@@ -1,30 +1,67 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, onValue, ref as dbRef, remove, set, update } from 'firebase/database';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 
 import { auth, db, storage } from '../../services/firebase';
-import { PLATFORM_LEGACY_CREATOR_UID } from '../../constants';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, ensureLegacyShitoObra, obraCreatorId } from '../../config/obras';
+import {
+  DESCRIPTION_MAX,
+  DESCRIPTION_MIN,
+  MAX_COVER_UPLOAD_BYTES,
+  MAX_GENRES,
+  OBRAS_WORK_GENRE_IDS,
+  OBRAS_WORK_GENRE_LABELS,
+  OBRAS_WORK_STATUS,
+  SEO_KEYWORDS_MAX,
+  SEO_TITLE_MAX,
+  TITULO_CURTO_MAX,
+  buildSeoDescriptionFromDescription,
+  normalizeGenreList,
+  normalizeStatusForForm,
+  normalizeTagsFromInput,
+  obraSlugFromTitle,
+  publicoAlvoFromMainGenre,
+  tagsToSeoKeywords,
+  validateObraWorkForm,
+} from '../../config/obraWorkForm';
 import { obraEstaArquivada } from '../../utils/obraCatalogo';
+import {
+  applyResponsiveDragDelta,
+  buildResponsiveCropStyle,
+  createResponsiveDragSnapshot,
+  drawResponsiveCropToCanvas,
+  getFullCropLayout,
+  getResponsiveCropZoomBounds,
+  normalizeResponsiveCropAdjustment,
+} from '../../utils/responsiveCrop';
 import './ObrasAdmin.css';
 
-const STATUS_OPTIONS = [
-  { id: 'ongoing', label: 'Em lançamento' },
-  { id: 'completed', label: 'Completo' },
-  { id: 'draft', label: 'Rascunho' },
-  { id: 'hiatus', label: 'Hiato' },
-];
+const STATUS_LABEL_BY_ID = Object.fromEntries(OBRAS_WORK_STATUS.map((s) => [s.id, s.label]));
+STATUS_LABEL_BY_ID.draft = 'Rascunho (legado)';
 
-function slugify(input) {
-  return String(input || '')
+function mensagemErroFirebase(e) {
+  const code = String(e?.code || '');
+  if (code === 'PERMISSION_DENIED') {
+    return 'Sem permissão para gravar. Confirme login, papel (admin/mangaka) e regras do Firebase.';
+  }
+  if (code === 'UNAVAILABLE' || /network|offline|failed to fetch/i.test(String(e?.message || ''))) {
+    return 'Rede indisponível. Verifique a conexão e tente de novo.';
+  }
+  return e?.message || 'Erro desconhecido ao comunicar com o servidor.';
+}
+
+function sanitizarSegmentoStorage(valor, fallback = 'item') {
+  const limpo = String(valor || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^a-z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
+    .slice(0, 60);
+  return limpo || fallback;
 }
 
 function nowMs() {
@@ -32,11 +69,7 @@ function nowMs() {
 }
 
 function normalizarAjusteObra(raw) {
-  return {
-    zoom: Math.min(3, Math.max(1, Number(raw?.zoom ?? 1))),
-    x: Math.min(100, Math.max(-100, Number(raw?.x ?? 0))),
-    y: Math.min(100, Math.max(-100, Number(raw?.y ?? 0))),
-  };
+  return normalizeResponsiveCropAdjustment(raw);
 }
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -46,53 +79,18 @@ const TARGET_IMAGE_SIZE_BYTES = 2.2 * 1024 * 1024;
 const COVER_EDITOR_CONFIG = {
   outputW: 1200,
   outputH: 1600,
-  editorW: 16,
-  editorH: 10,
-  cropWidthRatio: 0.45,
 };
 const BANNER_EDITOR_CONFIG = {
   outputW: 1600,
   outputH: 900,
-  editorW: 16,
-  editorH: 10,
-  cropWidthRatio: 0.84,
 };
-const OBRAS_EDITOR_PAN_MARGIN_RATIO = 0.06;
-const OBRAS_EDITOR_DRAG_SENSITIVITY = 1.6;
 
 function validarImagemUpload(file, label = 'Imagem') {
   if (!file) return `${label} não encontrado.`;
   if (!IMAGE_TYPES.includes(file.type)) return `${label} inválido. Use JPG, PNG ou WEBP.`;
+  if (file.size > MAX_COVER_UPLOAD_BYTES) return `${label} excede 2MB. Escolha um arquivo menor.`;
   if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 7MB.`;
   return '';
-}
-
-function calcularGeometriaEditorObra(
-  imgW,
-  imgH,
-  frameW,
-  frameH,
-  ajuste = { zoom: 1, x: 0, y: 0 }
-) {
-  const zoom = Math.min(3, Math.max(1, Number(ajuste?.zoom || 1)));
-  const eixoX = Math.min(100, Math.max(-100, Number(ajuste?.x || 0)));
-  const eixoY = Math.min(100, Math.max(-100, Number(ajuste?.y || 0)));
-
-  const coverScale = Math.max(frameW / imgW, frameH / imgH);
-  const minScalePanX = (frameW * (1 + OBRAS_EDITOR_PAN_MARGIN_RATIO * 2)) / imgW;
-  const minScalePanY = (frameH * (1 + OBRAS_EDITOR_PAN_MARGIN_RATIO * 2)) / imgH;
-  const baseScale = Math.max(coverScale, minScalePanX, minScalePanY);
-  const scale = baseScale * zoom;
-  const drawW = imgW * scale;
-  const drawH = imgH * scale;
-  const limiteX = Math.max(0, (drawW - frameW) / 2);
-  const limiteY = Math.max(0, (drawH - frameH) / 2);
-  const shiftX = (eixoX / 100) * limiteX;
-  const shiftY = (eixoY / 100) * limiteY;
-  const drawX = (frameW - drawW) / 2 + shiftX;
-  const drawY = (frameH - drawH) / 2 + shiftY;
-
-  return { drawW, drawH, drawX, drawY };
 }
 
 function nomeArquivoComExtensao(name, novaExt) {
@@ -166,32 +164,17 @@ function desenharImagemAjustada(
   img,
   targetW,
   targetH,
-  ajuste = { zoom: 1, x: 0, y: 0 },
-  editorConfig = BANNER_EDITOR_CONFIG
+  ajuste = { zoom: 1, x: 0, y: 0 }
 ) {
-  const frameW = targetW / editorConfig.cropWidthRatio;
-  const frameH = frameW * (editorConfig.editorH / editorConfig.editorW);
-  const cropX = (frameW - targetW) / 2;
-  const cropY = (frameH - targetH) / 2;
-  const { drawW, drawH, drawX, drawY } = calcularGeometriaEditorObra(
-    Number(img.width || 0),
-    Number(img.height || 0),
-    frameW,
-    frameH,
-    ajuste
-  );
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.fillStyle = '#0b0b0b';
-  ctx.fillRect(0, 0, targetW, targetH);
-  ctx.globalAlpha = 0.35;
-  const bgScale = Math.max(frameW / img.width, frameH / img.height);
-  const bgW = img.width * bgScale;
-  const bgH = img.height * bgScale;
-  ctx.drawImage(img, ((frameW - bgW) / 2) - cropX, ((frameH - bgH) / 2) - cropY, bgW, bgH);
-  ctx.globalAlpha = 1;
-  ctx.drawImage(img, drawX - cropX, drawY - cropY, drawW, drawH);
+  drawResponsiveCropToCanvas(ctx, img, targetW, targetH, ajuste, {
+    backgroundColor: '#0b0b0b',
+    backgroundAlpha: 0.35,
+    maxZoomCap: getResponsiveCropZoomBounds(
+      { w: img?.width, h: img?.height },
+      targetW,
+      targetH
+    ).maxZoom,
+  });
 }
 
 async function processarImagemObra(file, ajuste, editorConfig) {
@@ -214,33 +197,11 @@ async function processarImagemObra(file, ajuste, editorConfig) {
 }
 
 function editorLayout(config) {
-  const left = ((1 - config.cropWidthRatio) / 2) * 100;
-  const cropHRatio = config.cropWidthRatio * (config.outputH / config.outputW) * (config.editorW / config.editorH);
-  const top = ((1 - cropHRatio) / 2) * 100;
-  return {
-    leftPct: left,
-    topPct: top,
-    widthPct: config.cropWidthRatio * 100,
-    heightPct: cropHRatio * 100,
-  };
+  return getFullCropLayout(config);
 }
 
 function estiloEditorImagem(dim, ajuste = { zoom: 1, x: 0, y: 0 }, editorConfig = BANNER_EDITOR_CONFIG) {
-  const w = Number(dim?.w || 0);
-  const h = Number(dim?.h || 0);
-  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
-    return {};
-  }
-  const frameW = editorConfig.editorW;
-  const frameH = editorConfig.editorH;
-  const { drawW, drawH, drawX, drawY } = calcularGeometriaEditorObra(w, h, frameW, frameH, ajuste);
-
-  return {
-    width: `${(drawW / frameW) * 100}%`,
-    height: `${(drawH / frameH) * 100}%`,
-    left: `${(drawX / frameW) * 100}%`,
-    top: `${(drawY / frameH) * 100}%`,
-  };
+  return buildResponsiveCropStyle(dim, ajuste, editorConfig.outputW, editorConfig.outputH);
 }
 
 function emptyForm() {
@@ -248,17 +209,18 @@ function emptyForm() {
     id: '',
     titulo: '',
     tituloCurto: '',
-    slug: '',
     sinopse: '',
-    publicoAlvo: '',
+    genres: [],
+    mainGenre: '',
+    tagsRaw: '',
     capaUrl: '',
     bannerUrl: '',
     seoTitle: '',
-    seoDescription: '',
     seoKeywords: '',
     status: 'ongoing',
     isPublished: false,
     archived: false,
+    adminCreatorId: '',
   };
 }
 
@@ -271,18 +233,18 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [obras, setObras] = useState([]);
+  const [obrasTodas, setObrasTodas] = useState([]);
   const [obraSelecionadaId, setObraSelecionadaId] = useState('');
   const [form, setForm] = useState(emptyForm());
   const [editandoId, setEditandoId] = useState(null);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
-  const [saveFeedback, setSaveFeedback] = useState({ visible: false, type: 'ok', text: '' });
-  const [slugAuto, setSlugAuto] = useState(true);
-  const [slugLocked, setSlugLocked] = useState(false);
+  const [saveErrorModal, setSaveErrorModal] = useState({ open: false, lines: [] });
+  const [saveToast, setSaveToast] = useState({ visible: false, text: '' });
   const [capaArquivo, setCapaArquivo] = useState(null);
   const [bannerArquivo, setBannerArquivo] = useState(null);
-  const [capaAjuste, setCapaAjuste] = useState({ zoom: 1, x: 0, y: 0 });
-  const [bannerAjuste, setBannerAjuste] = useState({ zoom: 1, x: 0, y: 0 });
+  const [capaAjuste, setCapaAjuste] = useState(() => normalizarAjusteObra());
+  const [bannerAjuste, setBannerAjuste] = useState(() => normalizarAjusteObra());
   const [capaDimensoes, setCapaDimensoes] = useState(null);
   const [bannerDimensoes, setBannerDimensoes] = useState(null);
   const [capaPreviewFinalUrl, setCapaPreviewFinalUrl] = useState('');
@@ -290,8 +252,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const capaEditorRef = useRef(null);
   const bannerEditorRef = useRef(null);
   const dragMediaRef = useRef(null);
-  const saveFeedbackTimerRef = useRef(null);
   const legacyShitoSeedRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  const saveToastTimerRef = useRef(null);
 
   useEffect(() => {
     if (!adminAccess?.canAccessAdmin) {
@@ -312,7 +275,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         set(dbRef(db, `obras/${OBRA_PADRAO_ID}`), {
           ...OBRA_SHITO_DEFAULT,
           id: OBRA_PADRAO_ID,
-          slug: OBRA_PADRAO_ID,
+          slug: OBRA_SHITO_DEFAULT.slug,
           isPublished: true,
           createdAt: Number(raw?.[OBRA_PADRAO_ID]?.createdAt || 0),
           updatedAt: nowMs(),
@@ -328,6 +291,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         }))
       );
       lista.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+      setObrasTodas(lista);
       const visivel =
         isMangaka && user?.uid
           ? lista.filter((o) => obraCreatorId(o) === user.uid)
@@ -357,6 +321,50 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const bannerEditavel = Boolean(bannerFonteEditavel);
   const capaLiveUrl = capaPreviewFinalUrl || capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg';
   const bannerLiveUrl = bannerPreviewFinalUrl || bannerPreviewUrl || form.bannerUrl || form.capaUrl || '/assets/fotos/shito.jpg';
+  const slugPreview = editandoId || obraSlugFromTitle(form.titulo) || '—';
+
+  const validationLive = useMemo(
+    () =>
+      validateObraWorkForm({
+        titulo: form.titulo,
+        sinopse: form.sinopse,
+        genres: form.genres,
+        mainGenre: form.mainGenre,
+        tagsRaw: form.tagsRaw,
+        status: form.status,
+        tituloCurto: form.tituloCurto,
+        seoTitle: form.seoTitle,
+        hasCapaFile: Boolean(capaArquivo),
+        capaUrl: form.capaUrl,
+        hasBannerFile: Boolean(bannerArquivo),
+        bannerUrl: form.bannerUrl,
+        editandoId,
+        obrasTodas,
+        isMangaka,
+        currentUid: user?.uid,
+        adminCreatorId: form.adminCreatorId,
+      }),
+    [
+      form.titulo,
+      form.sinopse,
+      form.genres,
+      form.mainGenre,
+      form.tagsRaw,
+      form.status,
+      form.capaUrl,
+      form.bannerUrl,
+      form.tituloCurto,
+      form.seoTitle,
+      form.adminCreatorId,
+      capaArquivo,
+      bannerArquivo,
+      editandoId,
+      obrasTodas,
+      isMangaka,
+      user?.uid,
+    ]
+  );
+
   const preview = useMemo(() => ({
     titulo: form.titulo || 'Título da Obra',
     tituloCurto: form.tituloCurto || form.titulo || 'Obra',
@@ -366,14 +374,23 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     status: form.status || 'ongoing',
     isPublished: Boolean(form.isPublished),
     archived: Boolean(form.archived),
+    genres: normalizeGenreList(form.genres),
   }), [form, capaLiveUrl, bannerLiveUrl]);
   const capaEditorImageStyle = useMemo(
     () => estiloEditorImagem(capaDimensoes, capaAjuste, COVER_EDITOR_CONFIG),
     [capaDimensoes, capaAjuste]
   );
+  const capaZoomBounds = useMemo(
+    () => getResponsiveCropZoomBounds(capaDimensoes, COVER_EDITOR_CONFIG.outputW, COVER_EDITOR_CONFIG.outputH),
+    [capaDimensoes]
+  );
   const bannerEditorImageStyle = useMemo(
     () => estiloEditorImagem(bannerDimensoes, bannerAjuste, BANNER_EDITOR_CONFIG),
     [bannerDimensoes, bannerAjuste]
+  );
+  const bannerZoomBounds = useMemo(
+    () => getResponsiveCropZoomBounds(bannerDimensoes, BANNER_EDITOR_CONFIG.outputW, BANNER_EDITOR_CONFIG.outputH),
+    [bannerDimensoes]
   );
 
   const clearMsgs = () => {
@@ -381,32 +398,82 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     setOk('');
   };
 
-  const abrirFeedbackSalvar = (type, text, timeoutMs = 3400) => {
-    if (saveFeedbackTimerRef.current) clearTimeout(saveFeedbackTimerRef.current);
-    setSaveFeedback({ visible: true, type, text });
-    saveFeedbackTimerRef.current = setTimeout(() => {
-      setSaveFeedback((prev) => ({ ...prev, visible: false }));
-      saveFeedbackTimerRef.current = null;
-    }, timeoutMs);
-  };
+  const closeSaveErrorModal = useCallback(() => {
+    setSaveErrorModal({ open: false, lines: [] });
+  }, []);
+
+  const openSaveErrorModal = useCallback((lines) => {
+    const arr = Array.isArray(lines)
+      ? lines.map((s) => String(s || '').trim()).filter(Boolean)
+      : [String(lines || '').trim()].filter(Boolean);
+    setSaveErrorModal({
+      open: true,
+      lines: arr.length ? arr : ['Erro desconhecido.'],
+    });
+  }, []);
+
+  const showSaveToast = useCallback((text) => {
+    const t = String(text || '').trim();
+    if (!t) return;
+    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    setSaveToast({ visible: true, text: t });
+    saveToastTimerRef.current = setTimeout(() => {
+      setSaveToast({ visible: false, text: '' });
+      saveToastTimerRef.current = null;
+    }, 4200);
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (saveFeedbackTimerRef.current) clearTimeout(saveFeedbackTimerRef.current);
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!saveErrorModal.open) return undefined;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape') closeSaveErrorModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [saveErrorModal.open, closeSaveErrorModal]);
 
   const iniciarNovo = () => {
     clearMsgs();
     setEditandoId(null);
     setObraSelecionadaId('');
     setForm(emptyForm());
-    setSlugAuto(true);
-    setSlugLocked(false);
     setCapaArquivo(null);
     setBannerArquivo(null);
-    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
-    setBannerAjuste({ zoom: 1, x: 0, y: 0 });
+    setCapaAjuste(normalizarAjusteObra());
+    setBannerAjuste(normalizarAjusteObra());
+  };
+
+  const creatorUidOptions = useMemo(() => {
+    const set = new Set();
+    obrasTodas.forEach((o) => {
+      const c = String(obraCreatorId(o) || '').trim();
+      if (c) set.add(c);
+    });
+    return [...set].sort();
+  }, [obrasTodas]);
+
+  const toggleGenre = (genreId) => {
+    const id = String(genreId || '').trim().toLowerCase();
+    if (!OBRAS_WORK_GENRE_IDS.includes(id)) return;
+    setForm((prev) => {
+      const has = prev.genres.includes(id);
+      const nextGenres = normalizeGenreList(
+        has ? prev.genres.filter((g) => g !== id) : [...prev.genres, id]
+      );
+      const mainGenre = nextGenres.includes(prev.mainGenre) ? prev.mainGenre : '';
+      return { ...prev, genres: nextGenres, mainGenre };
+    });
   };
 
   const editarObra = (obraId) => {
@@ -419,23 +486,34 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     }
     setEditandoId(obraId);
     setObraSelecionadaId(obraId);
-    setSlugAuto(false);
-    setSlugLocked(true);
+    const rawGenres = obra.genres;
+    const genresArr = Array.isArray(rawGenres)
+      ? rawGenres
+      : rawGenres && typeof rawGenres === 'object'
+        ? Object.values(rawGenres)
+        : [];
+    const genres = normalizeGenreList(genresArr);
+    const rawTags = obra.tags;
+    const tagsArr = Array.isArray(rawTags) ? rawTags : rawTags && typeof rawTags === 'object' ? Object.values(rawTags) : [];
+    const tagsSanitized = normalizeTagsFromInput(tagsArr.join(', '));
+    const mainGRaw = String(obra.mainGenre || '').trim().toLowerCase();
+    const mainG = OBRAS_WORK_GENRE_IDS.includes(mainGRaw) ? mainGRaw : '';
     setForm({
       id: obraId,
       titulo: obra.titulo || '',
       tituloCurto: obra.tituloCurto || '',
-      slug: obra.slug || obraId,
       sinopse: obra.sinopse || '',
-      publicoAlvo: obra.publicoAlvo || '',
+      genres,
+      mainGenre: mainG && genres.includes(mainG) ? mainG : genres[0] || '',
+      tagsRaw: tagsSanitized.join(', '),
       capaUrl: obra.capaUrl || '',
       bannerUrl: obra.bannerUrl || '',
       seoTitle: obra.seoTitle || '',
-      seoDescription: obra.seoDescription || '',
-      seoKeywords: obra.seoKeywords || '',
-      status: obra.status || 'ongoing',
+      seoKeywords: obra.seoKeywords || tagsToSeoKeywords(tagsSanitized),
+      status: normalizeStatusForForm(obra.status),
       isPublished: obra.isPublished === true,
       archived: obraEstaArquivada(obra),
+      adminCreatorId: '',
     });
     setCapaArquivo(null);
     setBannerArquivo(null);
@@ -446,38 +524,46 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const carregarObraSelecionada = () => {
     if (!obraSelecionadaId) {
       setErro('Selecione uma obra para editar, ou clique em "Criar nova obra".');
-      abrirFeedbackSalvar('erro', 'Selecione uma obra para editar.', 3200);
+      openSaveErrorModal([
+        'Selecione uma obra para editar, ou clique em "Criar nova obra".',
+      ]);
       return;
     }
     editarObra(String(obraSelecionadaId));
   };
 
-  const validarForm = () => {
-    const titulo = String(form.titulo || '').trim();
-    const slug = slugify(form.slug || form.id || form.titulo);
-    if (!titulo || titulo.length < 2) return 'Título obrigatório (mínimo 2 caracteres).';
-    if (!slug || slug.length < 2) return 'Slug inválido.';
-    if (!/^[a-z0-9-]{2,40}$/.test(slug)) return 'Slug deve conter apenas letras minúsculas, números e hífen.';
-    const jaExiste = obras.some((obra) => obra.id === slug && obra.id !== editandoId);
-    if (jaExiste) return `Já existe uma obra com slug "${slug}".`;
-    if (!STATUS_OPTIONS.some((s) => s.id === form.status)) return 'Status inválido.';
-    if (!String(form.sinopse || '').trim()) return 'Sinopse é obrigatória.';
-    if (!String(form.capaUrl || '').trim() && !capaArquivo) return 'Capa é obrigatória (upload ou URL).';
-    if (!String(form.bannerUrl || '').trim() && !bannerArquivo) return 'Banner é obrigatório (upload ou URL).';
-    return '';
-  };
-
   const salvarObra = async () => {
+    if (saveInFlightRef.current) return;
     clearMsgs();
-    const erroValidacao = validarForm();
-    if (erroValidacao) {
-      setErro(erroValidacao);
-      abrirFeedbackSalvar('erro', erroValidacao, 4400);
+    const v = validateObraWorkForm({
+      titulo: form.titulo,
+      sinopse: form.sinopse,
+      genres: form.genres,
+      mainGenre: form.mainGenre,
+      tagsRaw: form.tagsRaw,
+      status: form.status,
+      tituloCurto: form.tituloCurto,
+      seoTitle: form.seoTitle,
+      hasCapaFile: Boolean(capaArquivo),
+      capaUrl: form.capaUrl,
+      hasBannerFile: Boolean(bannerArquivo),
+      bannerUrl: form.bannerUrl,
+      editandoId,
+      obrasTodas,
+      isMangaka,
+      currentUid: user?.uid,
+      adminCreatorId: form.adminCreatorId,
+    });
+    if (!v.ok) {
+      setErro(v.errors.join(' '));
+      openSaveErrorModal(v.errors.length ? v.errors : ['Corrija os campos destacados.']);
       return;
     }
-    const slug = slugify(form.slug || form.id || form.titulo);
+    const slugNovo = v.slug;
+    const recordSlug = obraSlugFromTitle(form.titulo);
     if (isMangaka && user?.uid && editandoId && obraCreatorId(obrasMap.get(editandoId)) !== user.uid) {
       setErro('Sem permissão para alterar esta obra.');
+      openSaveErrorModal(['Sem permissão para alterar esta obra.']);
       return;
     }
     const creatorIdResolved =
@@ -485,18 +571,28 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         ? obraCreatorId(obrasMap.get(editandoId))
         : isMangaka && user?.uid
           ? user.uid
-          : PLATFORM_LEGACY_CREATOR_UID;
+          : String(form.adminCreatorId || '').trim();
+    const ownerUidStorage = sanitizarSegmentoStorage(creatorIdResolved, 'shared');
+    const obraStorageSegment = sanitizarSegmentoStorage(editandoId || slugNovo, 'obra');
+    const tagsFinal = v.tags;
+    const tituloTrim = String(form.titulo || '').trim();
+    const tituloCurtoTrim = String(form.tituloCurto || '').trim();
+    const seoTitleTrim = String(form.seoTitle || '').trim();
+    const kwRaw = String(form.seoKeywords || '').trim() || tagsToSeoKeywords(tagsFinal);
     const payload = {
-      titulo: String(form.titulo || '').trim(),
-      tituloCurto: String(form.tituloCurto || '').trim() || String(form.titulo || '').trim(),
-      slug,
+      titulo: tituloTrim,
+      tituloCurto: (tituloCurtoTrim || tituloTrim).slice(0, TITULO_CURTO_MAX),
+      slug: recordSlug,
       sinopse: String(form.sinopse || '').trim(),
-      publicoAlvo: String(form.publicoAlvo || '').trim() || 'Geral',
+      publicoAlvo: publicoAlvoFromMainGenre(form.mainGenre),
+      genres: v.genres,
+      mainGenre: String(form.mainGenre || '').trim(),
+      tags: tagsFinal,
       capaUrl: String(form.capaUrl || '').trim(),
       bannerUrl: String(form.bannerUrl || '').trim(),
-      seoTitle: String(form.seoTitle || '').trim() || String(form.titulo || '').trim(),
-      seoDescription: String(form.seoDescription || '').trim() || String(form.sinopse || '').trim().slice(0, 160),
-      seoKeywords: String(form.seoKeywords || '').trim(),
+      seoTitle: (seoTitleTrim || tituloTrim).slice(0, SEO_TITLE_MAX),
+      seoDescription: v.seoDescription,
+      seoKeywords: kwRaw.slice(0, SEO_KEYWORDS_MAX),
       status: form.status,
       isPublished: Boolean(form.isPublished),
       archivedAt: form.archived ? Date.now() : null,
@@ -506,91 +602,57 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       creatorId: creatorIdResolved,
     };
 
+    saveInFlightRef.current = true;
     setSaving(true);
     try {
       if (capaArquivo) {
         const file = await processarImagemObra(capaArquivo, capaAjuste, COVER_EDITOR_CONFIG);
-        const path = `obras/${slug}/capa_${Date.now()}.webp`;
+        const path = `obras/${ownerUidStorage}/${obraStorageSegment}/capa_${Date.now()}.webp`;
         const fileRef = storageRef(storage, path);
         await uploadBytes(fileRef, file);
         payload.capaUrl = await getDownloadURL(fileRef);
       }
       if (bannerArquivo) {
         const file = await processarImagemObra(bannerArquivo, bannerAjuste, BANNER_EDITOR_CONFIG);
-        const path = `obras/${slug}/banner_${Date.now()}.webp`;
+        const path = `obras/${ownerUidStorage}/${obraStorageSegment}/banner_${Date.now()}.webp`;
         const fileRef = storageRef(storage, path);
         await uploadBytes(fileRef, file);
         payload.bannerUrl = await getDownloadURL(fileRef);
       }
 
       if (!editandoId) {
-        const jaExisteNoBanco = await get(dbRef(db, `obras/${slug}`));
+        const jaExisteNoBanco = await get(dbRef(db, `obras/${slugNovo}`));
         if (jaExisteNoBanco.exists()) {
-          throw new Error(`Já existe uma obra com slug "${slug}".`);
+          throw new Error(`Já existe uma obra com o identificador "${slugNovo}". Ajuste o título.`);
         }
-        await set(dbRef(db, `obras/${slug}`), {
+        await set(dbRef(db, `obras/${slugNovo}`), {
           ...payload,
           createdAt: nowMs(),
         });
         setOk('Obra criada com sucesso.');
-        abrirFeedbackSalvar('ok', 'Obra criada com sucesso.');
-        setEditandoId(slug);
-        setObraSelecionadaId(slug);
-        setSlugLocked(true);
+        showSaveToast('Obra criada com sucesso.');
+        setEditandoId(slugNovo);
+        setObraSelecionadaId(slugNovo);
         return;
       }
 
-      if (editandoId === slug) {
-        await update(dbRef(db, `obras/${editandoId}`), payload);
-        setOk('Obra atualizada com sucesso.');
-        abrirFeedbackSalvar('ok', 'Obra atualizada com sucesso.');
-        return;
-      }
-
-      if (editandoId === OBRA_PADRAO_ID && slug !== OBRA_PADRAO_ID) {
-        throw new Error('A obra base "shito" não pode ter slug alterado.');
-      }
-
-      const confirmarMigracao = window.confirm(
-        `Alterar slug de "${editandoId}" para "${slug}"?\n\nIsso migra a obra para outro ID e remove o ID antigo.`
-      );
-      if (!confirmarMigracao) {
-        throw new Error('Alteração de slug cancelada.');
-      }
-
-      const original = obrasMap.get(editandoId);
-      await set(dbRef(db, `obras/${slug}`), {
-        ...(original || {}),
-        ...payload,
-        createdAt: Number(original?.createdAt || nowMs()),
-      });
-      await remove(dbRef(db, `obras/${editandoId}`));
-      setEditandoId(slug);
-      setObraSelecionadaId(slug);
-      setSlugLocked(true);
-      setOk('Slug alterado e obra migrada com sucesso.');
-      abrirFeedbackSalvar('ok', 'Slug alterado e obra migrada com sucesso.');
+      await update(dbRef(db, `obras/${editandoId}`), payload);
+      const okMsg =
+        editandoId === OBRA_PADRAO_ID ? 'Obra base atualizada com sucesso.' : 'Obra atualizada com sucesso.';
+      setOk(okMsg);
+      showSaveToast(okMsg);
     } catch (e) {
-      const msg = `Falha ao salvar obra: ${e?.message || 'erro desconhecido'}`;
+      const msg = `Falha ao salvar obra: ${mensagemErroFirebase(e)}`;
       setErro(msg);
-      abrirFeedbackSalvar('erro', msg, 5200);
+      openSaveErrorModal([msg]);
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   };
 
   const onTituloChange = (value) => {
-    setForm((prev) => {
-      const next = { ...prev, titulo: value };
-      if (slugAuto) next.slug = slugify(value);
-      return next;
-    });
-  };
-
-  const onSlugChange = (value) => {
-    if (editandoId && slugLocked) return;
-    setSlugAuto(false);
-    setForm((prev) => ({ ...prev, slug: slugify(value) }));
+    setForm((prev) => ({ ...prev, titulo: value }));
   };
 
   const selecionarCapa = (file) => {
@@ -602,7 +664,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     }
     setErro('');
     setCapaArquivo(file);
-    setCapaAjuste({ zoom: 1, x: 0, y: 0 });
+    setCapaAjuste(normalizarAjusteObra());
   };
 
   const selecionarBanner = (file) => {
@@ -614,7 +676,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     }
     setErro('');
     setBannerArquivo(file);
-    setBannerAjuste({ zoom: 1, x: 0, y: 0 });
+    setBannerAjuste(normalizarAjusteObra());
   };
 
   const iniciarArrasteMidia = (event, tipo) => {
@@ -622,19 +684,27 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     if (!ref) return;
     const possuiFonte = tipo === 'capa' ? capaEditavel : bannerEditavel;
     if (!possuiFonte) return;
+    const dims = tipo === 'capa' ? capaDimensoes : bannerDimensoes;
+    if (!dims) return;
     event.preventDefault();
     const clientX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
     const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
     const box = ref.getBoundingClientRect();
     const ajusteAtual = tipo === 'capa' ? capaAjuste : bannerAjuste;
+    const dragSnapshot = createResponsiveDragSnapshot(
+      dims.w,
+      dims.h,
+      Math.max(1, box.width),
+      Math.max(1, box.height),
+      ajusteAtual,
+      { maxZoomCap: tipo === 'capa' ? capaZoomBounds.maxZoom : bannerZoomBounds.maxZoom }
+    );
     dragMediaRef.current = {
       tipo,
       startX: clientX,
       startY: clientY,
-      eixoX: ajusteAtual.x,
-      eixoY: ajusteAtual.y,
-      largura: Math.max(1, box.width),
-      altura: Math.max(1, box.height),
+      ajuste: ajusteAtual,
+      dragSnapshot,
     };
     document.body.style.userSelect = 'none';
   };
@@ -648,12 +718,18 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       const clientY = event.clientY ?? event.touches?.[0]?.clientY ?? 0;
       const deltaX = clientX - drag.startX;
       const deltaY = clientY - drag.startY;
-      const novoX = drag.eixoX + ((deltaX / (drag.largura * 0.5)) * 100 * OBRAS_EDITOR_DRAG_SENSITIVITY);
-      const novoY = drag.eixoY + ((deltaY / (drag.altura * 0.5)) * 100 * OBRAS_EDITOR_DRAG_SENSITIVITY);
       if (drag.tipo === 'capa') {
-        setCapaAjuste((prev) => ({ ...prev, x: Math.max(-100, Math.min(100, novoX)), y: Math.max(-100, Math.min(100, novoY)) }));
+        setCapaAjuste(
+          applyResponsiveDragDelta(drag.ajuste, drag.dragSnapshot, deltaX, deltaY, {
+            maxZoomCap: capaZoomBounds.maxZoom,
+          })
+        );
       } else {
-        setBannerAjuste((prev) => ({ ...prev, x: Math.max(-100, Math.min(100, novoX)), y: Math.max(-100, Math.min(100, novoY)) }));
+        setBannerAjuste(
+          applyResponsiveDragDelta(drag.ajuste, drag.dragSnapshot, deltaX, deltaY, {
+            maxZoomCap: bannerZoomBounds.maxZoom,
+          })
+        );
       }
     };
 
@@ -674,7 +750,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       window.removeEventListener('touchend', onUp);
       document.body.style.userSelect = '';
     };
-  }, []);
+  }, [bannerZoomBounds.maxZoom, capaZoomBounds.maxZoom]);
 
   useEffect(() => {
     return () => {
@@ -828,7 +904,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         updatedAt: nowMs(),
       });
     } catch (e) {
-      setErro(`Falha ao publicar/despublicar: ${e?.message || 'erro desconhecido'}`);
+      setErro(`Falha ao publicar/despublicar: ${mensagemErroFirebase(e)}`);
     }
   };
 
@@ -839,7 +915,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       return;
     }
     if (obra.id === OBRA_PADRAO_ID) {
-      setErro('A obra padrão (shito) não pode ser apagada por segurança.');
+      setErro('A obra padrão (Kokuin) não pode ser apagada por segurança.');
       return;
     }
     if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) return;
@@ -848,7 +924,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       if (editandoId === obra.id) iniciarNovo();
       setOk('Obra apagada.');
     } catch (e) {
-      setErro(`Falha ao apagar obra: ${e?.message || 'erro desconhecido'}`);
+      setErro(`Falha ao apagar obra: ${mensagemErroFirebase(e)}`);
     }
   };
 
@@ -930,82 +1006,128 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               <h2>Informações básicas</h2>
               <p>{isMangaka ? 'Defina como sua obra vai aparecer para os leitores.' : 'Defina a identidade principal da obra.'}</p>
             </header>
+            {!validationLive.ok && validationLive.errors.length > 0 ? (
+              <ul className="obra-validation-errors" aria-live="polite">
+                {validationLive.errors.map((msg) => (
+                  <li key={msg}>{msg}</li>
+                ))}
+              </ul>
+            ) : null}
+            {!isMangaka && !editandoId ? (
+              <label className="obra-field-full">
+                Autor da obra (UID Firebase) *
+                <input
+                  type="text"
+                  list="obra-creator-uid-options"
+                  autoComplete="off"
+                  value={form.adminCreatorId}
+                  onChange={(e) => setForm((p) => ({ ...p, adminCreatorId: e.target.value }))}
+                  placeholder="Cole o UID do criador"
+                />
+                <datalist id="obra-creator-uid-options">
+                  {creatorUidOptions.map((uid) => (
+                    <option key={uid} value={uid} />
+                  ))}
+                </datalist>
+                <small className="field-help">
+                  Obrigatório: deve ser o UID real do criador no Firebase Auth (sugestões vêm de obras já cadastradas).
+                </small>
+              </label>
+            ) : null}
+            {isMangaka ? (
+              <p className="field-help obra-field-full" style={{ marginBottom: '12px' }}>
+                Autor vinculado: sua conta ({user?.uid || '—'}).
+              </p>
+            ) : null}
             <div className="obra-grid">
               <label>
                 Título *
                 <input
                   type="text"
                   value={form.titulo}
+                  maxLength={80}
                   onChange={(e) => onTituloChange(e.target.value)}
                   placeholder="Nome oficial da obra"
                 />
+                <small className="field-help">{form.titulo.trim().length}/80 · mín. 3 caracteres</small>
               </label>
               <label>
-                Título curto
+                Título curto (opcional)
                 <input
                   type="text"
                   value={form.tituloCurto}
+                  maxLength={40}
                   onChange={(e) => setForm((p) => ({ ...p, tituloCurto: e.target.value }))}
-                  placeholder="Ex: SHITO"
-                />
-              </label>
-              <label>
-                Slug *
-                <div className="slug-input-wrap">
-                  <input
-                    type="text"
-                    value={form.slug}
-                    disabled={Boolean(editandoId && slugLocked)}
-                    onChange={(e) => onSlugChange(e.target.value)}
-                    placeholder="slug-da-obra"
-                  />
-                  {editandoId && slugLocked ? (
-                    <button
-                      type="button"
-                      className="btn-inline"
-                      onClick={() => setSlugLocked(false)}
-                    >
-                      desbloquear
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn-inline"
-                      onClick={() => setForm((p) => ({ ...p, slug: slugify(p.titulo) }))}
-                    >
-                      gerar
-                    </button>
-                  )}
-                </div>
-                <small className="field-help">
-                  URL pública: <code>/work/{form.slug || 'slug-da-obra'}</code> (legado: <code>/obra/…</code>)
-                </small>
-                {editandoId ? (
-                  <small className="field-help">
-                    {slugLocked
-                      ? 'Slug travado para evitar sobrescrita acidental. Desbloqueie apenas se quiser migrar a obra.'
-                      : 'Slug destravado: salvar pode migrar a obra para outro ID.'}
-                  </small>
-                ) : null}
-              </label>
-              <label>
-                Público alvo
-                <input
-                  type="text"
-                  value={form.publicoAlvo}
-                  onChange={(e) => setForm((p) => ({ ...p, publicoAlvo: e.target.value }))}
-                  placeholder="Ex: Seinen, 16+"
+                  placeholder="Ex: KOKUIN"
                 />
               </label>
             </div>
-            <label>
-              Sinopse *
+            <div className="obra-slug-preview obra-field-full">
+              <span className="obra-slug-preview-label">Slug na URL (automático, não editável)</span>
+              <code className="obra-slug-preview-value">/work/{slugPreview}</code>
+              <small className="field-help">
+                Novas obras usam este identificador como chave no banco. Ao editar, a chave permanece estável; o campo <code>slug</code> no registro acompanha o título para SEO.
+              </small>
+            </div>
+            <fieldset className="obra-genres-fieldset obra-field-full">
+              <legend>Gêneros * (até {MAX_GENRES})</legend>
+              <p className="field-help">Selecione até três. O gênero principal deve estar entre eles.</p>
+              <div className="obra-genre-chips" role="group" aria-label="Gêneros da obra">
+                {OBRAS_WORK_GENRE_IDS.map((gid) => {
+                  const on = form.genres.includes(gid);
+                  return (
+                    <button
+                      key={gid}
+                      type="button"
+                      className={`obra-genre-chip${on ? ' is-on' : ''}`}
+                      onClick={() => toggleGenre(gid)}
+                      aria-pressed={on}
+                    >
+                      {OBRAS_WORK_GENRE_LABELS[gid] || gid}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <div className="obra-grid">
+              <label>
+                Gênero principal *
+                <select
+                  value={form.mainGenre}
+                  onChange={(e) => setForm((p) => ({ ...p, mainGenre: e.target.value }))}
+                  disabled={form.genres.length === 0}
+                >
+                  <option value="">{form.genres.length ? 'Escolha entre os gêneros selecionados' : 'Selecione gêneros acima'}</option>
+                  {form.genres.map((gid) => (
+                    <option key={gid} value={gid}>
+                      {OBRAS_WORK_GENRE_LABELS[gid] || gid}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tags (opcional, máx. 5, separadas por vírgula)
+                <input
+                  type="text"
+                  value={form.tagsRaw}
+                  onChange={(e) => setForm((p) => ({ ...p, tagsRaw: e.target.value }))}
+                  placeholder="ex: magia, escola, amizade"
+                />
+                <small className="field-help">Normalizadas em minúsculas, sem duplicar.</small>
+              </label>
+            </div>
+            <label className="obra-field-full">
+              Descrição (sinopse) *
               <textarea
                 value={form.sinopse}
+                maxLength={DESCRIPTION_MAX}
                 onChange={(e) => setForm((p) => ({ ...p, sinopse: e.target.value }))}
-                rows={4}
-                placeholder="Resumo da obra"
+                rows={5}
+                placeholder={`Resumo da obra para leitores (mín. ${DESCRIPTION_MIN} caracteres)`}
               />
+              <small className="field-help">
+                {form.sinopse.trim().length}/{DESCRIPTION_MAX} · mínimo {DESCRIPTION_MIN} caracteres
+              </small>
             </label>
           </section>
 
@@ -1027,8 +1149,14 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 >
                   <img
                     src={capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg'}
+                    alt=""
+                    aria-hidden="true"
+                    className="obra-editor-img obra-editor-img--background"
+                  />
+                  <img
+                    src={capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg'}
                     alt="Editor da capa"
-                    className="obra-editor-img"
+                    className="obra-editor-img obra-editor-img--foreground"
                     style={capaEditavel ? capaEditorImageStyle : undefined}
                   />
                   <div className="obra-editor-outside-mask" aria-hidden="true">
@@ -1049,13 +1177,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 </div>
                 <div className="obra-media-controls">
                   <label>Zoom
-                    <input type="range" min="1" max="3" step="0.01" value={capaAjuste.zoom} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => ({ ...p, zoom: Number(e.target.value) }))} />
+                    <input type="range" min={capaZoomBounds.minZoom} max={capaZoomBounds.maxZoom} step="0.01" value={capaAjuste.zoom} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => ({ ...p, x: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => ({ ...p, y: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }))} />
                   </label>
                 </div>
                 <details>
@@ -1080,8 +1208,14 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 >
                   <img
                     src={bannerPreviewUrl || form.bannerUrl || '/assets/fotos/shito.jpg'}
+                    alt=""
+                    aria-hidden="true"
+                    className="obra-editor-img obra-editor-img--background"
+                  />
+                  <img
+                    src={bannerPreviewUrl || form.bannerUrl || '/assets/fotos/shito.jpg'}
                     alt="Editor do banner"
-                    className="obra-editor-img"
+                    className="obra-editor-img obra-editor-img--foreground"
                     style={bannerEditavel ? bannerEditorImageStyle : undefined}
                   />
                   <div className="obra-editor-outside-mask" aria-hidden="true">
@@ -1102,13 +1236,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 </div>
                 <div className="obra-media-controls">
                   <label>Zoom
-                    <input type="range" min="1" max="3" step="0.01" value={bannerAjuste.zoom} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => ({ ...p, zoom: Number(e.target.value) }))} />
+                    <input type="range" min={bannerZoomBounds.minZoom} max={bannerZoomBounds.maxZoom} step="0.01" value={bannerAjuste.zoom} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => ({ ...p, x: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }))} />
                   </label>
                   <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => ({ ...p, y: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }))} />
                   </label>
                 </div>
                 <details>
@@ -1136,11 +1270,18 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 </div>
                 <div className="obra-preview-card">
                   <img src={preview.capaUrl} alt={preview.titulo} />
-                  <div>
+                  <div className="obra-preview-card-body">
                     <strong>{preview.tituloCurto}</strong>
                     <p>{preview.sinopse}</p>
+                    {preview.genres.length > 0 ? (
+                      <span className="preview-genres">
+                        {preview.genres.map((g) => (
+                          <span key={g} className="preview-genre-pill">{OBRAS_WORK_GENRE_LABELS[g] || g}</span>
+                        ))}
+                      </span>
+                    ) : null}
                     <span className="preview-meta">
-                      {STATUS_OPTIONS.find((s) => s.id === preview.status)?.label || 'Em lançamento'}
+                      {STATUS_LABEL_BY_ID[preview.status] || 'Em lançamento'}
                     </span>
                   </div>
                 </div>
@@ -1151,7 +1292,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           <section className="obra-block">
             <header className="obra-block-head">
               <h2>SEO</h2>
-              <p>Preencha como se estivesse explicando sua obra para quem nunca te viu.</p>
+              <p>Título e palavras-chave você controla; o resumo para busca é gerado a partir da descrição (máx. 160 caracteres).</p>
             </header>
             <div className="obra-grid">
               <label>
@@ -1159,31 +1300,31 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 <input
                   type="text"
                   value={form.seoTitle}
+                  maxLength={SEO_TITLE_MAX}
                   onChange={(e) => setForm((p) => ({ ...p, seoTitle: e.target.value }))}
-                  placeholder="Ex: Shito - Mangá brasileiro de fantasia sombria"
+                  placeholder="Ex: Kokuin - Mangá brasileiro de fantasia sombria"
                 />
+                <small className="field-help">{form.seoTitle.length}/{SEO_TITLE_MAX}</small>
               </label>
               <label>
-                Palavras-chave (separadas por vírgula)
+                Palavras-chave (opcional; senão usamos as tags)
                 <input
                   type="text"
                   value={form.seoKeywords}
                   onChange={(e) => setForm((p) => ({ ...p, seoKeywords: e.target.value }))}
-                  placeholder="mangá brasileiro, fantasia, ação, shito"
+                  placeholder="mangá brasileiro, fantasia, ação, kokuin"
                 />
               </label>
             </div>
-            <label>
-              Resumo curto para Google (ideal: 140-160 caracteres)
-              <textarea
-                value={form.seoDescription}
-                onChange={(e) => setForm((p) => ({ ...p, seoDescription: e.target.value }))}
-                rows={3}
-                placeholder="Ex: Acompanhe Shito, uma saga autoral com capítulos semanais, personagens marcantes e acesso antecipado para membros."
-              />
-            </label>
+            <div className="obra-seo-readonly obra-field-full">
+              <span className="obra-seo-readonly-label">Resumo para Google (automático)</span>
+              <p className="obra-seo-readonly-text">{buildSeoDescriptionFromDescription(form.sinopse) || '—'}</p>
+              <small className="field-help">
+                {buildSeoDescriptionFromDescription(form.sinopse).length}/160 caracteres
+              </small>
+            </div>
             <p className="seo-help">
-              Dica rápida: use palavras simples, diga o gênero da obra e o que torna ela única.
+              Dica: na descrição, explique gênero e gancho da história — isso alimenta o snippet de busca.
             </p>
           </section>
 
@@ -1199,7 +1340,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                   value={form.status}
                   onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
                 >
-                  {STATUS_OPTIONS.map((op) => (
+                  {OBRAS_WORK_STATUS.map((op) => (
                     <option key={op.id} value={op.id}>{op.label}</option>
                   ))}
                 </select>
@@ -1224,7 +1365,12 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           </section>
 
           <div className="obra-form-actions">
-            <button type="button" className="btn-pri" disabled={saving} onClick={salvarObra}>
+            <button
+              type="button"
+              className="btn-pri"
+              disabled={saving || !validationLive.ok}
+              onClick={salvarObra}
+            >
               {saving ? 'Salvando...' : editandoId ? 'Salvar alterações' : 'Criar obra'}
             </button>
             <button type="button" className="btn-sec" onClick={iniciarNovo}>Limpar</button>
@@ -1254,7 +1400,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 <strong>{obra.titulo || obra.id}</strong>
                 <span>{obra.slug || obra.id}</span>
                 <span>
-                  {STATUS_OPTIONS.find((s) => s.id === obra.status)?.label || 'Em lançamento'} ·{' '}
+                  {STATUS_LABEL_BY_ID[obra.status] || 'Em lançamento'} ·{' '}
                   {obra.isPublished ? 'Publicado' : 'Oculto'}
                   {obraEstaArquivada(obra) ? ' · Arquivada' : ''}
                 </span>
@@ -1273,15 +1419,52 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           ))}
         </div>
       </section>
+      {createPortal(
+        saveErrorModal.open ? (
+          <div
+            className="obra-save-modal-overlay"
+            role="presentation"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) closeSaveErrorModal();
+            }}
+          >
+            <div
+              className="obra-save-modal-panel is-error"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="obra-save-modal-title"
+              aria-describedby="obra-save-modal-desc"
+            >
+              <h2 id="obra-save-modal-title" className="obra-save-modal-title">
+                Não foi possível salvar
+              </h2>
+              <div id="obra-save-modal-desc" className="obra-save-modal-body">
+                {saveErrorModal.lines.length === 1 ? (
+                  <p>{saveErrorModal.lines[0]}</p>
+                ) : (
+                  <ul>
+                    {saveErrorModal.lines.map((line, i) => (
+                      <li key={`${i}-${line.slice(0, 40)}`}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button type="button" className="btn-pri obra-save-modal-btn" onClick={closeSaveErrorModal}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        ) : null,
+        document.body
+      )}
       <div
-        className={`obra-save-feedback ${saveFeedback.visible ? 'show' : ''} ${saveFeedback.type}`}
-        role={saveFeedback.type === 'erro' ? 'alert' : 'status'}
+        className={`obra-save-feedback ${saveToast.visible ? 'show' : ''} ok`}
+        role="status"
         aria-live="polite"
       >
-        <strong>{saveFeedback.type === 'erro' ? 'Falha ao salvar' : 'Publicação concluída'}</strong>
-        <span>{saveFeedback.text}</span>
+        <strong>Salvo</strong>
+        <span>{saveToast.text}</span>
       </div>
     </main>
   );
 }
-

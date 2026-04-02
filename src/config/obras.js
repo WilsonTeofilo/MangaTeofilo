@@ -6,10 +6,15 @@ export const OBRA_PADRAO_ID = 'shito';
 
 export const OBRA_SHITO_DEFAULT = {
   id: OBRA_PADRAO_ID,
-  slug: OBRA_PADRAO_ID,
-  titulo: 'Shito: Fragmentos da Tempestade',
-  tituloCurto: 'Shito',
-  sinopse: '',
+  /** Slug canónico alinhado ao título (URL /work/...); o id RTDB permanece `shito`. */
+  slug: 'kokuin-heranca-do-abismo',
+  titulo: 'Kokuin : Heranca do Abismo',
+  tituloCurto: 'Kokuin',
+  sinopse:
+    'Em um mundo marcado por relíquias ancestrais e conflitos silenciosos, acompanhe a jornada de Kokuin. Ajuste este texto no painel quando quiser refinar a sinopse pública.',
+  genres: ['fantasia', 'aventura'],
+  mainGenre: 'fantasia',
+  tags: [],
   status: 'ongoing',
   isPublished: true,
   createdAt: Date.now(),
@@ -39,7 +44,7 @@ export function ensureLegacyShitoObra(list) {
     {
       ...OBRA_SHITO_DEFAULT,
       id: OBRA_PADRAO_ID,
-      slug: OBRA_PADRAO_ID,
+      slug: 'kokuin-heranca-do-abismo',
       createdAt: 0,
       updatedAt: 0,
       isPublished: true,
@@ -70,6 +75,25 @@ export function slugifyObraSlug(input) {
 }
 
 /**
+ * Segmento usado em `/work/{segment}` — SEO canónico sem mudar a chave RTDB da obra.
+ * - Obra-base (`shito`): prioriza slug derivado do **título** para a URL refletir "Kokuin…", não "shito".
+ * - Demais obras: usa `slug` se existir e for distinto do id; senão título; senão id.
+ */
+export function obraSegmentoUrlPublica(obra) {
+  if (!obra || typeof obra !== 'object') return OBRA_PADRAO_ID;
+  const id = String(obra.id || '').trim().toLowerCase();
+  const slugRaw = String(obra.slug || '').trim();
+  const slugS = slugifyObraSlug(slugRaw);
+  const titleS = slugifyObraSlug(String(obra.titulo || '').trim());
+
+  if (id === OBRA_PADRAO_ID) {
+    return titleS || slugS || id;
+  }
+  if (slugS && slugS !== id) return slugS;
+  return titleS || slugS || id || OBRA_PADRAO_ID;
+}
+
+/**
  * Resolve ID de obra no RTDB a partir do que veio na URL (id ou slug).
  */
 export function resolverObraIdPorSlugOuId(obrasList, rawKey) {
@@ -82,7 +106,9 @@ export function resolverObraIdPorSlugOuId(obrasList, rawKey) {
   const slugNorm = slugifyObraSlug(key);
   const bySlug = list.find((o) => {
     const s = String(o.slug || o.id || '').trim();
-    return slugifyObraSlug(s) === slugNorm || s.toLowerCase() === lower;
+    if (slugifyObraSlug(s) === slugNorm || s.toLowerCase() === lower) return true;
+    const tituloSlug = slugifyObraSlug(String(o.titulo || '').trim());
+    return tituloSlug === slugNorm && tituloSlug.length >= 2;
   });
   if (bySlug) return normalizarObraId(bySlug.id);
   return null;

@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
-import { ensureLegacyShitoObra, obraCreatorId } from '../../config/obras';
+import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './CriadorPublico.css';
 
@@ -21,8 +21,7 @@ function normalizarRede(url) {
 }
 
 function pathObra(obra) {
-  const slug = String(obra?.slug || obra?.id || '').trim();
-  return `/work/${encodeURIComponent(slug || obra?.id || '')}`;
+  return `/work/${encodeURIComponent(obraSegmentoUrlPublica(obra))}`;
 }
 
 function formatarPrecoBrl(valor) {

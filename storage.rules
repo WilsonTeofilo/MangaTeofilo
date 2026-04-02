@@ -14,40 +14,47 @@ service firebase.storage {
     return request.auth != null && request.auth.token.panelRole == "mangaka";
   }
 
-  function canUploadMangaAssets() {
-    return isShitoAdmin() || isMangaka();
+  function canWriteOwnerPath(ownerUid) {
+    return isShitoAdmin()
+      || (request.auth != null
+          && request.auth.uid == ownerUid
+          && isMangaka());
   }
 
   match /b/{bucket}/o {
-    match /capas/{fileName} {
+    match /capas/{ownerUid}/{fileName} {
       allow read: if true;
-      allow write: if canUploadMangaAssets()
+      allow write: if canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
-                   && fileName.matches('.*\\.(jpe?g|png|webp)$')));
+                   && request.resource.contentType.matches('image/.*')
+                   && !request.resource.contentType.matches('.*svg.*')
+                   && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')));
     }
 
-    match /manga/{obra}/{fileName} {
+    match /manga/{ownerUid}/{obra}/{fileName} {
       allow read: if true;
-      allow write: if canUploadMangaAssets()
+      allow write: if canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
-                   && fileName.matches('.*\\.(jpe?g|png|webp)$')));
+                   && request.resource.contentType.matches('image/.*')
+                   && !request.resource.contentType.matches('.*svg.*')
+                   && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')));
     }
 
-    match /obras/{obra}/{fileName} {
+    match /obras/{ownerUid}/{obra}/{fileName} {
       allow read: if true;
-      allow write: if canUploadMangaAssets()
+      allow write: if canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)')
-                   && fileName.matches('.*\\.(jpe?g|png|webp)$')));
+                   && request.resource.contentType.matches('image/.*')
+                   && !request.resource.contentType.matches('.*svg.*')
+                   && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')));
     }
 
     match /avatares/{fileName} {
       allow read: if true;
       allow write: if isShitoAdmin()
                    && (request.resource == null || (request.resource.size < 1024 * 1024
-                   && (request.resource.contentType == "image/webp" || fileName.matches('.*\\.webp$'))));
+                   && request.resource.contentType == "image/webp"
+                   && fileName.matches('.*\\.webp$')));
     }
 
     match /{allPaths=**} {

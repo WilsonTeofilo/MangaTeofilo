@@ -49,12 +49,18 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
         return visivel[0]?.id || OBRA_PADRAO_ID;
       });
       setLoading(false);
+    }, () => {
+      setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+      setObraId(OBRA_PADRAO_ID);
+      setLoading(false);
     });
     const unsubCaps = onValue(dbRef(db, 'capitulos'), (snapshot) => {
       const list = snapshot.exists()
         ? Object.entries(snapshot.val() || {}).map(([id, data]) => ({ id, ...(data || {}) }))
         : [];
       setAllCapitulos(list);
+    }, () => {
+      setAllCapitulos([]);
     });
     return () => {
       unsubObras();
@@ -178,5 +184,4 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
     </main>
   );
 }
-
 

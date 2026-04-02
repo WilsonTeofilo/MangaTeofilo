@@ -8,45 +8,71 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    
+
     <title>MangaTeofilo | Mangás autorais em português</title>
-    <meta name="description" content="Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações." />
+    <meta
+      name="description"
+      content="Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações."
+    />
     <meta name="theme-color" content="#ffcc00" />
     <meta name="robots" content="index,follow,max-image-preview:large" />
 
     <meta property="og:site_name" content="MangaTeofilo" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="MangaTeofilo | Mangás autorais em português" />
-    <meta property="og:description" content="Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações." />
+    <meta
+      property="og:description"
+      content="Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações."
+    />
     <meta property="og:image" content="/assets/fotos/shito.jpg" />
     <meta property="og:url" content="https://mangateofilo.com/" />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="MangaTeofilo | Mangás autorais em português" />
-    <meta name="twitter:description" content="Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações." />
+    <meta
+      name="twitter:description"
+      content="Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações."
+    />
     <meta name="twitter:image" content="/assets/fotos/shito.jpg" />
 
     <link rel="canonical" href="https://mangateofilo.com/" />
 
-    <link 
-      rel="stylesheet" 
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" 
-      integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" 
-      crossorigin="anonymous" 
-      referrerpolicy="no-referrer" 
+    <!-- Font Awesome: preload + apply on load — não bloqueia primeira pintura (ícones só em /login e /apoie) -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      as="style"
+      integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer"
+      />
+    </noscript>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;600;800;900&display=swap"
+      rel="stylesheet"
+    />
 
     <style>
       /* Reset agressivo para evitar o flash branco e garantir o fundo preto */
       :root {
         --bg-deep: #050505;
       }
-      
-      html, body {
+
+      html,
+      body {
         margin: 0;
         padding: 0;
         background-color: var(--bg-deep);
@@ -76,7 +102,9 @@
       }
 
       @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+          transform: rotate(360deg);
+        }
       }
     </style>
   </head>

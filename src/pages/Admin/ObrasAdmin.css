@@ -184,11 +184,11 @@
 }
 
 .obra-editor-mask--cover {
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 3 / 4;
 }
 
 .obra-editor-mask--banner {
-  aspect-ratio: 16 / 10;
+  aspect-ratio: 16 / 9;
 }
 
 .obra-editor-mask.is-editable {
@@ -210,6 +210,20 @@
   transition: left 0.1s linear, top 0.1s linear, width 0.1s linear, height 0.1s linear;
 }
 
+.obra-editor-img--background {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(18px) brightness(0.45);
+  transform: scale(1.08);
+  opacity: 0.72;
+}
+
+.obra-editor-img--foreground {
+  z-index: 1;
+}
+
 .obra-editor-outside-mask {
   position: absolute;
   inset: 0;
@@ -227,6 +241,7 @@
   border-radius: 10px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 14px rgba(255, 204, 0, 0.22);
   pointer-events: none;
+  z-index: 2;
 }
 
 .obra-media-controls {
@@ -328,6 +343,9 @@
   justify-self: start;
   width: 100%;
   max-width: 320px;
+  max-height: min(72vh, 640px);
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 12px;
   gap: 10px;
 }
@@ -351,7 +369,7 @@
 }
 
 .obra-preview--in-media .obra-preview-card {
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 56px minmax(0, 1fr);
   gap: 8px;
   padding: 8px;
 }
@@ -363,7 +381,11 @@
 .obra-preview--in-media .obra-preview-card p {
   margin-top: 4px;
   font-size: 0.72rem;
-  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+  word-break: break-word;
 }
 
 .obra-preview--in-media .preview-meta {
@@ -411,8 +433,14 @@
   background: #121212;
   padding: 10px;
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 72px minmax(0, 1fr);
   gap: 10px;
+  min-height: 0;
+}
+
+.obra-preview-card-body {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .obra-preview-card img {
@@ -515,6 +543,78 @@
   font-size: 0.78rem;
 }
 
+.obra-save-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.obra-save-modal-panel {
+  width: min(440px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(165deg, rgba(22, 22, 22, 0.99), rgba(12, 12, 12, 0.99));
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  padding: 22px 22px 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.obra-save-modal-panel.is-success {
+  border-color: rgba(67, 226, 163, 0.42);
+}
+
+.obra-save-modal-panel.is-error {
+  border-color: rgba(255, 88, 88, 0.48);
+}
+
+.obra-save-modal-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #f2f2f2;
+}
+
+.is-success .obra-save-modal-title {
+  color: #c4ffd9;
+}
+
+.is-error .obra-save-modal-title {
+  color: #ffc9c9;
+}
+
+.obra-save-modal-body {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #c8c8c8;
+}
+
+.obra-save-modal-body p {
+  margin: 0;
+}
+
+.obra-save-modal-body ul {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.obra-save-modal-body li {
+  margin: 6px 0;
+}
+
+.obra-save-modal-btn {
+  justify-self: stretch;
+  margin-top: 2px;
+}
+
 .obra-save-feedback {
   position: fixed;
   left: 50%;
@@ -523,9 +623,9 @@
   opacity: 0;
   pointer-events: none;
   width: min(760px, calc(100vw - 26px));
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(67, 226, 163, 0.45);
   border-radius: 12px;
-  background: rgba(13, 13, 13, 0.96);
+  background: linear-gradient(160deg, rgba(14, 27, 22, 0.98), rgba(12, 15, 13, 0.98));
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
   z-index: 4200;
   padding: 11px 14px;
@@ -542,6 +642,7 @@
 .obra-save-feedback strong {
   font-size: 0.82rem;
   line-height: 1.2;
+  color: #baffde;
 }
 
 .obra-save-feedback span {
@@ -550,22 +651,128 @@
   line-height: 1.35;
 }
 
-.obra-save-feedback.ok {
-  border-color: rgba(67, 226, 163, 0.45);
-  background: linear-gradient(160deg, rgba(14, 27, 22, 0.98), rgba(12, 15, 13, 0.98));
+.obra-field-full {
+  grid-column: 1 / -1;
+  display: block;
+  margin-bottom: 12px;
 }
 
-.obra-save-feedback.ok strong {
-  color: #baffde;
-}
-
-.obra-save-feedback.erro {
-  border-color: rgba(255, 88, 88, 0.5);
-  background: linear-gradient(160deg, rgba(33, 16, 16, 0.98), rgba(17, 12, 12, 0.98));
-}
-
-.obra-save-feedback.erro strong {
+.obra-validation-errors {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 120, 120, 0.4);
+  background: rgba(40, 14, 14, 0.55);
   color: #ffc9c9;
+  font-size: 0.82rem;
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+
+.obra-validation-errors li {
+  margin: 4px 0;
+}
+
+.obra-slug-preview {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: rgba(20, 20, 20, 0.85);
+  margin-bottom: 14px;
+}
+
+.obra-slug-preview-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9a9a9a;
+  margin-bottom: 6px;
+}
+
+.obra-slug-preview-value {
+  display: block;
+  font-size: 0.95rem;
+  color: #ffcc66;
+  word-break: break-all;
+}
+
+.obra-genres-fieldset {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 12px 14px 14px;
+  margin: 0 0 14px;
+}
+
+.obra-genres-fieldset legend {
+  padding: 0 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e8e8e8;
+}
+
+.obra-genre-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.obra-genre-chip {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(12, 12, 12, 0.9);
+  color: #c8c8c8;
+  cursor: pointer;
+}
+
+.obra-genre-chip.is-on {
+  border-color: rgba(255, 204, 0, 0.55);
+  background: rgba(60, 48, 8, 0.55);
+  color: #ffe8a8;
+}
+
+.obra-seo-readonly {
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: rgba(14, 14, 14, 0.75);
+  margin-top: 8px;
+}
+
+.obra-seo-readonly-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8f8f8f;
+  margin-bottom: 8px;
+}
+
+.obra-seo-readonly-text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #dcdcdc;
+}
+
+.preview-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.preview-genre-pill {
+  font-size: 0.68rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  color: #ffe6a0;
 }
 
 @media (max-width: 1080px) {

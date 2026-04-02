@@ -1,110 +1,110 @@
-import { useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useLocation } from 'react-router-dom';
 
 const SITE_NAME = 'MangaTeofilo';
 const SITE_URL = 'https://mangateofilo.com';
-const DEFAULT_IMAGE = '/assets/fotos/shito.jpg';
+const DEFAULT_IMAGE_PATH = '/assets/fotos/shito.jpg';
 
-function upsertMeta(selector, attr, value) {
-  let el = document.head.querySelector(selector);
-  if (!el) {
-    el = document.createElement('meta');
-    document.head.appendChild(el);
-  }
-  const [k, v] = attr;
-  el.setAttribute(k, v);
-  el.setAttribute('content', value);
-}
-
-function upsertLinkRel(rel, href) {
-  let el = document.head.querySelector(`link[rel="${rel}"]`);
-  if (!el) {
-    el = document.createElement('link');
-    el.setAttribute('rel', rel);
-    document.head.appendChild(el);
-  }
-  el.setAttribute('href', href);
-}
-
-function upsertJsonLd(id, data) {
-  let el = document.head.querySelector(`script[data-seo="${id}"]`);
-  if (!el) {
-    el = document.createElement('script');
-    el.type = 'application/ld+json';
-    el.setAttribute('data-seo', id);
-    document.head.appendChild(el);
-  }
-  el.textContent = JSON.stringify(data);
+function absUrl(pathOrUrl) {
+  const raw = String(pathOrUrl || DEFAULT_IMAGE_PATH).trim();
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `${SITE_URL}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
 function buildSeo(pathname) {
-  const slugFromPath = decodeURIComponent(pathname.split('/')[2] || '').trim();
+  const clean = pathname || '/';
+  const slugFromPath = decodeURIComponent(clean.split('/')[2] || '').trim();
 
   const defs = {
     title: `${SITE_NAME} | Mangás autorais em português`,
-    description: 'Leia mangás autorais de Teófilo em uma plataforma única: capítulos, obras, favoritos e atualizações.',
-    image: DEFAULT_IMAGE,
+    description:
+      'Leia mangás autorais em português: ler mangá online, capítulos gratuitos, obras autorais e atualizações.',
+    image: absUrl(DEFAULT_IMAGE_PATH),
     robots: 'index,follow,max-image-preview:large',
-    type: 'website',
+    ogType: 'website',
+    jsonLdExtra: null,
   };
 
-  if (pathname === '/mangas' || pathname === '/works') {
+  if (clean === '/mangas' || clean === '/works') {
     return {
       ...defs,
       title: `Lista de mangás | ${SITE_NAME}`,
       description:
-        'Catálogo responsivo de mangás autorais: capas em grelha, atualizações, status e favoritos — celular, tablet e desktop.',
+        'Catálogo de mangás autorais para ler online: capas, status, favoritos e novos capítulos — mobile e desktop.',
     };
   }
 
-  if (pathname.startsWith('/work/')) {
-    const slugWork = decodeURIComponent(pathname.split('/')[2] || '').trim() || 'Obra';
+  if (clean.startsWith('/work/')) {
+    const slugWork = decodeURIComponent(clean.split('/')[2] || '').trim() || 'Obra';
     return {
       ...defs,
-      type: 'article',
+      ogType: 'article',
       title: `${slugWork} | ${SITE_NAME}`,
-      description: `Leia capítulos, sinopse e novidades desta obra no ${SITE_NAME}.`,
+      description: `Leia ${slugWork} online — mangá autoral, capítulos e sinopse no ${SITE_NAME}.`,
     };
   }
 
-  if (pathname.startsWith('/obra/')) {
+  if (clean.startsWith('/obra/')) {
     const obraNome = slugFromPath || 'Obra';
     return {
       ...defs,
-      type: 'article',
+      ogType: 'article',
       title: `${obraNome} | ${SITE_NAME}`,
-      description: `Leia capítulos, sinopse e novidades da obra ${obraNome} no ${SITE_NAME}.`,
+      description: `Leia ${obraNome} online — capítulos e detalhes da obra no ${SITE_NAME}.`,
     };
   }
 
-  if (pathname.startsWith('/ler/')) {
+  if (clean.startsWith('/ler/')) {
     return {
       ...defs,
-      type: 'article',
-      title: `Leitor de Capítulos | ${SITE_NAME}`,
+      ogType: 'article',
+      title: `Leitor de capítulo | ${SITE_NAME}`,
       description:
-        'Acompanhe capitulos lancados no leitor oficial, com acesso antecipado liberado pela membership do autor quando o lancamento permitir.',
+        'Leia capítulos de mangá online no leitor oficial. Acesso antecipado quando o autor liberar para membros.',
     };
   }
 
-  if (pathname === '/capitulos') {
+  if (clean.startsWith('/criador/')) {
+    const cid = decodeURIComponent(clean.split('/')[2] || '').trim() || 'Criador';
     return {
       ...defs,
-      title: `Biblioteca de Capítulos | ${SITE_NAME}`,
-      description:
-        'Veja capitulos disponiveis, datas de liberacao e acesso antecipado para membros do autor, quando aplicavel.',
+      ogType: 'profile',
+      title: `Perfil do criador | ${SITE_NAME}`,
+      description: `Conheça o criador, obras e links no ${SITE_NAME}.`,
     };
   }
 
-  if (pathname === '/loja' || pathname.startsWith('/loja/produto/')) {
+  if (clean === '/sobre-autor') {
     return {
       ...defs,
-      title: `Loja Física | ${SITE_NAME}`,
-      description: 'Compre produtos físicos oficiais e acompanhe seus pedidos na Loja do MangaTeofilo.',
+      title: `Sobre o autor | ${SITE_NAME}`,
+      description: `Conheça o autor por trás das obras do ${SITE_NAME}.`,
     };
   }
 
-  if (pathname === '/biblioteca' || pathname.startsWith('/admin') || pathname === '/perfil' || pathname === '/login') {
+  if (clean === '/apoie' || clean.startsWith('/apoie/')) {
+    return {
+      ...defs,
+      title: `Apoie a obra | ${SITE_NAME}`,
+      description: `Apoie criadores e tenha benefícios — assinatura e doações no ${SITE_NAME}.`,
+    };
+  }
+
+  if (clean === '/loja' || clean.startsWith('/loja/')) {
+    return {
+      ...defs,
+      title: `Loja | ${SITE_NAME}`,
+      description: 'Produtos oficiais, pedidos e vitrine da loja MangaTeofilo.',
+    };
+  }
+
+  if (
+    clean === '/biblioteca' ||
+    clean.startsWith('/admin') ||
+    clean === '/perfil' ||
+    clean === '/login' ||
+    clean.startsWith('/creator/')
+  ) {
     return {
       ...defs,
       robots: 'noindex,nofollow',
@@ -116,59 +116,42 @@ function buildSeo(pathname) {
 
 export default function SeoManager() {
   const { pathname } = useLocation();
+  const cleanPath = pathname || '/';
+  const seo = buildSeo(cleanPath);
+  const canonical = `${SITE_URL}${cleanPath}`;
 
-  useEffect(() => {
-    const cleanPath = pathname || '/';
-    const seo = buildSeo(cleanPath);
-    const canonical = `${SITE_URL}${cleanPath}`;
+  const websiteJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: SITE_URL,
+    inLanguage: 'pt-BR',
+    description: seo.description,
+  };
 
-    document.title = seo.title;
+  return (
+    <Helmet prioritizeSeoTags>
+      <html lang="pt-BR" />
+      <title>{seo.title}</title>
+      <meta name="description" content={seo.description} />
+      <meta name="robots" content={seo.robots} />
 
-    upsertMeta('meta[name="description"]', ['name', 'description'], seo.description);
-    upsertMeta('meta[name="robots"]', ['name', 'robots'], seo.robots);
+      <meta property="og:site_name" content={SITE_NAME} />
+      <meta property="og:type" content={seo.ogType} />
+      <meta property="og:title" content={seo.title} />
+      <meta property="og:description" content={seo.description} />
+      <meta property="og:image" content={seo.image} />
+      <meta property="og:url" content={canonical} />
+      <meta property="og:locale" content="pt_BR" />
 
-    upsertMeta('meta[property="og:site_name"]', ['property', 'og:site_name'], SITE_NAME);
-    upsertMeta('meta[property="og:type"]', ['property', 'og:type'], seo.type);
-    upsertMeta('meta[property="og:title"]', ['property', 'og:title'], seo.title);
-    upsertMeta('meta[property="og:description"]', ['property', 'og:description'], seo.description);
-    upsertMeta('meta[property="og:image"]', ['property', 'og:image'], seo.image);
-    upsertMeta('meta[property="og:url"]', ['property', 'og:url'], canonical);
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content={seo.title} />
+      <meta name="twitter:description" content={seo.description} />
+      <meta name="twitter:image" content={seo.image} />
 
-    upsertMeta('meta[name="twitter:card"]', ['name', 'twitter:card'], 'summary_large_image');
-    upsertMeta('meta[name="twitter:title"]', ['name', 'twitter:title'], seo.title);
-    upsertMeta('meta[name="twitter:description"]', ['name', 'twitter:description'], seo.description);
-    upsertMeta('meta[name="twitter:image"]', ['name', 'twitter:image'], seo.image);
+      <link rel="canonical" href={canonical} />
 
-    upsertLinkRel('canonical', canonical);
-
-    upsertJsonLd('website', {
-      '@context': 'https://schema.org',
-      '@type': 'WebSite',
-      name: SITE_NAME,
-      url: SITE_URL,
-      potentialAction: {
-        '@type': 'SearchAction',
-        target: `${SITE_URL}/works`,
-        'query-input': 'required name=query',
-      },
-    });
-
-    if (cleanPath.startsWith('/obra/') || cleanPath.startsWith('/work/')) {
-      const obraNome = decodeURIComponent(cleanPath.split('/')[2] || 'obra');
-      upsertJsonLd('obra', {
-        '@context': 'https://schema.org',
-        '@type': 'CreativeWorkSeries',
-        name: obraNome,
-        url: canonical,
-        inLanguage: 'pt-BR',
-      });
-    } else {
-      const old = document.head.querySelector('script[data-seo="obra"]');
-      if (old) old.remove();
-    }
-  }, [pathname]);
-
-  return null;
+      <script type="application/ld+json">{JSON.stringify(websiteJsonLd)}</script>
+    </Helmet>
+  );
 }
-
-

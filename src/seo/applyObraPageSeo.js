@@ -1,62 +1,47 @@
+import { obraSegmentoUrlPublica } from '../config/obras';
+
 const SITE_NAME = 'MangaTeofilo';
 const SITE_URL = 'https://mangateofilo.com';
 const DEFAULT_IMAGE = '/assets/fotos/shito.jpg';
 
-function upsertMeta(selector, attrPair, value) {
-  let el = document.head.querySelector(selector);
-  if (!el) {
-    el = document.createElement('meta');
-    document.head.appendChild(el);
-  }
-  el.setAttribute(attrPair[0], attrPair[1]);
-  el.setAttribute('content', value);
-}
-
-function upsertLinkRel(rel, href) {
-  let el = document.head.querySelector(`link[rel="${rel}"]`);
-  if (!el) {
-    el = document.createElement('link');
-    el.setAttribute('rel', rel);
-    document.head.appendChild(el);
-  }
-  el.setAttribute('href', href);
+function absolutizeUrl(pathOrUrl) {
+  const raw = String(pathOrUrl || DEFAULT_IMAGE).trim();
+  if (/^https?:\/\//i.test(raw)) return raw;
+  return `${SITE_URL}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
 /**
- * SEO por obra (campos seoTitle / seoDescription do admin + imagem).
- * @param {{ pathname: string, obra: object }} p
+ * Dados para <Helmet> / meta da página da obra (título, OG, JSON-LD).
+ * @param {{ pathname?: string, obra: object }} p — `pathname` legado; canónico é sempre `/work/{obraSegmentoUrlPublica}`.
+ * @returns {null | { title: string, description: string, image: string, canonical: string, jsonLd: object }}
  */
-export function applyObraPageSeo({ pathname, obra }) {
-  if (!obra || typeof document === 'undefined') return;
+export function buildObraPageSeo({ obra }) {
+  if (!obra || typeof obra !== 'object') return null;
   const titleBase = String(obra.seoTitle || obra.titulo || 'Obra').trim();
   const description = String(obra.seoDescription || obra.sinopse || '')
     .trim()
     .slice(0, 220);
-  const rawImg = String(obra.capaUrl || obra.bannerUrl || DEFAULT_IMAGE).trim();
-  const image = /^https?:\/\//i.test(rawImg)
-    ? rawImg
-    : `${SITE_URL}${rawImg.startsWith('/') ? '' : '/'}${rawImg}`;
-  const canonical = `${SITE_URL}${pathname || '/'}`;
+  const descOut = description || `Leia ${titleBase} — mangá autoral em português no ${SITE_NAME}. Ler mangá online.`;
+  const image = absolutizeUrl(obra.capaUrl || obra.bannerUrl || DEFAULT_IMAGE);
+  const segment = obraSegmentoUrlPublica(obra);
+  const canonical = `${SITE_URL}/work/${encodeURIComponent(segment)}`;
 
-  document.title = `${titleBase} | ${SITE_NAME}`;
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'CreativeWorkSeries',
+    name: titleBase,
+    url: canonical,
+    inLanguage: 'pt-BR',
+    genre: ['Mangá', 'Graphic Novel'],
+    image: [image],
+  };
+  if (description) jsonLd.description = description;
 
-  upsertMeta('meta[name="description"]', ['name', 'description'], description || `Leia ${titleBase} no ${SITE_NAME}.`);
-
-  upsertMeta('meta[property="og:site_name"]', ['property', 'og:site_name'], SITE_NAME);
-  upsertMeta('meta[property="og:type"]', ['property', 'og:type'], 'article');
-  upsertMeta('meta[property="og:title"]', ['property', 'og:title'], `${titleBase} | ${SITE_NAME}`);
-  upsertMeta('meta[property="og:description"]', ['property', 'og:description'], description);
-  upsertMeta('meta[property="og:image"]', ['property', 'og:image'], image);
-  upsertMeta('meta[property="og:url"]', ['property', 'og:url'], canonical);
-
-  upsertMeta('meta[name="twitter:card"]', ['name', 'twitter:card'], 'summary_large_image');
-  upsertMeta('meta[name="twitter:title"]', ['name', 'twitter:title'], `${titleBase} | ${SITE_NAME}`);
-  upsertMeta('meta[name="twitter:description"]', ['name', 'twitter:description'], description);
-  upsertMeta('meta[name="twitter:image"]', ['name', 'twitter:image'], image);
-
-  upsertLinkRel('canonical', canonical);
-}
-
-export function defaultSiteTitle() {
-  return `${SITE_NAME} | Mangás autorais em português`;
+  return {
+    title: `${titleBase} | ${SITE_NAME}`,
+    description: descOut,
+    image,
+    canonical,
+    jsonLd,
+  };
 }

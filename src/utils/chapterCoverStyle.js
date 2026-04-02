@@ -3,6 +3,9 @@ function clamp(n, min, max) {
 }
 
 export function chapterCoverStyle(capaAjuste) {
+  if (capaAjuste?.rendered === true || capaAjuste?.mode === 'responsive-fit') {
+    return {};
+  }
   const zoom = clamp(Number(capaAjuste?.zoom ?? 1), 1, 3);
   const x = clamp(Number(capaAjuste?.x ?? 0), -100, 100);
   const y = clamp(Number(capaAjuste?.y ?? 0), -100, 100);

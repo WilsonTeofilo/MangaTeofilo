@@ -18,7 +18,7 @@ export const MENSAGEM_POR_PLANO = {
 export function mensagemDoacaoLivre(valorNum) {
   const v = Number(valorNum);
   if (!Number.isFinite(v) || v < 1) {
-    return 'Obrigado por apoiar Shito! Sua energia fortalece a história.';
+    return 'Obrigado por apoiar Kokuin! Sua energia fortalece a história.';
   }
   if (v < 20) {
     return 'Obrigado pela doação! Cada real conta — você ajuda a manter a tempestade viva.';

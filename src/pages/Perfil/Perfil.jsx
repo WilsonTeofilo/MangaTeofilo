@@ -6,7 +6,7 @@ import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
-import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // âœ… centralizado
+import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // centralizado
 import {
   algumaCreatorMembershipAtiva,
   assinaturaPremiumAtiva,
@@ -30,8 +30,8 @@ import './Perfil.css';
 const creatorSubmitApplication = httpsCallable(functions, 'creatorSubmitApplication');
 const markUserNotificationRead = httpsCallable(functions, 'markUserNotificationRead');
 
-// âœ… Recebe `user` via prop (consistente com App.jsx)
-// NÃ£o usa mais auth.currentUser diretamente para evitar dessincronizaÃ§Ã£o
+// Recebe `user` via prop (consistente com App.jsx)
+// Nao usa mais auth.currentUser diretamente para evitar dessincronizacao
 export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const navigate = useNavigate();
 
@@ -270,7 +270,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     e.preventDefault();
 
     if (!novoNome.trim()) {
-      setMensagem({ texto: 'DÃª um nome Ã  sua alma!', tipo: 'erro' });
+      setMensagem({ texto: 'Dê um nome à sua alma!', tipo: 'erro' });
       return;
     }
 
@@ -282,7 +282,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       promotionsEmail: notifyPromotions === true,
     };
     if (birthYear && (!Number.isInteger(ano) || ano < 1900 || ano > anoAtual)) {
-      setMensagem({ texto: 'Informe um ano de nascimento vÃ¡lido.', tipo: 'erro' });
+      setMensagem({ texto: 'Informe um ano de nascimento válido.', tipo: 'erro' });
       return;
     }
 
@@ -588,12 +588,12 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     <main className="perfil-page">
       <div className="perfil-card">
         <h1 className="perfil-title">FORJA DE ALMA</h1>
-        <p className="perfil-subtitle">Altere sua identidade em Shito</p>
+        <p className="perfil-subtitle">Altere sua identidade em Kokuin</p>
 
         {adminAccess.isMangaka && user?.uid ? (
           <div className="perfil-mangaka-apoio">
             <p className="perfil-mangaka-apoio-label">
-              Seu link de apoio (doaÃ§Ãµes e premium atribuÃ­dos a vocÃª ao usar este link):
+              Seu link de apoio (doações e premium atribuídos a você ao usar este link):
             </p>
             <div className="perfil-mangaka-apoio-row">
               <input
@@ -601,7 +601,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 readOnly
                 className="perfil-mangaka-apoio-input"
                 value={apoieUrlAbsolutaParaCriador(user.uid)}
-                aria-label="URL de apoio com atribuiÃ§Ã£o ao seu perfil"
+                aria-label="URL de apoio com atribuição ao seu perfil"
               />
               <button
                 type="button"
@@ -613,7 +613,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                     setLinkApoioCopiado(true);
                     setTimeout(() => setLinkApoioCopiado(false), 2500);
                   } catch {
-                    setMensagem({ texto: 'NÃ£o foi possÃ­vel copiar. Selecione o link manualmente.', tipo: 'erro' });
+                    setMensagem({ texto: 'Não foi possível copiar. Selecione o link manualmente.', tipo: 'erro' });
                   }
                 }}
               >
@@ -624,7 +624,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 className="perfil-mangaka-apoio-copy"
                 onClick={() => navigate(`/criador/${encodeURIComponent(user.uid)}`)}
               >
-                Ver pÃ¡gina pÃºblica
+                Ver página pública
               </button>
             </div>
             <p className="perfil-mangaka-apoio-label">
@@ -859,7 +859,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                   </div>
                   <p className="perfil-onboarding-progress-label">
                     {onboardingRequiredDone}/{onboardingRequiredAll} obrigatorios
-                    {onboardingAllRequiredComplete ? ' â€” tudo pronto para ir ao ar.' : ''}
+                    {onboardingAllRequiredComplete ? ' - tudo pronto para ir ao ar.' : ''}
                   </p>
                 </div>
                 <ol className="perfil-onboarding-steps">
@@ -869,7 +869,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                       className={`perfil-onboarding-step ${step.done ? 'is-done' : ''} ${step.optional ? 'is-optional' : ''}`}
                     >
                       <span className="perfil-onboarding-step-status" aria-hidden="true">
-                        {step.done ? 'âœ“' : step.optional ? 'â—‹' : 'â€¢'}
+                        {step.done ? 'OK' : step.optional ? 'Opc.' : '-'}
                       </span>
                       <div className="perfil-onboarding-step-body">
                         <div className="perfil-onboarding-step-title-row">
@@ -969,7 +969,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           </div>
 
           <div className="input-group">
-            <label>NOME DE EXIBIÃ‡ÃƒO</label>
+            <label>NOME DE EXIBIÇÃO</label>
             <input
               type="text"
               className="perfil-input"
@@ -1000,7 +1000,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               value={gender}
               onChange={(e) => setGender(e.target.value)}
             >
-              <option value="nao_informado">Prefiro nÃ£o informar</option>
+              <option value="nao_informado">Prefiro não informar</option>
               <option value="masculino">Masculino</option>
               <option value="feminino">Feminino</option>
               <option value="outro">Outro</option>
@@ -1015,9 +1015,9 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               }`}
             >
               {accountType === 'admin'
-                ? 'ðŸ›¡ï¸ Conta Admin'
+                ? 'Conta Admin'
                 : accountType === 'membro' || accountType === 'premium'
-                  ? 'ðŸ‘‘ Conta Premium'
+                  ? 'Conta Premium'
                   : 'Conta Comum'}
             </div>
           </div>
@@ -1065,7 +1065,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 </div>
 
                 <div className="input-group">
-                <label>BIO PÃšBLICA DO CRIADOR</label>
+                <label>BIO PÚBLICA DO CRIADOR</label>
                   <textarea
                   className="perfil-input"
                   rows={4}
@@ -1117,7 +1117,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                     checked={creatorMembershipEnabled}
                     onChange={(e) => setCreatorMembershipEnabled(e.target.checked)}
                   />
-                  Ativar assinatura do criador na pÃ¡gina pÃºblica
+                  Ativar assinatura do criador na página pública
                 </label>
               </div>
               ) : null}
@@ -1137,7 +1137,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
 
               {creatorMonetizationPreference === 'monetize' ? (
               <div className="input-group">
-                <label>DOAÃ‡ÃƒO SUGERIDA (R$)</label>
+                <label>DOAÇÃO SUGERIDA (R$)</label>
                 <input
                   type="text"
                   className="perfil-input"
@@ -1156,9 +1156,9 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             <div className="input-group perfil-premium-linha">
               <label>ASSINATURA PREMIUM</label>
               <p className="perfil-premium-msg">
-                Ativa atÃ©{' '}
+                Ativa até{' '}
                 <strong>
-                  {formatarDataLongaBr(premiumEntitlement.memberUntil, { seVazio: 'â€”' })}
+                  {formatarDataLongaBr(premiumEntitlement.memberUntil, { seVazio: '—' })}
                 </strong>
                 .
               </p>
@@ -1195,7 +1195,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             <label>ESCOLHA SEU NOVO VISUAL</label>
             {!podeUsarAvatarPremium && (
               <p className="avatar-premium-hint">
-                Avatares com selo <strong>Premium</strong> aparecem para vocÃª visualizar, mas sÃ³ podem ser usados
+                Avatares com selo <strong>Premium</strong> aparecem para você visualizar, mas só podem ser usados
                 por assinantes ativos.
               </p>
             )}
@@ -1212,13 +1212,13 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 >
                   <img
                     src={item.url}
-                    alt={`OpÃ§Ã£o ${i + 1}`}
+                    alt={`Opção ${i + 1}`}
                     onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
                   />
                   {normalizarAcessoAvatar(item) === 'premium' && (
                     <span className="avatar-tier-tag">Premium</span>
                   )}
-                  {bloqueado && <span className="avatar-lock">ðŸ”’</span>}
+                  {bloqueado && <span className="avatar-lock">Bloq.</span>}
                 </div>
               );
               })}
@@ -1247,7 +1247,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
 
           <div className="perfil-actions">
             <button type="submit" className="btn-save-perfil" disabled={loading}>
-              {loading ? 'SINCRONIZANDO...' : 'SALVAR ALTERAÃ‡Ã•ES'}
+              {loading ? 'SINCRONIZANDO...' : 'SALVAR ALTERAÇÕES'}
             </button>
             <button type="button" className="btn-cancel-perfil" onClick={() => navigate('/')}>
               CANCELAR

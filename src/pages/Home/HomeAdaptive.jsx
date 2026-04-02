@@ -10,6 +10,7 @@ import {
   ensureLegacyShitoObra,
   obterObraIdCapitulo,
   obraCreatorId,
+  obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
@@ -18,9 +19,7 @@ import ShitoManga from './ShitoManga';
 import './HomeAdaptive.css';
 
 function pathObraPublica(obra) {
-  const id = String(obra?.id || '').toLowerCase();
-  const slug = String(obra?.slug || '').trim();
-  return `/work/${encodeURIComponent(slug || id)}`;
+  return `/work/${encodeURIComponent(obraSegmentoUrlPublica(obra))}`;
 }
 
 function pathCriadorPublico(obra) {
@@ -157,6 +156,7 @@ export default function HomeAdaptive({ user }) {
   }, [modoHome, dadosMulti.hero.length]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (heroIndex >= dadosMulti.hero.length) setHeroIndex(0);
   }, [heroIndex, dadosMulti.hero.length]);
 

@@ -33,6 +33,10 @@ import {
   parseBirthDateLocal,
 } from '../../utils/birthDateAge';
 import { buildCreatorRecordForProfileSave } from '../../utils/creatorRecord';
+import {
+  creatorMonetizationStatusLabel,
+  effectiveCreatorMonetizationStatus,
+} from '../../utils/creatorMonetizationUi';
 import './Perfil.css';
 
 const creatorSubmitApplication = httpsCallable(functions, 'creatorSubmitApplication');
@@ -190,6 +194,10 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
 
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
   const creatorMonetizationStatus = String(perfilDb?.creatorMonetizationStatus || '').trim().toLowerCase();
+  const creatorMonetizationStatusEffective = effectiveCreatorMonetizationStatus(
+    creatorMonetizationPreference,
+    creatorMonetizationStatus
+  );
   const creatorReviewReason = String(perfilDb?.creatorReviewReason || '').trim();
   const creatorMonetizationReviewReason = String(perfilDb?.creatorMonetizationReviewReason || '').trim();
   const creatorModerationAction = String(perfilDb?.creatorModerationAction || '').trim().toLowerCase();
@@ -207,14 +215,10 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const creatorDisplayLabel = String(creatorDisplayName || novoNome || user?.displayName || '').trim() || 'Criador';
   const creatorSupportUrl = user?.uid ? apoieUrlAbsolutaParaCriador(user.uid) : '';
   const creatorPublicPath = user?.uid ? `/criador/${encodeURIComponent(user.uid)}` : '/creator/perfil';
-  const creatorStatusLabel =
-    creatorMonetizationStatus === 'active'
-      ? 'Monetizacao ativa'
-      : creatorMonetizationStatus === 'pending_review'
-        ? 'Monetizacao em revisao'
-        : creatorMonetizationStatus === 'blocked_underage'
-          ? 'Monetizacao bloqueada por idade'
-          : 'Modo apenas publicar';
+  const creatorStatusLabel = creatorMonetizationStatusLabel(
+    creatorMonetizationPreference,
+    creatorMonetizationStatus
+  );
   const linkApoioCopiado = false;
   const setLinkApoioCopiado = () => {};
   const currentOnboardingStep = null;
@@ -336,6 +340,25 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           return;
         }
         finalAvatar = u;
+      } else if (adminAccess.isMangaka) {
+        const asUrl = String(avatarSelecionado || '').trim();
+        if (/^https:\/\//i.test(asUrl) && asUrl.length <= 2048) {
+          finalAvatar = asUrl;
+        } else {
+          const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
+          if (avatarEscolhido) {
+            if (normalizarAcessoAvatar(avatarEscolhido) === 'premium' && !podeUsarAvatarPremium) {
+              setMensagem({ texto: 'Avatar Premium exclusivo para conta Premium ativa.', tipo: 'erro' });
+              setLoading(false);
+              return;
+            }
+            finalAvatar = avatarSelecionado;
+          } else {
+            const keep = String(perfilDb?.userAvatar || user?.photoURL || '').trim();
+            finalAvatar =
+              /^https:\/\//i.test(keep) && keep.length <= 2048 ? keep : AVATAR_FALLBACK;
+          }
+        }
       } else {
         const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
         if (!avatarEscolhido) {
@@ -888,14 +911,14 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </button>
             </div>
             <p className="perfil-mangaka-apoio-label">
-              Monetizacao: <strong>{creatorMonetizationStatus || 'disabled'}</strong>
-              {creatorMonetizationStatus === 'blocked_underage'
+              Monetizacao: <strong>{creatorMonetizationStatusEffective || 'disabled'}</strong>
+              {creatorMonetizationStatusEffective === 'blocked_underage'
                 ? isUnderageByBirthYear
                   ? ' - voce pode publicar, mas nao pode receber por ser menor de idade.'
                   : ' - bloqueio anterior; com 18+ na data do perfil, use Monetizar e salve para revisao.'
-                : creatorMonetizationStatus === 'active'
+                : creatorMonetizationStatusEffective === 'active'
                   ? ' - membership e ganhos estao liberados.'
-                  : creatorMonetizationStatus === 'pending_review'
+                  : creatorMonetizationStatusEffective === 'pending_review'
                     ? ' - sua monetizacao aguarda validacao da equipe.'
                     : ' - sua conta esta no modo apenas publicar.'}
             </p>
@@ -1223,7 +1246,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                   <p className="perfil-mangaka-apoio-label">
                     {isUnderageByBirthYear
                       ? 'Monetizacao so para maiores de 18 (conforme a data de nascimento acima).'
-                      : creatorMonetizationStatus === 'blocked_underage'
+                      : creatorMonetizationPreference === 'monetize' &&
+                          creatorMonetizationStatus === 'blocked_underage'
                         ? 'Status anterior era bloqueio por idade. Com 18+ na data acima, escolha Monetizar e salve para solicitar revisao.'
                         : creatorMonetizationPreference === 'monetize'
                           ? 'Membership e ganhos ficam disponiveis apenas com validacao da equipe.'
@@ -1377,49 +1401,56 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             </div>
           )}
 
-          <div className="avatar-selection-section">
-            <label>ESCOLHA SEU NOVO VISUAL</label>
-            {!podeUsarAvatarPremium && (
-              <p className="avatar-premium-hint">
-                Avatares com selo <strong>Premium</strong> aparecem para você visualizar, mas só podem ser usados
-                por assinantes ativos.
+          {!adminAccess.isMangaka ? (
+            <div className="avatar-selection-section">
+              <label>ESCOLHA SEU NOVO VISUAL</label>
+              {!podeUsarAvatarPremium && (
+                <p className="avatar-premium-hint">
+                  Avatares com selo <strong>Premium</strong> aparecem para você visualizar, mas só podem ser usados
+                  por assinantes ativos.
+                </p>
+              )}
+              <div className="avatar-options-grid">
+                {listaAvatares.map((item, i) => {
+                  const bloqueado = normalizarAcessoAvatar(item) === 'premium' && !podeUsarAvatarPremium;
+                  const ativo = avatarSelecionado === item.url;
+                  return (
+                    <div
+                      key={item.id || i}
+                      className={`avatar-option-card ${ativo ? 'active' : ''} ${bloqueado ? 'locked' : ''}`}
+                      onClick={() => {
+                        if (bloqueado) return;
+                        setAvatarSelecionado(item.url);
+                        setMangakaAvatarFile(null);
+                        setMangakaAvatarUrlDraft('');
+                      }}
+                      title={bloqueado ? 'Disponivel apenas para conta Premium ativa' : 'Selecionar avatar'}
+                    >
+                      <img
+                        src={item.url}
+                        alt={`Opção ${i + 1}`}
+                        onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
+                      />
+                      {normalizarAcessoAvatar(item) === 'premium' && (
+                        <span className="avatar-tier-tag">Premium</span>
+                      )}
+                      {bloqueado && <span className="avatar-lock">Bloq.</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="avatar-selection-summary">
+                {podeUsarAvatarPremium
+                  ? `Voce pode usar todos os ${listaAvatares.length} avatares disponiveis.`
+                  : `Disponiveis para sua conta: ${avataresLiberados.length} de ${listaAvatares.length}.`}
               </p>
-            )}
-            <div className="avatar-options-grid">
-              {listaAvatares.map((item, i) => {
-                const bloqueado = normalizarAcessoAvatar(item) === 'premium' && !podeUsarAvatarPremium;
-                const ativo = avatarSelecionado === item.url;
-                return (
-                <div
-                  key={item.id || i}
-                  className={`avatar-option-card ${ativo ? 'active' : ''} ${bloqueado ? 'locked' : ''}`}
-                  onClick={() => {
-                    if (bloqueado) return;
-                    setAvatarSelecionado(item.url);
-                    setMangakaAvatarFile(null);
-                    setMangakaAvatarUrlDraft('');
-                  }}
-                  title={bloqueado ? 'Disponivel apenas para conta Premium ativa' : 'Selecionar avatar'}
-                >
-                  <img
-                    src={item.url}
-                    alt={`Opção ${i + 1}`}
-                    onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
-                  />
-                  {normalizarAcessoAvatar(item) === 'premium' && (
-                    <span className="avatar-tier-tag">Premium</span>
-                  )}
-                  {bloqueado && <span className="avatar-lock">Bloq.</span>}
-                </div>
-              );
-              })}
             </div>
-            <p className="avatar-selection-summary">
-              {podeUsarAvatarPremium
-                ? `Voce pode usar todos os ${listaAvatares.length} avatares disponiveis.`
-                : `Disponiveis para sua conta: ${avataresLiberados.length} de ${listaAvatares.length}.`}
+          ) : (
+            <p className="perfil-mangaka-apoio-label" style={{ marginTop: 8 }}>
+              Sua foto publica e a enviada acima (arquivo ou URL). Contas criador nao usam a grade de avatares da
+              plataforma.
             </p>
-          </div>
+          )}
 
           <div className="input-group notify-group">
             <label className="notify-label">

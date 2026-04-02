@@ -1,9 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate, useParams } from 'react-router-dom';
-
-import { CREATOR_BIO_MIN_LENGTH } from '../../constants';
 import { db, functions } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { toRecordList } from '../../utils/firebaseRecordList';
@@ -86,26 +84,49 @@ export default function CreatorPublicProfilePage({ user }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followMessage, setFollowMessage] = useState('');
+  const [publicoReady, setPublicoReady] = useState(false);
+  const [obrasReady, setObrasReady] = useState(false);
+  const [sortObras, setSortObras] = useState('recent');
+  const obrasSectionRef = useRef(null);
   const creatorUid = String(creatorId || '').trim();
   const toggleCreatorFollow = useMemo(() => httpsCallable(functions, 'toggleCreatorFollow'), []);
 
   useEffect(() => {
     if (!creatorUid) return () => {};
-    const unsub = onValue(ref(db, `usuarios_publicos/${creatorUid}`), (snapshot) => {
-      setPerfilPublico(snapshot.exists() ? snapshot.val() : null);
-    });
+    setPublicoReady(false);
+    const unsub = onValue(
+      ref(db, `usuarios_publicos/${creatorUid}`),
+      (snapshot) => {
+        setPerfilPublico(snapshot.exists() ? snapshot.val() : null);
+        setPublicoReady(true);
+      },
+      () => {
+        setPerfilPublico(null);
+        setPublicoReady(true);
+      }
+    );
     return () => unsub();
   }, [creatorUid]);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'obras'), (snapshot) => {
-      const lista = snapshot.exists() ? ensureLegacyShitoObra(toRecordList(snapshot.val())) : [];
-      setObras(
-        lista
-          .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)
-          .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-      );
-    });
+    if (!creatorUid) return () => {};
+    setObrasReady(false);
+    const unsub = onValue(
+      ref(db, 'obras'),
+      (snapshot) => {
+        const lista = snapshot.exists() ? ensureLegacyShitoObra(toRecordList(snapshot.val())) : [];
+        setObras(
+          lista
+            .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)
+            .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+        );
+        setObrasReady(true);
+      },
+      () => {
+        setObras([]);
+        setObrasReady(true);
+      }
+    );
     return () => unsub();
   }, [creatorUid]);
 
@@ -187,13 +208,26 @@ export default function CreatorPublicProfilePage({ user }) {
     String(perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar || '').trim() ||
     '/assets/fotos/shito.jpg';
   const heroBackdropUrl = creatorPublicHeroImageUrl(perfilPublico);
-  const creatorStatus = String(perfilPublico?.creatorStatus || '').trim().toLowerCase();
   const creatorMonetizationStatus = String(perfilPublico?.creatorMonetizationStatus || '').trim().toLowerCase();
   const membershipEnabled = creatorMonetizationStatus === 'active' && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
   const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
-  const hasPublicBase = avatar.length > 3 && bio.length >= CREATOR_BIO_MIN_LENGTH && redes.length > 0;
+  const moderation = String(perfilPublico?.creatorModerationAction || '').trim().toLowerCase();
   const canFollow = Boolean(user?.uid) && user.uid !== creatorUid;
+
+  const obrasSorted = useMemo(() => {
+    const list = [...obrasComStats];
+    if (sortObras === 'popular') {
+      list.sort((a, b) => {
+        const score = (o) =>
+          Number(o?.stats?.views || 0) + Number(o?.stats?.likes || 0) * 2 + Number(o?.stats?.comments || 0) * 3;
+        return score(b) - score(a);
+      });
+    } else {
+      list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+    }
+    return list;
+  }, [obrasComStats, sortObras]);
 
   async function handleToggleFollow() {
     if (!user?.uid) {
@@ -259,12 +293,30 @@ export default function CreatorPublicProfilePage({ user }) {
     );
   }
 
-  if ((creatorStatus && creatorStatus !== 'active') || !hasPublicBase) {
+  if (!publicoReady || !obrasReady) {
+    return <div className="shito-app-splash" aria-hidden="true" />;
+  }
+
+  const perfilBloqueado = moderation === 'banned';
+  const temSinalPublico = perfilPublico != null || obras.length > 0;
+
+  if (perfilBloqueado) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>{nomeCriador}</h1>
-          <p>Este perfil de criador ainda esta em preparacao e nao foi publicado por completo.</p>
+          <h1>Perfil indisponivel</h1>
+          <p>Este perfil de criador nao esta acessivel no momento.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!temSinalPublico) {
+    return (
+      <main className="criador-page">
+        <section className="criador-empty">
+          <h1>Criador nao encontrado</h1>
+          <p>Nao ha dados publicos para este link.</p>
         </section>
       </main>
     );
@@ -288,7 +340,7 @@ export default function CreatorPublicProfilePage({ user }) {
           <span className="criador-hero__pill">Criador</span>
           <h1>{nomeCriador}</h1>
           <p className="criador-hero__username">@{username}</p>
-          <p>{bio || 'Criador autoral da plataforma MangaTeofilo.'}</p>
+          <p className="criador-hero__bio">{bio || 'Historias autorais na MangaTeofilo.'}</p>
           <div className="criador-hero__actions">
             {canFollow ? (
               <button type="button" className={isFollowing ? 'is-secondary' : ''} disabled={followBusy} onClick={handleToggleFollow}>
@@ -297,11 +349,18 @@ export default function CreatorPublicProfilePage({ user }) {
             ) : null}
             {membershipEnabled ? (
               <button type="button" onClick={() => navigate(apoiePathParaCriador(creatorUid))}>
-                Apoiar o autor
+                Apoiar
               </button>
             ) : null}
+            <button
+              type="button"
+              className="is-secondary"
+              onClick={() => obrasSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              Ver obras
+            </button>
             <button type="button" className="is-secondary" onClick={() => navigate('/works')}>
-              Ver catalogo
+              Catalogo geral
             </button>
           </div>
           {followMessage ? <p className="criador-hero__support-copy">{followMessage}</p> : null}
@@ -311,24 +370,25 @@ export default function CreatorPublicProfilePage({ user }) {
               <span>seguidores</span>
             </article>
             <article>
-              <strong>{creatorStats.totalLikes}</strong>
-              <span>likes</span>
+              <strong>{obrasComStats.length}</strong>
+              <span>obras publicas</span>
             </article>
             <article>
               <strong>{creatorStats.totalViews}</strong>
-              <span>views</span>
+              <span>views (obras)</span>
             </article>
             <article>
-              <strong>{creatorStats.totalComments}</strong>
-              <span>comentarios</span>
+              <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : '—'}</strong>
+              <span>{membershipEnabled ? 'membership /30d' : 'apoiar no site'}</span>
             </article>
           </div>
           <p className="criador-hero__support-copy">
-            Este e o link principal de apoio direto ao criador dentro da plataforma.
+            Seguir este criador ajuda a plataforma a destacar lancamentos e novidades quando estiverem ativas.
           </p>
           {membershipEnabled ? (
             <p className="criador-hero__support-copy">
-              Membership do criador: <strong>{formatarPrecoBrl(membershipPrice)}</strong> por 30 dias. Ela libera acesso antecipado somente nas obras deste autor. Doacao sugerida: <strong>{formatarPrecoBrl(donationSuggested)}</strong>.
+              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias — acesso antecipado nas obras
+              deste autor. Doacao sugerida: {formatarPrecoBrl(donationSuggested)}.
             </p>
           ) : null}
           {redes.length ? (
@@ -344,36 +404,78 @@ export default function CreatorPublicProfilePage({ user }) {
         </div>
       </section>
 
-      <section className="criador-section">
-        <div className="criador-section__head">
+      {membershipEnabled ? (
+        <section className="criador-section criador-section--support" aria-labelledby="criador-apoio-title">
+          <div className="criador-section__head">
+            <h2 id="criador-apoio-title">Apoie este criador</h2>
+          </div>
+          <div className="criador-support-card">
+            <p>
+              <strong>{formatarPrecoBrl(membershipPrice)}</strong> / 30 dias — membros ganham acesso antecipado aos
+              capitulos deste autor nas obras vinculadas.
+            </p>
+            <ul className="criador-support-benefits">
+              <li>Lancamentos antecipados (quando o autor publicar com early access)</li>
+              <li>Apoio direto ao trabalho autoral</li>
+            </ul>
+            <button type="button" className="criador-support-cta" onClick={() => navigate(apoiePathParaCriador(creatorUid))}>
+              Quero apoiar
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section ref={obrasSectionRef} className="criador-section" id="obras-do-criador">
+        <div className="criador-section__head criador-section__head--row">
           <h2>Obras do criador</h2>
-          <span>{obrasComStats.length} obra(s)</span>
+          <div className="criador-section__meta">
+            <span>{obrasComStats.length} obra(s)</span>
+            <label className="criador-sort-label">
+              Ordenar
+              <select value={sortObras} onChange={(e) => setSortObras(e.target.value)} aria-label="Ordenar obras">
+                <option value="recent">Mais recentes</option>
+                <option value="popular">Mais populares</option>
+              </select>
+            </label>
+          </div>
         </div>
-        {!obrasComStats.length ? (
+        {!obrasSorted.length ? (
           <p className="criador-section__empty">Nenhuma obra publica cadastrada para este criador ainda.</p>
         ) : (
           <div className="criador-obras-grid">
-            {obrasComStats.map((obra) => (
-              <article
-                key={obra.id}
-                className="criador-obra-card"
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(pathObra(obra))}
-                onKeyDown={(e) => e.key === 'Enter' && navigate(pathObra(obra))}
-              >
-                <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
-                <div>
-                  <strong>{obra.titulo || obra.id}</strong>
-                  <span>{obra.status || 'ongoing'}</span>
-                  <div className="criador-obra-stats">
-                    <small>{obra.stats.likes} likes</small>
-                    <small>{obra.stats.views} views</small>
-                    <small>{obra.stats.comments} comentarios</small>
+            {obrasSorted.map((obra) => {
+              const sinopse = String(obra.sinopse || obra.descricao || '').trim();
+              return (
+                <article
+                  key={obra.id}
+                  className="criador-obra-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(pathObra(obra))}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate(pathObra(obra))}
+                >
+                  <div className="criador-obra-card__thumb">
+                    <img
+                      src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                      alt={obra.titulo || obra.id}
+                      loading="lazy"
+                    />
                   </div>
-                </div>
-              </article>
-            ))}
+                  <div className="criador-obra-card__body">
+                    <strong className="criador-obra-card__title">{obra.titulo || obra.id}</strong>
+                    <span className="criador-obra-card__meta">{obra.status || 'ongoing'}</span>
+                    {sinopse ? (
+                      <p className="criador-obra-card__synopsis">{sinopse}</p>
+                    ) : null}
+                    <div className="criador-obra-stats" aria-label="Estatisticas da obra">
+                      <small>{obra.stats.likes} curtidas</small>
+                      <small>{obra.stats.views} views</small>
+                      <small>{obra.stats.comments} comentarios</small>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

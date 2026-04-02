@@ -11,18 +11,12 @@ import {
   onboardingRequiredDoneCount,
   onboardingRequiredTotal,
 } from '../../utils/creatorOnboardingProgress';
+import {
+  creatorMonetizationStatusLabel,
+  effectiveCreatorMonetizationStatus,
+} from '../../utils/creatorMonetizationUi';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import './CreatorWorkspace.css';
-
-function creatorStatusLabel(preference, status) {
-  const pref = String(preference || 'publish_only').trim().toLowerCase();
-  const norm = String(status || 'disabled').trim().toLowerCase();
-  if (pref !== 'monetize') return 'Apenas publicar';
-  if (norm === 'active') return 'Monetizacao ativa';
-  if (norm === 'pending_review') return 'Em validacao';
-  if (norm === 'blocked_underage') return 'Bloqueada por idade';
-  return 'Configuracao pendente';
-}
 
 export default function CreatorWorkspace({ user, perfil }) {
   const navigate = useNavigate();
@@ -88,11 +82,14 @@ export default function CreatorWorkspace({ user, perfil }) {
   const onboardingComplete = creatorOnboardingIsRequiredComplete(onboardingSteps);
   const nextPath = creatorOnboardingPrimaryNextPath(onboardingSteps);
   const creatorName = String(perfil?.creatorDisplayName || perfil?.userName || user?.displayName || 'Criador').trim();
-  const monetizationLabel = creatorStatusLabel(
+  const monetizationLabel = creatorMonetizationStatusLabel(
     perfil?.creatorMonetizationPreference,
     perfil?.creatorMonetizationStatus
   );
-  const monetizationStatus = String(perfil?.creatorMonetizationStatus || 'disabled').trim().toLowerCase();
+  const monetizationStatus = effectiveCreatorMonetizationStatus(
+    perfil?.creatorMonetizationPreference,
+    perfil?.creatorMonetizationStatus
+  );
   const monetizationPrimaryLabel =
     monetizationStatus === 'active'
       ? 'Abrir ganhos'
@@ -263,7 +260,7 @@ export default function CreatorWorkspace({ user, perfil }) {
                     : 'Conta em publicacao sem repasse direto'}
               </li>
               <li>
-                {perfil?.creatorMonetizationStatus === 'blocked_underage'
+                {monetizationStatus === 'blocked_underage'
                   ? 'Conta menor de idade: pode publicar, sem receber'
                   : monetizationStatus === 'active'
                     ? 'Promocoes, receita e base recorrente aparecem no workspace'

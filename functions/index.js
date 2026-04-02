@@ -4760,16 +4760,26 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
   ).trim().toLowerCase() === 'monetize'
     ? 'monetize'
     : 'publish_only';
-  const membershipPrice = Number(row?.creatorMembershipPriceBRL);
-  const donationSuggested = Number(row?.creatorDonationSuggestedBRL);
+  const age = resolveCreatorAgeYears(row);
+  const isUnderage = age != null && age < 18;
+  const membershipFromRow = Number(row?.creatorMembershipPriceBRL);
+  const donationFromRow = Number(row?.creatorDonationSuggestedBRL);
+  const defaultMembershipBrl = 12;
+  const defaultDonationBrl = 7;
+  let membershipPrice = membershipFromRow;
+  let donationSuggested = donationFromRow;
+  if (monetizationPreference === 'monetize' && !isUnderage) {
+    if (!Number.isFinite(membershipPrice) || membershipPrice < 1) membershipPrice = defaultMembershipBrl;
+    if (!Number.isFinite(donationSuggested) || donationSuggested < 1) donationSuggested = defaultDonationBrl;
+  }
   const hasMonetizationConfig =
+    monetizationPreference === 'monetize' &&
+    !isUnderage &&
     row?.creatorMembershipEnabled !== false &&
     Number.isFinite(membershipPrice) &&
     membershipPrice >= 1 &&
     Number.isFinite(donationSuggested) &&
     donationSuggested >= 1;
-  const age = resolveCreatorAgeYears(row);
-  const isUnderage = age != null && age < 18;
   const monetizationStatus =
     monetizationPreference === 'monetize'
       ? (isUnderage ? 'blocked_underage' : hasMonetizationConfig ? 'active' : 'pending_review')

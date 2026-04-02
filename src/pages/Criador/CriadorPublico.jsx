@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { CREATOR_BIO_MIN_LENGTH } from '../../constants';
 import { db } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
@@ -40,25 +39,46 @@ export default function CriadorPublico() {
   const navigate = useNavigate();
   const [perfilPublico, setPerfilPublico] = useState(null);
   const [obras, setObras] = useState([]);
+  const [publicoReady, setPublicoReady] = useState(false);
+  const [obrasReady, setObrasReady] = useState(false);
   const creatorUid = String(creatorId || '').trim();
 
   useEffect(() => {
     if (!creatorUid) return () => {};
-    const unsub = onValue(ref(db, `usuarios_publicos/${creatorUid}`), (snapshot) => {
-      setPerfilPublico(snapshot.exists() ? snapshot.val() : null);
-    });
+    setPublicoReady(false);
+    const unsub = onValue(
+      ref(db, `usuarios_publicos/${creatorUid}`),
+      (snapshot) => {
+        setPerfilPublico(snapshot.exists() ? snapshot.val() : null);
+        setPublicoReady(true);
+      },
+      () => {
+        setPerfilPublico(null);
+        setPublicoReady(true);
+      }
+    );
     return () => unsub();
   }, [creatorUid]);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'obras'), (snapshot) => {
-      const lista = snapshot.exists() ? ensureLegacyShitoObra(toList(snapshot.val())) : [];
-      setObras(
-        lista
-          .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)
-          .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-      );
-    });
+    if (!creatorUid) return () => {};
+    setObrasReady(false);
+    const unsub = onValue(
+      ref(db, 'obras'),
+      (snapshot) => {
+        const lista = snapshot.exists() ? ensureLegacyShitoObra(toList(snapshot.val())) : [];
+        setObras(
+          lista
+            .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)
+            .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+        );
+        setObrasReady(true);
+      },
+      () => {
+        setObras([]);
+        setObrasReady(true);
+      }
+    );
     return () => unsub();
   }, [creatorUid]);
 
@@ -81,12 +101,12 @@ export default function CriadorPublico() {
     String(perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar || '').trim() ||
     '/assets/fotos/shito.jpg';
   const heroBackdropUrl = creatorPublicHeroImageUrl(perfilPublico);
-  const creatorStatus = String(perfilPublico?.creatorStatus || '').trim().toLowerCase();
   const creatorMonetizationStatus = String(perfilPublico?.creatorMonetizationStatus || '').trim().toLowerCase();
   const membershipEnabled = creatorMonetizationStatus === 'active' && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
   const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
-  const hasPublicBase = avatar.length > 3 && bio.length >= CREATOR_BIO_MIN_LENGTH && redes.length > 0;
+  const moderation = String(perfilPublico?.creatorModerationAction || '').trim().toLowerCase();
+  const temSinalPublico = perfilPublico != null || obras.length > 0;
 
   if (!creatorUid) {
     return (
@@ -99,12 +119,27 @@ export default function CriadorPublico() {
     );
   }
 
-  if ((creatorStatus && creatorStatus !== 'active') || !hasPublicBase) {
+  if (!publicoReady || !obrasReady) {
+    return <div className="shito-app-splash" aria-hidden="true" />;
+  }
+
+  if (moderation === 'banned') {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>{nomeCriador}</h1>
-          <p>Este perfil de criador ainda esta em preparacao e nao foi publicado por completo.</p>
+          <h1>Perfil indisponivel</h1>
+          <p>Este perfil de criador nao esta acessivel no momento.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!temSinalPublico) {
+    return (
+      <main className="criador-page">
+        <section className="criador-empty">
+          <h1>Criador nao encontrado</h1>
+          <p>Nao ha dados publicos para este link.</p>
         </section>
       </main>
     );
@@ -168,22 +203,32 @@ export default function CriadorPublico() {
           <p className="criador-section__empty">Nenhuma obra pública cadastrada para este criador ainda.</p>
         ) : (
           <div className="criador-obras-grid">
-            {obras.map((obra) => (
-              <article
-                key={obra.id}
-                className="criador-obra-card"
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(pathObra(obra))}
-                onKeyDown={(e) => e.key === 'Enter' && navigate(pathObra(obra))}
-              >
-                <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
-                <div>
-                  <strong>{obra.titulo || obra.id}</strong>
-                  <span>{obra.status || 'ongoing'}</span>
-                </div>
-              </article>
-            ))}
+            {obras.map((obra) => {
+              const sinopse = String(obra.sinopse || obra.descricao || '').trim();
+              return (
+                <article
+                  key={obra.id}
+                  className="criador-obra-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(pathObra(obra))}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate(pathObra(obra))}
+                >
+                  <div className="criador-obra-card__thumb">
+                    <img
+                      src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                      alt={obra.titulo || obra.id}
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="criador-obra-card__body">
+                    <strong className="criador-obra-card__title">{obra.titulo || obra.id}</strong>
+                    <span className="criador-obra-card__meta">{obra.status || 'ongoing'}</span>
+                    {sinopse ? <p className="criador-obra-card__synopsis">{sinopse}</p> : null}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

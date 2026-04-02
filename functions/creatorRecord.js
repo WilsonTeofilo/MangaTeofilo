@@ -1,0 +1,138 @@
+/**
+ * Documento canônico `usuarios/{uid}/creator` (Realtime Database).
+ * Espelha a estrutura lógica pedida (perfil / social / monetização PIX / meta).
+ * Campos legados (creatorMonetizationStatus, creatorCompliance, etc.) continuam sincronizados nos callables.
+ */
+
+import {
+  parseBirthDateStrict,
+  resolveCreatorAgeYears,
+} from './creatorCompliance.js';
+import { inferPayoutPixTypeFromKey, PAYOUT_PIX_TYPES } from './pixKey.js';
+
+/**
+ * Nome legal para monetização: pelo menos 3 palavras (ex.: Nome Sobrenome Filho).
+ */
+export function legalFullNameHasMinThreeWords(s) {
+  const parts = String(s || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean);
+  return parts.length >= 3;
+}
+
+export function legalFullNameHasNoDigits(s) {
+  return !/\d/.test(String(s || '').trim());
+}
+
+export function normalizePixKey(raw) {
+  return String(raw || '').trim();
+}
+
+function payoutPixTypeFromCompliance(c, pixKey) {
+  const p = String(c?.payoutPixType || '').trim().toLowerCase();
+  if (PAYOUT_PIX_TYPES.includes(p)) return p;
+  return inferPayoutPixTypeFromKey(pixKey);
+}
+
+/**
+ * @param {object} params
+ * @param {object} params.row - linha atual usuarios/{uid}
+ * @param {string} params.birthDateIso - YYYY-MM-DD
+ * @param {string} params.displayName
+ * @param {string} params.bio
+ * @param {string} params.instagramUrl
+ * @param {string} params.youtubeUrl
+ * @param {'monetize'|'publish_only'} params.monetizationPreference
+ * @param {string} params.creatorMonetizationStatus - disabled | pending_review | active | blocked_underage
+ * @param {{ legalFullName?: string, taxId?: string, payoutInstructions?: string } | null} params.compliance
+ * @param {number} params.now
+ */
+export function assembleCreatorRecordForRtdb({
+  row,
+  birthDateIso,
+  displayName,
+  bio,
+  instagramUrl,
+  youtubeUrl,
+  monetizationPreference,
+  creatorMonetizationStatus,
+  compliance,
+  now,
+}) {
+  const birth =
+    birthDateIso && parseBirthDateStrict(String(birthDateIso).trim())
+      ? String(birthDateIso).trim()
+      : null;
+  const age = resolveCreatorAgeYears({
+    ...row,
+    birthDate: birth || row?.birthDate,
+    birthYear: row?.birthYear,
+  });
+  const isAdult = age != null && age >= 18;
+  const pref = monetizationPreference === 'monetize' ? 'monetize' : 'publish_only';
+  const st = String(creatorMonetizationStatus || 'disabled').trim().toLowerCase();
+
+  const prev = row?.creator && typeof row.creator === 'object' ? row.creator : {};
+  const createdAt = Number(prev.meta?.createdAt) || now;
+
+  const ig = String(instagramUrl || '').trim().slice(0, 200) || null;
+  const yt = String(youtubeUrl || '').trim().slice(0, 200) || null;
+
+  let monetization;
+  if (!isAdult) {
+    monetization = {
+      enabled: false,
+      requested: false,
+      approved: false,
+      legal: null,
+      payout: null,
+    };
+  } else if (pref !== 'monetize') {
+    monetization = {
+      enabled: false,
+      requested: false,
+      approved: false,
+      legal: null,
+      payout: null,
+    };
+  } else {
+    const c = compliance && typeof compliance === 'object' ? compliance : null;
+    const fullName = c ? String(c.legalFullName || '').trim() : '';
+    const cpfDigits = c ? String(c.taxId || '').replace(/\D/g, '') : '';
+    const pixKey = c ? normalizePixKey(c.payoutInstructions) : '';
+    const pixType = c ? payoutPixTypeFromCompliance(c, pixKey) : 'random';
+    const hasCompliance =
+      fullName.length >= 6 && cpfDigits.length === 11 && pixKey.length > 0;
+
+    monetization = {
+      enabled: st === 'active',
+      requested: true,
+      approved: st === 'active',
+      legal: hasCompliance ? { fullName, cpf: cpfDigits } : null,
+      payout: hasCompliance
+        ? { type: 'pix', key: pixKey.slice(0, 2000), pixType }
+        : null,
+    };
+  }
+
+  const BIO_MAX = 450;
+  return {
+    profile: {
+      displayName: String(displayName || '').trim().slice(0, 60),
+      bio: String(bio || '').trim().slice(0, BIO_MAX),
+      birthDate: birth,
+    },
+    social: {
+      instagram: ig,
+      youtube: yt,
+    },
+    monetization,
+    meta: {
+      isAdult,
+      createdAt,
+      updatedAt: now,
+    },
+  };
+}

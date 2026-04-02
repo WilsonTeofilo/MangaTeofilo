@@ -6,6 +6,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 import { auth, db, storage } from '../../services/firebase';
 import { isAdminUser } from '../../constants';
+import { normalizarAcessoAvatar } from '../../utils/avatarAccess';
 import './AdminPanel.css';
 import './AvatarAdmin.css';
 
@@ -91,15 +92,6 @@ export default function AvatarAdmin() {
     if (file.type !== 'image/webp') return 'Apenas arquivos WebP sao permitidos para avatar.';
     if (file.size > 1024 * 1024) return 'Avatar muito grande. Limite: 1MB.';
     return '';
-  };
-
-  const normalizarAcessoAvatar = (item) => {
-    const raw = item?.access;
-    if (raw == null || String(raw).trim() === '') return 'publico';
-    const v = String(raw).toLowerCase().trim();
-    if (v === 'premium' || v === 'vip' || v === 'exclusivo_vip') return 'premium';
-    if (v === 'publico' || v === 'public' || v === 'comum' || v === 'free') return 'publico';
-    return 'premium';
   };
 
   const handleSelecionarArquivos = (e) => {

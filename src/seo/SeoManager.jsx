@@ -4,6 +4,8 @@ import { useLocation } from 'react-router-dom';
 const SITE_NAME = 'MangaTeofilo';
 const SITE_URL = 'https://mangateofilo.com';
 const DEFAULT_IMAGE_PATH = '/assets/fotos/shito.jpg';
+const NOINDEX_ROUTE_PREFIXES = ['/admin', '/creator/'];
+const NOINDEX_EXACT_ROUTES = new Set(['/biblioteca', '/perfil', '/login', '/loja/carrinho', '/loja/pedidos']);
 
 function absUrl(pathOrUrl) {
   const raw = String(pathOrUrl || DEFAULT_IMAGE_PATH).trim();
@@ -13,8 +15,6 @@ function absUrl(pathOrUrl) {
 
 function buildSeo(pathname) {
   const clean = pathname || '/';
-  const slugFromPath = decodeURIComponent(clean.split('/')[2] || '').trim();
-
   const defs = {
     title: `${SITE_NAME} | Mangás autorais em português`,
     description:
@@ -45,12 +45,11 @@ function buildSeo(pathname) {
   }
 
   if (clean.startsWith('/obra/')) {
-    const obraNome = slugFromPath || 'Obra';
     return {
       ...defs,
       ogType: 'article',
-      title: `${obraNome} | ${SITE_NAME}`,
-      description: `Leia ${obraNome} online — capítulos e detalhes da obra no ${SITE_NAME}.`,
+      title: `Mangá autoral | ${SITE_NAME}`,
+      description: `Leia mangá autoral online, veja capítulos e detalhes da obra no ${SITE_NAME}.`,
     };
   }
 
@@ -65,7 +64,6 @@ function buildSeo(pathname) {
   }
 
   if (clean.startsWith('/criador/')) {
-    const cid = decodeURIComponent(clean.split('/')[2] || '').trim() || 'Criador';
     return {
       ...defs,
       ogType: 'profile',
@@ -98,13 +96,7 @@ function buildSeo(pathname) {
     };
   }
 
-  if (
-    clean === '/biblioteca' ||
-    clean.startsWith('/admin') ||
-    clean === '/perfil' ||
-    clean === '/login' ||
-    clean.startsWith('/creator/')
-  ) {
+  if (NOINDEX_EXACT_ROUTES.has(clean) || NOINDEX_ROUTE_PREFIXES.some((prefix) => clean.startsWith(prefix))) {
     return {
       ...defs,
       robots: 'noindex,nofollow',
@@ -135,6 +127,7 @@ export default function SeoManager() {
       <title>{seo.title}</title>
       <meta name="description" content={seo.description} />
       <meta name="robots" content={seo.robots} />
+      <meta name="theme-color" content="#0b1220" />
 
       <meta property="og:site_name" content={SITE_NAME} />
       <meta property="og:type" content={seo.ogType} />

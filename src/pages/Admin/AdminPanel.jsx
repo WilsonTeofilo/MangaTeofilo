@@ -34,8 +34,13 @@ const CAPA_ASPECT_H = 9;
 const CAPA_OUTPUT_WIDTH = 1600;
 const CAPA_OUTPUT_HEIGHT = Math.round((CAPA_OUTPUT_WIDTH * CAPA_ASPECT_H) / CAPA_ASPECT_W);
 
-function normalizarCapaAjuste(raw) {
-  return normalizeResponsiveCropAdjustment(raw);
+function normalizarCapaAjuste(raw, dims = null) {
+  const bounds = getResponsiveCropZoomBounds(dims, CAPA_OUTPUT_WIDTH, CAPA_OUTPUT_HEIGHT);
+  const normalized = normalizeResponsiveCropAdjustment(raw, { maxZoom: bounds.maxZoom });
+  return {
+    ...normalized,
+    zoom: Math.max(bounds.coverZoom, Number(normalized.zoom || bounds.coverZoom)),
+  };
 }
 
 function validarImagemUpload(file, label = 'arquivo') {
@@ -689,6 +694,11 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   }, [capaFonteEditavel]);
 
   useEffect(() => {
+    if (!capaDimensoes) return;
+    setCapaAjuste((prev) => normalizarCapaAjuste(prev, capaDimensoes));
+  }, [capaDimensoes]);
+
+  useEffect(() => {
     let ativo = true;
     let objectUrl = '';
     if (!capaFonteEditavel) {
@@ -1316,13 +1326,13 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                       Zoom ({capaAjuste.zoom.toFixed(2)}x)
                       <input
                         type="range"
-                        min={capaZoomBounds.minZoom}
+                        min={capaZoomBounds.coverZoom || capaZoomBounds.minZoom}
                         max={capaZoomBounds.maxZoom}
                         step="0.01"
                         value={capaAjuste.zoom}
                         disabled={!capaEditavel}
                         onChange={(e) =>
-                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, zoom: Number(e.target.value) }))
+                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, zoom: Number(e.target.value) }, capaDimensoes))
                         }
                       />
                     </label>
@@ -1336,7 +1346,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                         value={capaAjuste.x}
                         disabled={!capaEditavel}
                         onChange={(e) =>
-                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, x: Number(e.target.value) }))
+                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, x: Number(e.target.value) }, capaDimensoes))
                         }
                       />
                     </label>
@@ -1350,7 +1360,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                         value={capaAjuste.y}
                         disabled={!capaEditavel}
                         onChange={(e) =>
-                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, y: Number(e.target.value) }))
+                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, y: Number(e.target.value) }, capaDimensoes))
                         }
                       />
                     </label>
@@ -1361,7 +1371,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                       type="button"
                       className="btn-reset-capa"
                       disabled={!capaEditavel}
-                      onClick={() => setCapaAjuste(normalizarCapaAjuste())}
+                      onClick={() => setCapaAjuste(normalizarCapaAjuste({}, capaDimensoes))}
                     >
                       Resetar ajuste
                     </button>

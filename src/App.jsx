@@ -67,6 +67,7 @@ const EquipeAdmin = lazy(() => import('./pages/Admin/EquipeAdmin.jsx'));
 const SessoesAdmin = lazy(() => import('./pages/Admin/SessoesAdmin.jsx'));
 const MangakaFinanceiroAdmin = lazy(() => import('./pages/Admin/MangakaFinanceiroAdmin.jsx'));
 const CriadoresAdmin = lazy(() => import('./pages/Admin/CriadoresAdmin.jsx'));
+const CreatorsApplyPage = lazy(() => import('./pages/Creators/CreatorsApplyPage.jsx'));
 
 function RedirectToLogin() {
   const loc = useLocation();
@@ -337,6 +338,20 @@ function AppRoutes() {
             }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
+          <Route
+            path="/creators"
+            element={
+              usuario && !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : (
+                <CreatorsApplyPage
+                  user={podeAcessarApp ? usuario : null}
+                  perfil={podeAcessarApp ? perfilUsuario : null}
+                  adminAccess={adminAccess}
+                />
+              )
+            }
+          />
           <Route path="/apoie/criador/:creatorId" element={<ApoieCreatorRedirect />} />
           <Route
             path="/apoie"

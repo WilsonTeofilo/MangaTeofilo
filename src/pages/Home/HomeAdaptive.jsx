@@ -14,6 +14,7 @@ import {
 } from '../../config/obras';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
+import { toRecordList } from '../../utils/firebaseRecordList';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import ShitoManga from './ShitoManga';
 import './HomeAdaptive.css';
@@ -27,11 +28,6 @@ function pathCriadorPublico(obra) {
 }
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
-
-function toList(snapshotVal) {
-  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
-  return Object.entries(snapshotVal).map(([id, data]) => ({ id, ...(data || {}) }));
-}
 
 function randToken() {
   return Math.random().toString(36).slice(2, 8);
@@ -57,7 +53,7 @@ export default function HomeAdaptive({ user }) {
         setLoadingObras(false);
         return;
       }
-      const lista = ensureLegacyShitoObra(toList(snapshot.val()))
+      const lista = ensureLegacyShitoObra(toRecordList(snapshot.val()))
         .filter((obra) => obraVisivelNoCatalogoPublico(obra))
         .sort((a, b) => (Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0)));
       setObrasPublicadas(lista);
@@ -69,7 +65,7 @@ export default function HomeAdaptive({ user }) {
   useEffect(() => {
     const capsRef = ref(db, 'capitulos');
     const unsub = onValue(capsRef, (snapshot) => {
-      const lista = snapshot.exists() ? toList(snapshot.val()) : [];
+      const lista = snapshot.exists() ? toRecordList(snapshot.val()) : [];
       setCapitulos(lista);
       setLoadingCapitulos(false);
     });

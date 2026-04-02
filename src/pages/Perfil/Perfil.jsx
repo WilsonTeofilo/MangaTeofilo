@@ -1,12 +1,23 @@
-﻿// src/pages/Perfil/Perfil.jsx
+// src/pages/Perfil/Perfil.jsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { updateProfile } from 'firebase/auth';
 import { ref, update, get, onValue } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 
-import { db, functions } from '../../services/firebase';
-import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants'; // centralizado
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { db, functions, storage } from '../../services/firebase';
+import CreatorApplicationModal from '../../components/CreatorApplicationModal';
+import { submitCreatorApplicationPayload } from '../../utils/creatorApplicationClient';
+import { processCreatorProfileImageToWebp } from '../../utils/creatorProfileImage';
+import {
+  LISTA_AVATARES,
+  AVATAR_FALLBACK,
+  isAdminUser,
+  DISPLAY_NAME_MAX_LENGTH,
+  CREATOR_BIO_MAX_LENGTH,
+  CREATOR_BIO_MIN_LENGTH,
+} from '../../constants'; // centralizado
 import {
   algumaCreatorMembershipAtiva,
   assinaturaPremiumAtiva,
@@ -25,10 +36,19 @@ import {
   onboardingRequiredDoneCount,
   onboardingRequiredTotal,
 } from '../../utils/creatorOnboardingProgress';
+import { normalizarAcessoAvatar } from '../../utils/avatarAccess';
+import {
+  ageFromBirthDateLocal,
+  birthDateFromYearOnly,
+  formatBirthDateIsoToBr,
+  normalizeBirthDateBrTyping,
+  parseBirthDateBr,
+  parseBirthDateLocal,
+} from '../../utils/birthDateAge';
+import { buildCreatorRecordForProfileSave } from '../../utils/creatorRecord';
 import './Perfil.css';
 
 const creatorSubmitApplication = httpsCallable(functions, 'creatorSubmitApplication');
-const markUserNotificationRead = httpsCallable(functions, 'markUserNotificationRead');
 
 // Recebe `user` via prop (consistente com App.jsx)
 // Nao usa mais auth.currentUser diretamente para evitar dessincronizacao
@@ -46,7 +66,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     }))
   );
   const [gender, setGender] = useState('nao_informado');
-  const [birthYear, setBirthYear] = useState('');
+  const [birthDate, setBirthDate] = useState('');
+  const [birthDateDraft, setBirthDateDraft] = useState('');
   const [accountType, setAccountType] = useState('comum');
   const [loading, setLoading]                 = useState(false);
   const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
@@ -54,16 +75,18 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [linkApoioCopiado, setLinkApoioCopiado] = useState(false);
   const [creatorBio, setCreatorBio] = useState('');
   const [creatorDisplayName, setCreatorDisplayName] = useState('');
-  const [creatorBannerUrl, setCreatorBannerUrl] = useState('');
+  const [mangakaAvatarUrlDraft, setMangakaAvatarUrlDraft] = useState('');
+  const [mangakaAvatarFile, setMangakaAvatarFile] = useState(null);
+  const [mangakaAvatarLocalPreview, setMangakaAvatarLocalPreview] = useState('');
   const [instagramUrl, setInstagramUrl] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [creatorTermsAccepted, setCreatorTermsAccepted] = useState(false);
   const [creatorMonetizationPreference, setCreatorMonetizationPreference] = useState('publish_only');
-  const [notifications, setNotifications] = useState([]);
   const [creatorMembershipEnabled, setCreatorMembershipEnabled] = useState(true);
   const [creatorMembershipPriceBRL, setCreatorMembershipPriceBRL] = useState('12');
   const [creatorDonationSuggestedBRL, setCreatorDonationSuggestedBRL] = useState('7');
   const [creatorApplicationLoading, setCreatorApplicationLoading] = useState(false);
+  const [creatorApplyModalOpen, setCreatorApplyModalOpen] = useState(false);
   const [obrasValOnboarding, setObrasValOnboarding] = useState(null);
   const [capsValOnboarding, setCapsValOnboarding] = useState(null);
   const [produtosValOnboarding, setProdutosValOnboarding] = useState(null);
@@ -71,15 +94,10 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [creatorOnboardingStoreSkipped, setCreatorOnboardingStoreSkipped] = useState(false);
   const [onboardingUiBusy, setOnboardingUiBusy] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
-
-  const normalizarAcessoAvatar = (item) => {
-    const raw = item?.access;
-    if (raw == null || String(raw).trim() === '') return 'publico';
-    const v = String(raw).toLowerCase().trim();
-    if (v === 'premium' || v === 'vip' || v === 'exclusivo_vip') return 'premium';
-    if (v === 'publico' || v === 'public' || v === 'comum' || v === 'free') return 'publico';
-    return 'premium';
-  };
+  const mangakaAvatarPreserveRef = useRef(false);
+  useEffect(() => {
+    mangakaAvatarPreserveRef.current = adminAccess.isMangaka === true;
+  }, [adminAccess.isMangaka]);
 
   useEffect(() => {
     const carregarPerfil = async () => {
@@ -95,14 +113,17 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       } else {
         setAccountType(tipoValido);
       }
-      setBirthYear(
-        typeof perfil.birthYear === 'number' && perfil.birthYear > 1900
-          ? String(perfil.birthYear)
-          : ''
-      );
+      const fromDb = String(perfil.birthDate || '').trim();
+      let birthIso = '';
+      if (fromDb && parseBirthDateLocal(fromDb)) {
+        birthIso = fromDb;
+      } else if (typeof perfil.birthYear === 'number' && perfil.birthYear > 1900) {
+        birthIso = birthDateFromYearOnly(String(perfil.birthYear));
+      }
+      setBirthDate(birthIso);
+      setBirthDateDraft(birthIso ? formatBirthDateIsoToBr(birthIso) : '');
       setCreatorDisplayName(String(perfil.creatorDisplayName || perfil.userName || user.displayName || '').trim());
-      setCreatorBio(String(perfil.creatorBio || '').trim());
-      setCreatorBannerUrl(String(perfil.creatorBannerUrl || '').trim());
+      setCreatorBio(String(perfil.creatorBio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH));
       setInstagramUrl(String(perfil.instagramUrl || '').trim());
       setYoutubeUrl(String(perfil.youtubeUrl || '').trim());
       setCreatorTermsAccepted(Boolean(perfil.creatorTermsAccepted));
@@ -120,6 +141,10 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       );
       setCreatorOnboardingChecklistHidden(Boolean(perfil.creatorOnboardingChecklistHidden));
       setCreatorOnboardingStoreSkipped(Boolean(perfil.creatorOnboardingStoreSkipped));
+      const ua = String(perfil.userAvatar || '').trim();
+      if (ua) {
+        setAvatarSelecionado(ua);
+      }
     };
 
     if (!user) {
@@ -153,25 +178,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       uProd();
     };
   }, [user?.uid, adminAccess.isMangaka]);
-
-  useEffect(() => {
-    if (!user?.uid) {
-      setNotifications([]);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, `usuarios/${user.uid}/notifications`), (snap) => {
-      const rows = snap.exists()
-        ? Object.entries(snap.val() || {}).map(([id, row]) => ({ id, ...(row || {}) }))
-        : [];
-      rows.sort((a, b) => {
-        const priorityDiff = Number(b.priority || 0) - Number(a.priority || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        return Number(b.createdAt || b.updatedAt || 0) - Number(a.createdAt || a.updatedAt || 0);
-      });
-      setNotifications(rows.slice(0, 8));
-    });
-    return () => unsub();
-  }, [user?.uid]);
 
   const onboardingSteps = useMemo(
     () =>
@@ -218,11 +224,32 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       if (data.length > 0) {
         setListaAvatares(data);
         const urls = data.map((item) => item.url);
-        setAvatarSelecionado((prev) => (urls.includes(prev) ? prev : data[0].url));
+        setAvatarSelecionado((prev) => {
+          if (urls.includes(prev)) return prev;
+          const p = String(prev || '').trim();
+          if (mangakaAvatarPreserveRef.current && /^https:\/\//i.test(p) && p.length > 12) return p;
+          return data[0].url;
+        });
       }
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!mangakaAvatarFile) {
+      setMangakaAvatarLocalPreview('');
+      return () => {};
+    }
+    const u = URL.createObjectURL(mangakaAvatarFile);
+    setMangakaAvatarLocalPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [mangakaAvatarFile]);
+
+  const perfilAvatarPreviewSrc =
+    mangakaAvatarLocalPreview ||
+    (adminAccess.isMangaka && String(mangakaAvatarUrlDraft || '').trim()
+      ? String(mangakaAvatarUrlDraft).trim()
+      : avatarSelecionado);
 
   const premiumAtivo = assinaturaPremiumAtiva(perfilDb);
   const premiumEntitlement = obterEntitlementPremiumGlobal(perfilDb);
@@ -234,11 +261,10 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const creatorMonetizationReviewReason = String(perfilDb?.creatorMonetizationReviewReason || '').trim();
   const creatorModerationAction = String(perfilDb?.creatorModerationAction || '').trim().toLowerCase();
   const creatorSignupIntent = String(perfilDb?.signupIntent || '').trim().toLowerCase();
-  const birthYearNumber = Number(birthYear);
-  const isUnderageByBirthYear =
-    Number.isInteger(birthYearNumber) &&
-    birthYearNumber > 1900 &&
-    new Date().getFullYear() - birthYearNumber < 18;
+  const birthIsoEffective =
+    parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+  const birthAge = birthIsoEffective ? ageFromBirthDateLocal(birthIsoEffective) : null;
+  const isUnderageByBirthYear = birthAge != null && birthAge < 18;
   const isCreatorCandidate = creatorSignupIntent === 'creator' || creatorApplicationStatus !== '';
   const podeUsarAvatarPremium = podeUsarAvataresPremiumDaLoja(user, perfilDb, accountType);
   const avataresLiberados = listaAvatares.filter((item) => {
@@ -259,12 +285,13 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   }, [avatarSelecionado, listaAvatares, podeUsarAvatarPremium]);
 
   useEffect(() => {
-    const year = Number(birthYear);
-    const currentYear = new Date().getFullYear();
-    if (Number.isInteger(year) && year > 1900 && currentYear - year < 18) {
+    const iso =
+      parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+    const age = iso ? ageFromBirthDateLocal(iso) : null;
+    if (age != null && age < 18) {
       setCreatorMonetizationPreference('publish_only');
     }
-  }, [birthYear]);
+  }, [birthDate, birthDateDraft]);
 
   const handleSalvar = async (e) => {
     e.preventDefault();
@@ -274,22 +301,30 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       return;
     }
 
-    const anoAtual = new Date().getFullYear();
-    const ano = Number(birthYear);
+    const birthIsoForSave =
+      parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+    const birthDraftHasDigits = birthDateDraft.replace(/\D/g, '').length > 0;
+    if (birthDraftHasDigits && !parseBirthDateLocal(birthIsoForSave)) {
+      setMensagem({ texto: 'Data de nascimento invalida. Use dia/mes/ano (ex.: 28/12/2001).', tipo: 'erro' });
+      return;
+    }
+
+    const ano = birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? Number(birthIsoForSave.slice(0, 4)) : NaN;
     const membershipPrice = Number(String(creatorMembershipPriceBRL || '').replace(',', '.'));
     const suggestedDonation = Number(String(creatorDonationSuggestedBRL || '').replace(',', '.'));
     const notificationPrefs = {
       promotionsEmail: notifyPromotions === true,
     };
-    if (birthYear && (!Number.isInteger(ano) || ano < 1900 || ano > anoAtual)) {
-      setMensagem({ texto: 'Informe um ano de nascimento válido.', tipo: 'erro' });
-      return;
-    }
 
+    const ageIfValid =
+      birthIsoForSave && parseBirthDateLocal(birthIsoForSave)
+        ? ageFromBirthDateLocal(birthIsoForSave)
+        : null;
     const monetizationRequiresValues =
       adminAccess.isMangaka &&
       creatorMonetizationPreference === 'monetize' &&
-      creatorMonetizationStatus !== 'blocked_underage';
+      ageIfValid != null &&
+      ageIfValid >= 18;
 
     if (monetizationRequiresValues && (!Number.isFinite(membershipPrice) || membershipPrice < 1 || membershipPrice > 5000)) {
       setMensagem({ texto: 'Defina um valor de membership entre R$ 1,00 e R$ 5.000,00.', tipo: 'erro' });
@@ -303,28 +338,64 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setMensagem({ texto: 'Ative a membership do criador para concluir a monetizacao.', tipo: 'erro' });
       return;
     }
+    if (adminAccess.isMangaka) {
+      const bioLen = String(creatorBio || '').trim().length;
+      if (bioLen < CREATOR_BIO_MIN_LENGTH || bioLen > CREATOR_BIO_MAX_LENGTH) {
+        setMensagem({
+          texto: `A bio do criador deve ter entre ${CREATOR_BIO_MIN_LENGTH} e ${CREATOR_BIO_MAX_LENGTH} caracteres.`,
+          tipo: 'erro',
+        });
+        return;
+      }
+    }
 
     setLoading(true);
     setMensagem({ texto: '', tipo: '' });
 
     try {
-      const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
-      if (!avatarEscolhido) {
-        setMensagem({ texto: 'Escolha um avatar valido da lista.', tipo: 'erro' });
-        setLoading(false);
-        return;
-      }
-      if (normalizarAcessoAvatar(avatarEscolhido) === 'premium' && !podeUsarAvatarPremium) {
-        setMensagem({ texto: 'Avatar Premium exclusivo para conta Premium ativa.', tipo: 'erro' });
-        setLoading(false);
-        return;
+      let finalAvatar = avatarSelecionado;
+      if (adminAccess.isMangaka && mangakaAvatarFile) {
+        try {
+          const blob = await processCreatorProfileImageToWebp(mangakaAvatarFile);
+          const path = `creator_profile/${user.uid}/avatar_${Date.now()}.webp`;
+          const fileRef = storageRef(storage, path);
+          await uploadBytes(fileRef, blob, {
+            contentType: 'image/webp',
+            cacheControl: 'public,max-age=31536000,immutable',
+          });
+          finalAvatar = await getDownloadURL(fileRef);
+        } catch (avErr) {
+          setMensagem({ texto: avErr?.message || 'Nao foi possivel processar a foto.', tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+      } else if (adminAccess.isMangaka && String(mangakaAvatarUrlDraft || '').trim()) {
+        const u = String(mangakaAvatarUrlDraft || '').trim();
+        if (!/^https:\/\//i.test(u) || u.length > 2048) {
+          setMensagem({ texto: 'URL da foto deve ser HTTPS valida.', tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+        finalAvatar = u;
+      } else {
+        const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
+        if (!avatarEscolhido) {
+          setMensagem({ texto: 'Escolha um avatar valido da lista.', tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+        if (normalizarAcessoAvatar(avatarEscolhido) === 'premium' && !podeUsarAvatarPremium) {
+          setMensagem({ texto: 'Avatar Premium exclusivo para conta Premium ativa.', tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+        finalAvatar = avatarSelecionado;
       }
 
       const creatorPublicName = String(creatorDisplayName || novoNome || '').trim();
       const creatorProfilePatch = {
         creatorDisplayName: creatorPublicName,
         creatorBio: String(creatorBio || '').trim(),
-        creatorBannerUrl: String(creatorBannerUrl || '').trim(),
         creatorMonetizationPreference: creatorMonetizationPreference,
         instagramUrl: String(instagramUrl || '').trim(),
         youtubeUrl: String(youtubeUrl || '').trim(),
@@ -332,7 +403,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         creatorMembershipPriceBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(membershipPrice * 100) / 100 : null,
         creatorDonationSuggestedBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(suggestedDonation * 100) / 100 : null,
         userName: novoNome.trim(),
-        userAvatar: avatarSelecionado,
+        userAvatar: finalAvatar,
       };
       const projectedPerfil = {
         ...(perfilDb || {}),
@@ -357,37 +428,53 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       const creatorStatusNext = adminAccess.isMangaka
         ? (projectedOnboardingComplete ? 'active' : 'onboarding')
         : null;
+      const ageForMonet = birthIsoForSave ? ageFromBirthDateLocal(birthIsoForSave) : null;
       const creatorMonetizationStatusNext = !adminAccess.isMangaka
         ? null
         : creatorMonetizationPreference !== 'monetize'
           ? 'disabled'
-          : (Number.isInteger(ano) && anoAtual - ano < 18)
+          : ageForMonet != null && ageForMonet < 18
             ? 'blocked_underage'
             : creatorMonetizationStatus === 'active'
               ? 'active'
               : 'pending_review';
 
+      const creatorCanonicalDoc = adminAccess.isMangaka
+        ? buildCreatorRecordForProfileSave({
+            perfilDb,
+            birthDateIso: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : '',
+            displayName: creatorPublicName,
+            bio: String(creatorBio || '').trim(),
+            instagramUrl,
+            youtubeUrl,
+            monetizationPreference: creatorMonetizationPreference,
+            monetizationStatus: creatorMonetizationStatusNext,
+            now: Date.now(),
+          })
+        : null;
+
       // 1. Atualiza no Firebase Auth
       await updateProfile(user, {
         displayName: novoNome.trim(),
-        photoURL: avatarSelecionado,
+        photoURL: finalAvatar,
       });
 
       // 2. Atualiza no Realtime Database (Leitor.jsx escuta daqui)
       await update(ref(db, `usuarios/${user.uid}`), {
         userName:   novoNome.trim(),
-        userAvatar: avatarSelecionado,
+        userAvatar: finalAvatar,
         uid:        user.uid,
         notifyPromotions: notifyPromotions === true,
         notificationPrefs,
         gender,
-        birthYear: birthYear ? ano : null,
+        birthDate: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : null,
+        birthYear: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? ano : null,
         creatorDisplayName: creatorPublicName,
         creatorTermsAccepted: creatorTermsAccepted === true,
         creatorMonetizationPreference: creatorMonetizationPreference,
         creatorMonetizationStatus: creatorMonetizationStatusNext,
         creatorBio: String(creatorBio || '').trim(),
-        creatorBannerUrl: String(creatorBannerUrl || '').trim(),
+        creatorBannerUrl: null,
         instagramUrl: String(instagramUrl || '').trim(),
         youtubeUrl: String(youtubeUrl || '').trim(),
         creatorMembershipEnabled: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? creatorMembershipEnabled : false,
@@ -396,6 +483,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         creatorOnboardingCompleted: adminAccess.isMangaka ? projectedOnboardingComplete : null,
         creatorOnboardingCompletedAt: adminAccess.isMangaka && projectedOnboardingComplete ? Date.now() : null,
         creatorStatus: creatorStatusNext,
+        ...(creatorCanonicalDoc ? { creator: creatorCanonicalDoc } : {}),
         creatorProfile: adminAccess.isMangaka ? {
           ...(perfilDb?.creatorProfile && typeof perfilDb.creatorProfile === 'object' ? perfilDb.creatorProfile : {}),
           creatorId: user.uid,
@@ -404,8 +492,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           username: perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
           bioShort: String(creatorBio || '').trim(),
           bioFull: String(creatorBio || '').trim(),
-          avatarUrl: avatarSelecionado,
-          bannerUrl: String(creatorBannerUrl || '').trim(),
+          avatarUrl: finalAvatar,
+          bannerUrl: '',
           socialLinks: {
             instagramUrl: String(instagramUrl || '').trim() || null,
             youtubeUrl: String(youtubeUrl || '').trim() || null,
@@ -413,7 +501,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           monetizationEnabled: creatorMonetizationStatusNext === 'active',
           monetizationPreference: creatorMonetizationPreference,
           monetizationStatus: creatorMonetizationStatusNext,
-          ageVerified: Number.isInteger(ano) && ano > 1900,
+          ageVerified: Boolean(birthIsoForSave && parseBirthDateLocal(birthIsoForSave)),
           status: creatorStatusNext,
           stats: {
             followersCount: Number(perfilDb?.creatorProfile?.stats?.followersCount || perfilDb?.stats?.followersCount || 0),
@@ -429,11 +517,11 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       await update(ref(db, `usuarios_publicos/${user.uid}`), {
         uid: user.uid,
         userName: novoNome.trim(),
-        userAvatar: avatarSelecionado,
+        userAvatar: finalAvatar,
         accountType,
         creatorDisplayName: creatorPublicName,
         creatorBio: String(creatorBio || '').trim(),
-        creatorBannerUrl: String(creatorBannerUrl || '').trim(),
+        creatorBannerUrl: null,
         instagramUrl: String(instagramUrl || '').trim(),
         youtubeUrl: String(youtubeUrl || '').trim(),
         creatorMonetizationPreference: creatorMonetizationPreference,
@@ -449,8 +537,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           username: perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
           bioShort: String(creatorBio || '').trim(),
           bioFull: String(creatorBio || '').trim(),
-          avatarUrl: avatarSelecionado,
-          bannerUrl: String(creatorBannerUrl || '').trim(),
+          avatarUrl: finalAvatar,
+          bannerUrl: '',
           socialLinks: {
             instagramUrl: String(instagramUrl || '').trim() || null,
             youtubeUrl: String(youtubeUrl || '').trim() || null,
@@ -478,6 +566,18 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         updatedAt: Date.now(),
       });
 
+      setAvatarSelecionado(finalAvatar);
+      setMangakaAvatarFile(null);
+      if (listaAvatares.some((i) => i.url === finalAvatar)) {
+        setMangakaAvatarUrlDraft('');
+      } else if (adminAccess.isMangaka && /^https:\/\//i.test(finalAvatar)) {
+        setMangakaAvatarUrlDraft(finalAvatar);
+      }
+
+      const savedBirth = birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : '';
+      setBirthDate(savedBirth);
+      setBirthDateDraft(savedBirth ? formatBirthDateIsoToBr(savedBirth) : '');
+
       setMensagem({ texto: 'Perfil forjado com sucesso!', tipo: 'sucesso' });
       setTimeout(() => navigate(adminAccess.isMangaka ? nextOnboardingPath : '/'), 1200);
 
@@ -489,30 +589,25 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     }
   };
 
-  const handleSolicitarCriador = async () => {
+  const handleCreatorApplicationModalSubmit = async (payload) => {
     setCreatorApplicationLoading(true);
     setMensagem({ texto: '', tipo: '' });
     try {
-      if (String(creatorDisplayName || '').trim().length < 3) {
-        throw new Error('Informe um nome artistico com pelo menos 3 caracteres.');
-      }
-      if (String(creatorBio || '').trim().length < 20) {
-        throw new Error('Escreva uma bio curta com pelo menos 20 caracteres.');
-      }
-      if (!String(instagramUrl || '').trim() && !String(youtubeUrl || '').trim()) {
-        throw new Error('Informe pelo menos uma rede social para solicitar acesso de criador.');
-      }
-      if (creatorTermsAccepted !== true) {
-        throw new Error('Voce precisa aceitar os termos do programa de criadores.');
-      }
-      const { data } = await creatorSubmitApplication({
-        displayName: String(creatorDisplayName || '').trim(),
-        bioShort: String(creatorBio || '').trim(),
-        instagramUrl: String(instagramUrl || '').trim(),
-        youtubeUrl: String(youtubeUrl || '').trim(),
-        monetizationPreference: creatorMonetizationPreference,
-        acceptTerms: true,
+      const { data } = await submitCreatorApplicationPayload({
+        creatorSubmitApplication,
+        payload,
+        uid: user.uid,
       });
+      setCreatorDisplayName(payload.displayName);
+      setCreatorBio(payload.bioShort);
+      const pbd = String(payload.birthDate || '').trim();
+      setBirthDate(parseBirthDateLocal(pbd) ? pbd : '');
+      setBirthDateDraft(parseBirthDateLocal(pbd) ? formatBirthDateIsoToBr(pbd) : '');
+      setInstagramUrl(payload.instagramUrl);
+      setYoutubeUrl(payload.youtubeUrl);
+      setCreatorMonetizationPreference(payload.monetizationPreference);
+      setCreatorTermsAccepted(payload.acceptTerms);
+      setCreatorApplyModalOpen(false);
       if (data?.alreadyMangaka) {
         setMensagem({ texto: 'Sua conta ja esta aprovada como criador.', tipo: 'sucesso' });
       } else if (data?.alreadyPending) {
@@ -521,7 +616,9 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         setMensagem({ texto: 'Solicitacao enviada. A equipe vai revisar seu acesso de criador.', tipo: 'sucesso' });
       }
     } catch (err) {
-      setMensagem({ texto: err?.message || 'Nao foi possivel enviar sua solicitacao agora.', tipo: 'erro' });
+      const msg = err?.message || 'Nao foi possivel enviar sua solicitacao agora.';
+      setMensagem({ texto: msg, tipo: 'erro' });
+      throw new Error(msg);
     } finally {
       setCreatorApplicationLoading(false);
     }
@@ -552,30 +649,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const handlePularLojaOnboarding = () => {
     setCreatorOnboardingStoreSkipped(true);
     persistOnboardingPrefs({ creatorOnboardingStoreSkipped: true });
-  };
-
-  const handleMarkNotificationRead = async (notificationId) => {
-    if (!notificationId) return;
-    try {
-      await markUserNotificationRead({ notificationId });
-    } catch (err) {
-      setMensagem({ texto: err?.message || 'Nao foi possivel marcar a notificacao como lida.', tipo: 'erro' });
-    }
-  };
-
-  const handleMarkAllNotificationsRead = async () => {
-    try {
-      await markUserNotificationRead({ markAll: true });
-    } catch (err) {
-      setMensagem({ texto: err?.message || 'Nao foi possivel limpar as notificacoes.', tipo: 'erro' });
-    }
-  };
-
-  const handleOpenNotification = async (item) => {
-    if (!item?.id) return;
-    const targetPath = item?.targetPath || item?.data?.readPath || item?.data?.creatorPath || '/perfil';
-    await handleMarkNotificationRead(item.id);
-    navigate(targetPath);
   };
 
   const scrollToMangakaFields = () => {
@@ -630,7 +703,9 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             <p className="perfil-mangaka-apoio-label">
               Monetizacao: <strong>{creatorMonetizationStatus || 'disabled'}</strong>
               {creatorMonetizationStatus === 'blocked_underage'
-                ? ' - voce pode publicar, mas nao pode receber por ser menor de idade.'
+                ? isUnderageByBirthYear
+                  ? ' - voce pode publicar, mas nao pode receber por ser menor de idade.'
+                  : ' - bloqueio anterior; com 18+ na data do perfil, use Monetizar e salve para revisao.'
                 : creatorMonetizationStatus === 'active'
                   ? ' - membership e ganhos estao liberados.'
                   : creatorMonetizationStatus === 'pending_review'
@@ -648,52 +723,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </p>
             ) : null}
           </div>
-        ) : null}
-
-        {notifications.length > 0 ? (
-          <section className="perfil-onboarding" aria-label="Notificacoes">
-            <div className="perfil-onboarding-head">
-              <h2 className="perfil-onboarding-title">Notificacoes</h2>
-              <p className="perfil-onboarding-sub">Atualizacoes da conta e do programa de criadores.</p>
-              <div className="perfil-onboarding-step-actions">
-                <button type="button" className="perfil-onboarding-btn perfil-onboarding-btn--ghost" onClick={handleMarkAllNotificationsRead}>
-                  Marcar todas como lidas
-                </button>
-              </div>
-            </div>
-            <ol className="perfil-onboarding-steps">
-              {notifications.map((item) => (
-                <li key={item.id} className={`perfil-onboarding-step ${item.read ? 'is-done' : ''}`}>
-                  <span className="perfil-onboarding-step-status" aria-hidden="true">
-                    {item.read ? 'OK' : '!'}
-                  </span>
-                  <div className="perfil-onboarding-step-body">
-                    <div className="perfil-onboarding-step-title-row">
-                      <strong>{item.title || 'Atualizacao'}</strong>
-                    </div>
-                    <p className="perfil-onboarding-step-hint">{item.message || 'Sem detalhes.'}</p>
-                    <p className="perfil-onboarding-progress-label">
-                      {formatarDataLongaBr(item.createdAt, { seVazio: 'Agora' })}
-                    </p>
-                    <div className="perfil-onboarding-step-actions">
-                      <button
-                        type="button"
-                        className="perfil-onboarding-btn"
-                        onClick={() => handleOpenNotification(item)}
-                      >
-                        Abrir
-                      </button>
-                      {!item.read ? (
-                        <button type="button" className="perfil-onboarding-btn perfil-onboarding-btn--ghost" onClick={() => handleMarkNotificationRead(item.id)}>
-                          Marcar como lida
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </section>
         ) : null}
 
         {!adminAccess.isMangaka && !adminAccess.canAccessAdmin ? (
@@ -725,113 +754,42 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </p>
             ) : null}
             {creatorModerationAction !== 'banned' && creatorApplicationStatus !== 'requested' && creatorApplicationStatus !== 'approved' ? (
-              <>
-                <div className="input-group">
-                  <label>NOME ARTISTICO</label>
-                  <input
-                    type="text"
-                    className="perfil-input"
-                    value={creatorDisplayName}
-                    onChange={(e) => setCreatorDisplayName(e.target.value)}
-                    placeholder="Como voce quer aparecer publicamente"
-                    maxLength={60}
-                  />
-                </div>
-                <div className="input-group">
-                  <label>BIO CURTA DO CRIADOR</label>
-                  <textarea
-                    className="perfil-input"
-                    rows={3}
-                    value={creatorBio}
-                    onChange={(e) => setCreatorBio(e.target.value)}
-                    placeholder="Explique em 1 ou 2 linhas quem voce e e o que cria."
-                  />
-                </div>
-                <div className="input-group">
-                  <label>BANNER PUBLICO</label>
-                  <input
-                    type="text"
-                    className="perfil-input"
-                    value={creatorBannerUrl}
-                    onChange={(e) => setCreatorBannerUrl(e.target.value)}
-                    placeholder="https://..."
-                  />
-                </div>
-                <div className="input-group">
-                  <label>MONETIZACAO</label>
-                  <div className="perfil-mangaka-apoio-row">
-                    <button
-                      type="button"
-                      className="perfil-mangaka-apoio-copy"
-                      onClick={() => setCreatorMonetizationPreference('publish_only')}
-                    >
-                      Apenas publicar
-                    </button>
-                    <button
-                      type="button"
-                      className="perfil-mangaka-apoio-copy"
-                      onClick={() => setCreatorMonetizationPreference('monetize')}
-                      disabled={isUnderageByBirthYear}
-                    >
-                      Quero monetizar
-                    </button>
-                  </div>
-                  <p className="perfil-mangaka-apoio-label">
-                    {isUnderageByBirthYear
-                      ? 'Conta menor de idade: publicacao liberada, monetizacao indisponivel por enquanto.'
-                      : 'Publicar e monetizar sao escolhas separadas. Menores de idade podem publicar, mas nao recebem.'}
-                  </p>
-                </div>
-                <div className="perfil-mangaka-apoio-row">
-                  <div className="input-group perfil-creator-application-half">
-                    <label>INSTAGRAM</label>
-                    <input
-                      type="text"
-                      className="perfil-input"
-                      value={instagramUrl}
-                      onChange={(e) => setInstagramUrl(e.target.value)}
-                      placeholder="instagram.com/seuperfil"
-                    />
-                  </div>
-                  <div className="input-group perfil-creator-application-half">
-                    <label>YOUTUBE</label>
-                    <input
-                      type="text"
-                      className="perfil-input"
-                      value={youtubeUrl}
-                      onChange={(e) => setYoutubeUrl(e.target.value)}
-                      placeholder="youtube.com/@seucanal"
-                    />
-                  </div>
-                </div>
-                <div className="input-group notify-group">
-                  <label className="notify-label">
-                    <input
-                      type="checkbox"
-                      checked={creatorTermsAccepted}
-                      onChange={(e) => setCreatorTermsAccepted(e.target.checked)}
-                    />
-                    Aceito os termos do programa de criadores e entendo que a aprovacao nao substitui o onboarding.
-                  </label>
-                </div>
-                <div className="perfil-mangaka-apoio-row">
-                  <button
-                    type="button"
-                    className="perfil-mangaka-apoio-copy"
-                    disabled={creatorApplicationLoading}
-                    onClick={handleSolicitarCriador}
-                  >
-                    {creatorApplicationLoading
-                      ? 'Enviando...'
-                      : isCreatorCandidate
-                        ? 'Enviar novo pedido de criador'
-                        : 'Quero virar criador'}
-                  </button>
-                </div>
-              </>
+              <div className="perfil-mangaka-apoio-row">
+                <button
+                  type="button"
+                  className="perfil-mangaka-apoio-copy perfil-creator-apply-btn"
+                  disabled={creatorApplicationLoading}
+                  onClick={() => setCreatorApplyModalOpen(true)}
+                >
+                  {isCreatorCandidate ? 'Enviar novo pedido de criador' : 'Quero virar criador'}
+                </button>
+              </div>
             ) : null}
           </div>
         ) : null}
+
+        <CreatorApplicationModal
+          open={creatorApplyModalOpen}
+          onClose={() => {
+            if (!creatorApplicationLoading) setCreatorApplyModalOpen(false);
+          }}
+          loading={creatorApplicationLoading}
+          initial={{
+            displayName: creatorDisplayName,
+            bio: creatorBio,
+            instagramUrl,
+            youtubeUrl,
+            monetizationPreference: creatorMonetizationPreference,
+            termsAccepted: creatorTermsAccepted,
+            birthDate,
+            legalFullName: String(perfilDb?.creatorCompliance?.legalFullName || '').trim(),
+            taxId: String(perfilDb?.creatorCompliance?.taxId || '').trim(),
+            payoutInstructions: String(perfilDb?.creatorCompliance?.payoutInstructions || '').trim(),
+            payoutPixType: String(perfilDb?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
+            profileImageCrop: perfilDb?.creatorApplication?.profileImageCrop || null,
+          }}
+          onSubmit={handleCreatorApplicationModalSubmit}
+        />
 
         {adminAccess.isMangaka ? (
           <>
@@ -961,7 +919,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           <div className="avatar-big-preview">
             <div className="circle-wrap">
               <img
-                src={avatarSelecionado}
+                src={perfilAvatarPreviewSrc || AVATAR_FALLBACK}
                 alt="Preview Avatar"
                 onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
               />
@@ -981,15 +939,35 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           </div>
 
           <div className="input-group">
-            <label>ANO DE NASCIMENTO</label>
+            <label>DATA DE NASCIMENTO</label>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              autoComplete="bday"
+              placeholder="28/12/2001"
               className="perfil-input"
-              value={birthYear}
-              onChange={(e) => setBirthYear(e.target.value)}
-              placeholder="Ex: 2001"
-              min="1900"
-              max={new Date().getFullYear()}
+              value={birthDateDraft}
+              onChange={(e) => {
+                const d = normalizeBirthDateBrTyping(e.target.value);
+                setBirthDateDraft(d);
+                const iso = parseBirthDateBr(d);
+                if (iso) setBirthDate(iso);
+                else if (!d.replace(/\D/g, '').length) setBirthDate('');
+              }}
+              onBlur={() => {
+                const iso = parseBirthDateBr(birthDateDraft);
+                if (iso) {
+                  setBirthDate(iso);
+                  setBirthDateDraft(formatBirthDateIsoToBr(iso));
+                } else if (!birthDateDraft.replace(/\D/g, '').length) {
+                  setBirthDate('');
+                  setBirthDateDraft('');
+                } else {
+                  setBirthDateDraft(
+                    birthDate && parseBirthDateLocal(birthDate) ? formatBirthDateIsoToBr(birthDate) : ''
+                  );
+                }
+              }}
             />
           </div>
 
@@ -1050,17 +1028,19 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                       type="button"
                       className="perfil-mangaka-apoio-copy"
                       onClick={() => setCreatorMonetizationPreference('monetize')}
-                      disabled={creatorMonetizationStatus === 'blocked_underage' || isUnderageByBirthYear}
+                      disabled={isUnderageByBirthYear}
                     >
                       Monetizar
                     </button>
                   </div>
                   <p className="perfil-mangaka-apoio-label">
-                    {creatorMonetizationStatus === 'blocked_underage'
-                      ? 'Monetizacao bloqueada por idade. Sua conta pode publicar normalmente.'
-                      : creatorMonetizationPreference === 'monetize'
-                        ? 'Membership e ganhos ficam disponiveis apenas com validacao da equipe.'
-                        : 'Modo publicar: voce pode postar normalmente sem receber pelas obras.'}
+                    {isUnderageByBirthYear
+                      ? 'Monetizacao so para maiores de 18 (conforme a data de nascimento acima).'
+                      : creatorMonetizationStatus === 'blocked_underage'
+                        ? 'Status anterior era bloqueio por idade. Com 18+ na data acima, escolha Monetizar e salve para solicitar revisao.'
+                        : creatorMonetizationPreference === 'monetize'
+                          ? 'Membership e ganhos ficam disponiveis apenas com validacao da equipe.'
+                          : 'Modo publicar: voce pode postar normalmente sem receber pelas obras.'}
                   </p>
                 </div>
 
@@ -1070,7 +1050,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                   className="perfil-input"
                   rows={4}
                   value={creatorBio}
-                  onChange={(e) => setCreatorBio(e.target.value)}
+                  maxLength={CREATOR_BIO_MAX_LENGTH}
+                  onChange={(e) => setCreatorBio(e.target.value.slice(0, CREATOR_BIO_MAX_LENGTH))}
                   placeholder="Apresente seu universo, seu estilo e o que voce publica."
                 />
               </div>
@@ -1098,13 +1079,31 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </div>
 
               <div className="input-group">
-                <label>BANNER PUBLICO</label>
+                <label>FOTO DE PERFIL (CRIADOR)</label>
+                <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
+                  O banner publico e gerado automaticamente com desfoque desta imagem. Envie arquivo (WebP otimizado) ou
+                  cole URL HTTPS.
+                </p>
                 <input
-                  type="text"
+                  type="url"
                   className="perfil-input"
-                  value={creatorBannerUrl}
-                  onChange={(e) => setCreatorBannerUrl(e.target.value)}
+                  value={mangakaAvatarUrlDraft}
+                  onChange={(e) => {
+                    setMangakaAvatarUrlDraft(e.target.value);
+                    setMangakaAvatarFile(null);
+                  }}
                   placeholder="https://..."
+                />
+                <input
+                  type="file"
+                  className="perfil-input"
+                  style={{ marginTop: 8 }}
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    setMangakaAvatarFile(f || null);
+                    if (f) setMangakaAvatarUrlDraft('');
+                  }}
                 />
               </div>
 
@@ -1207,7 +1206,12 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 <div
                   key={item.id || i}
                   className={`avatar-option-card ${ativo ? 'active' : ''} ${bloqueado ? 'locked' : ''}`}
-                  onClick={() => !bloqueado && setAvatarSelecionado(item.url)}
+                  onClick={() => {
+                    if (bloqueado) return;
+                    setAvatarSelecionado(item.url);
+                    setMangakaAvatarFile(null);
+                    setMangakaAvatarUrlDraft('');
+                  }}
                   title={bloqueado ? 'Disponivel apenas para conta Premium ativa' : 'Selecionar avatar'}
                 >
                   <img

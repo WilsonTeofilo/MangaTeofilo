@@ -1,9 +1,6 @@
-﻿import { obterObraIdCapitulo } from '../config/obras';
-
-function toList(snapshotVal) {
-  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
-  return Object.entries(snapshotVal).map(([id, data]) => ({ id, ...(data || {}) }));
-}
+import { obterObraIdCapitulo } from '../config/obras';
+import { CREATOR_BIO_MIN_LENGTH } from '../constants';
+import { toRecordList } from './firebaseRecordList';
 
 /**
  * Passos do onboarding do criador. "loja" e opcional.
@@ -17,11 +14,11 @@ export function buildCreatorOnboardingSteps({
   storeSkipped = false,
 }) {
   const u = String(uid || '').trim();
-  const obras = toList(obrasVal);
+  const obras = toRecordList(obrasVal);
   const minhasObras = obras.filter((o) => String(o.creatorId || '').trim() === u);
   const obraIds = new Set(minhasObras.map((o) => String(o.id || '').toLowerCase()));
 
-  const caps = toList(capsVal);
+  const caps = toRecordList(capsVal);
   const capsMeus = caps.filter((c) => {
     if (String(c.creatorId || '').trim() === u) return true;
     const oid = obterObraIdCapitulo(c);
@@ -33,10 +30,9 @@ export function buildCreatorOnboardingSteps({
   const yt = String(perfilDb.youtubeUrl || '').trim();
   const publicName = String(perfilDb.creatorDisplayName || perfilDb.userName || '').trim();
   const avatar = String(perfilDb.userAvatar || '').trim();
-  const banner = String(perfilDb.creatorBannerUrl || '').trim();
-  const hasBio = bio.length >= 24;
+  const hasBio = bio.length >= CREATOR_BIO_MIN_LENGTH;
   const hasSocial = ig.length > 3 || yt.length > 3;
-  const publicOk = publicName.length >= 3 && avatar.length > 3 && banner.length > 3 && hasBio && hasSocial;
+  const publicOk = publicName.length >= 3 && avatar.length > 3 && hasBio && hasSocial;
 
   const price = Number(perfilDb.creatorMembershipPriceBRL);
   const donation = Number(perfilDb.creatorDonationSuggestedBRL);
@@ -58,7 +54,7 @@ export function buildCreatorOnboardingSteps({
       (monetizationConfigured && (monetizationStatus === 'pending_review' || monetizationStatus === 'active'))
     );
 
-  const produtos = toList(produtosVal);
+  const produtos = toRecordList(produtosVal);
   const meusProdutos = produtos.filter((prod) => String(prod.creatorId || '').trim() === u);
   const lojaOk = meusProdutos.length > 0 || storeSkipped;
 
@@ -66,7 +62,7 @@ export function buildCreatorOnboardingSteps({
     {
       id: 'publicProfile',
       label: 'Perfil publico',
-      hint: 'Nome publico, avatar, banner, bio (24+ caracteres) e pelo menos uma rede social.',
+      hint: `Nome publico, foto de perfil, bio (${CREATOR_BIO_MIN_LENGTH}+ caracteres) e pelo menos uma rede social.`,
       done: publicOk,
       action: 'form',
     },

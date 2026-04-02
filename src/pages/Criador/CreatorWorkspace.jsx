@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
+import { CREATOR_BIO_MIN_LENGTH } from '../../constants';
 import { db } from '../../services/firebase';
 import {
   buildCreatorOnboardingSteps,
@@ -10,12 +11,8 @@ import {
   onboardingRequiredDoneCount,
   onboardingRequiredTotal,
 } from '../../utils/creatorOnboardingProgress';
+import { toRecordList } from '../../utils/firebaseRecordList';
 import './CreatorWorkspace.css';
-
-function toList(snapshotVal) {
-  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
-  return Object.entries(snapshotVal).map(([id, row]) => ({ id, ...(row || {}) }));
-}
 
 function creatorStatusLabel(preference, status) {
   const pref = String(preference || 'publish_only').trim().toLowerCase();
@@ -58,14 +55,14 @@ export default function CreatorWorkspace({ user, perfil }) {
 
   const metrics = useMemo(() => {
     const uid = String(user?.uid || '').trim();
-    const obras = toList(obrasVal).filter((obra) => String(obra?.creatorId || '').trim() === uid);
+    const obras = toRecordList(obrasVal).filter((obra) => String(obra?.creatorId || '').trim() === uid);
     const obraIds = new Set(obras.map((obra) => String(obra.id || '').trim().toLowerCase()));
-    const caps = toList(capsVal).filter((cap) => {
+    const caps = toRecordList(capsVal).filter((cap) => {
       if (String(cap?.creatorId || '').trim() === uid) return true;
       const obraId = String(cap?.obraId || cap?.mangaId || '').trim().toLowerCase();
       return obraIds.has(obraId);
     });
-    const produtos = toList(produtosVal).filter((produto) => String(produto?.creatorId || '').trim() === uid);
+    const produtos = toRecordList(produtosVal).filter((produto) => String(produto?.creatorId || '').trim() === uid);
     return {
       obras,
       caps,
@@ -212,7 +209,11 @@ export default function CreatorWorkspace({ user, perfil }) {
             </p>
             <ul className="creator-pillar-list">
               <li>{String(perfil?.creatorDisplayName || '').trim() ? 'Nome publico definido' : 'Nome publico pendente'}</li>
-              <li>{String(perfil?.creatorBio || '').trim().length >= 24 ? 'Bio pronta' : 'Bio ainda curta'}</li>
+              <li>
+                {String(perfil?.creatorBio || '').trim().length >= CREATOR_BIO_MIN_LENGTH
+                  ? 'Bio pronta'
+                  : 'Bio ainda curta'}
+              </li>
               <li>{String(perfil?.instagramUrl || '').trim() || String(perfil?.youtubeUrl || '').trim() ? 'Rede social adicionada' : 'Rede social pendente'}</li>
             </ul>
             <button type="button" className="creator-workspace-btn" onClick={() => navigate('/perfil?onboarding=creator')}>

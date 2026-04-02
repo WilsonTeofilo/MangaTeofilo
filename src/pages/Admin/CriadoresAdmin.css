@@ -1,0 +1,449 @@
+/* Lista compacta + drawer de ficha (aprovação de criadores) */
+
+.criadores-admin-list-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.criadores-admin-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.criadores-admin-list th,
+.criadores-admin-list td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+
+.criadores-admin-list th {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.criadores-admin-list tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.criadores-admin-cell-main strong {
+  display: block;
+  color: #e8f5e9;
+  font-weight: 700;
+}
+
+.criadores-admin-cell-main span {
+  display: block;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 2px;
+}
+
+.criadores-admin-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.criadores-admin-badge--pending {
+  background: rgba(251, 191, 36, 0.2);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.criadores-admin-badge--approved {
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.criadores-admin-badge--rejected {
+  background: rgba(248, 113, 113, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.criadores-admin-badge--muted {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.criadores-admin-btn-ficha {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(129, 199, 132, 0.45);
+  background: rgba(46, 125, 50, 0.25);
+  color: #c8e6c9;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.criadores-admin-btn-ficha:hover {
+  background: rgba(46, 125, 50, 0.4);
+  color: #fff;
+}
+
+/* Drawer */
+.criadores-admin-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.criadores-admin-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 8001;
+  width: min(520px, 100vw);
+  height: 100vh;
+  height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #142018 0%, #0a100c 100%);
+  border-left: 1px solid rgba(129, 199, 132, 0.25);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.5);
+  color: #e8f5e9;
+}
+
+.criadores-admin-drawer__head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.criadores-admin-drawer__head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #d4f8a8;
+}
+
+.criadores-admin-drawer__head p {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.criadores-admin-drawer__close {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35);
+  color: #cfe9c8;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.criadores-admin-drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.criadores-admin-drawer__foot {
+  flex-shrink: 0;
+  padding: 14px 20px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.criadores-admin-section {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.criadores-admin-section__title {
+  margin: 0 0 12px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ccc65;
+}
+
+.criadores-admin-section--profile {
+  border-color: rgba(129, 199, 132, 0.22);
+}
+
+.criadores-admin-section--account {
+  border-color: rgba(100, 181, 246, 0.22);
+}
+
+.criadores-admin-section--account .criadores-admin-section__title {
+  color: #90caf9;
+}
+
+.criadores-admin-section--money {
+  border-color: rgba(255, 193, 7, 0.28);
+}
+
+.criadores-admin-section--money .criadores-admin-section__title {
+  color: #ffca28;
+}
+
+.criadores-admin-section--compliance {
+  border-width: 2px;
+  border-color: rgba(255, 213, 79, 0.55);
+  background: linear-gradient(165deg, rgba(255, 193, 7, 0.12) 0%, rgba(0, 0, 0, 0.28) 100%);
+  box-shadow: 0 0 0 1px rgba(255, 193, 7, 0.08);
+}
+
+.criadores-admin-section--compliance .criadores-admin-section__title {
+  color: #ffe082;
+  font-size: 0.72rem;
+}
+
+.criadores-admin-compliance-warn {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.criadores-admin-compliance-warn strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #fca5a5;
+}
+
+.criadores-admin-compliance-warn ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.criadores-admin-compliance-hint {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.4;
+}
+
+.criadores-admin-foot-blocked {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px dashed rgba(248, 113, 113, 0.4);
+  color: #fecaca;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.criadores-admin-section--behavior {
+  border-color: rgba(206, 147, 216, 0.22);
+}
+
+.criadores-admin-section--behavior .criadores-admin-section__title {
+  color: #ce93d8;
+}
+
+.criadores-admin-dl {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.criadores-admin-dl > div {
+  display: grid;
+  gap: 2px;
+}
+
+.criadores-admin-dl dt {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.criadores-admin-dl dd {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #f1f8e9;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.criadores-admin-dl dd.criadores-admin-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.82rem;
+}
+
+.criadores-admin-media-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.criadores-admin-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.criadores-admin-banner-preview {
+  max-width: 100%;
+  max-height: 120px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.criadores-admin-alert {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.criadores-admin-alert--warn {
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fde68a;
+}
+
+.criadores-admin-alert--bad {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
+.criadores-admin-alert--ok {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: #bbf7d0;
+}
+
+.criadores-admin-pill {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.criadores-admin-pill--ok {
+  background: rgba(74, 222, 128, 0.2);
+  color: #86efac;
+}
+
+.criadores-admin-pill--bad {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+}
+
+.criadores-admin-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.criadores-admin-actions-row button {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(46, 125, 50, 0.35);
+  color: #e8f5e9;
+}
+
+.criadores-admin-actions-row button:hover:not(:disabled) {
+  background: rgba(46, 125, 50, 0.55);
+}
+
+.criadores-admin-actions-row button.is-danger {
+  background: rgba(183, 28, 28, 0.35);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fecaca;
+}
+
+.criadores-admin-actions-row button.is-danger:hover:not(:disabled) {
+  background: rgba(183, 28, 28, 0.5);
+}
+
+.criadores-admin-actions-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.criadores-admin-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.4);
+  color: #f0fdf4;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.criadores-admin-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.criadores-admin-check input {
+  margin-top: 3px;
+}
+
+@media (max-width: 640px) {
+  .criadores-admin-list th:nth-child(3),
+  .criadores-admin-list td:nth-child(3) {
+    display: none;
+  }
+}

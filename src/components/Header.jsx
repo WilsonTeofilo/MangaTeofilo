@@ -11,6 +11,19 @@ import './HeaderV2.css';
 
 const MOBILE_BREAKPOINT = 1360;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
+const ADMIN_CREATOR_QUEUE_SEEN_KEY = 'shito:admin-creator-queue-seen';
+const ADMIN_SUPPORT_QUEUE_SEEN_KEY = 'shito:admin-support-queue-seen';
+
+function readSeenCount(storageKey) {
+  if (typeof window === 'undefined') return 0;
+  const raw = Number(window.localStorage.getItem(storageKey) || 0);
+  return Number.isFinite(raw) ? raw : 0;
+}
+
+function writeSeenCount(storageKey, value) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(storageKey, String(Math.max(0, Number(value || 0))));
+}
 
 function getInitialWorkspace(pathname, canSeeAdmin, canSeeCreator) {
   if (pathname.startsWith('/creator')) return 'creator';
@@ -33,6 +46,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [headerNotifications, setHeaderNotifications] = useState([]);
+  const [selectedNotification, setSelectedNotification] = useState(null);
+  const [adminCreatorQueueCount, setAdminCreatorQueueCount] = useState(0);
+  const [adminSupportQueueCount, setAdminSupportQueueCount] = useState(0);
   const workspaceCloseTimer = useRef(null);
   const notificationIdsSeenRef = useRef(new Set());
   const notificationsInitializedRef = useRef(false);
@@ -51,10 +67,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
 
+  /** Candidatura publica: quem ja abre ADMIN (Criadores etc.) nao precisa do atalho CREATORS. */
+  const showCreatorsNav = !isMangakaPanel && !canSeeAdminWorkspace;
+
   const navItems = [
     { label: 'Lista de Mangas', path: '/works' },
     { label: 'Loja', path: '/loja' },
     ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
+    ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
     { label: 'Sobre nos', path: '/sobre-autor' },
   ];
 
@@ -151,12 +171,10 @@ export default function Header({ usuario, perfil, adminAccess }) {
     // Fechamos os menus ao trocar de rota para evitar overlays presos em navegacao SPA.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMenuAberto(false);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWorkspaceOpen(null);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNotificationsOpen(false);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAccountMenuOpen(false);
+    setSelectedNotification(null);
     if (location.pathname.startsWith('/admin') && canSeeAdminWorkspace) {
       persistWorkspace('admin');
       return;
@@ -234,6 +252,46 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, [usuario?.uid]);
 
   useEffect(() => {
+    if (!canSeeAdminWorkspace) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAdminCreatorQueueCount(0);
+      return () => {};
+    }
+    const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
+      const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
+      const pending = rows.filter(
+        (item) => String(item?.creatorApplicationStatus || '').trim().toLowerCase() === 'requested'
+      ).length;
+      setAdminCreatorQueueCount(pending);
+    });
+    return () => unsub();
+  }, [canSeeAdminWorkspace]);
+
+  useEffect(() => {
+    if (!canSeeAdminWorkspace) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAdminSupportQueueCount(0);
+      return () => {};
+    }
+    const supportPaths = ['sac/tickets', 'suporte/tickets', 'support/tickets', 'tickets'];
+    const totals = new Map();
+    const unsubs = supportPaths.map((path) =>
+      onValue(ref(db, path), (snapshot) => {
+        const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
+        const openItems = rows.filter((item) => {
+          const status = String(item?.status || item?.state || '').trim().toLowerCase();
+          return !['closed', 'resolved', 'done', 'archived'].includes(status);
+        }).length;
+        totals.set(path, openItems);
+        setAdminSupportQueueCount([...totals.values()].reduce((sum, value) => sum + Number(value || 0), 0));
+      })
+    );
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+    };
+  }, [canSeeAdminWorkspace]);
+
+  useEffect(() => {
     if (!usuario?.uid) return;
     if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
     if (Notification.permission !== 'granted') return;
@@ -260,11 +318,68 @@ export default function Header({ usuario, perfil, adminAccess }) {
       };
     });
   }, [headerNotifications, navigate, usuario?.uid]);
+  const adminQueueNotifications = useMemo(() => {
+    if (!canSeeAdminWorkspace) return [];
+    const items = [];
+    if (adminCreatorQueueCount > 0) {
+      const seen = readSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY);
+      items.push({
+        id: 'admin-creator-queue',
+        type: 'admin_creator_queue',
+        title: adminCreatorQueueCount === 1 ? '1 solicitacao de creator pendente' : `${adminCreatorQueueCount} solicitacoes de creator pendentes`,
+        message: 'Clique para abrir a fila de aprovacao de creators.',
+        targetPath: '/admin/criadores',
+        read: adminCreatorQueueCount <= seen,
+        priority: 2,
+        createdAt: 9999999999999,
+        updatedAt: 9999999999999,
+      });
+    }
+    if (adminSupportQueueCount > 0) {
+      const seen = readSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY);
+      items.push({
+        id: 'admin-support-queue',
+        type: 'admin_support_queue',
+        title: adminSupportQueueCount === 1 ? '1 chamado de SAC pendente' : `${adminSupportQueueCount} chamados de SAC pendentes`,
+        message: 'Clique para revisar a fila de suporte da plataforma.',
+        targetPath: '/admin/dashboard',
+        read: adminSupportQueueCount <= seen,
+        priority: 2,
+        createdAt: 9999999999998,
+        updatedAt: 9999999999998,
+      });
+    }
+    return items;
+  }, [adminCreatorQueueCount, adminSupportQueueCount, canSeeAdminWorkspace]);
 
-  const unreadNotificationsCount = headerNotifications.filter((item) => item.read !== true).length;
+  const allNotifications = useMemo(() => {
+    const list = [...adminQueueNotifications, ...headerNotifications];
+    list.sort((a, b) => {
+      const priorityDiff = Number(b.priority || 0) - Number(a.priority || 0);
+      if (priorityDiff !== 0) return priorityDiff;
+      return Number(b.createdAt || b.updatedAt || 0) - Number(a.createdAt || a.updatedAt || 0);
+    });
+    return list.slice(0, 16);
+  }, [adminQueueNotifications, headerNotifications]);
+
+  const unreadNotificationsCount = allNotifications.filter((item) => item.read !== true).length;
 
   const openNotificationTarget = async (item) => {
     if (!item?.id) return;
+    if (item.type === 'admin_creator_queue') {
+      writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
+      navigate(item.targetPath || '/admin/criadores');
+      setNotificationsOpen(false);
+      setMenuAberto(false);
+      return;
+    }
+    if (item.type === 'admin_support_queue') {
+      writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
+      navigate(item.targetPath || '/admin/dashboard');
+      setNotificationsOpen(false);
+      setMenuAberto(false);
+      return;
+    }
     try {
       if (item.read !== true) {
         await markUserNotificationRead({ notificationId: item.id });
@@ -272,15 +387,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
     } catch (error) {
       console.error('Erro ao marcar notificacao:', error);
     }
-    const targetPath = item?.targetPath || item?.data?.readPath || item?.data?.creatorPath || '/perfil';
-    navigate(targetPath);
-    setNotificationsOpen(false);
-    setMenuAberto(false);
+    setSelectedNotification(item);
   };
 
   const handleMarkAllNotificationsRead = async () => {
     try {
       await markUserNotificationRead({ markAll: true });
+      writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
+      writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
     } catch (error) {
       console.error('Erro ao marcar notificacoes como lidas:', error);
     }
@@ -288,6 +402,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   const handleToggleNotifications = async () => {
     setAccountMenuOpen(false);
+    setSelectedNotification(null);
     setNotificationsOpen((prev) => !prev);
   };
 
@@ -301,6 +416,16 @@ export default function Header({ usuario, perfil, adminAccess }) {
     if (priority >= 3) return 'critica';
     if (priority >= 2) return 'importante';
     return 'nova';
+  };
+
+  const openSelectedNotificationPath = () => {
+    const item = selectedNotification;
+    if (!item) return;
+    const targetPath = item?.targetPath || item?.data?.readPath || item?.data?.creatorPath || '/perfil';
+    setSelectedNotification(null);
+    setNotificationsOpen(false);
+    setMenuAberto(false);
+    navigate(targetPath);
   };
 
   const isActivePath = (path) =>
@@ -430,17 +555,17 @@ export default function Header({ usuario, perfil, adminAccess }) {
                         <strong>Notificacoes</strong>
                         <small>Tudo que importa da conta e dos criadores.</small>
                       </div>
-                      {headerNotifications.length ? (
+                      {allNotifications.length ? (
                         <button type="button" className="header-notification-link" onClick={handleMarkAllNotificationsRead}>
                           Limpar nao lidas
                         </button>
                       ) : null}
                     </div>
                     <div className="header-notification-panel-body">
-                      {!headerNotifications.length ? (
+                      {!allNotifications.length ? (
                         <p className="header-notification-empty">Nenhuma notificacao por enquanto.</p>
                       ) : (
-                        headerNotifications.map((item) => (
+                        allNotifications.map((item) => (
                           <button
                             key={item.id}
                             type="button"
@@ -498,6 +623,43 @@ export default function Header({ usuario, perfil, adminAccess }) {
           )}
         </div>
       </div>
+      {selectedNotification ? (
+        <div
+          className="header-notification-modal"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSelectedNotification(null);
+          }}
+        >
+          <div className="header-notification-modal__panel" role="dialog" aria-modal="true">
+            <div className="header-notification-modal__head">
+              <div>
+                <small>{priorityLabel(selectedNotification)}</small>
+                <strong>{selectedNotification.title || 'Atualizacao'}</strong>
+              </div>
+              <button type="button" onClick={() => setSelectedNotification(null)} aria-label="Fechar detalhes">
+                ×
+              </button>
+            </div>
+            <div className="header-notification-modal__body">
+              <p>{selectedNotification.message || 'Sem detalhes adicionais.'}</p>
+              {Number(selectedNotification?.aggregate?.count || 1) > 1 ? (
+                <p className="header-notification-modal__meta">
+                  {Number(selectedNotification.aggregate.count)} eventos recentes agrupados nesta notificacao.
+                </p>
+              ) : null}
+            </div>
+            <div className="header-notification-modal__actions">
+              <button type="button" className="header-notification-modal__ghost" onClick={() => setSelectedNotification(null)}>
+                Fechar
+              </button>
+              <button type="button" className="header-notification-modal__primary" onClick={openSelectedNotificationPath}>
+                Abrir destino
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </nav>
   );
 }

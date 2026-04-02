@@ -21,6 +21,7 @@ import {
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
+import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada } from '../../utils/obraCatalogo';
 import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
@@ -32,11 +33,6 @@ function usuarioPodeVerObraArquivada(user, adminAccess, obra) {
   if (isAdminUser(user)) return true;
   if (adminAccess?.canAccessAdmin && !adminAccess?.isMangaka) return true;
   return obraCreatorId(obra) === user.uid;
-}
-
-function toList(snapshotVal) {
-  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
-  return Object.entries(snapshotVal).map(([id, data]) => ({ id, ...(data || {}) }));
 }
 
 function chapterSort(a, b) {
@@ -123,7 +119,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       setIdResolvido(false);
       const raw = decodeURIComponent(String(routeSlug || ''));
       const unsub = onValue(ref(db, 'obras'), (snapshot) => {
-        const list = snapshot.exists() ? ensureLegacyShitoObra(toList(snapshot.val())) : [];
+        const list = snapshot.exists() ? ensureLegacyShitoObra(toRecordList(snapshot.val())) : [];
         const resolved = resolverObraIdPorSlugOuId(list, raw);
         setObraId(resolved);
         setIdResolvido(true);
@@ -170,7 +166,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
     const capRef = ref(db, 'capitulos');
     const unsubCap = onValue(capRef, (snapshot) => {
-      const lista = snapshot.exists() ? toList(snapshot.val()) : [];
+      const lista = snapshot.exists() ? toRecordList(snapshot.val()) : [];
       const filtrados = lista
         .filter((cap) => obterObraIdCapitulo(cap) === obraId)
         .sort(chapterSort);

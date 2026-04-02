@@ -35,3 +35,7 @@ export const AVATAR_FALLBACK = "/assets/avatares/ava1.webp";
 /** Nome de exibição (cadastro / perfil). */
 export const DISPLAY_NAME_MAX_LENGTH = 60;
 
+/** Bio pública do criador (perfil + candidatura). */
+export const CREATOR_BIO_MIN_LENGTH = 50;
+export const CREATOR_BIO_MAX_LENGTH = 450;
+

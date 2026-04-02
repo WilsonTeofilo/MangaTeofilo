@@ -1,4 +1,4 @@
-﻿// src/pages/Auth/Login.jsx
+// src/pages/Auth/Login.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -15,6 +15,7 @@ import { auth, db, googleProvider } from '../../services/firebase';
 import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants';
 import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSyncV2';
 import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
+import { avatarEhPublicoNoCadastro } from '../../utils/avatarAccess';
 import './Login.css';
 
 // --- Chaves de sessionStorage ───────────────────────────────────────────────
@@ -134,17 +135,22 @@ export default function Login() {
   useEffect(() => {
     const unsub = onValue(ref(db, 'avatares'), (snap) => {
       if (!snap.exists()) return;
-      const data = Object.values(snap.val() || {})
+      const ordenados = Object.values(snap.val() || {})
         .filter((i) => i?.active !== false && typeof i?.url === 'string')
         .sort((a, b) => {
           const aO = typeof a?.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
           const bO = typeof b?.order === 'number' ? b.order : Number.MAX_SAFE_INTEGER;
           return aO !== bO ? aO - bO : (b?.createdAt || 0) - (a?.createdAt || 0);
-        })
-        .map((i) => i.url);
-      if (data.length > 0) {
-        setListaAvatares(data);
-        setSelectedAvatar((prev) => (data.includes(prev) ? prev : data[0]));
+        });
+      const somentePublicos = ordenados.filter((i) => avatarEhPublicoNoCadastro(i)).map((i) => i.url);
+      if (somentePublicos.length > 0) {
+        setListaAvatares(somentePublicos);
+        setSelectedAvatar((prev) => (somentePublicos.includes(prev) ? prev : somentePublicos[0]));
+      } else {
+        setListaAvatares(LISTA_AVATARES);
+        setSelectedAvatar((prev) =>
+          LISTA_AVATARES.includes(prev) ? prev : LISTA_AVATARES[0] || AVATAR_FALLBACK
+        );
       }
     });
     return () => unsub();
@@ -376,19 +382,22 @@ export default function Login() {
       return;
     }
 
+    const avatarSeguro =
+      listaAvatares.includes(selectedAvatar) ? selectedAvatar : listaAvatares[0] || AVATAR_FALLBACK;
+
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const agora = Date.now();
       await updateProfile(cred.user, {
         displayName: displayName.trim(),
-        photoURL:    selectedAvatar,
+        photoURL:    avatarSeguro,
       });
 
       const perfil = await ensureUsuarioRecord(
         cred.user,
         displayName.trim(),
-        selectedAvatar,
+        avatarSeguro,
         listaAvatares,
         'ativo'
       );
@@ -664,15 +673,15 @@ export default function Login() {
                     onClick={() => setSignupIntent('reader')}
                   >
                     <strong>Leitor</strong>
-                    <span>Conta focada em leitura, favoritos e compras.</span>
+                    <span>Entra lendo na hora, com favoritos, biblioteca e loja.</span>
                   </button>
                   <button
                     type="button"
                     className={`signup-intent-card ${signupIntent === 'creator' ? 'is-active' : ''}`}
                     onClick={() => setSignupIntent('creator')}
                   >
-                    <strong>Autor independente</strong>
-                    <span>Conta preparada para publicar obras e ativar perfil público de criador depois.</span>
+                    <strong>Quero ser mangaka</strong>
+                    <span>Cria a conta agora e envia a solicitacao de creator logo depois, com revisao humana.</span>
                   </button>
                 </div>
               </div>
@@ -877,4 +886,3 @@ export default function Login() {
     </main>
   );
 }
-

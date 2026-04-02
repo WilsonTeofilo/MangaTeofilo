@@ -189,7 +189,10 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
         avatarUrl:
           String(profile?.creatorProfile?.avatarUrl || profile?.userAvatar || '').trim() ||
           '/assets/fotos/shito.jpg',
-        bannerUrl: String(profile?.creatorProfile?.bannerUrl || profile?.creatorBannerUrl || '').trim(),
+        bannerUrl:
+          String(profile?.creatorProfile?.bannerUrl || profile?.creatorBannerUrl || '').trim() ||
+          String(profile?.creatorProfile?.avatarUrl || profile?.userAvatar || '').trim() ||
+          '/assets/fotos/shito.jpg',
         followersCount: followers,
         totalLikes: likes,
         totalViews: views,

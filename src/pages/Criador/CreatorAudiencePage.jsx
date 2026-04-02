@@ -4,12 +4,8 @@ import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
+import { toRecordList } from '../../utils/firebaseRecordList';
 import './CreatorFrame.css';
-
-function toList(val) {
-  if (!val || typeof val !== 'object') return [];
-  return Object.entries(val).map(([id, row]) => ({ id, ...(row || {}) }));
-}
 
 function safeNumber(value) {
   const n = Number(value);
@@ -136,7 +132,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
   }, [uid]);
 
   const creatorWorks = useMemo(() => {
-    return toList(worksMap).filter((work) => String(work?.creatorId || '').trim() === uid);
+    return toRecordList(worksMap).filter((work) => String(work?.creatorId || '').trim() === uid);
   }, [uid, worksMap]);
 
   const creatorWorkIds = useMemo(
@@ -163,7 +159,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
   }, [uid, creatorWorks]);
 
   const creatorChapters = useMemo(() => {
-    return toList(chaptersMap)
+    return toRecordList(chaptersMap)
       .filter((chapter) => {
         if (String(chapter?.creatorId || '').trim() === uid) return true;
         const workId = String(chapter?.obraId || chapter?.mangaId || '').trim().toLowerCase();

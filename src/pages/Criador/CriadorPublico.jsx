@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { CREATOR_BIO_MIN_LENGTH } from '../../constants';
 import { db } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
+import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
 import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './CriadorPublico.css';
@@ -75,14 +77,16 @@ export default function CriadorPublico() {
     'Criador';
 
   const bio = String(perfilPublico?.creatorBio || perfilPublico?.bio || '').trim();
-  const avatar = String(perfilPublico?.userAvatar || '').trim() || '/assets/fotos/shito.jpg';
-  const banner = String(perfilPublico?.creatorBannerUrl || '').trim();
+  const avatar =
+    String(perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar || '').trim() ||
+    '/assets/fotos/shito.jpg';
+  const heroBackdropUrl = creatorPublicHeroImageUrl(perfilPublico);
   const creatorStatus = String(perfilPublico?.creatorStatus || '').trim().toLowerCase();
   const creatorMonetizationStatus = String(perfilPublico?.creatorMonetizationStatus || '').trim().toLowerCase();
   const membershipEnabled = creatorMonetizationStatus === 'active' && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
   const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
-  const hasPublicBase = avatar.length > 3 && banner.length > 3 && bio.length >= 24 && redes.length > 0;
+  const hasPublicBase = avatar.length > 3 && bio.length >= CREATOR_BIO_MIN_LENGTH && redes.length > 0;
 
   if (!creatorUid) {
     return (
@@ -108,10 +112,15 @@ export default function CriadorPublico() {
 
   return (
     <main className="criador-page">
-      <section
-        className="criador-hero"
-        style={banner ? { backgroundImage: `linear-gradient(rgba(7, 11, 18, 0.78), rgba(7, 11, 18, 0.92)), url(${banner})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
-      >
+      <section className="criador-hero criador-hero--blur-backdrop">
+        <div className="criador-hero__backdrop" aria-hidden="true">
+          <div
+            className="criador-hero__backdrop-img"
+            style={{ backgroundImage: `url(${heroBackdropUrl})` }}
+          />
+          <div className="criador-hero__backdrop-scrim" />
+        </div>
+        <div className="criador-hero__foreground">
         <div className="criador-hero__avatar">
           <img src={avatar} alt={nomeCriador} />
         </div>
@@ -146,6 +155,7 @@ export default function CriadorPublico() {
               ))}
             </div>
           ) : null}
+        </div>
         </div>
       </section>
 

@@ -1,3 +1,10 @@
 User-agent: *
 Allow: /
+Disallow: /admin
+Disallow: /creator
+Disallow: /perfil
+Disallow: /login
+Disallow: /biblioteca
+Disallow: /loja/carrinho
+Disallow: /loja/pedidos
 Sitemap: https://mangateofilo.com/sitemap.xml

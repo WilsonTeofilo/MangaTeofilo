@@ -471,6 +471,109 @@
   font-size: 0.8rem;
 }
 
+.header-notification-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9800;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(4, 8, 14, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.header-notification-modal__panel {
+  width: min(480px, calc(100vw - 32px));
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(12, 17, 26, 0.98), rgba(8, 12, 20, 0.98));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+  overflow: hidden;
+}
+
+.header-notification-modal__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.header-notification-modal__head small,
+.header-notification-modal__head strong {
+  display: block;
+}
+
+.header-notification-modal__head small {
+  margin-bottom: 6px;
+  color: #ffe08a;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.header-notification-modal__head strong {
+  font-size: 1rem;
+  color: #f8fafc;
+}
+
+.header-notification-modal__head button {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+
+.header-notification-modal__body {
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.header-notification-modal__body p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.55;
+}
+
+.header-notification-modal__meta {
+  font-size: 0.84rem;
+  color: #94a3b8;
+}
+
+.header-notification-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+
+.header-notification-modal__ghost,
+.header-notification-modal__primary {
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.header-notification-modal__ghost {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: transparent;
+  color: #cbd5e1;
+}
+
+.header-notification-modal__primary {
+  border: 1px solid rgba(255, 204, 0, 0.38);
+  background: rgba(255, 204, 0, 0.12);
+  color: #fff1a6;
+}
+
 .header-avatar-wrapper {
   display: inline-flex;
   align-items: center;

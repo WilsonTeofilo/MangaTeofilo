@@ -220,6 +220,41 @@
         "notifyPromotions":  { ".validate": "newData.isBoolean()" },
         "gender":            { ".validate": "newData.val() === 'masculino' || newData.val() === 'feminino' || newData.val() === 'outro' || newData.val() === 'nao_informado'" },
         "birthYear":         { ".validate": "newData.val() === null || (newData.isNumber() && newData.val() >= 1900 && newData.val() <= now / 31557600000 + 1970)" },
+        "birthDate":         { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/))" },
+        "creatorCompliance": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        },
+        "creator": {
+          "profile": {
+            "displayName": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
+            "bio": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)" },
+            "birthDate": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/))" }
+          },
+          "social": {
+            "instagram": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" },
+            "youtube": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" }
+          },
+          "monetization": {
+            "enabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
+            "requested": { ".validate": "!newData.exists() || newData.isBoolean()" },
+            "approved": { ".validate": "!newData.exists() || newData.isBoolean()" },
+            "legal": {
+              "fullName": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 120)" },
+              "cpf": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{11}$/))" }
+            },
+            "payout": {
+              "type": { ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'pix'" },
+              "key": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length > 0 && newData.val().length <= 2000)" },
+              "pixType": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && (newData.val() === 'cpf' || newData.val() === 'email' || newData.val() === 'phone' || newData.val() === 'random'))" }
+            }
+          },
+          "meta": {
+            "isAdult": { ".validate": "!newData.exists() || newData.isBoolean()" },
+            "createdAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "updatedAt": { ".validate": "!newData.exists() || newData.isNumber()" }
+          }
+        },
         "marketingOptIn":    { ".validate": "newData.isBoolean()" },
         "marketingOptInAt":  { ".validate": "newData.val() === null || newData.isNumber()" },
         "createdAt":         { ".validate": "newData.isNumber() && (!data.exists() || newData.val() === data.val())" },
@@ -245,6 +280,7 @@
         "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
         "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "creatorBannerUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
         "creatorOnboardingChecklistHidden": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorOnboardingStoreSkipped": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorMemberships": {
@@ -275,9 +311,10 @@
         "userAvatar":  { ".validate": "newData.isString() && newData.val().length > 0" },
         "accountType": { ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true) || newData.val() === root.child('usuarios').child($uid).child('accountType').val() || (auth.uid === $uid && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)))" },
         "creatorDisplayName": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
-        "creatorBio": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)" },
+        "creatorBio": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)" },
         "instagramUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
         "youtubeUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
+        "creatorBannerUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 2048)" },
         "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
         "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
@@ -300,8 +337,8 @@
         "stats": {
           ".read": "auth != null && auth.uid === $creatorId",
           "$field": {
-            ".validate": "newData.isNumber()",
-            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
+            ".validate": "$field.matches(/^(followersCount|totalViews|likesTotal|commentsTotal|uniqueReaders)$/) && newData.isNumber() && newData.val() >= 0",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && $field.matches(/^(followersCount|totalViews|likesTotal|commentsTotal|uniqueReaders)$/) && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
           }
         },
         "membersIndex": {
@@ -319,7 +356,8 @@
             ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
           },
           "$metric": {
-            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
+            ".validate": "$metric.matches(/^(followersAdded|totalViews|uniqueReaders|likesTotal|commentsTotal)$/) && newData.isNumber() && newData.val() >= 0",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && $metric.matches(/^(followersAdded|totalViews|uniqueReaders|likesTotal|commentsTotal)$/) && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
           }
         }
       }

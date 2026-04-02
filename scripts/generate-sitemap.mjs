@@ -5,7 +5,7 @@ import process from 'node:process';
 const SITE_URL = (process.env.SITE_URL || 'https://mangateofilo.com').replace(/\/+$/, '');
 const DATABASE_URL = process.env.FIREBASE_DATABASE_URL || 'https://shitoproject-ed649-default-rtdb.firebaseio.com';
 
-const STATIC_ROUTES = ['/', '/works', '/mangas', '/sobre-autor', '/apoie', '/loja'];
+const STATIC_ROUTES = ['/', '/works', '/mangas', '/sobre-autor', '/apoie', '/loja', '/creators'];
 
 function toIso(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return new Date().toISOString();
@@ -146,17 +146,26 @@ ${urls.map((u) => `  <url>
   await writeFile(path.join(publicDir, 'sitemap.xml'), xml, 'utf8');
   await writeFile(
     path.join(publicDir, 'robots.txt'),
-    `User-agent: *\nAllow: /\nSitemap: ${SITE_URL}/sitemap.xml\n`,
+    [
+      'User-agent: *',
+      'Allow: /',
+      'Disallow: /admin',
+      'Disallow: /creator',
+      'Disallow: /perfil',
+      'Disallow: /login',
+      'Disallow: /biblioteca',
+      'Disallow: /loja/carrinho',
+      'Disallow: /loja/pedidos',
+      `Sitemap: ${SITE_URL}/sitemap.xml`,
+      '',
+    ].join('\n'),
     'utf8'
   );
 
-  // eslint-disable-next-line no-console
   console.log(`Sitemap gerado com ${urls.length} URLs.`);
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error('[sitemap] erro:', err.message);
   process.exitCode = 1;
 });
-

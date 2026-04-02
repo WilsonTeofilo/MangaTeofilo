@@ -68,8 +68,13 @@ function nowMs() {
   return Date.now();
 }
 
-function normalizarAjusteObra(raw) {
-  return normalizeResponsiveCropAdjustment(raw);
+function normalizarAjusteObra(raw, dims = null, editorConfig = BANNER_EDITOR_CONFIG) {
+  const bounds = getResponsiveCropZoomBounds(dims, editorConfig.outputW, editorConfig.outputH);
+  const normalized = normalizeResponsiveCropAdjustment(raw, { maxZoom: bounds.maxZoom });
+  return {
+    ...normalized,
+    zoom: Math.max(bounds.coverZoom, Number(normalized.zoom || bounds.coverZoom)),
+  };
 }
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -392,6 +397,18 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     () => getResponsiveCropZoomBounds(bannerDimensoes, BANNER_EDITOR_CONFIG.outputW, BANNER_EDITOR_CONFIG.outputH),
     [bannerDimensoes]
   );
+
+  useEffect(() => {
+    if (capaDimensoes) {
+      setCapaAjuste((prev) => normalizarAjusteObra(prev, capaDimensoes, COVER_EDITOR_CONFIG));
+    }
+  }, [capaDimensoes]);
+
+  useEffect(() => {
+    if (bannerDimensoes) {
+      setBannerAjuste((prev) => normalizarAjusteObra(prev, bannerDimensoes, BANNER_EDITOR_CONFIG));
+    }
+  }, [bannerDimensoes]);
 
   const clearMsgs = () => {
     setErro('');
@@ -1177,13 +1194,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 </div>
                 <div className="obra-media-controls">
                   <label>Zoom
-                    <input type="range" min={capaZoomBounds.minZoom} max={capaZoomBounds.maxZoom} step="0.01" value={capaAjuste.zoom} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }))} />
+                    <input type="range" min={capaZoomBounds.coverZoom || capaZoomBounds.minZoom} max={capaZoomBounds.maxZoom} step="0.01" value={capaAjuste.zoom} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }, capaDimensoes, COVER_EDITOR_CONFIG))} />
                   </label>
                   <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }, capaDimensoes, COVER_EDITOR_CONFIG))} />
                   </label>
                   <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }, capaDimensoes, COVER_EDITOR_CONFIG))} />
                   </label>
                 </div>
                 <details>
@@ -1236,13 +1253,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 </div>
                 <div className="obra-media-controls">
                   <label>Zoom
-                    <input type="range" min={bannerZoomBounds.minZoom} max={bannerZoomBounds.maxZoom} step="0.01" value={bannerAjuste.zoom} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }))} />
+                    <input type="range" min={bannerZoomBounds.coverZoom || bannerZoomBounds.minZoom} max={bannerZoomBounds.maxZoom} step="0.01" value={bannerAjuste.zoom} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }, bannerDimensoes, BANNER_EDITOR_CONFIG))} />
                   </label>
                   <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }, bannerDimensoes, BANNER_EDITOR_CONFIG))} />
                   </label>
                   <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }))} />
+                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }, bannerDimensoes, BANNER_EDITOR_CONFIG))} />
                   </label>
                 </div>
                 <details>

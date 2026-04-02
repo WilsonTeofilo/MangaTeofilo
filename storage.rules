@@ -14,6 +14,10 @@ service firebase.storage {
     return request.auth != null && request.auth.token.panelRole == "mangaka";
   }
 
+  function isSafeSegment(value) {
+    return value.matches('^[A-Za-z0-9_-]{2,128}$');
+  }
+
   function canWriteOwnerPath(ownerUid) {
     return isShitoAdmin()
       || (request.auth != null
@@ -24,7 +28,8 @@ service firebase.storage {
   match /b/{bucket}/o {
     match /capas/{ownerUid}/{fileName} {
       allow read: if true;
-      allow write: if canWriteOwnerPath(ownerUid)
+      allow write: if isSafeSegment(ownerUid)
+                   && canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*')
                    && !request.resource.contentType.matches('.*svg.*')
@@ -33,7 +38,9 @@ service firebase.storage {
 
     match /manga/{ownerUid}/{obra}/{fileName} {
       allow read: if true;
-      allow write: if canWriteOwnerPath(ownerUid)
+      allow write: if isSafeSegment(ownerUid)
+                   && isSafeSegment(obra)
+                   && canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*')
                    && !request.resource.contentType.matches('.*svg.*')
@@ -42,7 +49,9 @@ service firebase.storage {
 
     match /obras/{ownerUid}/{obra}/{fileName} {
       allow read: if true;
-      allow write: if canWriteOwnerPath(ownerUid)
+      allow write: if isSafeSegment(ownerUid)
+                   && isSafeSegment(obra)
+                   && canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*')
                    && !request.resource.contentType.matches('.*svg.*')
@@ -55,6 +64,17 @@ service firebase.storage {
                    && (request.resource == null || (request.resource.size < 1024 * 1024
                    && request.resource.contentType == "image/webp"
                    && fileName.matches('.*\\.webp$')));
+    }
+
+    /** Banner de perfil público do criador (upload antes de virar mangaka). WebP comprimido no cliente (~400KB). */
+    match /creator_profile/{ownerUid}/{fileName} {
+      allow read: if true;
+      allow write: if isSafeSegment(ownerUid)
+                   && request.auth != null
+                   && request.auth.uid == ownerUid
+                   && (request.resource == null || (request.resource.size < 600 * 1024
+                   && request.resource.contentType == "image/webp"
+                   && fileName.lower().matches('.*\\.webp$')));
     }
 
     match /{allPaths=**} {

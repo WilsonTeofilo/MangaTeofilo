@@ -12,17 +12,13 @@ import {
   obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
+import { toRecordList } from '../../utils/firebaseRecordList';
 import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './ListaMangas.css';
 
 function pathObraPublica(obra) {
   return `/work/${encodeURIComponent(obraSegmentoUrlPublica(obra))}`;
-}
-
-function toList(snapshotVal) {
-  if (!snapshotVal || typeof snapshotVal !== 'object') return [];
-  return Object.entries(snapshotVal).map(([id, data]) => ({ id, ...(data || {}) }));
 }
 
 function msUltimaAtualizacao(cap) {
@@ -60,7 +56,7 @@ export default function ListaMangas({ user }) {
         setLoadingObras(false);
         return;
       }
-      const lista = ensureLegacyShitoObra(toList(snapshot.val()))
+      const lista = ensureLegacyShitoObra(toRecordList(snapshot.val()))
         .filter((obra) => obraVisivelNoCatalogoPublico(obra))
         .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
       setObras(lista);
@@ -75,7 +71,7 @@ export default function ListaMangas({ user }) {
   useEffect(() => {
     const capsRef = ref(db, 'capitulos');
     const unsub = onValue(capsRef, (snapshot) => {
-      const lista = snapshot.exists() ? toList(snapshot.val()) : [];
+      const lista = snapshot.exists() ? toRecordList(snapshot.val()) : [];
       setCapitulos(lista);
       setLoadingCaps(false);
     }, () => {

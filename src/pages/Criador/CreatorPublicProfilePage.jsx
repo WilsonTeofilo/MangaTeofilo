@@ -3,16 +3,14 @@ import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { CREATOR_BIO_MIN_LENGTH } from '../../constants';
 import { db, functions } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
+import { toRecordList } from '../../utils/firebaseRecordList';
+import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
 import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './CriadorPublico.css';
-
-function toList(data) {
-  if (!data || typeof data !== 'object') return [];
-  return Object.entries(data).map(([id, value]) => ({ id, ...(value || {}) }));
-}
 
 function normalizarRede(url) {
   const valor = String(url || '').trim();
@@ -101,7 +99,7 @@ export default function CreatorPublicProfilePage({ user }) {
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'obras'), (snapshot) => {
-      const lista = snapshot.exists() ? ensureLegacyShitoObra(toList(snapshot.val())) : [];
+      const lista = snapshot.exists() ? ensureLegacyShitoObra(toRecordList(snapshot.val())) : [];
       setObras(
         lista
           .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)
@@ -113,7 +111,7 @@ export default function CreatorPublicProfilePage({ user }) {
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'capitulos'), (snapshot) => {
-      setCapitulos(snapshot.exists() ? toList(snapshot.val()) : []);
+      setCapitulos(snapshot.exists() ? toRecordList(snapshot.val()) : []);
     });
     return () => unsub();
   }, []);
@@ -188,13 +186,13 @@ export default function CreatorPublicProfilePage({ user }) {
   const avatar =
     String(perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar || '').trim() ||
     '/assets/fotos/shito.jpg';
-  const banner = String(perfilPublico?.creatorProfile?.bannerUrl || perfilPublico?.creatorBannerUrl || '').trim();
+  const heroBackdropUrl = creatorPublicHeroImageUrl(perfilPublico);
   const creatorStatus = String(perfilPublico?.creatorStatus || '').trim().toLowerCase();
   const creatorMonetizationStatus = String(perfilPublico?.creatorMonetizationStatus || '').trim().toLowerCase();
   const membershipEnabled = creatorMonetizationStatus === 'active' && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
   const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
-  const hasPublicBase = avatar.length > 3 && banner.length > 3 && bio.length >= 24 && redes.length > 0;
+  const hasPublicBase = avatar.length > 3 && bio.length >= CREATOR_BIO_MIN_LENGTH && redes.length > 0;
   const canFollow = Boolean(user?.uid) && user.uid !== creatorUid;
 
   async function handleToggleFollow() {
@@ -274,18 +272,15 @@ export default function CreatorPublicProfilePage({ user }) {
 
   return (
     <main className="criador-page">
-      <section
-        className="criador-hero"
-        style={
-          banner
-            ? {
-                backgroundImage: `linear-gradient(rgba(7, 11, 18, 0.78), rgba(7, 11, 18, 0.92)), url(${banner})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-              }
-            : undefined
-        }
-      >
+      <section className="criador-hero criador-hero--blur-backdrop">
+        <div className="criador-hero__backdrop" aria-hidden="true">
+          <div
+            className="criador-hero__backdrop-img"
+            style={{ backgroundImage: `url(${heroBackdropUrl})` }}
+          />
+          <div className="criador-hero__backdrop-scrim" />
+        </div>
+        <div className="criador-hero__foreground">
         <div className="criador-hero__avatar">
           <img src={avatar} alt={nomeCriador} />
         </div>
@@ -345,6 +340,7 @@ export default function CreatorPublicProfilePage({ user }) {
               ))}
             </div>
           ) : null}
+        </div>
         </div>
       </section>
 

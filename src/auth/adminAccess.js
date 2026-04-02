@@ -73,6 +73,11 @@ export async function resolveAdminAccess(user) {
         permissions: null,
       };
     }
+    try {
+      await user.getIdToken(true);
+    } catch {
+      /* JWT com panelRole para Storage/RTDB apos adminGetMyAdminProfile (inclui sync de claims no servidor) */
+    }
     const isMangaka = data.mangaka === true;
     const panelRole = data.panelRole || (byAllowlist ? 'super_admin' : data.super ? 'super_admin' : 'admin');
     return {

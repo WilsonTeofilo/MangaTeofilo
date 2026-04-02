@@ -47,6 +47,9 @@ function mensagemErroFirebase(e) {
   if (code === 'PERMISSION_DENIED') {
     return 'Sem permissão para gravar. Confirme login, papel (admin/mangaka) e regras do Firebase.';
   }
+  if (code === 'storage/unauthorized') {
+    return 'Upload negado pelo servidor. Saia e entre de novo na conta ou tente outra imagem (máx. 1,2 MB).';
+  }
   if (code === 'UNAVAILABLE' || /network|offline|failed to fetch/i.test(String(e?.message || ''))) {
     return 'Rede indisponível. Verifique a conexão e tente de novo.';
   }
@@ -64,6 +67,13 @@ function sanitizarSegmentoStorage(valor, fallback = 'item') {
   return limpo || fallback;
 }
 
+/** UID do Firebase nas regras do Storage deve bater com `auth.uid` — nao normalizar/lowercase. */
+function segmentoStorageOwnerUid(creatorIdResolved) {
+  const raw = String(creatorIdResolved || '').trim();
+  if (/^[A-Za-z0-9_-]{2,128}$/.test(raw)) return raw;
+  return sanitizarSegmentoStorage(creatorIdResolved, 'shared');
+}
+
 function nowMs() {
   return Date.now();
 }
@@ -78,9 +88,9 @@ function normalizarAjusteObra(raw, dims = null, editorConfig = BANNER_EDITOR_CON
 }
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_INPUT_IMAGE_SIZE_BYTES = 7 * 1024 * 1024;
-const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const TARGET_IMAGE_SIZE_BYTES = 2.2 * 1024 * 1024;
+/** Meta de peso após processar (~250–500 KB; WebP gerado no navegador; JPG/PNG de entrada ok). */
+const OBRA_WEBP_TARGET_MAX = 500 * 1024;
+const OBRA_WEBP_HARD_MAX = 560 * 1024;
 const COVER_EDITOR_CONFIG = {
   outputW: 1200,
   outputH: 1600,
@@ -93,8 +103,9 @@ const BANNER_EDITOR_CONFIG = {
 function validarImagemUpload(file, label = 'Imagem') {
   if (!file) return `${label} não encontrado.`;
   if (!IMAGE_TYPES.includes(file.type)) return `${label} inválido. Use JPG, PNG ou WEBP.`;
-  if (file.size > MAX_COVER_UPLOAD_BYTES) return `${label} excede 2MB. Escolha um arquivo menor.`;
-  if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 7MB.`;
+  if (file.size > MAX_COVER_UPLOAD_BYTES) {
+    return `${label} é grande demais (máx. 1,2 MB). Comprima ou escolha outra imagem.`;
+  }
   return '';
 }
 
@@ -133,35 +144,39 @@ function canvasParaBlob(canvas, type, quality) {
   });
 }
 
-async function comprimirImagemParaUpload(file) {
-  if (file.size <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) return file;
-  const img = await carregarImagem(file);
-  let width = img.naturalWidth || img.width;
-  let height = img.naturalHeight || img.height;
-  let quality = 0.9;
-  let melhorBlob = null;
-  for (let tentativa = 0; tentativa < 9; tentativa += 1) {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) throw new Error('Falha ao inicializar compressor de imagem.');
-    ctx.drawImage(img, 0, 0, width, height);
-    const blob = await canvasParaBlob(canvas, 'image/webp', quality);
-    melhorBlob = blob;
-    if (blob.size <= TARGET_IMAGE_SIZE_BYTES || blob.size <= MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-      return new File([blob], nomeArquivoComExtensao(file.name, '.webp'), { type: 'image/webp', lastModified: Date.now() });
+/**
+ * Exporta WebP do canvas (~250–500 KB quando possível; teto ~560 KB).
+ * Entrada pode ser JPG/PNG/WebP; o arquivo enviado ao Storage continua sendo WebP gerado aqui.
+ */
+async function exportObraWebpPesoAlvo(sourceCanvas) {
+  let canvas = sourceCanvas;
+  for (let pass = 0; pass < 10; pass += 1) {
+    for (let q = 0.9; q >= 0.34; q -= 0.04) {
+      const blob = await canvasParaBlob(canvas, 'image/webp', q);
+      if (blob.size <= OBRA_WEBP_TARGET_MAX) {
+        return blob;
+      }
     }
-    if (quality > 0.56) quality -= 0.08;
-    else {
-      width = Math.max(900, Math.round(width * 0.86));
-      height = Math.max(900, Math.round(height * 0.86));
+    const lastTry = await canvasParaBlob(canvas, 'image/webp', 0.32);
+    if (lastTry.size <= OBRA_WEBP_HARD_MAX) {
+      return lastTry;
     }
+    const nw = Math.max(520, Math.round(canvas.width * 0.82));
+    const nh = Math.max(520, Math.round(canvas.height * 0.82));
+    if (nw >= canvas.width && nh >= canvas.height) {
+      break;
+    }
+    const next = document.createElement('canvas');
+    next.width = nw;
+    next.height = nh;
+    const ctx = next.getContext('2d', { alpha: false });
+    if (!ctx) throw new Error('Não foi possível processar a imagem.');
+    ctx.drawImage(canvas, 0, 0, nw, nh);
+    canvas = next;
   }
-  if (!melhorBlob || melhorBlob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-    throw new Error('Não foi possível otimizar imagem para até 5MB.');
-  }
-  return new File([melhorBlob], nomeArquivoComExtensao(file.name, '.webp'), { type: 'image/webp', lastModified: Date.now() });
+  throw new Error(
+    'Não foi possível comprimir a imagem até ~500 KB. Escolha outro arquivo (máx. 1,2 MB) ou uma foto menos detalhada.'
+  );
 }
 
 function desenharImagemAjustada(
@@ -183,18 +198,30 @@ function desenharImagemAjustada(
 }
 
 async function processarImagemObra(file, ajuste, editorConfig) {
-  const otimizada = await comprimirImagemParaUpload(file);
-  const img = await carregarImagem(otimizada);
+  const img = await carregarImagem(file);
+  const natW = img.naturalWidth || img.width;
+  const natH = img.naturalHeight || img.height;
+  const maxEdge = 4096;
+  let source = img;
+  if (natW > maxEdge || natH > maxEdge) {
+    const scale = Math.min(maxEdge / natW, maxEdge / natH);
+    const tw = Math.max(1, Math.round(natW * scale));
+    const th = Math.max(1, Math.round(natH * scale));
+    const pre = document.createElement('canvas');
+    pre.width = tw;
+    pre.height = th;
+    const pctx = pre.getContext('2d', { alpha: false });
+    if (!pctx) throw new Error('Falha ao processar imagem da obra.');
+    pctx.drawImage(img, 0, 0, tw, th);
+    source = pre;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = editorConfig.outputW;
   canvas.height = editorConfig.outputH;
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) throw new Error('Falha ao processar imagem da obra.');
-  desenharImagemAjustada(ctx, img, canvas.width, canvas.height, ajuste, editorConfig);
-  const blob = await canvasParaBlob(canvas, 'image/webp', 0.9);
-  if (blob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-    throw new Error('Imagem final excedeu 5MB. Ajuste o arquivo original.');
-  }
+  desenharImagemAjustada(ctx, source, canvas.width, canvas.height, ajuste, editorConfig);
+  const blob = await exportObraWebpPesoAlvo(canvas);
   return new File([blob], nomeArquivoComExtensao(file.name, '.webp'), {
     type: 'image/webp',
     lastModified: Date.now(),
@@ -589,7 +616,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         : isMangaka && user?.uid
           ? user.uid
           : String(form.adminCreatorId || '').trim();
-    const ownerUidStorage = sanitizarSegmentoStorage(creatorIdResolved, 'shared');
+    const ownerUidStorage = segmentoStorageOwnerUid(creatorIdResolved);
     const obraStorageSegment = sanitizarSegmentoStorage(editandoId || slugNovo, 'obra');
     const tagsFinal = v.tags;
     const tituloTrim = String(form.titulo || '').trim();
@@ -629,14 +656,20 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         const file = await processarImagemObra(capaArquivo, capaAjuste, COVER_EDITOR_CONFIG);
         const path = `obras/${ownerUidStorage}/${obraStorageSegment}/capa_${Date.now()}.webp`;
         const fileRef = storageRef(storage, path);
-        await uploadBytes(fileRef, file);
+        await uploadBytes(fileRef, file, {
+          contentType: 'image/webp',
+          cacheControl: 'public,max-age=31536000,immutable',
+        });
         payload.capaUrl = await getDownloadURL(fileRef);
       }
       if (bannerArquivo) {
         const file = await processarImagemObra(bannerArquivo, bannerAjuste, BANNER_EDITOR_CONFIG);
         const path = `obras/${ownerUidStorage}/${obraStorageSegment}/banner_${Date.now()}.webp`;
         const fileRef = storageRef(storage, path);
-        await uploadBytes(fileRef, file);
+        await uploadBytes(fileRef, file, {
+          contentType: 'image/webp',
+          cacheControl: 'public,max-age=31536000,immutable',
+        });
         payload.bannerUrl = await getDownloadURL(fileRef);
       }
 
@@ -680,6 +713,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     const erroValid = validarImagemUpload(file, 'Capa');
     if (erroValid) {
       setErro(erroValid);
+      openSaveErrorModal([erroValid]);
       return;
     }
     setErro('');
@@ -692,6 +726,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     const erroValid = validarImagemUpload(file, 'Banner');
     if (erroValid) {
       setErro(erroValid);
+      openSaveErrorModal([erroValid]);
       return;
     }
     setErro('');
@@ -1160,6 +1195,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               <div className="obra-media-card">
                 <h3>Capa (3:4)</h3>
                 <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => selecionarCapa(e.target.files?.[0])} />
+                <small className="field-help">
+                  JPG, PNG ou WebP · arquivo até 1,2 MB · na publicação vira WebP comprimido (~até 500 KB)
+                </small>
                 <div
                   ref={capaEditorRef}
                   className={`obra-editor-mask obra-editor-mask--cover${capaEditavel ? ' is-editable' : ''}`}
@@ -1219,6 +1257,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               <div className="obra-media-card">
                 <h3>Banner (16:9)</h3>
                 <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => selecionarBanner(e.target.files?.[0])} />
+                <small className="field-help">
+                  JPG, PNG ou WebP · arquivo até 1,2 MB · na publicação vira WebP comprimido (~até 500 KB)
+                </small>
                 <div
                   ref={bannerEditorRef}
                   className={`obra-editor-mask obra-editor-mask--banner${bannerEditavel ? ' is-editable' : ''}`}

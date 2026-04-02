@@ -79,6 +79,12 @@ function sanitizarSegmentoStorage(valor, fallback = 'item') {
   return limpo || fallback;
 }
 
+function segmentoStorageOwnerUid(creatorIdResolved) {
+  const raw = String(creatorIdResolved || '').trim();
+  if (/^[A-Za-z0-9_-]{2,128}$/.test(raw)) return raw;
+  return sanitizarSegmentoStorage(creatorIdResolved, 'shared');
+}
+
 function carregarImagem(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -523,6 +529,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
   const [capitulos, setCapitulos] = useState([]);
   const [obras, setObras] = useState([]);
+  /** Evita redirect falso: antes do 1º snapshot, o fallback da obra copiava creatorId legado (Shito). */
+  const [obrasSnapshotReady, setObrasSnapshotReady] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progressoMsg, setProgressoMsg] = useState('');
@@ -540,6 +548,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       return;
     }
 
+    setObrasSnapshotReady(false);
+
     const unsubscribe = onValue(dbRef(db, 'capitulos'), (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -551,16 +561,24 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         setCapitulos([]);
       }
     });
-    const unsubObras = onValue(dbRef(db, 'obras'), (snapshot) => {
-      if (!snapshot.exists()) {
+    const unsubObras = onValue(
+      dbRef(db, 'obras'),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        } else {
+          const lista = ensureLegacyShitoObra(
+            Object.entries(snapshot.val() || {}).map(([id, valores]) => ({ id, ...(valores || {}) }))
+          );
+          setObras(lista);
+        }
+        setObrasSnapshotReady(true);
+      },
+      () => {
         setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
-        return;
+        setObrasSnapshotReady(true);
       }
-      const lista = ensureLegacyShitoObra(
-        Object.entries(snapshot.val() || {}).map(([id, valores]) => ({ id, ...(valores || {}) }))
-      );
-      setObras(lista);
-    });
+    );
 
     return () => {
       unsubscribe();
@@ -588,10 +606,20 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
   const obraSelecionada = useMemo(() => {
     const obra = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
-    return obra || { ...OBRA_SHITO_DEFAULT, id: obraIdSelecionada, slug: obraIdSelecionada };
-  }, [obras, obraIdSelecionada]);
+    if (obra) return obra;
+    if (isMangaka && !obrasSnapshotReady && user?.uid) {
+      return {
+        id: obraIdSelecionada,
+        slug: obraIdSelecionada,
+        titulo: 'Carregando obra…',
+        tituloCurto: '',
+        creatorId: user.uid,
+      };
+    }
+    return { ...OBRA_SHITO_DEFAULT, id: obraIdSelecionada, slug: obraIdSelecionada };
+  }, [obras, obraIdSelecionada, isMangaka, obrasSnapshotReady, user?.uid]);
   const ownerUidStorage = useMemo(
-    () => sanitizarSegmentoStorage(obraCreatorId(obraSelecionada) || user?.uid, 'shared'),
+    () => segmentoStorageOwnerUid(obraCreatorId(obraSelecionada) || user?.uid),
     [obraSelecionada, user?.uid]
   );
   const obraStorageSegment = useMemo(
@@ -603,12 +631,24 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
 
   useEffect(() => {
-    if (!adminAccess?.isMangaka || !user?.uid) return;
-    const own = obraCreatorId(obraSelecionada) === user.uid;
-    if (!own) {
+    if (!adminAccess?.isMangaka || !user?.uid || !obrasSnapshotReady) return;
+    const match = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
+    if (!match) {
+      navigate(chaptersHubPath);
+      return;
+    }
+    if (obraCreatorId(match) !== user.uid) {
       navigate(chaptersHubPath);
     }
-  }, [adminAccess?.isMangaka, user?.uid, obraSelecionada, navigate, chaptersHubPath]);
+  }, [
+    adminAccess?.isMangaka,
+    user?.uid,
+    obrasSnapshotReady,
+    obras,
+    obraIdSelecionada,
+    navigate,
+    chaptersHubPath,
+  ]);
 
   const capitulosDaObra = useMemo(
     () =>

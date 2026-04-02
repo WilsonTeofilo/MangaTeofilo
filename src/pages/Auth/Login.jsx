@@ -420,10 +420,14 @@ export default function Login() {
       registerAttemptResult('registerPassword', true);
       setInfo(
         signupIntent === 'creator'
-          ? 'Conta criada! Complete sua solicitacao de criador no perfil para entrar em analise.'
+          ? 'Conta criada! Abrindo Creators para voce concluir a candidatura de mangaka.'
           : 'Conta criada! Bem-vindo à Tempestade.'
       );
-      irParaAposLogin();
+      if (signupIntent === 'creator') {
+        navigate('/creators', { replace: true });
+      } else {
+        irParaAposLogin();
+      }
     } catch (err) {
       registerAttemptResult('registerPassword', false);
       const msgs = {

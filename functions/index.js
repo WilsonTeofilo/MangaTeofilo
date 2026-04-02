@@ -3784,6 +3784,26 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
     return { ok: true, admin: false };
   }
   const panelRole = ctx.mangaka ? 'mangaka' : ctx.super ? 'super_admin' : 'admin';
+
+  /** Storage/RTDB rules leem `auth.token.panelRole`; sem isso o criador ve o painel mas falha no upload. */
+  let claimsSynced = false;
+  try {
+    const authUser = await getAuth().getUser(request.auth.uid);
+    const prevClaims = { ...(authUser.customClaims || {}) };
+    if (prevClaims.panelRole !== panelRole) {
+      await getAuth().setCustomUserClaims(request.auth.uid, {
+        ...prevClaims,
+        panelRole,
+      });
+      claimsSynced = true;
+    }
+  } catch (e) {
+    logger.warn('adminGetMyAdminProfile panelRole sync failed', {
+      uid: request.auth.uid,
+      err: String(e?.message || e),
+    });
+  }
+
   return {
     ok: true,
     admin: true,
@@ -3792,6 +3812,7 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
     mangaka: ctx.mangaka === true,
     panelRole,
     permissions: ctx.permissions,
+    claimsSynced,
   };
 });
 

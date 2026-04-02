@@ -75,9 +75,16 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [creatorApplyModalOpen, setCreatorApplyModalOpen] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
   const mangakaAvatarPreserveRef = useRef(false);
+  /** Evita mandar o usuario de volta a /creators a cada salvamento enquanto candidatura ainda esta em draft. */
+  const perfilCreatorsHandoffKeyRef = useRef('');
   useEffect(() => {
     mangakaAvatarPreserveRef.current = adminAccess.isMangaka === true;
   }, [adminAccess.isMangaka]);
+
+  useEffect(() => {
+    perfilCreatorsHandoffKeyRef.current =
+      user?.uid ? `shito_perfilCreatorsHandoffDone:${user.uid}` : '';
+  }, [user?.uid]);
 
   useEffect(() => {
     const carregarPerfil = async () => {
@@ -497,7 +504,21 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setBirthDateDraft(savedBirth ? formatBirthDateIsoToBr(savedBirth) : '');
 
       setMensagem({ texto: 'Perfil atualizado com sucesso!', tipo: 'sucesso' });
-      setTimeout(() => navigate(adminAccess.isMangaka ? '/perfil' : '/'), 1200);
+      const handoffKey = perfilCreatorsHandoffKeyRef.current;
+      const shouldHandoffToCreators =
+        !adminAccess.isMangaka &&
+        creatorModerationAction !== 'banned' &&
+        handoffKey &&
+        typeof sessionStorage !== 'undefined' &&
+        !sessionStorage.getItem(handoffKey) &&
+        creatorSignupIntent === 'creator' &&
+        creatorApplicationStatus === 'draft';
+      if (shouldHandoffToCreators) {
+        sessionStorage.setItem(handoffKey, '1');
+        setTimeout(() => navigate('/creators', { replace: true }), 900);
+      } else {
+        setTimeout(() => navigate(adminAccess.isMangaka ? '/perfil' : '/'), 1200);
+      }
 
     } catch (error) {
       console.error('Erro na forja:', error);

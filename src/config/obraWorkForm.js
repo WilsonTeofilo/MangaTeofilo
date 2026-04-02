@@ -50,7 +50,8 @@ export const SEO_DESCRIPTION_MAX = 160;
 export const MAX_GENRES = 3;
 export const MAX_TAGS = 5;
 export const TAG_MAX_LEN = 32;
-export const MAX_COVER_UPLOAD_BYTES = 2 * 1024 * 1024;
+/** Limite do arquivo escolhido pelo autor antes do processamento (capa/banner). */
+export const MAX_COVER_UPLOAD_BYTES = Math.round(1.2 * 1024 * 1024);
 export const SEO_TITLE_MAX = 70;
 export const TITULO_CURTO_MAX = 40;
 export const SEO_KEYWORDS_MAX = 400;
@@ -195,7 +196,7 @@ export function validateObraWorkForm(p) {
   const capaUrlTrim = String(p.capaUrl || '').trim();
   const capaOk = Boolean(p.hasCapaFile) || isLikelyHttpImageUrl(capaUrlTrim);
   if (!capaOk) {
-    errors.push('Capa obrigatória: envie JPG/PNG/WebP (até 2MB) ou uma URL https/http direta para .jpg, .png ou .webp.');
+    errors.push('Capa obrigatória: envie JPG/PNG/WebP (até 1,2 MB) ou uma URL https/http direta para .jpg, .png ou .webp.');
   }
 
   const bannerUrlTrim = String(p.bannerUrl || '').trim();

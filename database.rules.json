@@ -24,7 +24,7 @@
       ".read": true,
       ".write": false,
       "$capId": {
-        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
         "obraId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
         },
@@ -79,7 +79,7 @@
       ".write": false,
       "$obraId": {
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
-        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
         "titulo": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
         },
@@ -177,13 +177,13 @@
     "loja": {
       "config": {
         ".read": true,
-        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
+        ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
       },
       "produtos": {
         ".read": true,
         ".write": false,
         "$productId": {
-          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
           "creatorId": {
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
           }
@@ -197,8 +197,8 @@
       },
       "pedidos": {
         "$pedidoId": {
-          ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
-          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)"
+          ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+          ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
         }
       }
     },

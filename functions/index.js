@@ -314,7 +314,7 @@ function loginRateLimitIpKey(req) {
       req.socket?.remoteAddress ||
       'unknown'
   ).slice(0, 80);
-  return raw.replace(/[.#$\[\]\/]/g, '_') || 'unknown';
+  return raw.replace(/[.#$[\]/]/g, '_') || 'unknown';
 }
 
 async function consumeLoginCodeRateSlot(ref, windowMs, max) {
@@ -4028,7 +4028,15 @@ async function pushUserNotification(db, uid, payload) {
 
 async function notifyCreatorRequestAdmins(db, { applicantUid, displayName, monetizationPreference }) {
   const registrySnap = await db.ref(ADMIN_REGISTRY_PATH).get();
-  const adminIds = new Set(Array.isArray(SUPER_ADMIN_UIDS) ? SUPER_ADMIN_UIDS : []);
+  const superAdminIds = (() => {
+    if (SUPER_ADMIN_UIDS instanceof Set) return [...SUPER_ADMIN_UIDS];
+    if (Array.isArray(SUPER_ADMIN_UIDS)) return SUPER_ADMIN_UIDS;
+    if (SUPER_ADMIN_UIDS && typeof SUPER_ADMIN_UIDS[Symbol.iterator] === 'function') {
+      return [...SUPER_ADMIN_UIDS];
+    }
+    return [];
+  })();
+  const adminIds = new Set(superAdminIds);
   if (registrySnap.exists()) {
     for (const [uid, row] of Object.entries(registrySnap.val() || {})) {
       const role = String(row?.role || '').trim().toLowerCase();
@@ -4850,7 +4858,7 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
       username: creatorUsername,
       bioShort,
       bioFull: String(row?.creatorBio || '').trim(),
-      avatarUrl: userAvatar || '',
+      avatarUrl: approvedCreatorAvatar || currentUserAvatar || '',
       bannerUrl: '',
       socialLinks: {
         instagramUrl: instagramUrl || null,
@@ -4873,7 +4881,7 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
     },
     [`usuarios_publicos/${uid}/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
     [`usuarios_publicos/${uid}/userName`]: displayName,
-    [`usuarios_publicos/${uid}/userAvatar`]: userAvatar || null,
+    [`usuarios_publicos/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
     [`usuarios_publicos/${uid}/accountType`]: String(row?.accountType || 'comum'),
     [`usuarios_publicos/${uid}/updatedAt`]: now,
     [`creators/${uid}/stats/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
@@ -5185,6 +5193,31 @@ export const markUserNotificationRead = onCall({ region: 'us-central1' }, async 
     read: true,
     readAt: Date.now(),
   });
+  return { ok: true, notificationId };
+});
+
+export const deleteUserNotification = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const uid = request.auth.uid;
+  const notificationId = String(request.data?.notificationId || '').trim();
+  const deleteAll = request.data?.deleteAll === true;
+  const db = getDatabase();
+
+  if (deleteAll) {
+    const notificationsRef = db.ref(`usuarios/${uid}/notifications`);
+    const snap = await notificationsRef.get();
+    const notifications = snap.val() || {};
+    await notificationsRef.remove();
+    return { ok: true, deleted: Object.keys(notifications).length };
+  }
+
+  if (!notificationId) {
+    throw new HttpsError('invalid-argument', 'notificationId obrigatorio.');
+  }
+
+  await db.ref(`usuarios/${uid}/notifications/${notificationId}`).remove();
   return { ok: true, notificationId };
 });
 

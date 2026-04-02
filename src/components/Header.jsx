@@ -56,6 +56,10 @@ export default function Header({ usuario, perfil, adminAccess }) {
     () => httpsCallable(functions, 'markUserNotificationRead'),
     []
   );
+  const deleteUserNotification = useMemo(
+    () => httpsCallable(functions, 'deleteUserNotification'),
+    []
+  );
 
   const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
   const isMangakaPanel = Boolean(adminAccess?.isMangaka);
@@ -400,6 +404,40 @@ export default function Header({ usuario, perfil, adminAccess }) {
     }
   };
 
+  const handleDeleteNotification = async (item, event = null) => {
+    if (event) {
+      event.stopPropagation();
+      event.preventDefault();
+    }
+    if (!item?.id) return;
+    try {
+      if (item.type === 'admin_creator_queue') {
+        writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
+      } else if (item.type === 'admin_support_queue') {
+        writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
+      } else {
+        await deleteUserNotification({ notificationId: item.id });
+      }
+      setSelectedNotification((current) => (current?.id === item.id ? null : current));
+    } catch (error) {
+      console.error('Erro ao deletar notificacao:', error);
+    }
+  };
+
+  const handleDeleteAllNotifications = async () => {
+    try {
+      const hasUserNotifications = headerNotifications.length > 0;
+      if (hasUserNotifications) {
+        await deleteUserNotification({ deleteAll: true });
+      }
+      writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
+      writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
+      setSelectedNotification(null);
+    } catch (error) {
+      console.error('Erro ao deletar todas as notificacoes:', error);
+    }
+  };
+
   const handleToggleNotifications = async () => {
     setAccountMenuOpen(false);
     setSelectedNotification(null);
@@ -556,9 +594,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
                         <small>Tudo que importa da conta e dos criadores.</small>
                       </div>
                       {allNotifications.length ? (
-                        <button type="button" className="header-notification-link" onClick={handleMarkAllNotificationsRead}>
-                          Limpar nao lidas
-                        </button>
+                        <div className="header-notification-panel-actions">
+                          <button type="button" className="header-notification-link" onClick={handleMarkAllNotificationsRead}>
+                            Marcar lidas
+                          </button>
+                          <button type="button" className="header-notification-link header-notification-link--danger" onClick={handleDeleteAllNotifications}>
+                            Apagar todas
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                     <div className="header-notification-panel-body">
@@ -566,21 +609,34 @@ export default function Header({ usuario, perfil, adminAccess }) {
                         <p className="header-notification-empty">Nenhuma notificacao por enquanto.</p>
                       ) : (
                         allNotifications.map((item) => (
-                          <button
+                          <div
                             key={item.id}
-                            type="button"
-                            className={`header-notification-item ${item.read ? 'is-read' : ''} priority-${Number(item.priority || 0)}`}
-                            onClick={() => openNotificationTarget(item)}
+                            className={`header-notification-item-row ${item.read ? 'is-read' : ''} priority-${Number(item.priority || 0)}`}
                           >
-                            <small className="header-notification-meta">{priorityLabel(item)}</small>
-                            <strong>{item.title || 'Atualizacao'}</strong>
-                            <span>{item.message || 'Sem detalhes.'}</span>
-                            {Number(item?.aggregate?.count || 1) > 1 ? (
-                              <em className="header-notification-group-count">
-                                {Number(item.aggregate.count)} itens recentes
-                              </em>
-                            ) : null}
-                          </button>
+                            <button
+                              type="button"
+                              className="header-notification-item"
+                              onClick={() => openNotificationTarget(item)}
+                            >
+                              <small className="header-notification-meta">{priorityLabel(item)}</small>
+                              <strong>{item.title || 'Atualizacao'}</strong>
+                              <span>{item.message || 'Sem detalhes.'}</span>
+                              {Number(item?.aggregate?.count || 1) > 1 ? (
+                                <em className="header-notification-group-count">
+                                  {Number(item.aggregate.count)} itens recentes
+                                </em>
+                              ) : null}
+                            </button>
+                            <button
+                              type="button"
+                              className="header-notification-delete"
+                              aria-label={`Apagar notificacao ${item.title || 'sem titulo'}`}
+                              title="Apagar notificacao"
+                              onClick={(event) => handleDeleteNotification(item, event)}
+                            >
+                              ×
+                            </button>
+                          </div>
                         ))
                       )}
                     </div>
@@ -652,6 +708,13 @@ export default function Header({ usuario, perfil, adminAccess }) {
             <div className="header-notification-modal__actions">
               <button type="button" className="header-notification-modal__ghost" onClick={() => setSelectedNotification(null)}>
                 Fechar
+              </button>
+              <button
+                type="button"
+                className="header-notification-modal__danger"
+                onClick={(event) => handleDeleteNotification(selectedNotification, event)}
+              >
+                Apagar
               </button>
               <button type="button" className="header-notification-modal__primary" onClick={openSelectedNotificationPath}>
                 Abrir destino

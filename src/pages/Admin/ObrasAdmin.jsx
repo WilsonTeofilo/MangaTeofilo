@@ -622,6 +622,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     saveInFlightRef.current = true;
     setSaving(true);
     try {
+      if (auth.currentUser) {
+        await auth.currentUser.getIdToken(true);
+      }
       if (capaArquivo) {
         const file = await processarImagemObra(capaArquivo, capaAjuste, COVER_EDITOR_CONFIG);
         const path = `obras/${ownerUidStorage}/${obraStorageSegment}/capa_${Date.now()}.webp`;

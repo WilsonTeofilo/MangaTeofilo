@@ -14,12 +14,20 @@ service firebase.storage {
     return request.auth != null && request.auth.token.panelRole == "mangaka";
   }
 
+  function hasAdminPanelAccess() {
+    return request.auth != null
+      && (request.auth.token.panelRole == "admin"
+          || request.auth.token.panelRole == "super_admin"
+          || request.auth.token.admin == true);
+  }
+
   function isSafeSegment(value) {
     return value.matches('^[A-Za-z0-9_-]{2,128}$');
   }
 
   function canWriteOwnerPath(ownerUid) {
     return isShitoAdmin()
+      || hasAdminPanelAccess()
       || (request.auth != null
           && request.auth.uid == ownerUid
           && isMangaka());

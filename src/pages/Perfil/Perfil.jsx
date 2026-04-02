@@ -1,5 +1,5 @@
 // src/pages/Perfil/Perfil.jsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { updateProfile } from 'firebase/auth';
 import { ref, update, get, onValue } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
@@ -19,23 +19,10 @@ import {
   CREATOR_BIO_MIN_LENGTH,
 } from '../../constants'; // centralizado
 import {
-  algumaCreatorMembershipAtiva,
-  assinaturaPremiumAtiva,
-  listarMembershipsDeCriadorAtivas,
-  obterEntitlementPremiumGlobal,
   podeUsarAvataresPremiumDaLoja,
 } from '../../utils/capituloLancamento';
-import { formatarTempoRestanteAssinatura } from '../../utils/assinaturaTempoRestante';
-import { formatarDataLongaBr } from '../../utils/datasBr';
 import { emptyAdminAccess } from '../../auth/adminAccess';
 import { apoieUrlAbsolutaParaCriador } from '../../utils/creatorSupportPaths';
-import {
-  buildCreatorOnboardingSteps,
-  creatorOnboardingIsRequiredComplete,
-  creatorOnboardingPrimaryNextPath,
-  onboardingRequiredDoneCount,
-  onboardingRequiredTotal,
-} from '../../utils/creatorOnboardingProgress';
 import { normalizarAcessoAvatar } from '../../utils/avatarAccess';
 import {
   ageFromBirthDateLocal,
@@ -72,7 +59,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [loading, setLoading]                 = useState(false);
   const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
   const [perfilDb, setPerfilDb]               = useState(null);
-  const [linkApoioCopiado, setLinkApoioCopiado] = useState(false);
   const [creatorBio, setCreatorBio] = useState('');
   const [creatorDisplayName, setCreatorDisplayName] = useState('');
   const [mangakaAvatarUrlDraft, setMangakaAvatarUrlDraft] = useState('');
@@ -87,12 +73,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [creatorDonationSuggestedBRL, setCreatorDonationSuggestedBRL] = useState('7');
   const [creatorApplicationLoading, setCreatorApplicationLoading] = useState(false);
   const [creatorApplyModalOpen, setCreatorApplyModalOpen] = useState(false);
-  const [obrasValOnboarding, setObrasValOnboarding] = useState(null);
-  const [capsValOnboarding, setCapsValOnboarding] = useState(null);
-  const [produtosValOnboarding, setProdutosValOnboarding] = useState(null);
-  const [creatorOnboardingChecklistHidden, setCreatorOnboardingChecklistHidden] = useState(false);
-  const [creatorOnboardingStoreSkipped, setCreatorOnboardingStoreSkipped] = useState(false);
-  const [onboardingUiBusy, setOnboardingUiBusy] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
   const mangakaAvatarPreserveRef = useRef(false);
   useEffect(() => {
@@ -139,8 +119,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setCreatorDonationSuggestedBRL(
         perfil.creatorDonationSuggestedBRL != null ? String(perfil.creatorDonationSuggestedBRL) : '7'
       );
-      setCreatorOnboardingChecklistHidden(Boolean(perfil.creatorOnboardingChecklistHidden));
-      setCreatorOnboardingStoreSkipped(Boolean(perfil.creatorOnboardingStoreSkipped));
       const ua = String(perfil.userAvatar || '').trim();
       if (ua) {
         setAvatarSelecionado(ua);
@@ -155,54 +133,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     setAvatarSelecionado(user.photoURL || LISTA_AVATARES[0] || AVATAR_FALLBACK);
     carregarPerfil().catch(() => setNotifyPromotions(false));
   }, [user, navigate]);
-
-  useEffect(() => {
-    if (!user?.uid || !adminAccess.isMangaka) {
-      setObrasValOnboarding(null);
-      setCapsValOnboarding(null);
-      setProdutosValOnboarding(null);
-      return () => {};
-    }
-    const uObras = onValue(ref(db, 'obras'), (snap) => {
-      setObrasValOnboarding(snap.exists() ? snap.val() : {});
-    });
-    const uCaps = onValue(ref(db, 'capitulos'), (snap) => {
-      setCapsValOnboarding(snap.exists() ? snap.val() : {});
-    });
-    const uProd = onValue(ref(db, 'loja/produtos'), (snap) => {
-      setProdutosValOnboarding(snap.exists() ? snap.val() : {});
-    });
-    return () => {
-      uObras();
-      uCaps();
-      uProd();
-    };
-  }, [user?.uid, adminAccess.isMangaka]);
-
-  const onboardingSteps = useMemo(
-    () =>
-      buildCreatorOnboardingSteps({
-        uid: user?.uid,
-        perfilDb: perfilDb || {},
-        obrasVal: obrasValOnboarding,
-        capsVal: capsValOnboarding,
-        produtosVal: produtosValOnboarding,
-        storeSkipped: creatorOnboardingStoreSkipped,
-      }),
-    [
-      user?.uid,
-      perfilDb,
-      obrasValOnboarding,
-      capsValOnboarding,
-      produtosValOnboarding,
-      creatorOnboardingStoreSkipped,
-    ]
-  );
-
-  const onboardingRequiredDone = onboardingRequiredDoneCount(onboardingSteps);
-  const onboardingRequiredAll = onboardingRequiredTotal(onboardingSteps);
-  const onboardingAllRequiredComplete = onboardingRequiredDone >= onboardingRequiredAll;
-  const currentOnboardingStep = onboardingSteps.find((step) => !step.optional && !step.done) || null;
 
   useEffect(() => {
     const unsub = onValue(ref(db, 'avatares'), (snap) => {
@@ -251,10 +181,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       ? String(mangakaAvatarUrlDraft).trim()
       : avatarSelecionado);
 
-  const premiumAtivo = assinaturaPremiumAtiva(perfilDb);
-  const premiumEntitlement = obterEntitlementPremiumGlobal(perfilDb);
-  const membershipCriadorAtiva = algumaCreatorMembershipAtiva(perfilDb);
-  const membershipsCriadorAtivas = listarMembershipsDeCriadorAtivas(perfilDb);
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
   const creatorMonetizationStatus = String(perfilDb?.creatorMonetizationStatus || '').trim().toLowerCase();
   const creatorReviewReason = String(perfilDb?.creatorReviewReason || '').trim();
@@ -271,6 +197,32 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     if (normalizarAcessoAvatar(item) === 'publico') return true;
     return podeUsarAvatarPremium;
   });
+  const creatorDisplayLabel = String(creatorDisplayName || novoNome || user?.displayName || '').trim() || 'Criador';
+  const creatorSupportUrl = user?.uid ? apoieUrlAbsolutaParaCriador(user.uid) : '';
+  const creatorPublicPath = user?.uid ? `/criador/${encodeURIComponent(user.uid)}` : '/creator/perfil';
+  const creatorStatusLabel =
+    creatorMonetizationStatus === 'active'
+      ? 'Monetizacao ativa'
+      : creatorMonetizationStatus === 'pending_review'
+        ? 'Monetizacao em revisao'
+        : creatorMonetizationStatus === 'blocked_underage'
+          ? 'Monetizacao bloqueada por idade'
+          : 'Modo apenas publicar';
+  const linkApoioCopiado = false;
+  const setLinkApoioCopiado = () => {};
+  const currentOnboardingStep = null;
+  const creatorOnboardingChecklistHidden = true;
+  const onboardingRequiredDone = 0;
+  const onboardingRequiredAll = 0;
+  const onboardingAllRequiredComplete = false;
+  const onboardingSteps = [];
+  const onboardingUiBusy = false;
+  const premiumAtivo = false;
+  const premiumEntitlement = null;
+  const membershipCriadorAtiva = false;
+  const membershipsCriadorAtivas = [];
+  const formatarTempoRestanteAssinatura = () => ({ ativo: false, texto: '' });
+  const formatarDataLongaBr = (value, { seVazio = '—' } = {}) => (value ? String(value) : seVazio);
 
   useEffect(() => {
     if (!listaAvatares.length) return;
@@ -393,41 +345,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       }
 
       const creatorPublicName = String(creatorDisplayName || novoNome || '').trim();
-      const creatorProfilePatch = {
-        creatorDisplayName: creatorPublicName,
-        creatorBio: String(creatorBio || '').trim(),
-        creatorMonetizationPreference: creatorMonetizationPreference,
-        instagramUrl: String(instagramUrl || '').trim(),
-        youtubeUrl: String(youtubeUrl || '').trim(),
-        creatorMembershipEnabled: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? creatorMembershipEnabled : false,
-        creatorMembershipPriceBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(membershipPrice * 100) / 100 : null,
-        creatorDonationSuggestedBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(suggestedDonation * 100) / 100 : null,
-        userName: novoNome.trim(),
-        userAvatar: finalAvatar,
-      };
-      const projectedPerfil = {
-        ...(perfilDb || {}),
-        ...creatorProfilePatch,
-      };
-      const projectedOnboardingSteps = adminAccess.isMangaka
-        ? buildCreatorOnboardingSteps({
-            uid: user.uid,
-            perfilDb: projectedPerfil,
-            obrasVal: obrasValOnboarding,
-            capsVal: capsValOnboarding,
-            produtosVal: produtosValOnboarding,
-            storeSkipped: creatorOnboardingStoreSkipped,
-          })
-        : [];
-      const projectedOnboardingComplete = adminAccess.isMangaka
-        ? creatorOnboardingIsRequiredComplete(projectedOnboardingSteps)
-        : false;
-      const nextOnboardingPath = adminAccess.isMangaka
-        ? creatorOnboardingPrimaryNextPath(projectedOnboardingSteps)
-        : '/';
-      const creatorStatusNext = adminAccess.isMangaka
-        ? (projectedOnboardingComplete ? 'active' : 'onboarding')
-        : null;
+      const creatorStatusNext = adminAccess.isMangaka ? 'active' : null;
       const ageForMonet = birthIsoForSave ? ageFromBirthDateLocal(birthIsoForSave) : null;
       const creatorMonetizationStatusNext = !adminAccess.isMangaka
         ? null
@@ -480,8 +398,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         creatorMembershipEnabled: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? creatorMembershipEnabled : false,
         creatorMembershipPriceBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(membershipPrice * 100) / 100 : null,
         creatorDonationSuggestedBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(suggestedDonation * 100) / 100 : null,
-        creatorOnboardingCompleted: adminAccess.isMangaka ? projectedOnboardingComplete : null,
-        creatorOnboardingCompletedAt: adminAccess.isMangaka && projectedOnboardingComplete ? Date.now() : null,
+        creatorOnboardingCompleted: adminAccess.isMangaka ? true : null,
+        creatorOnboardingCompletedAt: adminAccess.isMangaka ? Number(perfilDb?.creatorOnboardingCompletedAt || Date.now()) : null,
         creatorStatus: creatorStatusNext,
         ...(creatorCanonicalDoc ? { creator: creatorCanonicalDoc } : {}),
         creatorProfile: adminAccess.isMangaka ? {
@@ -578,8 +496,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setBirthDate(savedBirth);
       setBirthDateDraft(savedBirth ? formatBirthDateIsoToBr(savedBirth) : '');
 
-      setMensagem({ texto: 'Perfil forjado com sucesso!', tipo: 'sucesso' });
-      setTimeout(() => navigate(adminAccess.isMangaka ? nextOnboardingPath : '/'), 1200);
+      setMensagem({ texto: 'Perfil atualizado com sucesso!', tipo: 'sucesso' });
+      setTimeout(() => navigate(adminAccess.isMangaka ? '/perfil' : '/'), 1200);
 
     } catch (error) {
       console.error('Erro na forja:', error);
@@ -624,44 +542,292 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     }
   };
 
-  const persistOnboardingPrefs = async (patch) => {
-    if (!user?.uid) return;
-    setOnboardingUiBusy(true);
-    try {
-      await update(ref(db, `usuarios/${user.uid}`), patch);
-    } catch (err) {
-      setMensagem({ texto: err?.message || 'Nao foi possivel salvar preferencia.', tipo: 'erro' });
-    } finally {
-      setOnboardingUiBusy(false);
-    }
-  };
-
-  const handleOcultarOnboardingChecklist = () => {
-    setCreatorOnboardingChecklistHidden(true);
-    persistOnboardingPrefs({ creatorOnboardingChecklistHidden: true });
-  };
-
-  const handleMostrarOnboardingChecklist = () => {
-    setCreatorOnboardingChecklistHidden(false);
-    persistOnboardingPrefs({ creatorOnboardingChecklistHidden: false });
-  };
-
-  const handlePularLojaOnboarding = () => {
-    setCreatorOnboardingStoreSkipped(true);
-    persistOnboardingPrefs({ creatorOnboardingStoreSkipped: true });
-  };
-
   const scrollToMangakaFields = () => {
     mangakaFormAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const handleCopyCreatorSupportLink = async () => {
+    if (!creatorSupportUrl) return;
+    try {
+      await navigator.clipboard.writeText(creatorSupportUrl);
+      setMensagem({ texto: 'Link de apoio copiado.', tipo: 'sucesso' });
+    } catch {
+      setMensagem({ texto: 'Nao foi possivel copiar o link agora.', tipo: 'erro' });
+    }
+  };
+
+  const handleOcultarOnboardingChecklist = () => {};
+  const handleMostrarOnboardingChecklist = () => {};
+  const handlePularLojaOnboarding = () => {};
+
   if (!user) return null; // guard enquanto o useEffect redireciona
+
+  if (adminAccess.isMangaka) {
+    return (
+      <main className="perfil-page perfil-page--creator">
+        <div className="perfil-card perfil-card--creator">
+          <section className="perfil-creator-hero">
+            <div
+              className="perfil-creator-hero__backdrop"
+              style={{ backgroundImage: `url(${perfilAvatarPreviewSrc || AVATAR_FALLBACK})` }}
+            />
+            <div className="perfil-creator-hero__scrim" />
+            <div className="perfil-creator-hero__content">
+              <div className="perfil-creator-hero__avatar">
+                <img
+                  src={perfilAvatarPreviewSrc || AVATAR_FALLBACK}
+                  alt={creatorDisplayLabel}
+                  onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
+                />
+              </div>
+              <div className="perfil-creator-hero__text">
+                <p className="perfil-creator-hero__eyebrow">Creator profile</p>
+                <h1>{creatorDisplayLabel}</h1>
+                <p className="perfil-creator-hero__meta">{creatorStatusLabel}</p>
+                <div className="perfil-creator-hero__actions">
+                  <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate(creatorPublicPath)}>
+                    Ver pagina publica
+                  </button>
+                  <button type="button" className="perfil-mangaka-apoio-copy" onClick={handleCopyCreatorSupportLink}>
+                    Copiar link de apoio
+                  </button>
+                  <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate('/creator/dashboard')}>
+                    Dashboard
+                  </button>
+                </div>
+                {creatorMonetizationReviewReason ? (
+                  <p className="perfil-creator-hero__note">{creatorMonetizationReviewReason}</p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <form onSubmit={handleSalvar} className="perfil-creator-form">
+            <div ref={mangakaFormAnchorRef} className="perfil-mangaka-fields-anchor" aria-hidden="true" />
+
+            <section className="perfil-creator-panel">
+              <div className="input-group perfil-creator-section-title">
+                <label>IDENTIDADE PUBLICA</label>
+                <p>Edite apenas o que faz diferenca para leitores e para sua pagina de autor.</p>
+              </div>
+
+              <div className="input-group">
+                <label>NOME PUBLICO DO CRIADOR</label>
+                <input
+                  type="text"
+                  className="perfil-input"
+                  value={creatorDisplayName}
+                  onChange={(e) => setCreatorDisplayName(e.target.value)}
+                  placeholder="Como seu nome aparece para leitores"
+                  maxLength={60}
+                />
+              </div>
+
+              <div className="input-group">
+                <label>BIO PUBLICA</label>
+                <textarea
+                  className="perfil-input"
+                  rows={4}
+                  value={creatorBio}
+                  maxLength={CREATOR_BIO_MAX_LENGTH}
+                  onChange={(e) => setCreatorBio(e.target.value.slice(0, CREATOR_BIO_MAX_LENGTH))}
+                  placeholder="Apresente seu universo, seu estilo e o que voce publica."
+                />
+              </div>
+
+              <div className="input-group">
+                <label>INSTAGRAM</label>
+                <input
+                  type="text"
+                  className="perfil-input"
+                  value={instagramUrl}
+                  onChange={(e) => setInstagramUrl(e.target.value)}
+                  placeholder="instagram.com/seuperfil"
+                />
+              </div>
+
+              <div className="input-group">
+                <label>YOUTUBE</label>
+                <input
+                  type="text"
+                  className="perfil-input"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="youtube.com/@seucanal"
+                />
+              </div>
+
+              <div className="input-group">
+                <label>FOTO DE PERFIL</label>
+                <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
+                  A capa publica reaproveita a mesma imagem com blur. Envie arquivo ou use URL HTTPS.
+                </p>
+                <input
+                  type="url"
+                  className="perfil-input"
+                  value={mangakaAvatarUrlDraft}
+                  onChange={(e) => {
+                    setMangakaAvatarUrlDraft(e.target.value);
+                    setMangakaAvatarFile(null);
+                  }}
+                  placeholder="https://..."
+                />
+                <input
+                  type="file"
+                  className="perfil-input"
+                  style={{ marginTop: 8 }}
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    setMangakaAvatarFile(f || null);
+                    if (f) setMangakaAvatarUrlDraft('');
+                  }}
+                />
+              </div>
+            </section>
+
+            <section className="perfil-creator-panel">
+              <div className="input-group perfil-creator-section-title">
+                <label>CONTA E MONETIZACAO</label>
+                <p>Somente o essencial para manter sua pagina e seu apoio organizados.</p>
+              </div>
+
+              <div className="input-group">
+                <label>NOME DE EXIBICAO DA CONTA</label>
+                <input
+                  type="text"
+                  className="perfil-input"
+                  value={novoNome}
+                  onChange={(e) => setNovoNome(e.target.value)}
+                  maxLength={DISPLAY_NAME_MAX_LENGTH}
+                  placeholder="Ex: Guerreiro de Brajiru"
+                />
+              </div>
+
+              <div className="input-group">
+                <label>DATA DE NASCIMENTO</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="bday"
+                  placeholder="28/12/2001"
+                  className="perfil-input"
+                  value={birthDateDraft}
+                  onChange={(e) => {
+                    const d = normalizeBirthDateBrTyping(e.target.value);
+                    setBirthDateDraft(d);
+                    const iso = parseBirthDateBr(d);
+                    if (iso) setBirthDate(iso);
+                    else if (!d.replace(/\D/g, '').length) setBirthDate('');
+                  }}
+                  onBlur={() => {
+                    const iso = parseBirthDateBr(birthDateDraft);
+                    if (iso) {
+                      setBirthDate(iso);
+                      setBirthDateDraft(formatBirthDateIsoToBr(iso));
+                    } else if (!birthDateDraft.replace(/\D/g, '').length) {
+                      setBirthDate('');
+                      setBirthDateDraft('');
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="input-group">
+                <label>MONETIZACAO</label>
+                <div className="perfil-mangaka-apoio-row">
+                  <button
+                    type="button"
+                    className="perfil-mangaka-apoio-copy"
+                    onClick={() => setCreatorMonetizationPreference('publish_only')}
+                  >
+                    Apenas publicar
+                  </button>
+                  <button
+                    type="button"
+                    className="perfil-mangaka-apoio-copy"
+                    onClick={() => setCreatorMonetizationPreference('monetize')}
+                    disabled={isUnderageByBirthYear}
+                  >
+                    Monetizar
+                  </button>
+                </div>
+              </div>
+
+              {creatorMonetizationPreference === 'monetize' ? (
+                <>
+                  <div className="input-group">
+                    <label className="notify-label">
+                      <input
+                        type="checkbox"
+                        checked={creatorMembershipEnabled}
+                        onChange={(e) => setCreatorMembershipEnabled(e.target.checked)}
+                      />
+                      Ativar membership na pagina publica
+                    </label>
+                  </div>
+
+                  <div className="input-group">
+                    <label>VALOR DA MEMBERSHIP (R$)</label>
+                    <input
+                      type="text"
+                      className="perfil-input"
+                      value={creatorMembershipPriceBRL}
+                      onChange={(e) => setCreatorMembershipPriceBRL(e.target.value)}
+                      placeholder="12,00"
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label>DOACAO SUGERIDA (R$)</label>
+                    <input
+                      type="text"
+                      className="perfil-input"
+                      value={creatorDonationSuggestedBRL}
+                      onChange={(e) => setCreatorDonationSuggestedBRL(e.target.value)}
+                      placeholder="7,00"
+                    />
+                  </div>
+                </>
+              ) : null}
+
+              <div className="input-group notify-group">
+                <label className="notify-label">
+                  <input
+                    type="checkbox"
+                    checked={notifyPromotions}
+                    onChange={(e) => setNotifyPromotions(e.target.checked)}
+                  />
+                  Receber promocoes e campanhas por e-mail
+                </label>
+              </div>
+            </section>
+
+            {mensagem.texto ? (
+              <p className={`feedback-msg ${mensagem.tipo}`}>{mensagem.texto}</p>
+            ) : null}
+
+            <div className="perfil-actions">
+              <button type="submit" className="btn-save-perfil" disabled={loading}>
+                {loading ? 'SALVANDO...' : 'SALVAR PERFIL'}
+              </button>
+              <button type="button" className="btn-cancel-perfil" onClick={() => navigate('/')}>
+                Voltar
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="perfil-page">
       <div className="perfil-card">
-        <h1 className="perfil-title">FORJA DE ALMA</h1>
-        <p className="perfil-subtitle">Altere sua identidade em Kokuin</p>
+        <h1 className="perfil-title">{adminAccess.isMangaka ? 'Meu perfil de criador' : 'Meu perfil'}</h1>
+        <p className="perfil-subtitle">
+          {adminAccess.isMangaka ? 'Sua vitrine publica com edicao limpa e direta.' : 'Atualize seus dados e preferencias da conta.'}
+        </p>
 
         {adminAccess.isMangaka && user?.uid ? (
           <div className="perfil-mangaka-apoio">

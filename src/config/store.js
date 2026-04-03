@@ -31,6 +31,8 @@ export const STORE_DEFAULT_CONFIG = {
   storeVisibleToUsers: false,
   acceptingOrders: false,
   vipDiscountPct: 10,
+  /** Padrão quando o produto não define `shippingMode` (api | region | fixed). */
+  defaultShippingMode: 'api',
   freeShippingThresholdBrl: 150,
   /** Frete fixo em BRL (fase 1). */
   fixedShippingBrl: 0,
@@ -51,6 +53,9 @@ export function normalizeStoreConfig(raw) {
     storeVisibleToUsers: c.storeVisibleToUsers === true,
     acceptingOrders: c.acceptingOrders === true,
     vipDiscountPct: Number.isFinite(Number(c.vipDiscountPct)) ? Number(c.vipDiscountPct) : 10,
+    defaultShippingMode: ['api', 'region', 'fixed'].includes(String(c.defaultShippingMode || '').toLowerCase())
+      ? String(c.defaultShippingMode || '').toLowerCase()
+      : STORE_DEFAULT_CONFIG.defaultShippingMode,
     freeShippingThresholdBrl: Number.isFinite(Number(c.freeShippingThresholdBrl))
       ? Math.max(0, Number(c.freeShippingThresholdBrl))
       : 150,

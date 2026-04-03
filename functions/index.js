@@ -6210,7 +6210,8 @@ export const adminListVisibleStoreOrders = onCall({ region: 'us-central1' }, asy
   const canUseGlobal =
     ctx.super === true ||
     ctx.legacy === true ||
-    ctx.permissions?.canAccessLojaAdmin === true;
+    ctx.permissions?.canAccessLojaAdmin === true ||
+    ctx.permissions?.canAccessPedidos === true;
   const snap = await getDatabase().ref('loja/pedidos').get();
   const orders = snap.val() || {};
   const list = Object.entries(orders)
@@ -6281,7 +6282,8 @@ export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, as
   const canUseGlobal =
     ctx.super === true ||
     ctx.legacy === true ||
-    ctx.permissions?.canAccessLojaAdmin === true;
+    ctx.permissions?.canAccessLojaAdmin === true ||
+    ctx.permissions?.canAccessPedidos === true;
 
   if (ctx.mangaka) {
     const ownItems = orderItemsForCreator(order, request.auth.uid);

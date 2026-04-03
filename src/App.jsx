@@ -63,9 +63,10 @@ const ObrasAdmin = lazy(() => import('./pages/Admin/ObrasAdmin.jsx'));
 const AvatarAdmin = lazy(() => import('./pages/Admin/AvatarAdmin.jsx'));
 const DashboardAdmin = lazy(() => import('./pages/Admin/DashboardAdmin.jsx'));
 const FinanceiroAdmin = lazy(() => import('./pages/Admin/FinanceiroAdmin.jsx'));
-const LojaAdmin = lazy(() => import('./pages/Admin/LojaAdmin.jsx'));
-const AdminLojaPedidos = lazy(() => import('./pages/Admin/AdminLojaPedidos.jsx'));
-const PrintOnDemandAdmin = lazy(() => import('./pages/Admin/PrintOnDemandAdmin.jsx'));
+const LojaProductsListAdmin = lazy(() => import('./pages/Admin/LojaProductsListAdmin.jsx'));
+const LojaProductEditorAdmin = lazy(() => import('./pages/Admin/LojaProductEditorAdmin.jsx'));
+const StoreSettingsAdmin = lazy(() => import('./pages/Admin/StoreSettingsAdmin.jsx'));
+const AdminPedidosHub = lazy(() => import('./pages/Admin/AdminPedidosHub.jsx'));
 const EquipeAdmin = lazy(() => import('./pages/Admin/EquipeAdmin.jsx'));
 const SessoesAdmin = lazy(() => import('./pages/Admin/SessoesAdmin.jsx'));
 const MangakaFinanceiroAdmin = lazy(() => import('./pages/Admin/MangakaFinanceiroAdmin.jsx'));
@@ -531,13 +532,50 @@ function AppRoutes() {
               )
             }
           />
+          <Route path="/admin/loja" element={<Navigate to="/admin/products" replace />} />
           <Route
-            path="/admin/loja"
+            path="/admin/store/settings"
             element={
               !adminAccessReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : adminPathOk('/admin/loja') ? (
-                <LojaAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
+              ) : adminPathOk('/admin/store/settings') ? (
+                <StoreSettingsAdmin />
+              ) : (
+                <Navigate to={adminAccess?.isMangaka ? '/admin/products' : '/'} replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/products/create"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/products') ? (
+                <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/products/:productId/edit"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/products') ? (
+                <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/admin/products"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/products') ? (
+                <LojaProductsListAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -549,25 +587,14 @@ function AppRoutes() {
               !adminAccessReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/pedidos') ? (
-                <AdminLojaPedidos user={usuario} adminAccess={adminAccess} />
+                <AdminPedidosHub user={usuario} adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )
             }
           />
-          <Route
-            path="/admin/orders"
-            element={
-              !adminAccessReady ? (
-                <div className="shito-app-splash" aria-hidden="true" />
-              ) : adminPathOk('/admin/orders') ? (
-                <PrintOnDemandAdmin user={usuario} adminAccess={adminAccess} />
-              ) : (
-                <Navigate to="/" replace />
-              )
-            }
-          />
-          <Route path="/admin/producao-fisica" element={<Navigate to="/admin/orders" replace />} />
+          <Route path="/admin/orders" element={<Navigate to="/admin/pedidos?tab=producao" replace />} />
+          <Route path="/admin/producao-fisica" element={<Navigate to="/admin/pedidos?tab=producao" replace />} />
           <Route
             path="/admin/sessoes"
             element={
@@ -703,6 +730,42 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/creator/loja/produtos/criar"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/loja') && adminAccess?.isMangaka && creatorMonetizationIsActive ? (
+                <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
+              ) : (
+                <Navigate to="/creator/dashboard" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/loja/produtos/:productId/editar"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/loja') && adminAccess?.isMangaka && creatorMonetizationIsActive ? (
+                <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
+              ) : (
+                <Navigate to="/creator/dashboard" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/loja/produtos"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/loja') && adminAccess?.isMangaka && creatorMonetizationIsActive ? (
+                <LojaProductsListAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
+              ) : (
+                <Navigate to="/creator/dashboard" replace />
+              )
+            }
+          />
+          <Route
             path="/creator/loja"
             element={
               !adminAccessReady ? (
@@ -710,14 +773,14 @@ function AppRoutes() {
               ) : creatorPathOk('/creator/loja') ? (
                 adminAccess?.isMangaka ? (
                   creatorMonetizationIsActive ? (
-                    <CreatorStorePage user={usuario} adminAccess={adminAccess} />
+                    <CreatorStorePage user={usuario} />
                   ) : (
                     <Navigate to="/creator/dashboard" replace />
                   )
                 ) : adminPathOk('/admin/pedidos') ? (
-                  <AdminLojaPedidos user={usuario} adminAccess={adminAccess} />
+                  <AdminPedidosHub user={usuario} adminAccess={adminAccess} />
                 ) : (
-                  <LojaAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
+                  <Navigate to="/admin/products" replace />
                 )
               ) : (
                 <Navigate to="/" replace />

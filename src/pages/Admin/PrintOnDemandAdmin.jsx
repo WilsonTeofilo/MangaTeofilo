@@ -70,7 +70,7 @@ function productionMeta(o) {
   return { label, late, daysLeft: Math.max(0, days), due, msLeft, kind };
 }
 
-export default function PrintOnDemandAdmin() {
+export default function PrintOnDemandAdmin({ embedded = false }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creatorNames, setCreatorNames] = useState({});
@@ -295,24 +295,26 @@ export default function PrintOnDemandAdmin() {
   };
 
   return (
-    <div className="po-orders">
+    <div className={`po-orders${embedded ? ' po-orders--embedded' : ''}`}>
       {toast ? (
         <div className={`po-toast po-toast--${toast.type}`} role="status">
           {toast.message}
         </div>
       ) : null}
 
-      <aside className="po-orders__sidebar" aria-label="Navegação admin">
-        <Link to="/admin" className="po-orders__side-link">
-          ← Painel admin
-        </Link>
-        <Link to="/admin/pedidos" className="po-orders__side-link">
-          Pedidos da loja
-        </Link>
-        <Link to="/admin/loja" className="po-orders__side-link">
-          Loja global
-        </Link>
-      </aside>
+      {!embedded ? (
+        <aside className="po-orders__sidebar" aria-label="Navegação admin">
+          <Link to="/admin" className="po-orders__side-link">
+            ← Painel admin
+          </Link>
+          <Link to="/admin/pedidos" className="po-orders__side-link">
+            Pedidos da loja
+          </Link>
+          <Link to="/admin/products" className="po-orders__side-link">
+            Produtos
+          </Link>
+        </aside>
+      ) : null}
 
       <div className="po-orders__main">
         <header className="po-orders__header">

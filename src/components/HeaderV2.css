@@ -205,6 +205,16 @@
   display: flex;
 }
 
+.workspace-dropdown-heading {
+  padding: 8px 12px 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(231, 237, 247, 0.45);
+  pointer-events: none;
+}
+
 .workspace-dropdown button {
   border: none;
   background: transparent;

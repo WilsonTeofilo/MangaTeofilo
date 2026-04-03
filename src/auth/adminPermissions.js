@@ -42,7 +42,13 @@ export function canAccessAdminPath(pathname, access) {
     if (pathname.startsWith('/admin/equipe') || pathname.startsWith('/admin/sessoes')) return false;
     if (pathname.startsWith('/admin/avatares')) return false;
     if (pathname.startsWith('/admin/dashboard')) return false;
-    if (pathname.startsWith('/admin/loja') || pathname.startsWith('/admin/pedidos')) return true;
+    if (
+      pathname.startsWith('/admin/loja') ||
+      pathname.startsWith('/admin/products') ||
+      pathname.startsWith('/admin/pedidos')
+    ) {
+      return true;
+    }
     if (pathname.startsWith('/admin/financeiro')) return true;
     if (pathname.startsWith('/admin/capitulos')) return true;
     if (pathname.startsWith('/admin/manga')) return true;
@@ -78,7 +84,11 @@ export function canAccessAdminPath(pathname, access) {
   if (pathname.startsWith('/admin/financeiro')) {
     return perm.canAccessFinanceiro === true;
   }
-  if (pathname.startsWith('/admin/loja')) {
+  if (pathname.startsWith('/admin/store/settings')) {
+    if (access?.isMangaka) return false;
+    return perm.canAccessLojaAdmin === true;
+  }
+  if (pathname.startsWith('/admin/products') || pathname.startsWith('/admin/loja')) {
     return perm.canAccessLojaAdmin === true;
   }
   if (pathname.startsWith('/admin/pedidos')) {
@@ -137,9 +147,8 @@ const ADMIN_HOME_CANDIDATES = [
   '/admin/avatares',
   '/admin/dashboard',
   '/admin/financeiro',
+  '/admin/products',
   '/admin/loja',
-  '/admin/orders',
-  '/admin/producao-fisica',
   '/admin/pedidos',
   '/admin/sessoes',
   '/admin/equipe',
@@ -162,6 +171,7 @@ const CREATOR_HOME_CANDIDATES = [
   '/creator/capitulos',
   '/creator/promocoes',
   '/creator/loja',
+  '/creator/print',
   '/print-on-demand?ctx=creator',
 ];
 

@@ -171,7 +171,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
           </p>
         </div>
         <div className="admin-loja-pedidos__actions">
-          <button type="button" onClick={() => navigate('/admin/loja')}>
+          <button type="button" onClick={() => navigate('/admin/products')}>
             Voltar para produtos
           </button>
         </div>

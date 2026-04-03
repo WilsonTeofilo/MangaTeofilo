@@ -65,7 +65,7 @@ async function pushUserNotification(db, uid, payload) {
     createdAt: now,
     updatedAt: now,
     dedupeKey,
-    data: { ...(payload.data || {}), readPath: '/print-on-demand?ctx=creator' },
+    data: { ...(payload.data || {}), readPath: '/creator/print' },
   };
   await notificationsRef.push(row);
 }

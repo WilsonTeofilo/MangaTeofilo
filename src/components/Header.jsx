@@ -85,18 +85,38 @@ export default function Header({ usuario, perfil, adminAccess }) {
   /** Candidatura publica: quem ja abre ADMIN (Criadores etc.) nao precisa do atalho CREATORS. */
   const showCreatorsNav = !isMangakaPanel && !canSeeAdminWorkspace;
 
-  const navItems = [
-    { label: 'Lista de Mangas', path: '/works' },
-    { label: 'Loja', path: '/loja' },
-    { label: 'Lance sua linha', path: '/print-on-demand' },
-    ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
-    ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
-    { label: 'Sobre nos', path: '/sobre-autor' },
-  ];
+  const lanceSuaLinhaPath =
+    usuario && adminAccess?.isMangaka && creatorMonetizationIsActive ? '/creator/print' : '/print-on-demand';
+
+  const navItems = useMemo(
+    () => [
+      { label: 'Lista de Mangas', path: '/works' },
+      { label: 'Loja', path: '/loja' },
+      { label: 'Lance sua linha', path: lanceSuaLinhaPath, podNav: true },
+      ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
+      ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
+      { label: 'Sobre nos', path: '/sobre-autor' },
+    ],
+    [creatorMonetizationIsActive, lanceSuaLinhaPath, showCreatorsNav, usuario]
+  );
 
   const workspaceMenus = useMemo(() => {
     const menus = [];
     if (canSeeAdminWorkspace) {
+      const lojaMenuBits = [];
+      if (canAccessAdminPath('/admin/products', adminAccess)) {
+        if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
+        lojaMenuBits.push({ label: 'Produtos', path: '/admin/products' });
+      }
+      if (canAccessAdminPath('/admin/pedidos', adminAccess)) {
+        if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
+        lojaMenuBits.push({ label: 'Pedidos', path: '/admin/pedidos' });
+      }
+      if (canAccessAdminPath('/admin/store/settings', adminAccess)) {
+        if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
+        lojaMenuBits.push({ label: 'Configurações', path: '/admin/store/settings' });
+      }
+
       menus.push({
         id: 'admin',
         label: 'ADMIN',
@@ -104,14 +124,10 @@ export default function Header({ usuario, perfil, adminAccess }) {
           canAccessAdminPath('/admin/equipe', adminAccess) ? { label: 'Equipe', path: '/admin/equipe' } : null,
           canAccessAdminPath('/admin/criadores', adminAccess) ? { label: 'Criadores', path: '/admin/criadores' } : null,
           canAccessAdminPath('/admin/sessoes', adminAccess) ? { label: 'Sessoes', path: '/admin/sessoes' } : null,
-          canAccessAdminPath('/admin/avatares', adminAccess) ? { label: 'CRUD de Avatares', path: '/admin/avatares' } : null,
-          canAccessAdminPath('/admin/dashboard', adminAccess) ? { label: 'Financeiro global', path: '/admin/dashboard' } : null,
-          canAccessAdminPath('/admin/financeiro', adminAccess) ? { label: 'Promocoes e financeiro', path: '/admin/financeiro' } : null,
-          canAccessAdminPath('/admin/loja', adminAccess) ? { label: 'Loja global', path: '/admin/loja' } : null,
-          canAccessAdminPath('/admin/orders', adminAccess)
-            ? { label: 'Pedidos produção', path: '/admin/orders' }
-            : null,
-          canAccessAdminPath('/admin/pedidos', adminAccess) ? { label: 'Pedidos globais', path: '/admin/pedidos' } : null,
+          canAccessAdminPath('/admin/avatares', adminAccess) ? { label: 'Avatares', path: '/admin/avatares' } : null,
+          canAccessAdminPath('/admin/dashboard', adminAccess) ? { label: 'Financeiro', path: '/admin/dashboard' } : null,
+          canAccessAdminPath('/admin/financeiro', adminAccess) ? { label: 'Promocoes', path: '/admin/financeiro' } : null,
+          ...lojaMenuBits,
         ].filter(Boolean),
       });
     }
@@ -131,9 +147,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
             : null,
           canAccessCreatorPath('/creator/loja', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
             ? { label: 'Loja', path: '/creator/loja' }
-            : null,
-          canAccessCreatorPath('/creator/print', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
-            ? { label: 'Mangá físico', path: '/print-on-demand?ctx=creator' }
             : null,
         ].filter(Boolean),
       });
@@ -515,6 +528,15 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const isActivePath = (path) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
+  const navItemIsActive = (item) => {
+    if (item.podNav) {
+      return (
+        location.pathname.startsWith('/print-on-demand') || location.pathname.startsWith('/creator/print')
+      );
+    }
+    return isActivePath(item.path);
+  };
+
   return (
     <nav
       className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''} ${menuAberto ? 'menu-open' : ''}`}
@@ -547,12 +569,12 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
         <ul className={`nav-menu ${menuAberto ? 'active' : ''}`}>
           {navItems.map((item) => (
-            <li key={item.path} className={isActivePath(item.path) ? 'is-active' : ''}>
+            <li key={item.path} className={navItemIsActive(item) ? 'is-active' : ''}>
               <button
                 type="button"
                 className="nav-link-btn"
                 onClick={() => pushRoute(item.path)}
-                aria-current={isActivePath(item.path) ? 'page' : undefined}
+                aria-current={navItemIsActive(item) ? 'page' : undefined}
               >
                 {item.label}
               </button>
@@ -586,11 +608,25 @@ export default function Header({ usuario, perfil, adminAccess }) {
                   {workspace.subtitle ? <span className="workspace-menu-subtitle">{workspace.subtitle}</span> : null}
                 </button>
                 <div className="workspace-dropdown">
-                  {workspace.items.map((item) => (
-                    <button key={item.path} type="button" onClick={() => pushRoute(item.path, workspace.id)}>
-                      {item.label}
-                    </button>
-                  ))}
+                  {workspace.items.map((item, idx) =>
+                    item.type === 'heading' ? (
+                      <div
+                        key={`${item.label}-${idx}`}
+                        className="workspace-dropdown-heading"
+                        role="presentation"
+                      >
+                        {item.label}
+                      </div>
+                    ) : (
+                      <button
+                        key={item.path}
+                        type="button"
+                        onClick={() => pushRoute(item.path, workspace.id)}
+                      >
+                        {item.label}
+                      </button>
+                    )
+                  )}
                 </div>
               </li>
             );

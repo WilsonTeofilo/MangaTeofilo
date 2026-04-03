@@ -86,6 +86,20 @@ service firebase.storage {
     }
 
     /** Miolo PDF e capa (imagem) para pedidos print-on-demand; leitura pelo dono e staff. */
+    /** Assets da loja (capa, PDF miolo) — admin ou mangá dono do segmento. */
+    match /loja_produtos/{ownerUid}/{fileName} {
+      allow read: if true;
+      allow write: if isSafeSegment(ownerUid)
+                   && canWriteOwnerPath(ownerUid)
+                   && (request.resource == null || (request.resource.size < 60 * 1024 * 1024
+                   && ((request.resource.contentType == "application/pdf"
+                        && fileName.lower().matches('.*\\.pdf$'))
+                       || (request.resource.contentType.matches('image/.*')
+                           && !request.resource.contentType.matches('.*svg.*')
+                           && request.resource.size < 5 * 1024 * 1024
+                           && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')))));
+    }
+
     match /print_on_demand/{ownerUid}/{fileName} {
       allow read: if isShitoAdmin()
                    || hasAdminPanelAccess()

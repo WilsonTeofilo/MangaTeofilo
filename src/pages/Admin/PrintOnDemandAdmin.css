@@ -7,6 +7,16 @@
   color: var(--text-pure, #f4f4f5);
 }
 
+.po-orders--embedded {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.po-orders--embedded .po-orders__main {
+  padding-top: 0;
+  max-width: none;
+}
+
 @media (max-width: 900px) {
   .po-orders {
     grid-template-columns: 1fr;

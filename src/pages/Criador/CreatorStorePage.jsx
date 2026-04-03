@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import CreatorStoreOperations from './CreatorStoreOperations.jsx';
-import LojaAdmin from '../Admin/LojaAdmin.jsx';
 import './CreatorFrame.css';
 
-export default function CreatorStorePage({ user, adminAccess }) {
+export default function CreatorStorePage({ user }) {
   const navigate = useNavigate();
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
     <div className="creator-frame-page">
@@ -17,15 +15,22 @@ export default function CreatorStorePage({ user, adminAccess }) {
             <p className="creator-frame-eyebrow">Creator Store</p>
             <h1>Produtos, pedidos e operação</h1>
             <p>
-              Gerencie sua operação comercial no mesmo contexto do creator. Aqui entram produtos, estoque
-              e pedidos ligados ao seu catálogo, sem misturar configuração global da plataforma.
+              Gerencie sua operação comercial no mesmo contexto do creator. Catálogo completo e criação de produtos
+              ficam em telas dedicadas; aqui você vê resumo, pedidos e atalhos.
             </p>
           </div>
           <div className="creator-frame-actions">
             <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/obras')}>
               Ir para obras
             </button>
-            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/dashboard')}>
+            <button
+              type="button"
+              className="creator-frame-btn is-primary"
+              onClick={() => navigate('/creator/loja/produtos')}
+            >
+              Catálogo e produtos
+            </button>
+            <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/dashboard')}>
               Voltar ao workspace
             </button>
           </div>
@@ -34,7 +39,7 @@ export default function CreatorStorePage({ user, adminAccess }) {
         <section className="creator-frame-notes">
           <article className="creator-frame-note">
             <strong>Catálogo</strong>
-            <p>Cadastre produtos conectados ao seu universo e mantenha a operação sob seu creatorId.</p>
+            <p>Lista, novo produto e edição com foco em preço e margem — em /creator/loja/produtos.</p>
           </article>
           <article className="creator-frame-note">
             <strong>Pedidos</strong>
@@ -42,17 +47,11 @@ export default function CreatorStorePage({ user, adminAccess }) {
           </article>
           <article className="creator-frame-note">
             <strong>Escala</strong>
-            <p>O admin segue controlando a loja global, enquanto você opera apenas seu lado da estrutura.</p>
+            <p>O admin controla a loja global; você opera apenas o que está ligado ao seu creatorId.</p>
           </article>
         </section>
 
-        <CreatorStoreOperations
-          user={user}
-          showAdvanced={showAdvanced}
-          onToggleAdvanced={() => setShowAdvanced((value) => !value)}
-        />
-
-        {showAdvanced ? <LojaAdmin user={user} adminAccess={adminAccess} workspace="creator" /> : null}
+        <CreatorStoreOperations user={user} />
       </section>
     </div>
   );

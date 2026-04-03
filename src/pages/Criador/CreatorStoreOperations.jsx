@@ -38,7 +38,7 @@ const ORDER_STATUS_OPTIONS = [
   { id: 'cancelled', label: 'Cancelado' },
 ];
 
-export default function CreatorStoreOperations({ user, showAdvanced = false, onToggleAdvanced }) {
+export default function CreatorStoreOperations({ user }) {
   const navigate = useNavigate();
   const uid = String(user?.uid || '').trim();
   const listVisibleOrders = useMemo(() => httpsCallable(functions, 'adminListVisibleStoreOrders'), []);
@@ -262,8 +262,7 @@ export default function CreatorStoreOperations({ user, showAdvanced = false, onT
           </div>
           {!products.length ? (
             <p className="creator-empty-copy">
-              Nenhum produto vinculado ao seu creatorId ainda. Quando quiser expandir alem dos capitulos,
-              abra o editor detalhado e publique seu primeiro item.
+              Nenhum produto vinculado ao seu creatorId ainda. Abra o catálogo completo e crie seu primeiro item.
             </p>
           ) : (
             <ul className="creator-activity-list">

@@ -53,7 +53,9 @@ function regionalBaseFromProduct(product, regionKey, serviceCode, normalizedRegi
 
 function lineShippingCost(product, quantity, regionKey, serviceCode, config, normalizedRegions) {
   const region = normalizedRegions[regionKey] || normalizedRegions.sudeste;
-  const shippingMode = String(product?.shippingMode || 'fixed').toLowerCase();
+  const shippingMode = String(
+    product?.shippingMode || config?.defaultShippingMode || 'fixed'
+  ).toLowerCase();
   const weightGrams = Math.max(1, Number(product?.weightGrams || 450)) * Math.max(1, Number(quantity || 1));
   const units = weightUnits(weightGrams);
 

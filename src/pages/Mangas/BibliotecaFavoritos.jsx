@@ -38,7 +38,7 @@ function capSortDesc(a, b) {
 
 export default function BibliotecaFavoritos({ user, perfil }) {
   const navigate = useNavigate();
-  const [loadingFavs, setLoadingFavs] = useState(true);
+  const [favoritosLoadedFor, setFavoritosLoadedFor] = useState('');
   const [loadingObras, setLoadingObras] = useState(true);
   const [loadingCaps, setLoadingCaps] = useState(true);
   const [favoritosLegacy, setFavoritosLegacy] = useState({});
@@ -48,19 +48,12 @@ export default function BibliotecaFavoritos({ user, perfil }) {
 
   useEffect(() => {
     if (!user?.uid) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFavoritosLegacy({});
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFavoritosCanon({});
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLoadingFavs(false);
       return () => {};
     }
-    setLoadingFavs(true);
     let pending = 2;
     const done = () => {
       pending -= 1;
-      if (pending <= 0) setLoadingFavs(false);
+      if (pending <= 0) setFavoritosLoadedFor(user.uid);
     };
     const u1 = onValue(ref(db, `usuarios/${user.uid}/favoritosObras`), (snapshot) => {
       setFavoritosLegacy(snapshot.exists() ? snapshot.val() || {} : {});
@@ -158,6 +151,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
       });
   }, [favoritosMap, obras, capitulos, user, perfil]);
 
+  const loadingFavs = Boolean(user?.uid) && favoritosLoadedFor !== user.uid;
   const loading = loadingFavs || loadingObras || loadingCaps;
 
   const desfavoritarObra = async (obraId) => {

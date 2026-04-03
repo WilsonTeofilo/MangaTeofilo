@@ -36,6 +36,9 @@ export const AVATAR_FALLBACK = "/assets/avatares/ava1.webp";
 export const DISPLAY_NAME_MAX_LENGTH = 60;
 
 /** Bio pública do criador (perfil + candidatura). */
-export const CREATOR_BIO_MIN_LENGTH = 50;
+/** Bio mínima quando o criador opta por monetização (revisão / compliance). */
+export const CREATOR_BIO_MIN_LENGTH = 24;
+/** Bio mínima para publicar sem monetização (entrada leve como autor). */
+export const CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY = 24;
 export const CREATOR_BIO_MAX_LENGTH = 450;
 

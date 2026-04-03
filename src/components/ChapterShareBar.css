@@ -1,0 +1,88 @@
+.chapter-share-bar {
+  margin: 28px 16px 12px;
+  padding: 18px 16px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 204, 0, 0.22);
+  background: linear-gradient(165deg, rgba(20, 24, 32, 0.94) 0%, rgba(10, 12, 18, 0.98) 100%);
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.chapter-share-bar__title {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--naraa-gold, #ffcc00);
+}
+
+.chapter-share-bar__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.chapter-share-bar__btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-pure, #f5f5f5);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.2s ease;
+}
+
+.chapter-share-bar__btn:hover {
+  border-color: rgba(255, 204, 0, 0.45);
+  background: rgba(255, 204, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.chapter-share-bar__btn--copy.is-copied {
+  border-color: rgba(74, 222, 128, 0.65);
+  background: rgba(74, 222, 128, 0.15);
+  color: #86efac;
+  animation: chapter-share-pulse 0.45s ease;
+}
+
+@keyframes chapter-share-pulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.chapter-share-bar__copied {
+  margin: 12px 0 0;
+  font-size: 0.85rem;
+  color: #86efac;
+  animation: chapter-share-fade 0.35s ease;
+}
+
+@keyframes chapter-share-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

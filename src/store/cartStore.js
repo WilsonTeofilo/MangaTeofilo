@@ -1,5 +1,12 @@
 const KEY = 'mangateofilo_cart_v1';
 
+export const CART_CHANGED_EVENT = 'mangateofilo:cart';
+
+function notifyCartChanged() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(CART_CHANGED_EVENT));
+}
+
 function lineKey(productId, size) {
   return `${String(productId || '')}::${String(size || '')}`;
 }
@@ -26,6 +33,7 @@ export function getCartItems() {
 
 export function setCartItems(items) {
   localStorage.setItem(KEY, JSON.stringify(items || []));
+  notifyCartChanged();
 }
 
 /**

@@ -15,6 +15,7 @@ import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import { resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
 import './ListaMangas.css';
 
 function pathObraPublica(obra) {
@@ -26,6 +27,21 @@ function msUltimaAtualizacao(cap) {
   if (Number.isFinite(release) && release > 0) return release;
   const uploadMs = Date.parse(cap?.dataUpload || '');
   if (Number.isFinite(uploadMs) && uploadMs > 0) return uploadMs;
+  return 0;
+}
+
+function msCriacaoObra(obra) {
+  const candidates = [
+    Number(obra?.createdAt),
+    Number(obra?.createdAtMs),
+    Number(obra?.publishedAt),
+    Date.parse(obra?.dataCriacao || ''),
+    Date.parse(obra?.createdAtIso || ''),
+    Number(obra?.updatedAt),
+  ];
+  for (const value of candidates) {
+    if (Number.isFinite(value) && value > 0) return value;
+  }
   return 0;
 }
 
@@ -113,6 +129,8 @@ export default function ListaMangas({ user }) {
   );
 
   const obrasCards = useMemo(() => {
+    const NEW_BADGE_MS = 8 * 24 * 60 * 60 * 1000;
+    const LATEST_24H_MS = 24 * 60 * 60 * 1000;
     const agrupado = new Map();
     capitulos.forEach((cap) => {
       const obraId = obterObraIdCapitulo(cap);
@@ -127,17 +145,27 @@ export default function ListaMangas({ user }) {
     return obras.map((obra) => {
       const obraId = String(obra?.id || '').toLowerCase();
       const stats = agrupado.get(obraId) || { total: 0, lastUpdateTs: Number(obra?.updatedAt || 0) };
-      const dias = Math.floor((catalogSnapshotNow - Number(stats.lastUpdateTs || 0)) / (1000 * 60 * 60 * 24));
-      const badgeNovo = Number.isFinite(dias) && dias >= 0 && dias <= 7;
+      const createdAtTs = msCriacaoObra(obra);
+      const badgeNovo =
+        Number.isFinite(createdAtTs) &&
+        createdAtTs > 0 &&
+        catalogSnapshotNow - createdAtTs <= NEW_BADGE_MS;
+      const badgeLatest24h =
+        Number.isFinite(stats.lastUpdateTs) &&
+        stats.lastUpdateTs > 0 &&
+        catalogSnapshotNow - stats.lastUpdateTs <= LATEST_24H_MS;
       const status = String(obra?.status || 'ongoing').toLowerCase();
       return {
         ...obra,
         obraId,
         totalCapitulos: stats.total,
         lastUpdateTs: stats.lastUpdateTs,
+        createdAtTs,
         updatedLabel: formatarAtualizacaoRelativa(stats.lastUpdateTs),
         isFavorito: Boolean(favoritosMap?.[obraId]),
         badgeNovo,
+        badgeLatest24h,
+        badgeEmLancamento: status === 'ongoing',
         status,
       };
     });
@@ -149,15 +177,7 @@ export default function ListaMangas({ user }) {
   );
   const heroWork = discovery.trendingWorks[0] || obrasCards[0] || null;
 
-  const creatorName = (obra) => {
-    const profile = creatorsMap?.[obraCreatorId(obra)] || null;
-    return (
-      profile?.creatorProfile?.displayName ||
-      profile?.creatorDisplayName ||
-      profile?.userName ||
-      'Criador'
-    );
-  };
+  const creatorName = (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos);
 
   const toggleFavorito = async (obra) => {
     if (!user?.uid) {
@@ -231,7 +251,7 @@ export default function ListaMangas({ user }) {
               <p>Ranking por seguidores, likes, views, comentarios e recencia.</p>
             </div>
             <div className="lista-discovery-row">
-              {discovery.trendingWorks.slice(0, 6).map((obra, index) => (
+              {discovery.trendingWorks.slice(0, 5).map((obra, index) => (
                 <article
                   key={`discover-work-${obra.id}`}
                   className="lista-discovery-card"
@@ -253,8 +273,10 @@ export default function ListaMangas({ user }) {
                   />
                   <div className="lista-discovery-body">
                     <strong>{obra.titulo || obra.id}</strong>
-                    <span>por {creatorName(obra)}</span>
-                    <span>{Math.round(obra.totalViews || 0)} views · {obra.totalLikes || 0} likes</span>
+                    <span className="lista-discovery-author">por {creatorName(obra)}</span>
+                    <span className="lista-discovery-stats">
+                      {Math.round(obra.totalViews || 0)} views · {obra.totalLikes || 0} likes
+                    </span>
                   </div>
                 </article>
               ))}
@@ -330,10 +352,16 @@ export default function ListaMangas({ user }) {
                     decoding="async"
                   />
                   <div className="manga-card-badges">
-                    {obra.badgeNovo && <span className="badge novo">Novo</span>}
-                    {obra.status === 'completed' && <span className="badge completo">Completo</span>}
-                    {obra.status === 'hiatus' && <span className="badge hiato">Hiato</span>}
-                    {obra.status === 'ongoing' && <span className="badge ongoing">Em lançamento</span>}
+                    <div className="manga-card-badges__top">
+                      {obra.badgeNovo ? <span className="badge novo">Novo</span> : null}
+                      {!obra.badgeNovo && obra.badgeLatest24h ? <span className="badge latest">Latest 24 hours</span> : null}
+                      {!obra.badgeNovo && !obra.badgeLatest24h && obra.status === 'completed' ? <span className="badge completo">Completo</span> : null}
+                      {!obra.badgeNovo && !obra.badgeLatest24h && obra.status === 'hiatus' ? <span className="badge hiato">Hiato</span> : null}
+                    </div>
+                    <div className="manga-card-badges__bottom">
+                      {obra.badgeEmLancamento ? <span className="badge ongoing">Em lançamento</span> : null}
+                      {obra.badgeNovo && obra.badgeLatest24h ? <span className="badge latest">Latest 24 hours</span> : null}
+                    </div>
                   </div>
                 </div>
                 <div className="manga-card-body">

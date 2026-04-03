@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
-import { useNavigate, useParams } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { addToCart, cartCount, getCartItems } from '../../store/cartStore';
@@ -15,12 +16,14 @@ import {
 } from '../../config/store';
 import { openStoreCheckout } from '../../utils/storeCheckout';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
-import { getStoreDemoProductById } from '../../data/storeDemoProducts';
+import { getStoreBuyerProfileMissingFields } from '../../utils/storeBuyerProfile';
+import { PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
 import './Loja.css';
 
 export default function LojaProduto({ user, perfil }) {
   const { productId } = useParams();
   const navigate = useNavigate();
+  const quoteStoreShipping = useMemo(() => httpsCallable(functions, 'quoteStoreShipping'), []);
   const [config, setConfig] = useState(STORE_DEFAULT_CONFIG);
   const [product, setProduct] = useState(null);
   const [qty, setQty] = useState(1);
@@ -29,8 +32,14 @@ export default function LojaProduto({ user, perfil }) {
   const [err, setErr] = useState('');
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
+  const [shippingQuote, setShippingQuote] = useState(null);
+  const [shippingService, setShippingService] = useState('PAC');
 
   const vip = descontoVipLojaAtivo(perfil, user);
+  const buyerMissingFields = useMemo(
+    () => getStoreBuyerProfileMissingFields(perfil?.buyerProfile),
+    [perfil?.buyerProfile]
+  );
   const id = useMemo(() => decodeURIComponent(String(productId || '')), [productId]);
 
   useEffect(() => {
@@ -42,12 +51,7 @@ export default function LojaProduto({ user, perfil }) {
 
   useEffect(() => {
     const unsubProd = onValue(ref(db, `loja/produtos/${id}`), (snap) => {
-      if (snap.exists()) {
-        setProduct({ id, ...(snap.val() || {}) });
-        return;
-      }
-      const demo = getStoreDemoProductById(id);
-      setProduct(demo || null);
+      setProduct(snap.exists() ? { id, ...(snap.val() || {}) } : null);
     });
     return () => unsubProd();
   }, [id]);
@@ -71,11 +75,35 @@ export default function LojaProduto({ user, perfil }) {
     setImgIdx(0);
   }, [id, images.length]);
 
+  useEffect(() => {
+    let active = true;
+    async function loadQuote() {
+      if (!user?.uid || !product || buyerMissingFields.length) {
+        setShippingQuote(null);
+        return;
+      }
+      try {
+        const items = [{ productId: product.id, quantity: qty }];
+        const { data } = await quoteStoreShipping({ items });
+        if (!active) return;
+        const quote = data?.quote || null;
+        setShippingQuote(quote);
+        setShippingService(quote?.defaultServiceCode || 'PAC');
+      } catch {
+        if (active) setShippingQuote(null);
+      }
+    }
+    loadQuote();
+    return () => {
+      active = false;
+    };
+  }, [buyerMissingFields.length, product, qty, quoteStoreShipping, user?.uid]);
+
   if (!product) {
     return (
       <main className="loja-page">
         <section className="loja-empty">
-          <h1>Produto não encontrado</h1>
+          <h1>Produto nao encontrado</h1>
           <button type="button" onClick={() => navigate('/loja')}>
             Voltar para loja
           </button>
@@ -93,19 +121,24 @@ export default function LojaProduto({ user, perfil }) {
   const mainImg = images.length ? images[Math.min(imgIdx, images.length - 1)] : '/assets/fotos/shito.jpg';
   const collectionLine = getProductCollectionKey(product);
   const dropLine = getProductDropLabel(product);
+  const selectedShippingOption = shippingQuote?.options?.find((option) => option.serviceCode === shippingService) || null;
 
   async function handleComprarAgora() {
     setErr('');
-    if (product.isStoreDemo === true) {
-      setErr('Produto de demonstração — só para visualizar o layout.');
-      return;
-    }
     if (!user?.uid) {
       navigate('/login');
       return;
     }
+    if (buyerMissingFields.length) {
+      setErr(`Complete seu perfil de compra antes de pagar: ${buyerMissingFields.join(', ')}.`);
+      return;
+    }
+    if (!selectedShippingOption) {
+      setErr('Escolha PAC ou SEDEX antes de finalizar.');
+      return;
+    }
     if (!config.acceptingOrders) {
-      setErr('Pedidos estão fechados.');
+      setErr('Pedidos estao fechados.');
       return;
     }
     if (type === 'roupa' && sizes.length && !sizes.includes(size)) {
@@ -116,7 +149,7 @@ export default function LojaProduto({ user, perfil }) {
     try {
       const item = { productId: product.id, quantity: Math.min(qty, stock) };
       if (type === 'roupa' && size) item.size = size;
-      const url = await openStoreCheckout(functions, [item]);
+      const url = await openStoreCheckout(functions, [item], shippingService);
       window.location.assign(url);
     } catch (e) {
       setErr(mensagemErroCallable(e));
@@ -162,12 +195,12 @@ export default function LojaProduto({ user, perfil }) {
           {collectionLine ? <p className="loja-product-kicker">{collectionLine}</p> : null}
           {dropLine ? <p className="loja-product-drop">{dropLine}</p> : null}
           <h1 className="loja-product-title">{product.title}</h1>
-          <p className="loja-product-desc">{product.description || 'Sem descrição'}</p>
-          <ul className="loja-product-trust" aria-label="Informações do produto">
-            <li>Edição artesanal · produção limitada</li>
-            <li>Envio pelos Correios após confirmação do pagamento</li>
+          <p className="loja-product-desc">{product.description || 'Sem descricao'}</p>
+          <ul className="loja-product-trust" aria-label="Informacoes do produto">
+            <li>Edicao artesanal � producao limitada</li>
+            <li>Envio pelos Correios apos confirmacao do pagamento</li>
             {stock > 0 && stock <= 12 ? (
-              <li className="loja-product-trust--scarcity">Restam poucas unidades — {stock} em estoque</li>
+              <li className="loja-product-trust--scarcity">Restam poucas unidades - {stock} em estoque</li>
             ) : null}
           </ul>
           {product.obra ? (
@@ -182,9 +215,9 @@ export default function LojaProduto({ user, perfil }) {
             <strong>R$ {finalPrice.toFixed(2)}</strong>
             {vip && product.isVIPDiscountEnabled && finalPrice < basePrice ? <span className="loja-price-vip">VIP</span> : null}
           </div>
-          {config.fixedShippingBrl > 0 ? (
-            <p className="loja-shipping-hint">+ frete fixo R$ {Number(config.fixedShippingBrl).toFixed(2)} no checkout</p>
-          ) : null}
+          <p className="loja-shipping-hint">
+            Escolha PAC ou SEDEX abaixo. O frete considera peso do item, regiao e regra de frete gratis acima do limite da loja.
+          </p>
           <p className={`loja-stock ${stock > 0 && stock <= 12 ? 'loja-stock--low' : ''}`}>
             Estoque: {stock}
           </p>
@@ -201,9 +234,35 @@ export default function LojaProduto({ user, perfil }) {
               </select>
             </label>
           ) : null}
-
-          {product.isStoreDemo === true ? (
-            <p className="loja-demo-hint">Demonstração — não é possível comprar ou reservar este item.</p>
+          {shippingQuote ? (
+            <div className="loja-shipping-options">
+              {shippingQuote.options.map((option) => (
+                <button
+                  key={option.serviceCode}
+                  type="button"
+                  className={`loja-shipping-option ${shippingService === option.serviceCode ? 'loja-shipping-option--active' : ''}`}
+                  onClick={() => setShippingService(option.serviceCode)}
+                >
+                  <strong>{option.label}</strong>
+                  <span>{option.regionLabel}</span>
+                  <span>Prazo: {option.deliveryDays} dias</span>
+                  <span>
+                    Frete: R$ {Number(option.priceBrl || 0).toFixed(2)}
+                    {Number(option.discountBrl || 0) > 0 ? ` (de R$ ${Number(option.originalPriceBrl || 0).toFixed(2)})` : ''}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {buyerMissingFields.length ? (
+            <div className="loja-banner loja-banner--erro loja-banner--with-cta loja-produto__buyer-hint" role="status">
+              <p className="loja-banner__text">
+                Antes de comprar, complete no perfil: {buyerMissingFields.join(', ')}.
+              </p>
+              <Link className="loja-banner__cta" to={`/perfil#${PERFIL_LOJA_DADOS_HASH}`}>
+                Completar cadastro
+              </Link>
+            </div>
           ) : null}
           {err ? <p className="loja-error loja-error--block">{err}</p> : null}
 
@@ -221,26 +280,22 @@ export default function LojaProduto({ user, perfil }) {
             <button
               type="button"
               className="loja-btn-buy"
-              disabled={
-                product.isStoreDemo === true || stock <= 0 || !config.acceptingOrders || loadingCheckout
-              }
+              disabled={stock <= 0 || !config.acceptingOrders || loadingCheckout || !selectedShippingOption}
               onClick={handleComprarAgora}
             >
-              {product.isStoreDemo === true ? 'Só demo' : 'Comprar agora'}
+              Comprar agora
             </button>
             <button
               type="button"
               className="loja-btn-ghost"
-              disabled={
-                product.isStoreDemo === true || stock <= 0 || !config.acceptingOrders
-              }
+              disabled={stock <= 0 || !config.acceptingOrders}
               onClick={() => {
-                if (product.isStoreDemo === true) return;
                 const next = addToCart(product.id, qty, { size: type === 'roupa' && size ? size : '' });
                 setCartItems(next);
+                navigate('/loja/carrinho');
               }}
             >
-              Adicionar ao carrinho
+              Ir para carrinho
             </button>
             <button type="button" className="loja-btn-ghost" onClick={() => navigate('/loja/carrinho')}>
               Carrinho ({cartCount(cartItems)})

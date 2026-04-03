@@ -231,6 +231,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: flex-end;
+  gap: 10px;
   flex: 0 0 auto;
   min-width: 0;
 }
@@ -278,6 +279,54 @@
   justify-content: flex-end;
   gap: 12px;
   min-width: 0;
+}
+
+.header-store-cart-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  border: 1px solid rgba(110, 205, 255, 0.38);
+  background: rgba(110, 205, 255, 0.1);
+  color: #b8ecff;
+  cursor: pointer;
+  transition:
+    transform var(--header-transition),
+    background var(--header-transition),
+    border-color var(--header-transition);
+}
+
+.header-store-cart-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(110, 205, 255, 0.18);
+  border-color: rgba(143, 227, 255, 0.55);
+}
+
+.header-store-cart-icon {
+  display: block;
+}
+
+.header-store-cart-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #f0fdf4;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .header-notification-shell {
@@ -744,6 +793,7 @@
 .workspace-menu-trigger:focus-visible,
 .btn-login-header:focus-visible,
 .header-notification-btn:focus-visible,
+.header-store-cart-btn:focus-visible,
 .header-avatar-wrapper:focus-visible,
 .welcome-text:focus-visible {
   outline: 2px solid #ffe08a;
@@ -756,7 +806,8 @@ body.mobile-menu-open {
   touch-action: none;
 }
 
-@media (max-width: 1360px) {
+/* Alinhado com MOBILE_BREAKPOINT em Header.jsx — hambúrguer abaixo de ~tablet em pé / telemóvel. */
+@media (max-width: 768px) {
   .reader-header {
     min-height: var(--header-height-mobile);
     backdrop-filter: none;
@@ -862,6 +913,11 @@ body.mobile-menu-open {
   }
 
   .header-notification-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .header-store-cart-btn {
     width: 44px;
     height: 44px;
   }

@@ -159,6 +159,16 @@
   line-height: 1.5;
 }
 
+.perfil-section-loja-dados {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 204, 0, 0.14);
+}
+
+.perfil-section-loja-dados .perfil-creator-section-title p {
+  margin-top: 6px;
+}
+
 .perfil-card--creator .perfil-actions,
 .perfil-card--creator .feedback-msg {
   grid-column: 1 / -1;
@@ -816,4 +826,74 @@ select.perfil-input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.perfil-mangaka-apoio-label--warn {
+  color: #fbbf24 !important;
+  font-weight: 600;
+}
+
+.perfil-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+.perfil-modal {
+  width: min(100%, 440px);
+  max-height: min(90vh, 560px);
+  overflow: auto;
+  padding: 22px 20px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 204, 0, 0.35);
+  background: rgba(14, 14, 20, 0.98);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+.perfil-modal__title {
+  margin: 0 0 14px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--naraa-gold, #ffcc00);
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
+.perfil-modal__body {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #b8c0d0;
+}
+
+.perfil-modal__body p {
+  margin: 0 0 12px;
+}
+
+.perfil-modal__body p:last-of-type {
+  margin-bottom: 0;
+}
+
+.perfil-modal__body strong {
+  color: #e8edf5;
+  font-weight: 700;
+}
+
+.perfil-modal__hint {
+  margin-top: 12px !important;
+  font-size: 0.85rem;
+  color: rgba(255, 204, 0, 0.88);
+}
+
+.perfil-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
 }

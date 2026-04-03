@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { isAdminUser } from '../../constants';
 import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
-import { cartCount, getCartItems } from '../../store/cartStore';
+import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../../store/cartStore';
 import {
   applyVipDiscount,
   getStoreProductBadges,
@@ -19,7 +19,8 @@ import {
 } from '../../config/store';
 import { openStoreCheckout } from '../../utils/storeCheckout';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
-import { mergeFirebaseListWithDemos } from '../../data/storeDemoProducts';
+import { getStoreBuyerProfileMissingFields } from '../../utils/storeBuyerProfile';
+import { PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
 import './Loja.css';
 
 function toList(data) {
@@ -60,6 +61,10 @@ export default function LojaCatalogo({ user, perfil }) {
 
   const isAdmin = isAdminUser(user);
   const vip = descontoVipLojaAtivo(perfil, user);
+  const buyerMissingFields = useMemo(
+    () => getStoreBuyerProfileMissingFields(perfil?.buyerProfile),
+    [perfil?.buyerProfile]
+  );
 
   useEffect(() => {
     const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {
@@ -87,22 +92,19 @@ export default function LojaCatalogo({ user, perfil }) {
       if (document.visibilityState === 'visible') sync();
     };
     window.addEventListener('storage', sync);
+    window.addEventListener(CART_CHANGED_EVENT, sync);
     document.addEventListener('visibilitychange', onVis);
     return () => {
       window.removeEventListener('storage', sync);
+      window.removeEventListener(CART_CHANGED_EVENT, sync);
       document.removeEventListener('visibilitychange', onVis);
     };
   }, []);
 
-  const productsWithDemo = useMemo(
-    () => mergeFirebaseListWithDemos(products),
-    [products]
-  );
-
   const visibleProducts = useMemo(() => {
-    if (isAdmin) return productsWithDemo;
-    return productsWithDemo.filter(productIsVisible);
-  }, [productsWithDemo, isAdmin]);
+    if (isAdmin) return products;
+    return products.filter(productIsVisible);
+  }, [products, isAdmin]);
 
   const filtered = useMemo(() => {
     if (catFilter === 'all') return visibleProducts;
@@ -116,10 +118,6 @@ export default function LojaCatalogo({ user, perfil }) {
   const handleComprar = useCallback(
     async (p) => {
       setCheckoutErr('');
-      if (p.isStoreDemo === true) {
-        setCheckoutErr('Item de demonstração — só visualização. Cadastre um produto real no admin para vender.');
-        return;
-      }
       const type = String(p.type || 'manga').toLowerCase();
       const sizes = Array.isArray(p.sizes) ? p.sizes.filter(Boolean) : [];
       if (type === 'roupa' && sizes.length) {
@@ -130,8 +128,12 @@ export default function LojaCatalogo({ user, perfil }) {
         navigate('/login');
         return;
       }
+      if (buyerMissingFields.length) {
+        setCheckoutErr(`Complete seu perfil de compra antes de pagar: ${buyerMissingFields.join(', ')}.`);
+        return;
+      }
       if (!config.acceptingOrders) {
-        setCheckoutErr('Pedidos estão fechados no momento.');
+        setCheckoutErr('Pedidos estao fechados no momento.');
         return;
       }
       setCheckoutLoading(true);
@@ -143,7 +145,7 @@ export default function LojaCatalogo({ user, perfil }) {
         setCheckoutLoading(false);
       }
     },
-    [config.acceptingOrders, functions, navigate, user?.uid]
+    [buyerMissingFields, config.acceptingOrders, navigate, user?.uid]
   );
 
   if (loading) return <div className="shito-app-splash" aria-hidden="true" />;
@@ -152,8 +154,8 @@ export default function LojaCatalogo({ user, perfil }) {
     return (
       <main className="loja-page">
         <section className="loja-empty">
-          <h1>Loja em preparação</h1>
-          <p>Em breve você poderá comprar produtos físicos direto por aqui.</p>
+          <h1>Loja em preparacao</h1>
+          <p>Em breve voce podera comprar produtos fisicos direto por aqui.</p>
         </section>
       </main>
     );
@@ -165,7 +167,7 @@ export default function LojaCatalogo({ user, perfil }) {
     <main className="loja-page loja-page--premium loja-store">
       <header className="loja-store__dock">
         <button type="button" className="loja-store__ghost-link" onClick={() => navigate('/')}>
-          ← Site
+          ? Site
         </button>
         <div className="loja-store__dock-actions">
           {user ? (
@@ -185,7 +187,7 @@ export default function LojaCatalogo({ user, perfil }) {
         </div>
       </header>
 
-      <section className="loja-hero loja-hero--store" aria-label="Coleção">
+      <section className="loja-hero loja-hero--store" aria-label="Colecao">
         <div className="loja-hero__bg" aria-hidden="true" />
         <div className="loja-hero__inner">
           <span className="loja-hero__eyebrow">{config.heroEyebrow}</span>
@@ -216,10 +218,23 @@ export default function LojaCatalogo({ user, perfil }) {
         </nav>
 
         {checkoutErr ? <p className="loja-banner loja-banner--erro loja-banner--store">{checkoutErr}</p> : null}
+        {buyerMissingFields.length && user ? (
+          <div
+            className="loja-banner loja-banner--erro loja-banner--store loja-banner--with-cta"
+            role="status"
+          >
+            <p className="loja-banner__text">
+              Para comprar, complete seu perfil com: {buyerMissingFields.join(', ')}.
+            </p>
+            <Link className="loja-banner__cta" to={`/perfil#${PERFIL_LOJA_DADOS_HASH}`}>
+              Completar cadastro
+            </Link>
+          </div>
+        ) : null}
         {vip ? (
           <div className="loja-vip-strip" role="status">
             <span className="loja-vip-strip__icon" aria-hidden="true">
-              ✨
+              ?
             </span>
             <p className="loja-vip-strip__text">Membros VIP recebem desconto exclusivo nos produtos marcados.</p>
           </div>
@@ -244,9 +259,8 @@ export default function LojaCatalogo({ user, perfil }) {
                   const badges = getStoreProductBadges(p);
                   const img = (Array.isArray(p.images) && p.images[0]) || '/assets/fotos/shito.jpg';
                   const outOfStock = Number(p.stock || 0) <= 0;
-                  const buyDisabled =
-                    p.isStoreDemo === true || !config.acceptingOrders || outOfStock || checkoutLoading;
-                  const buyLabel = p.isStoreDemo === true ? 'Só demo' : outOfStock ? 'Esgotado' : 'Comprar';
+                  const buyDisabled = !config.acceptingOrders || outOfStock || checkoutLoading;
+                  const buyLabel = outOfStock ? 'Esgotado' : 'Comprar';
                   const openProd = () => navigate(`/loja/produto/${encodeURIComponent(p.id)}`);
 
                   return (

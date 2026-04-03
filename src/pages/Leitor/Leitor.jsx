@@ -19,7 +19,10 @@ import {
 } from '../../config/obras';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
+import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
 import LoadingScreen from '../../components/LoadingScreen';
+import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
+import ChapterShareBar from '../../components/ChapterShareBar.jsx';
 import './Leitor.css';
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
@@ -55,8 +58,11 @@ export default function Leitor({ user, perfil }) {
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [modalLoginComentario, setModalLoginComentario] = useState(false);
   const [creatorUidApoio, setCreatorUidApoio] = useState(null);
+  const [creatorSupportEnabled, setCreatorSupportEnabled] = useState(false);
   const [isSubscribedCurrentWork, setIsSubscribedCurrentWork] = useState(false);
   const [subscribeCurrentWorkBusy, setSubscribeCurrentWorkBusy] = useState(false);
+  const [chapterBrowserPushModalOpen, setChapterBrowserPushModalOpen] = useState(false);
+  const [chapterBrowserPushPermission, setChapterBrowserPushPermission] = useState('default');
   const [obraMetaLeitor, setObraMetaLeitor] = useState(null);
 
   const touchStartX          = useRef(0);
@@ -75,6 +81,7 @@ export default function Leitor({ user, perfil }) {
   useEffect(() => {
     if (!capitulo) {
       setCreatorUidApoio(null);
+      setCreatorSupportEnabled(false);
       setObraMetaLeitor(null);
       return () => {};
     }
@@ -115,6 +122,22 @@ export default function Leitor({ user, perfil }) {
       cancelled = true;
     };
   }, [capitulo]);
+
+  useEffect(() => {
+    if (!creatorUidApoio) {
+      setCreatorSupportEnabled(false);
+      return () => {};
+    }
+    const unsub = onValue(ref(db, `usuarios_publicos/${creatorUidApoio}`), (snapshot) => {
+      const row = snapshot.exists() ? snapshot.val() || {} : {};
+      const monetizationStatus = effectiveCreatorMonetizationStatus(
+        row.creatorMonetizationPreference,
+        row.creatorMonetizationStatus
+      );
+      setCreatorSupportEnabled(monetizationStatus === 'active');
+    });
+    return () => unsub();
+  }, [creatorUidApoio]);
 
   useEffect(() => {
     if (!modalLoginComentario) return;
@@ -345,8 +368,14 @@ export default function Leitor({ user, perfil }) {
   const currentWorkId = obterObraIdCapitulo(capitulo);
   const chapterLikesCount = Number(capitulo?.likesCount || 0);
   const chapterLikedByUser = Boolean(user?.uid && capitulo?.usuariosQueCurtiram?.[user.uid]);
-  const irProxima  = () => setPaginaAtual((p) => Math.min(p + 1, totalPaginas - 1));
-  const irAnterior = () => setPaginaAtual((p) => Math.max(p - 1, 0));
+  const irProxima = useCallback(
+    () => setPaginaAtual((p) => Math.min(p + 1, totalPaginas - 1)),
+    [totalPaginas]
+  );
+  const irAnterior = useCallback(
+    () => setPaginaAtual((p) => Math.max(p - 1, 0)),
+    []
+  );
 
   useEffect(() => {
     if (!user?.uid || !currentWorkId) {
@@ -367,7 +396,7 @@ export default function Leitor({ user, perfil }) {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [modoLeitura, totalPaginas]);
+  }, [irAnterior, irProxima, modoLeitura]);
 
   const handleTouchStart = (e) => { touchStartX.current = e.changedTouches[0].screenX; };
   const handleTouchMove  = (e) => { touchEndX.current   = e.changedTouches[0].screenX; };
@@ -391,21 +420,22 @@ export default function Leitor({ user, perfil }) {
     if (enviando)                return;
 
     setEnviando(true);
+    const texto = comentarioTexto.trim();
     try {
       await sincronizarPerfilPublico(user); // atualiza avatar antes de gravar
       await set(push(ref(db, `capitulos/${id}/comentarios`)), {
-        texto:  comentarioTexto.trim(),
+        texto,
         userId: user.uid,
         data:   serverTimestamp(),
         likes:  0,
       });
+      setComentario('');
       await applyChapterCommentDelta(db, {
         chapterId: id,
         workId: obterObraIdCapitulo(capitulo),
         creatorId: creatorUidApoio || obraCreatorId({ creatorId: capitulo?.creatorId || '' }),
         amount: 1,
       });
-      setComentario('');
     } catch (err) {
       console.error('Erro ao comentar:', err);
     } finally {
@@ -450,6 +480,7 @@ export default function Leitor({ user, perfil }) {
   );
 
   const irParaApoioDoCriador = () => {
+    if (!creatorSupportEnabled) return;
     registrarAttributionEvento({
       eventType: 'creator_support_click',
       source: leituraAttributionRef.current?.source || 'normal',
@@ -474,13 +505,13 @@ export default function Leitor({ user, perfil }) {
         targetId: currentWorkId,
         enabled: nextEnabled,
       });
-      if (nextEnabled && typeof window !== 'undefined' && typeof Notification !== 'undefined') {
-        const wantsBrowserNotifications = window.confirm(
-          'Quer ser avisado no navegador quando sair o proximo capitulo desta obra?'
-        );
-        if (wantsBrowserNotifications && Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
+      if (nextEnabled) {
+        const perm =
+          typeof window === 'undefined' || typeof Notification === 'undefined'
+            ? 'unsupported'
+            : Notification.permission;
+        setChapterBrowserPushPermission(perm);
+        setChapterBrowserPushModalOpen(true);
       }
     } finally {
       setSubscribeCurrentWorkBusy(false);
@@ -596,13 +627,15 @@ export default function Leitor({ user, perfil }) {
           >
             Voltar à biblioteca
           </button>
-          <button
-            type="button"
-            className="leitor-lancamento-apoie"
-            onClick={irParaApoioDoCriador}
-          >
-            Apoiar a obra
-          </button>
+          {creatorSupportEnabled ? (
+            <button
+              type="button"
+              className="leitor-lancamento-apoie"
+              onClick={irParaApoioDoCriador}
+            >
+              Apoiar a obra
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -610,6 +643,13 @@ export default function Leitor({ user, perfil }) {
 
   return (
     <div className="leitor-container">
+      <BrowserPushPreferenceModal
+        open={chapterBrowserPushModalOpen}
+        permission={chapterBrowserPushPermission}
+        title="Avisos no navegador"
+        description="Quer receber notificação aqui no navegador quando sair capítulo novo desta obra?"
+        onClose={() => setChapterBrowserPushModalOpen(false)}
+      />
       {chapterSeo ? (
         <Helmet prioritizeSeoTags>
           <title>{chapterSeo.title}</title>
@@ -712,9 +752,11 @@ export default function Leitor({ user, perfil }) {
             Ficha da obra
           </Link>
         ) : null}
-        <button type="button" className="leitor-footer-apoie" onClick={irParaApoioDoCriador}>
-          Apoiar criador
-        </button>
+        {creatorSupportEnabled ? (
+          <button type="button" className="leitor-footer-apoie" onClick={irParaApoioDoCriador}>
+            Apoiar criador
+          </button>
+        ) : null}
       </footer>
         <section className="leitor-next-alert">
           <strong>Quer continuar recebendo?</strong>
@@ -732,6 +774,11 @@ export default function Leitor({ user, perfil }) {
               : 'Acompanhar obra'}
         </button>
       </section>
+
+      <ChapterShareBar
+        shareUrl={chapterSeo?.canonical}
+        chapterTitle={chapterSeo?.title || capitulo?.titulo}
+      />
 
       {/* ── COMENTÁRIOS ── */}
       <section className="comentarios-section">

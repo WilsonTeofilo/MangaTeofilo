@@ -32,13 +32,18 @@ export async function criarPreferenciaPremium(
   notificationUrl,
   unitPrice = PREMIUM_PRICE_BRL,
   promoMeta = null,
-  attributionMeta = null
+  attributionMeta = null,
+  options = {}
 ) {
   const base = String(appBaseUrl || '').replace(/\/$/, '');
   const price = Number(unitPrice);
   if (!Number.isFinite(price) || price <= 0) {
     throw new Error('Preco premium invalido para checkout.');
   }
+  const backUrlQuery = String(options?.backUrlQuery || '').trim();
+  const successUrl = backUrlQuery ? `${base}/apoie?mp=ok&tipo=premium&${backUrlQuery}` : `${base}/apoie?mp=ok&tipo=premium`;
+  const failureUrl = backUrlQuery ? `${base}/apoie?mp=erro&${backUrlQuery}` : `${base}/apoie?mp=erro`;
+  const pendingUrl = backUrlQuery ? `${base}/apoie?mp=pending&${backUrlQuery}` : `${base}/apoie?mp=pending`;
   const body = {
     items: [
       {
@@ -62,9 +67,9 @@ export async function criarPreferenciaPremium(
       attributionCreatorId: attributionMeta?.creatorId ? String(attributionMeta.creatorId).trim() : null,
     },
     back_urls: {
-      success: `${base}/apoie?mp=ok&tipo=premium`,
-      failure: `${base}/apoie?mp=erro`,
-      pending: `${base}/apoie?mp=pending`,
+      success: successUrl,
+      failure: failureUrl,
+      pending: pendingUrl,
     },
     auto_return: 'approved',
     statement_descriptor: 'SHITO PREMIUM',

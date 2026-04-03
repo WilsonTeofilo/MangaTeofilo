@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { db } from '../../services/firebase';
+import { db, functions } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import {
   correiosRastreamentoUrl,
   formatLojaOrderStatusPt,
+  formatLojaPayoutStatusPt,
   normalizeStoreConfig,
   STORE_DEFAULT_CONFIG,
 } from '../../config/store';
 import './Loja.css';
+
+const listMyStoreOrders = httpsCallable(functions, 'listMyStoreOrders');
 
 export default function LojaPedidos({ user }) {
   const navigate = useNavigate();
@@ -29,20 +33,26 @@ export default function LojaPedidos({ user }) {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) return () => {};
-    const unsub = onValue(ref(db, 'loja/pedidos'), (snap) => {
-      if (!snap.exists()) {
+    let active = true;
+    async function loadOrders() {
+      if (!user?.uid) {
         setOrders([]);
         return;
       }
-      const list = Object.entries(snap.val() || {})
-        .map(([id, v]) => ({ id, ...(v || {}) }))
-        .filter((order) => order.uid === user.uid)
-        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
-      setOrders(list);
-    });
-    return () => unsub();
-  }, [user?.uid]);
+      try {
+        const { data } = await listMyStoreOrders();
+        if (!active) return;
+        const list = Array.isArray(data?.orders) ? data.orders : [];
+        setOrders(list);
+      } catch {
+        if (active) setOrders([]);
+      }
+    }
+    loadOrders();
+    return () => {
+      active = false;
+    };
+  }, [user?.uid, mpOk]);
 
   useEffect(() => {
     if (!mpOk) return undefined;
@@ -60,7 +70,7 @@ export default function LojaPedidos({ user }) {
   }, [mpOk, setSearchParams]);
 
   const totalSpent = useMemo(
-    () => orders.filter((o) => o.status !== 'cancelled' && o.status !== 'pending').reduce((sum, o) => sum + Number(o.total || 0), 0),
+    () => orders.filter((o) => o.status !== 'cancelled' && o.status !== 'pending' && o.status !== 'pending_payment').reduce((sum, o) => sum + Number(o.total || 0), 0),
     [orders]
   );
 
@@ -68,7 +78,7 @@ export default function LojaPedidos({ user }) {
     return (
       <main className="loja-page">
         <section className="loja-empty">
-          <h1>Faça login para ver seus pedidos</h1>
+          <h1>Faca login para ver seus pedidos</h1>
           <button type="button" onClick={() => navigate('/login')}>
             Entrar
           </button>
@@ -97,7 +107,7 @@ export default function LojaPedidos({ user }) {
 
       {!orders.length ? (
         <section className="loja-empty">
-          <p>Você ainda não possui pedidos.</p>
+          <p>Voce ainda nao possui pedidos.</p>
         </section>
       ) : (
         <section className="loja-order-list">
@@ -112,6 +122,7 @@ export default function LojaPedidos({ user }) {
                   <div>
                     <h3>Pedido #{o.id.slice(-8).toUpperCase()}</h3>
                     <p>Status: {formatLojaOrderStatusPt(o.status)}</p>
+                    <p className="loja-order-date">Repasse do criador: {formatLojaPayoutStatusPt(o.payoutStatus)}</p>
                     <p className="loja-order-date">{formatarDataHoraBr(Number(o.createdAt || 0))}</p>
                     {o.paymentStatus && o.paymentStatus !== 'approved' ? (
                       <p className="loja-order-date">Mercado Pago: {String(o.paymentStatus)}</p>
@@ -134,10 +145,15 @@ export default function LojaPedidos({ user }) {
                 </div>
                 {expanded ? (
                   <div className="loja-order-detail">
+                    {o.shippingAddress ? (
+                      <p className="loja-order-lines-meta">
+                        Envio para {o.shippingAddress.addressLine1}, {o.shippingAddress.neighborhood} - {o.shippingAddress.city}/{o.shippingAddress.state}
+                      </p>
+                    ) : null}
                     {track && trackUrl ? (
                       <div className="loja-order-tracking-block">
                         <p>
-                          <strong>Código de rastreio:</strong> <code>{track}</code>
+                          <strong>Codigo de rastreio:</strong> <code>{track}</code>
                         </p>
                         <a className="loja-btn-ghost loja-btn-small" href={trackUrl} target="_blank" rel="noopener noreferrer">
                           Abrir rastreio nos Correios
@@ -147,14 +163,15 @@ export default function LojaPedidos({ user }) {
                     {Number(o.subtotal) > 0 || Number(o.shippingBrl) > 0 ? (
                       <p className="loja-order-lines-meta">
                         Subtotal R$ {Number(o.subtotal ?? o.total).toFixed(2)}
-                        {Number(o.shippingBrl) > 0 ? ` · Frete R$ ${Number(o.shippingBrl).toFixed(2)}` : ''}
+                        {Number(o.shippingBrl) > 0 ? ` � Frete R$ ${Number(o.shippingBrl).toFixed(2)}` : ''}
+                        {Number(o.shippingDiscountBrl) > 0 ? ` � Economia de frete R$ ${Number(o.shippingDiscountBrl).toFixed(2)}` : ''}
                       </p>
                     ) : null}
                     <ul>
                       {items.map((it, idx) => (
                         <li key={`${it.productId}-${idx}`}>
-                          {it.title || it.productId} × {it.quantity}
-                          {it.size ? ` (${it.size})` : ''} — R$ {Number(it.lineTotal || 0).toFixed(2)}
+                          {it.title || it.productId} x {it.quantity}
+                          {it.size ? ` (${it.size})` : ''} - R$ {Number(it.lineTotal || 0).toFixed(2)}
                         </li>
                       ))}
                     </ul>

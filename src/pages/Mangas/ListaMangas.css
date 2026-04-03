@@ -385,10 +385,17 @@
   position: absolute;
   top: clamp(6px, 1.5vw, 10px);
   left: clamp(6px, 1.5vw, 10px);
+  display: grid;
+  gap: 5px;
+  max-width: calc(100% - 12px);
+}
+
+.manga-card-badges__top,
+.manga-card-badges__bottom {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
-  max-width: calc(100% - 12px);
+  align-items: flex-start;
 }
 
 .badge {
@@ -424,6 +431,12 @@
   color: #fff2b8;
   background: rgba(139, 112, 24, 0.88);
   border-color: rgba(255, 204, 0, 0.72);
+}
+
+.badge.latest {
+  color: #eef7ff;
+  background: rgba(28, 86, 150, 0.9);
+  border-color: rgba(128, 196, 255, 0.8);
 }
 
 .manga-card-body {

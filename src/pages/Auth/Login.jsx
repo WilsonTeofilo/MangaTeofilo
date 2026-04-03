@@ -65,8 +65,19 @@ async function carregarStatusConta(uid) {
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const irParaAposLogin = () =>
-    navigate(resolveSafeInternalRedirect(searchParams.get('redirect')), { replace: true });
+  const irParaAposLogin = (authUser) => {
+    const raw = searchParams.get('redirect');
+    const resolved = resolveSafeInternalRedirect(raw);
+    if (resolved !== '/') {
+      navigate(resolved, { replace: true });
+      return;
+    }
+    if (authUser && isAdminUser(authUser)) {
+      navigate('/', { replace: true });
+      return;
+    }
+    navigate('/perfil', { replace: true });
+  };
   // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');
   /** Após código: usuário tem senha no site e também Google — mostrar alternativa */
@@ -169,7 +180,7 @@ export default function Login() {
         const av = listaAvatares[0] || AVATAR_FALLBACK;
         await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
         await ativarContaUsuario(googleUser.uid);
-        irParaAposLogin();
+        irParaAposLogin(googleUser);
         return;
       }
 
@@ -190,7 +201,7 @@ export default function Login() {
       await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
       await ativarContaUsuario(googleUser.uid);
 
-      irParaAposLogin();
+      irParaAposLogin(googleUser);
     } catch (err) {
       const msgs = {
         'auth/popup-closed-by-user':                     'Popup fechado. Tente novamente.',
@@ -420,13 +431,13 @@ export default function Login() {
       registerAttemptResult('registerPassword', true);
       setInfo(
         signupIntent === 'creator'
-          ? 'Conta criada! Abrindo Creators para voce concluir a candidatura de mangaka.'
+          ? 'Conta criada! Abrindo seu perfil — use "Quero virar criador" para enviar a candidatura.'
           : 'Conta criada! Bem-vindo à Tempestade.'
       );
       if (signupIntent === 'creator') {
-        navigate('/creators', { replace: true });
+        navigate('/perfil', { replace: true });
       } else {
-        irParaAposLogin();
+        irParaAposLogin(cred.user);
       }
     } catch (err) {
       registerAttemptResult('registerPassword', false);
@@ -474,7 +485,7 @@ export default function Login() {
         );
         await ativarContaUsuario(cred.user.uid);
         registerAttemptResult('loginPassword', true);
-        irParaAposLogin();
+        irParaAposLogin(cred.user);
         return;
       }
 
@@ -499,7 +510,7 @@ export default function Login() {
       }
 
       registerAttemptResult('loginPassword', true);
-      irParaAposLogin();
+      irParaAposLogin(cred.user);
     } catch (err) {
       registerAttemptResult('loginPassword', false);
       const base = {

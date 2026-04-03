@@ -25,6 +25,7 @@ import {
   parseStoreExternalRef,
   criarPreferenciaLoja,
 } from './mercadoPagoStore.js';
+import { buildStoreShippingQuote } from './storeShipping.js';
 import {
   sanitizeTrackingValue,
   normalizeTrackingSource,
@@ -56,6 +57,7 @@ import {
   recordCreatorPayment,
   recordCreatorAttributedPremium,
   recordCreatorMembershipSubscription,
+  recordCreatorManualPixPayout,
 } from './creatorDataLedger.js';
 import {
   ageFromBirthDateIso,
@@ -1095,11 +1097,13 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     const order = orderSnap.val() || {};
     const now = Date.now();
     await db.ref(`loja/pedidos/${storeRef.orderId}`).update({
-      status: 'paid',
+      status: 'order_received',
+      orderReceivedAt: now,
       paidAt: now,
       paymentId: String(paymentId),
       paymentStatus: String(pay?.status || 'approved'),
       paymentAmount: Number(pay?.transaction_amount || 0),
+      payoutStatus: 'held',
       updatedAt: now,
     });
 
@@ -1108,6 +1112,10 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       const productId = String(item?.productId || '').trim();
       const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
       if (!productId) continue;
+      if (String(item?.inventoryMode || '').toLowerCase() === 'on_demand') continue;
+      const prodSnap = await db.ref(`loja/produtos/${productId}`).get();
+      const prod = prodSnap.exists() ? prodSnap.val() || {} : {};
+      if (storeProductIsOnDemand(prod)) continue;
       await db.ref(`loja/produtos/${productId}/stock`).transaction((curr) => {
         const stock = Math.max(0, Number(curr || 0));
         return Math.max(0, stock - quantity);
@@ -2076,6 +2084,9 @@ export const criarCheckoutApoio = onCall(
 
     try {
       let url;
+      const creatorBackUrlQuery = attributionCreatorId
+        ? `creatorId=${encodeURIComponent(attributionCreatorId)}`
+        : '';
       if (creatorMembership) {
         url = await criarPreferenciaApoioValorLivre(
           token,
@@ -2099,7 +2110,8 @@ export const criarCheckoutApoio = onCall(
           APP_BASE_URL.value(),
           request.auth.uid,
           notificationUrl,
-          attributionCreatorId
+          attributionCreatorId,
+          creatorBackUrlQuery ? { backUrlQuery: creatorBackUrlQuery } : {}
         );
       } else {
         url = await criarPreferenciaApoio(
@@ -2108,7 +2120,8 @@ export const criarCheckoutApoio = onCall(
           APP_BASE_URL.value(),
           request.auth.uid,
           notificationUrl,
-          attributionCreatorId
+          attributionCreatorId,
+          creatorBackUrlQuery ? { backUrlQuery: creatorBackUrlQuery } : {}
         );
       }
       return { ok: true, url };
@@ -2140,6 +2153,120 @@ export const criarCheckoutApoio = onCall(
   }
 );
 
+function normalizeStoreBuyerProfile(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const digits = (value, max) => String(value || '').replace(/\D+/g, '').slice(0, max);
+  return {
+    fullName: String(src.fullName || '').trim(),
+    cpf: normalizeAndValidateCpf(src.cpf || '') || '',
+    phone: digits(src.phone, 11),
+    postalCode: digits(src.postalCode, 8),
+    state: String(src.state || '').trim().toUpperCase().slice(0, 2),
+    city: String(src.city || '').trim(),
+    neighborhood: String(src.neighborhood || '').trim(),
+    addressLine1: String(src.addressLine1 || '').trim(),
+    addressLine2: String(src.addressLine2 || '').trim(),
+  };
+}
+
+function storeBuyerProfileMissingFields(raw) {
+  const profile = normalizeStoreBuyerProfile(raw);
+  const missing = [];
+  if (profile.fullName.length < 6) missing.push('nome completo');
+  if (!profile.cpf) missing.push('CPF');
+  if (profile.phone.length < 10) missing.push('telefone');
+  if (profile.postalCode.length !== 8) missing.push('CEP');
+  if (profile.state.length !== 2) missing.push('estado');
+  if (profile.city.length < 2) missing.push('cidade');
+  if (profile.neighborhood.length < 2) missing.push('bairro');
+  if (profile.addressLine1.length < 6) missing.push('endereco');
+  return missing;
+}
+
+function maskCpf(cpf) {
+  const digits = String(cpf || '').replace(/\D+/g, '');
+  if (digits.length !== 11) return '';
+  return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function storeProductIsOnDemand(product) {
+  return String(product?.inventoryMode || '').toLowerCase() === 'on_demand';
+}
+
+/**
+ * Valida uma linha do carrinho (checkout e cotação de frete).
+ * @returns {object} orderLine com inventoryMode para o webhook não debitar estoque infinito.
+ */
+function parseStoreCartLineItem(item, products, { vip, vipDiscountPct, enforceStock }) {
+  const productId = String(item?.productId || '').trim();
+  const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
+  if (!productId) {
+    throw new HttpsError('invalid-argument', 'Item invalido (productId ausente).');
+  }
+  const product = products[productId];
+  if (!product) {
+    throw new HttpsError('not-found', `Produto ${productId} nao encontrado.`);
+  }
+  if (product.isActive === false) {
+    throw new HttpsError('failed-precondition', `Produto ${productId} indisponivel.`);
+  }
+  if (product.isStoreDemo === true) {
+    throw new HttpsError('failed-precondition', `Produto ${productId} nao esta disponivel para venda.`);
+  }
+  const onDemand = storeProductIsOnDemand(product);
+  if (enforceStock && !onDemand) {
+    const stock = Math.max(0, Number(product.stock || 0));
+    if (quantity > stock) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Estoque insuficiente para ${product.title || productId}.`
+      );
+    }
+  }
+
+  const type = String(product.type || 'manga').toLowerCase();
+  const sizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
+  let size = String(item?.size || '').trim();
+  if (type === 'roupa' && sizes.length) {
+    if (!size || !sizes.includes(size)) {
+      throw new HttpsError(
+        'invalid-argument',
+        `Informe um tamanho valido para ${product.title || productId}.`
+      );
+    }
+  } else {
+    size = '';
+  }
+
+  const basePrice = Number(
+    product.isOnSale === true && Number(product.promoPrice) > 0
+      ? product.promoPrice
+      : product.price
+  );
+  if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    throw new HttpsError('failed-precondition', `Preco invalido para ${product.title || productId}.`);
+  }
+  let unitPrice = round2(basePrice);
+  if (vip && product.isVIPDiscountEnabled === true) {
+    unitPrice = round2(basePrice * (1 - vipDiscountPct / 100));
+  }
+  const lineTotal = round2(unitPrice * quantity);
+  const baseTitle = String(product.title || productId);
+  const productCreatorId = sanitizeCreatorId(product?.creatorId) || null;
+  return {
+    productId,
+    title: size ? `${baseTitle} (${size})` : baseTitle,
+    description: String(product.description || ''),
+    quantity,
+    unitPrice,
+    lineTotal,
+    size: size || null,
+    type: type || 'manga',
+    creatorId: productCreatorId,
+    inventoryMode: onDemand ? 'on_demand' : 'fixed',
+  };
+}
+
 export const criarCheckoutLoja = onCall(
   {
     region: 'us-central1',
@@ -2152,6 +2279,7 @@ export const criarCheckoutLoja = onCall(
     }
     const payload = request.data && typeof request.data === 'object' ? request.data : {};
     const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    const requestedShippingService = String(payload.shippingService || 'PAC').trim().toUpperCase();
     if (!rawItems.length) throw new HttpsError('invalid-argument', 'Carrinho vazio.');
     if (rawItems.length > 20) throw new HttpsError('invalid-argument', 'Limite de 20 itens por checkout.');
 
@@ -2177,9 +2305,18 @@ export const criarCheckoutLoja = onCall(
       throw new HttpsError('failed-precondition', 'Loja nao esta aceitando pedidos agora.');
     }
 
-    const fixedShippingBrl = round2(Math.max(0, Number(config.fixedShippingBrl || 0)));
-
     const profile = userSnap.exists() ? userSnap.val() || {} : {};
+    const buyerProfile = normalizeStoreBuyerProfile(profile.buyerProfile);
+    const missingBuyerFields = storeBuyerProfileMissingFields(buyerProfile);
+    if (missingBuyerFields.length) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Complete seu perfil de compra antes de pagar: ${missingBuyerFields.join(', ')}.`
+      );
+    }
+    if (String(profile.status || '').trim().toLowerCase() !== 'ativo') {
+      throw new HttpsError('failed-precondition', 'Sua conta precisa estar ativa para comprar.');
+    }
     const vip = buildUserEntitlements(profile).global.isPremium === true;
     const vipDiscountPct = Math.max(0, Math.min(60, Number(config.vipDiscountPct || 10)));
 
@@ -2187,59 +2324,35 @@ export const criarCheckoutLoja = onCall(
     const orderItems = [];
     let subtotal = 0;
     for (const item of rawItems) {
-      const productId = String(item?.productId || '').trim();
-      const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
-      if (!productId) throw new HttpsError('invalid-argument', 'Item invalido (productId ausente).');
-      const product = products[productId];
-      if (!product) throw new HttpsError('not-found', `Produto ${productId} nao encontrado.`);
-      if (product.isActive === false) throw new HttpsError('failed-precondition', `Produto ${productId} indisponivel.`);
-      const stock = Math.max(0, Number(product.stock || 0));
-      if (quantity > stock) throw new HttpsError('failed-precondition', `Estoque insuficiente para ${product.title || productId}.`);
-
-      const type = String(product.type || 'manga').toLowerCase();
-      const sizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
-      let size = String(item?.size || '').trim();
-      if (type === 'roupa' && sizes.length) {
-        if (!size || !sizes.includes(size)) {
-          throw new HttpsError('invalid-argument', `Informe um tamanho valido para ${product.title || productId}.`);
-        }
-      } else {
-        size = '';
-      }
-
-      const basePrice = Number(
-        product.isOnSale === true && Number(product.promoPrice) > 0
-          ? product.promoPrice
-          : product.price
-      );
-      if (!Number.isFinite(basePrice) || basePrice <= 0) {
-        throw new HttpsError('failed-precondition', `Preco invalido para ${product.title || productId}.`);
-      }
-      let unitPrice = round2(basePrice);
-      if (vip && product.isVIPDiscountEnabled === true) {
-        unitPrice = round2(basePrice * (1 - vipDiscountPct / 100));
-      }
-      const lineTotal = round2(unitPrice * quantity);
-      subtotal += lineTotal;
-      const baseTitle = String(product.title || productId);
-      const productCreatorId = sanitizeCreatorId(product?.creatorId) || null;
-      orderItems.push({
-        productId,
-        title: size ? `${baseTitle} (${size})` : baseTitle,
-        description: String(product.description || ''),
-        quantity,
-        unitPrice,
-        lineTotal,
-        size: size || null,
-        type: type || 'manga',
-        creatorId: productCreatorId,
+      const line = parseStoreCartLineItem(item, products, {
+        vip,
+        vipDiscountPct,
+        enforceStock: true,
       });
+      subtotal += line.lineTotal;
+      orderItems.push(line);
     }
 
     subtotal = round2(subtotal);
     if (subtotal <= 0) throw new HttpsError('failed-precondition', 'Subtotal invalido para checkout.');
 
-    const total = round2(subtotal + fixedShippingBrl);
+    const shippingQuote = buildStoreShippingQuote({
+      items: orderItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+      productsById: products,
+      config,
+      buyerProfile,
+      subtotal,
+    });
+    const shippingOption =
+      shippingQuote.options.find((option) => option.serviceCode === requestedShippingService) ||
+      shippingQuote.options.find((option) => option.serviceCode === shippingQuote.defaultServiceCode) ||
+      shippingQuote.options[0];
+    if (!shippingOption) {
+      throw new HttpsError('failed-precondition', 'Nao foi possivel calcular o frete.');
+    }
+    const shippingDiscountBrl = round2(shippingOption.discountBrl);
+    const shippingBrl = round2(shippingOption.priceBrl);
+    const total = round2(subtotal + shippingBrl);
     if (total <= 0) throw new HttpsError('failed-precondition', 'Total invalido para checkout.');
 
     const now = Date.now();
@@ -2249,14 +2362,38 @@ export const criarCheckoutLoja = onCall(
 
     const order = {
       uid: request.auth.uid,
-      status: 'pending',
+      status: 'pending_payment',
+      buyer: {
+        fullName: buyerProfile.fullName,
+        phone: buyerProfile.phone,
+        cpfMasked: maskCpf(buyerProfile.cpf),
+      },
+      shippingAddress: {
+        postalCode: buyerProfile.postalCode,
+        state: buyerProfile.state,
+        city: buyerProfile.city,
+        neighborhood: buyerProfile.neighborhood,
+        addressLine1: buyerProfile.addressLine1,
+        addressLine2: buyerProfile.addressLine2 || null,
+      },
       items: orderItems,
       subtotal,
-      shippingBrl: fixedShippingBrl,
+      shippingBrl,
+      shippingOriginalBrl: round2(shippingOption.originalPriceBrl),
+      shippingDiscountBrl,
+      shippingFreeApplied: shippingDiscountBrl > 0,
+      shippingMethod: shippingOption.serviceCode,
+      shippingRegion: shippingOption.regionKey,
+      shippingRegionLabel: shippingOption.regionLabel,
+      shippingDeliveryDays: shippingOption.deliveryDays,
+      shippingWeightGrams: shippingOption.totalWeightGrams,
+      shippingCostInternal: round2(shippingOption.internalCostBrl),
       total,
       currency: 'BRL',
       vipApplied: vip,
       vipDiscountPct: vip ? vipDiscountPct : 0,
+      payoutStatus: 'held',
+      payoutReleasedAt: null,
       createdAt: now,
       updatedAt: now,
       source: 'checkout_store',
@@ -2276,13 +2413,13 @@ export const criarCheckoutLoja = onCall(
           quantity: i.quantity,
           unitPrice: i.unitPrice,
         })),
-        ...(fixedShippingBrl > 0
+        ...(shippingBrl > 0
           ? [
               {
-                title: 'Frete fixo',
+                title: 'Frete',
                 description: 'Envio',
                 quantity: 1,
-                unitPrice: fixedShippingBrl,
+                unitPrice: shippingBrl,
               },
             ]
           : []),
@@ -2302,6 +2439,59 @@ export const criarCheckoutLoja = onCall(
     });
 
     return { ok: true, orderId, url };
+  }
+);
+
+export const quoteStoreShipping = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para calcular o frete.');
+    }
+    const payload = request.data && typeof request.data === 'object' ? request.data : {};
+    const rawItems = Array.isArray(payload.items) ? payload.items : [];
+    if (!rawItems.length) throw new HttpsError('invalid-argument', 'Carrinho vazio.');
+    const db = getDatabase();
+    const [cfgSnap, productsSnap, userSnap] = await Promise.all([
+      db.ref('loja/config').get(),
+      db.ref('loja/produtos').get(),
+      db.ref(`usuarios/${request.auth.uid}`).get(),
+    ]);
+    const config = cfgSnap.exists() ? cfgSnap.val() || {} : {};
+    const profile = userSnap.exists() ? userSnap.val() || {} : {};
+    const buyerProfile = normalizeStoreBuyerProfile(profile.buyerProfile);
+    const missingBuyerFields = storeBuyerProfileMissingFields(buyerProfile);
+    if (missingBuyerFields.length) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Complete seu perfil de compra antes de calcular o frete: ${missingBuyerFields.join(', ')}.`
+      );
+    }
+    const products = productsSnap.exists() ? productsSnap.val() || {} : {};
+    const vipQuote = buildUserEntitlements(profile).global.isPremium === true;
+    const vipDiscountPctQuote = Math.max(0, Math.min(60, Number(config.vipDiscountPct || 10)));
+    let subtotal = 0;
+    const items = [];
+    for (const item of rawItems) {
+      const line = parseStoreCartLineItem(item, products, {
+        vip: vipQuote,
+        vipDiscountPct: vipDiscountPctQuote,
+        enforceStock: true,
+      });
+      subtotal += line.lineTotal;
+      items.push({ productId: line.productId, quantity: line.quantity });
+    }
+    const quote = buildStoreShippingQuote({
+      items,
+      productsById: products,
+      config,
+      buyerProfile,
+      subtotal,
+    });
+    return { ok: true, quote };
   }
 );
 
@@ -2425,7 +2615,10 @@ export const criarCheckoutPremium = onCall(
         offer.isPromoActive
           ? { promoId: offer.promo?.promoId, promoName: offer.promo?.name }
           : null,
-        attribution
+        attribution,
+        attributionCreatorId
+          ? { backUrlQuery: `creatorId=${encodeURIComponent(attributionCreatorId)}` }
+          : {}
       );
       await pushMarketingEvent(db, {
         eventType: 'premium_checkout_started',
@@ -3816,7 +4009,7 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
   };
 });
 
-async function buildCreatorApplicationRow(uid, row) {
+async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
   let email = null;
   try {
     const user = await getAuth().getUser(uid);
@@ -3827,6 +4020,15 @@ async function buildCreatorApplicationRow(uid, row) {
   const app = row?.creatorApplication && typeof row.creatorApplication === 'object'
     ? row.creatorApplication
     : {};
+  const creatorData = creatorDataRow && typeof creatorDataRow === 'object' ? creatorDataRow : {};
+  const balance = creatorData?.balance && typeof creatorData.balance === 'object' ? creatorData.balance : null;
+  const payoutsRaw = creatorData?.payouts && typeof creatorData.payouts === 'object' ? creatorData.payouts : null;
+  const recentPayouts = payoutsRaw
+    ? Object.entries(payoutsRaw)
+      .map(([payoutId, payoutRow]) => ({ payoutId, ...(payoutRow || {}) }))
+      .sort((a, b) => Number(b.paidAt || b.createdAt || 0) - Number(a.paidAt || a.createdAt || 0))
+      .slice(0, 3)
+    : [];
   return {
     uid,
     email,
@@ -3892,6 +4094,26 @@ async function buildCreatorApplicationRow(uid, row) {
     creatorModerationBy: String(row?.creatorModerationBy || ''),
     creatorModeratedAt: Number(row?.creatorModeratedAt || 0),
     creatorMonetizationReviewReason: String(row?.creatorMonetizationReviewReason || ''),
+    creatorBalanceAdmin: balance
+      ? {
+          availableBRL: round2(Number(balance.availableBRL || 0)),
+          pendingPayoutBRL: round2(Number(balance.pendingPayoutBRL || 0)),
+          lifetimeNetBRL: round2(Number(balance.lifetimeNetBRL || 0)),
+          paidOutBRL: round2(Number(balance.paidOutBRL || 0)),
+          updatedAt: Number(balance.updatedAt || 0) || null,
+          lastPayoutAt: Number(balance.lastPayoutAt || 0) || null,
+        }
+      : null,
+    creatorRecentPayoutsAdmin: recentPayouts.map((p) => ({
+      payoutId: String(p.payoutId || ''),
+      amount: round2(Number(p.amount || 0)),
+      status: String(p.status || ''),
+      paidAt: Number(p.paidAt || 0) || null,
+      pixType: String(p.pixType || ''),
+      pixKeyMasked: String(p.pixKeyMasked || ''),
+      paidByUid: String(p.paidByUid || ''),
+      notes: String(p.notes || ''),
+    })),
     role: String(row?.role || 'user'),
     accountStatus: String(row?.status || ''),
   };
@@ -4047,7 +4269,7 @@ async function pushUserNotification(db, uid, payload) {
   return { ok: true, notificationId: created.key };
 }
 
-async function notifyCreatorRequestAdmins(db, { applicantUid, displayName, monetizationPreference }) {
+async function notifyCreatorRequestAdmins(db, { applicantUid, displayName, monetizationPreference, monetizationOnly = false }) {
   const registrySnap = await db.ref(ADMIN_REGISTRY_PATH).get();
   const superAdminIds = (() => {
     if (SUPER_ADMIN_UIDS instanceof Set) return [...SUPER_ADMIN_UIDS];
@@ -4067,10 +4289,16 @@ async function notifyCreatorRequestAdmins(db, { applicantUid, displayName, monet
 
   const applicantName = String(displayName || 'Novo creator').trim() || 'Novo creator';
   const wantsMonetize = String(monetizationPreference || '').trim().toLowerCase() === 'monetize';
-  const title = wantsMonetize ? 'Nova solicitacao com monetizacao' : 'Nova solicitacao de creator';
-  const message = wantsMonetize
-    ? `${applicantName} pediu acesso de creator e revisao de monetizacao.`
-    : `${applicantName} pediu acesso ao programa de creators.`;
+  const title = monetizationOnly
+    ? 'Criador pediu revisao de monetizacao'
+    : wantsMonetize
+      ? 'Nova solicitacao com monetizacao'
+      : 'Nova solicitacao de creator';
+  const message = monetizationOnly
+    ? `${applicantName} ja publica na plataforma e enviou dados para ativar monetizacao. Revise em Criadores.`
+    : wantsMonetize
+      ? `${applicantName} pediu acesso de creator e revisao de monetizacao.`
+      : `${applicantName} pediu acesso ao programa de creators.`;
 
   await Promise.all(
     [...adminIds]
@@ -4088,6 +4316,7 @@ async function notifyCreatorRequestAdmins(db, { applicantUid, displayName, monet
             applicantUid,
             readPath: '/admin/criadores',
             monetizationPreference,
+            monetizationOnly,
           },
         })
       )
@@ -4471,7 +4700,12 @@ async function getMonetizableCreatorPublicProfile(db, creatorId, { requireMember
     throw new HttpsError('not-found', 'Perfil publico do criador nao encontrado.');
   }
   const creatorPublic = snap.val() || {};
-  const creatorMonetizationStatus = String(creatorPublic.creatorMonetizationStatus || '').trim().toLowerCase();
+  const creatorMonetizationPreference =
+    String(creatorPublic.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
+  const creatorMonetizationStatus =
+    creatorMonetizationPreference === 'monetize'
+      ? String(creatorPublic.creatorMonetizationStatus || '').trim().toLowerCase()
+      : 'disabled';
   if (creatorMonetizationStatus !== 'active') {
     throw new HttpsError('failed-precondition', 'Este criador esta em modo apenas publicar e nao pode receber agora.');
   }
@@ -4486,21 +4720,240 @@ export const adminListCreatorApplications = onCall({ region: 'us-central1' }, as
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
   requireSuperAdmin(request.auth);
-  const snap = await getDatabase().ref('usuarios').get();
+  const db = getDatabase();
+  const [snap, creatorDataSnap] = await Promise.all([
+    db.ref('usuarios').get(),
+    db.ref('creatorData').get(),
+  ]);
   const users = snap.val() || {};
+  const creatorDataByUid = creatorDataSnap.exists() ? creatorDataSnap.val() || {} : {};
   const rows = await Promise.all(
     Object.entries(users)
       .filter(([, row]) => String(row?.signupIntent || '') === 'creator')
-      .map(([uid, row]) => buildCreatorApplicationRow(uid, row))
+      .map(([uid, row]) => buildCreatorApplicationRow(uid, row, creatorDataByUid?.[uid] || null))
   );
   rows.sort((a, b) => {
-    const aPending = a.creatorApplicationStatus === 'requested' ? 1 : 0;
-    const bPending = b.creatorApplicationStatus === 'requested' ? 1 : 0;
-    if (aPending !== bPending) return bPending - aPending;
+    const queueScore = (r) => {
+      const s = String(r?.creatorApplicationStatus || '').trim().toLowerCase();
+      const mon = String(r?.creatorMonetizationStatus || '').trim().toLowerCase();
+      const role = String(r?.role || '').trim().toLowerCase();
+      if (s === 'requested') return 2;
+      if (s === 'approved' && mon === 'pending_review' && role === 'mangaka') return 1;
+      return 0;
+    };
+    const diff = queueScore(b) - queueScore(a);
+    if (diff !== 0) return diff;
     return Number(b.creatorRequestedAt || 0) - Number(a.creatorRequestedAt || 0);
   });
   return { ok: true, applications: rows };
 });
+
+/**
+ * Aprova candidatura de criador (registry, claims, RTDB, notificacao).
+ * `isAutoPublishOnly`: fluxo "so publicar" sem fila de admin (marca moderacao como __auto_publish_only__).
+ */
+async function finalizeCreatorApplicationApproval(db, uid, row, reviewedByUid, options = {}) {
+  const isAutoPublishOnly = options?.isAutoPublishOnly === true;
+  const effectiveBy = isAutoPublishOnly ? '__auto_publish_only__' : String(reviewedByUid || '').trim() || 'unknown';
+  const now = Date.now();
+  const application = row?.creatorApplication && typeof row.creatorApplication === 'object'
+    ? row.creatorApplication
+    : {};
+  const displayName = String(row?.creatorDisplayName || application.displayName || row?.userName || '').trim() || 'Criador';
+  const currentUserAvatar = String(row?.userAvatar || '').trim();
+  const approvedCreatorAvatar = String(
+    application.profileImageUrl || row?.creatorPendingProfileImageUrl || row?.userAvatar || ''
+  ).trim();
+  const bioShort = String(row?.creatorBio || application.bioShort || '').trim();
+  const bannerUrl = '';
+  const instagramUrl = String(row?.instagramUrl || application?.socialLinks?.instagramUrl || '').trim();
+  const youtubeUrl = String(row?.youtubeUrl || application?.socialLinks?.youtubeUrl || '').trim();
+  const monetizationPreference = String(
+    row?.creatorMonetizationPreference || application?.monetizationPreference || 'publish_only'
+  ).trim().toLowerCase() === 'monetize'
+    ? 'monetize'
+    : 'publish_only';
+  const age = resolveCreatorAgeYears(row);
+  const isUnderage = age != null && age < 18;
+  const monetizationStatus =
+    monetizationPreference === 'monetize'
+      ? (isUnderage ? 'blocked_underage' : 'pending_review')
+      : 'disabled';
+  const creatorUsername = slugifyCreatorUsername(displayName, uid);
+  const creatorProfile = {
+    creatorId: uid,
+    displayName,
+    username: creatorUsername,
+    bioShort,
+    bioFull: String(row?.creatorBio || '').trim(),
+    avatarUrl: approvedCreatorAvatar || '',
+    bannerUrl,
+    socialLinks: {
+      instagramUrl: instagramUrl || null,
+      youtubeUrl: youtubeUrl || null,
+    },
+    monetizationEnabled: monetizationStatus === 'active',
+    monetizationPreference,
+    monetizationStatus,
+    ageVerified: age != null,
+    status: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+    createdAt: row?.creatorProfile?.createdAt || now,
+    updatedAt: now,
+  };
+
+  await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).set({
+    role: 'mangaka',
+    permissions: defaultMangakaPermissions(),
+    updatedAt: now,
+    updatedBy: effectiveBy,
+  });
+
+  const authUser = await getAuth().getUser(uid);
+  const prevClaims = { ...(authUser.customClaims || {}) };
+  delete prevClaims.admin;
+  prevClaims.panelRole = 'mangaka';
+  await getAuth().setCustomUserClaims(uid, prevClaims);
+  if (approvedCreatorAvatar && approvedCreatorAvatar !== authUser.photoURL) {
+    await getAuth().updateUser(uid, { photoURL: approvedCreatorAvatar });
+  }
+
+  const creatorDocApproved = assembleCreatorRecordForRtdb({
+    row,
+    birthDateIso: String(row?.birthDate || '').trim(),
+    displayName,
+    bio: bioShort,
+    instagramUrl,
+    youtubeUrl,
+    monetizationPreference,
+    creatorMonetizationStatus: monetizationStatus,
+    compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
+    now,
+  });
+
+  await db.ref().update({
+    [`usuarios/${uid}/creator`]: creatorDocApproved,
+    [`usuarios/${uid}/role`]: 'mangaka',
+    [`usuarios/${uid}/signupIntent`]: 'creator',
+    [`usuarios/${uid}/creatorApplicationStatus`]: 'approved',
+    [`usuarios/${uid}/creatorApplication/status`]: 'approved',
+    [`usuarios/${uid}/creatorApplication/updatedAt`]: now,
+    [`usuarios/${uid}/creatorApprovedAt`]: now,
+    [`usuarios/${uid}/creatorRejectedAt`]: null,
+    [`usuarios/${uid}/creatorReviewedBy`]: effectiveBy,
+    [`usuarios/${uid}/creatorReviewReason`]: null,
+    [`usuarios/${uid}/creatorModerationAction`]: 'approved',
+    [`usuarios/${uid}/creatorModerationBy`]: effectiveBy,
+    [`usuarios/${uid}/creatorModeratedAt`]: now,
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
+    [`usuarios/${uid}/creatorOnboardingStartedAt`]: row?.creatorOnboardingStartedAt || now,
+    [`usuarios/${uid}/creatorOnboardingCompleted`]: row?.creatorOnboardingCompleted === true,
+    [`usuarios/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
+    [`usuarios/${uid}/creatorProfile`]: creatorProfile,
+    [`usuarios/${uid}/creatorPendingProfileImageUrl`]: null,
+    [`usuarios/${uid}/creatorPendingProfileImageCrop`]: null,
+    [`usuarios/${uid}/creatorBannerUrl`]: null,
+    [`usuarios/${uid}/creatorStatus`]: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+    [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
+    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios/${uid}/creatorMembershipEnabled`]:
+      false,
+    [`usuarios/${uid}/creatorMembershipPriceBRL`]:
+      null,
+    [`usuarios/${uid}/creatorDonationSuggestedBRL`]:
+      null,
+    [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
+    [`usuarios_publicos/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
+    [`usuarios_publicos/${uid}/creatorDisplayName`]: displayName,
+    [`usuarios_publicos/${uid}/creatorUsername`]: creatorUsername,
+    [`usuarios_publicos/${uid}/creatorBio`]: bioShort,
+    [`usuarios_publicos/${uid}/creatorBannerUrl`]: null,
+    [`usuarios_publicos/${uid}/instagramUrl`]: instagramUrl || null,
+    [`usuarios_publicos/${uid}/youtubeUrl`]: youtubeUrl || null,
+    [`usuarios_publicos/${uid}/creatorStatus`]: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]:
+      false,
+    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]:
+      null,
+    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]:
+      null,
+    [`usuarios_publicos/${uid}/creatorProfile`]: {
+      creatorId: uid,
+      userId: uid,
+      displayName,
+      username: creatorUsername,
+      bioShort,
+      bioFull: String(row?.creatorBio || '').trim(),
+      avatarUrl: approvedCreatorAvatar || currentUserAvatar || '',
+      bannerUrl: '',
+      socialLinks: {
+        instagramUrl: instagramUrl || null,
+        youtubeUrl: youtubeUrl || null,
+      },
+      stats: {
+        followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
+        totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
+        totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
+        totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
+      },
+      createdAt: row?.creatorProfile?.createdAt || now,
+      updatedAt: now,
+    },
+    [`usuarios_publicos/${uid}/stats`]: {
+      followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
+      totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
+      totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
+      totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
+    },
+    [`usuarios_publicos/${uid}/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
+    [`usuarios_publicos/${uid}/userName`]: displayName,
+    [`usuarios_publicos/${uid}/accountType`]: String(row?.accountType || 'comum'),
+    [`usuarios_publicos/${uid}/updatedAt`]: now,
+    [`creators/${uid}/stats/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
+    [`creators/${uid}/stats/likesTotal`]: Number(row?.creatorProfile?.stats?.totalLikes || 0),
+    [`creators/${uid}/stats/totalViews`]: Number(row?.creatorProfile?.stats?.totalViews || 0),
+    [`creators/${uid}/stats/commentsTotal`]: Number(row?.creatorProfile?.stats?.totalComments || 0),
+    [`creators/${uid}/stats/membersCount`]: Number(row?.creatorProfile?.stats?.membersCount || 0),
+    [`creators/${uid}/stats/revenueTotal`]: Number(row?.creatorProfile?.stats?.revenueTotal || 0),
+    [`creators/${uid}/stats/uniqueReaders`]: Number(row?.creatorProfile?.stats?.uniqueReaders || 0),
+    [`creators/${uid}/stats/updatedAt`]: now,
+  });
+
+  const approvalMessage = isAutoPublishOnly
+    ? 'Voce ja pode publicar como criador. Se o painel nao aparecer, recarregue a pagina ou faca login de novo.'
+    : monetizationStatus === 'blocked_underage'
+      ? 'Voce foi aprovado para publicar, mas a monetizacao ficou bloqueada por idade. Sua conta esta liberada apenas para publicacao.'
+      : monetizationStatus === 'active'
+        ? 'Voce foi aprovado como criador e sua monetizacao foi ativada.'
+        : monetizationPreference === 'monetize'
+          ? 'Voce foi aprovado como criador. Agora finalize sua configuracao de membership para concluir a monetizacao.'
+          : 'Voce foi aprovado como criador para publicar na plataforma.';
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: 'creator_application',
+      title: isAutoPublishOnly ? 'Acesso de criador liberado' : 'Solicitacao aprovada',
+      message: approvalMessage,
+      data: {
+        status: 'approved',
+        creatorStatus: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
+        monetizationStatus,
+        monetizationPreference,
+        readPath: '/perfil',
+        autoApproved: isAutoPublishOnly,
+      },
+    },
+    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
+      title: isAutoPublishOnly ? 'Acesso de criador liberado' : 'Solicitacao aprovada',
+      subject: isAutoPublishOnly
+        ? 'Voce ja pode publicar na plataforma'
+        : 'Sua solicitacao de criador foi aprovada',
+      message: approvalMessage,
+    }),
+  });
+
+  return { ok: true, uid, status: 'approved', monetizationStatus, monetizationPreference };
+}
 
 export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth?.uid) {
@@ -4509,9 +4962,6 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   const uid = request.auth.uid;
   const db = getDatabase();
   const ctx = await getAdminAuthContext(request.auth);
-  if (ctx?.mangaka) {
-    return { ok: true, status: 'approved', alreadyMangaka: true };
-  }
   const userRef = db.ref(`usuarios/${uid}`);
   const snap = await userRef.get();
   if (!snap.exists()) {
@@ -4520,15 +4970,43 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   const row = snap.val() || {};
   const now = Date.now();
   const statusAtual = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
-  if (statusAtual === 'requested') {
+  if (statusAtual === 'requested' && !ctx?.mangaka) {
     return { ok: true, status: 'requested', alreadyPending: true };
   }
   const payload = request.data && typeof request.data === 'object' ? request.data : {};
   const displayName = String(payload.displayName || row?.creatorDisplayName || row?.userName || '').trim();
   const bioShort = String(payload.bioShort || row?.creatorBio || '').trim();
-  const instagramUrl = String(payload.instagramUrl || row?.instagramUrl || '').trim();
-  const youtubeUrl = String(payload.youtubeUrl || row?.youtubeUrl || '').trim();
-  const profileImageUrl = String(payload.profileImageUrl || row?.creatorApplication?.profileImageUrl || '').trim();
+  const normalizeCreatorSocialUrl = (raw, allowedHosts = []) => {
+    const value = String(raw || '').trim();
+    if (!value) return '';
+    const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    try {
+      const url = new URL(candidate);
+      const host = String(url.hostname || '').trim().toLowerCase();
+      const hostOk = allowedHosts.some((item) => host === item || host.endsWith(`.${item}`));
+      if (!hostOk) return '';
+      if (!['http:', 'https:'].includes(url.protocol)) return '';
+      return url.toString();
+    } catch {
+      return '';
+    }
+  };
+  const instagramRaw = String(payload.instagramUrl || row?.instagramUrl || '').trim();
+  const youtubeRaw = String(payload.youtubeUrl || row?.youtubeUrl || '').trim();
+  const instagramUrl = normalizeCreatorSocialUrl(instagramRaw, ['instagram.com']);
+  const youtubeUrl = normalizeCreatorSocialUrl(youtubeRaw, ['youtube.com', 'youtu.be']);
+  let profileImageUrl = String(payload.profileImageUrl || row?.creatorApplication?.profileImageUrl || '').trim();
+  if (
+    !profileImageUrl ||
+    profileImageUrl.length < 12 ||
+    !/^https:\/\//i.test(profileImageUrl) ||
+    profileImageUrl.length > 2048
+  ) {
+    const av = String(row?.userAvatar || '').trim();
+    if (/^https:\/\//i.test(av) && av.length >= 12 && av.length <= 2048) {
+      profileImageUrl = av;
+    }
+  }
   const profileImageCrop =
     payload.profileImageCrop && typeof payload.profileImageCrop === 'object'
       ? {
@@ -4597,8 +5075,16 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   if (displayName.length < 3) {
     throw new HttpsError('invalid-argument', 'Informe um nome artistico com pelo menos 3 caracteres.');
   }
-  if (bioShort.length < 50) {
-    throw new HttpsError('invalid-argument', 'Escreva uma bio com pelo menos 50 caracteres.');
+  const bioMinPublishOnly = 24;
+  const bioMinMonetize = 24;
+  const bioMin = monetizationPreference === 'publish_only' ? bioMinPublishOnly : bioMinMonetize;
+  if (bioShort.length < bioMin) {
+    throw new HttpsError(
+      'invalid-argument',
+      monetizationPreference === 'publish_only'
+        ? `Escreva uma bio curta com pelo menos ${bioMinPublishOnly} caracteres.`
+        : `Escreva uma bio com pelo menos ${bioMinMonetize} caracteres.`
+    );
   }
   if (bioShort.length > 450) {
     throw new HttpsError('invalid-argument', 'A bio pode ter no maximo 450 caracteres.');
@@ -4616,6 +5102,20 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   if (!acceptTerms) {
     throw new HttpsError('invalid-argument', 'Voce precisa aceitar os termos para solicitar acesso de criador.');
   }
+  if (instagramRaw && !instagramUrl) {
+    throw new HttpsError('invalid-argument', 'Instagram invalido. Use um link real de perfil do Instagram.');
+  }
+  if (youtubeRaw && !youtubeUrl) {
+    throw new HttpsError('invalid-argument', 'YouTube invalido. Use um link real de canal/video do YouTube.');
+  }
+  if (!instagramUrl && !youtubeUrl) {
+    throw new HttpsError(
+      'invalid-argument',
+      monetizationPreference === 'monetize'
+        ? 'Para monetizar, informe pelo menos um link valido de Instagram ou YouTube.'
+        : 'Informe pelo menos um link valido de Instagram ou YouTube no seu perfil publico.'
+    );
+  }
 
   const birthYearFromDate = Number(birthDateRaw.slice(0, 4));
   const compliance =
@@ -4629,6 +5129,90 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
           updatedAt: now,
         }
       : null;
+
+  if (ctx?.mangaka) {
+    if (monetizationPreference !== 'monetize') {
+      return { ok: true, status: 'approved', alreadyMangaka: true };
+    }
+    const monStatus = String(row?.creatorMonetizationStatus || '').trim().toLowerCase();
+    if (monStatus === 'active') {
+      return { ok: true, status: 'approved', alreadyMangaka: true, monetizationAlreadyActive: true };
+    }
+    if (monStatus === 'pending_review') {
+      return { ok: true, status: 'approved', alreadyMangaka: true, monetizationPendingReview: true };
+    }
+    const creatorApplicationMangaka = {
+      ...(row?.creatorApplication && typeof row.creatorApplication === 'object' ? row.creatorApplication : {}),
+      userId: uid,
+      displayName,
+      bioShort,
+      profileImageUrl,
+      profileImageCrop,
+      bannerUrl: null,
+      monetizationPreference: 'monetize',
+      monetizationRequested: true,
+      birthDate: birthDateRaw,
+      isAdult,
+      socialLinks: {
+        instagramUrl: instagramUrl || null,
+        youtubeUrl: youtubeUrl || null,
+      },
+      status: 'approved',
+      acceptTerms: true,
+      createdAt: row?.creatorApplication?.createdAt || now,
+      updatedAt: now,
+    };
+    const creatorDocM = assembleCreatorRecordForRtdb({
+      row,
+      birthDateIso: birthDateRaw,
+      displayName,
+      bio: bioShort,
+      instagramUrl,
+      youtubeUrl,
+      monetizationPreference: 'monetize',
+      creatorMonetizationStatus: 'pending_review',
+      compliance,
+      now,
+    });
+    await db.ref().update({
+      [`usuarios/${uid}/creator`]: creatorDocM,
+      [`usuarios/${uid}/creatorApplication`]: creatorApplicationMangaka,
+      [`usuarios/${uid}/creatorDisplayName`]: displayName,
+      [`usuarios/${uid}/creatorBio`]: bioShort,
+      [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
+      [`usuarios/${uid}/creatorMonetizationStatus`]: 'pending_review',
+      [`usuarios/${uid}/creatorCompliance`]: compliance,
+      [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
+      [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
+      [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
+      [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
+      [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
+      [`usuarios/${uid}/creatorProfile/monetizationStatus`]: 'pending_review',
+      [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: false,
+      [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
+      [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: 'pending_review',
+      [`usuarios_publicos/${uid}/updatedAt`]: now,
+    });
+    await pushUserNotification(db, uid, {
+      type: 'creator_monetization',
+      title: 'Monetizacao em analise',
+      message:
+        'Seus dados para monetizacao foram enviados. Voce continua publicando normalmente; a equipe revisara antes de ativar repasses.',
+      data: { monetizationStatus: 'pending_review', readPath: '/perfil' },
+    });
+    await notifyCreatorRequestAdmins(db, {
+      applicantUid: uid,
+      displayName,
+      monetizationPreference: 'monetize',
+      monetizationOnly: true,
+    });
+    return {
+      ok: true,
+      status: 'approved',
+      alreadyMangaka: true,
+      monetizationPendingReviewSubmitted: true,
+    };
+  }
 
   const creatorMonetizationStatusForRecord =
     monetizationPreference === 'monetize' ? 'pending_review' : 'disabled';
@@ -4667,6 +5251,43 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     now,
   });
 
+  if (monetizationPreference === 'publish_only') {
+    const prePatch = {
+      [`usuarios/${uid}/creator`]: creatorDocSubmit,
+      [`usuarios/${uid}/signupIntent`]: 'creator',
+      [`usuarios/${uid}/creatorApplication`]: creatorApplication,
+      [`usuarios/${uid}/creatorDisplayName`]: displayName,
+      [`usuarios/${uid}/creatorBio`]: bioShort,
+      [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
+      [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
+      [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
+      [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
+      [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
+      [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
+      [`usuarios/${uid}/creatorBannerUrl`]: null,
+      [`usuarios_publicos/${uid}/creatorBannerUrl`]: null,
+      [`usuarios/${uid}/birthDate`]: birthDateRaw,
+      [`usuarios/${uid}/birthYear`]: Number.isInteger(birthYearFromDate) ? birthYearFromDate : null,
+      [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
+      [`usuarios_publicos/${uid}/updatedAt`]: now,
+      [`usuarios/${uid}/creatorTermsAccepted`]: true,
+      [`usuarios/${uid}/creatorCompliance`]: null,
+    };
+    await db.ref().update(prePatch);
+    const snapAfter = await userRef.get();
+    const rowAfter = snapAfter.val() || {};
+    await finalizeCreatorApplicationApproval(db, uid, rowAfter, uid, { isAutoPublishOnly: true });
+    return {
+      ok: true,
+      status: 'approved',
+      autoApproved: true,
+      application: creatorApplication,
+      monetizationPreference,
+      monetizationRequested,
+      isAdult,
+    };
+  }
+
   const patch = {
     [`usuarios/${uid}/creator`]: creatorDocSubmit,
     [`usuarios/${uid}/signupIntent`]: 'creator',
@@ -4675,7 +5296,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     [`usuarios/${uid}/creatorDisplayName`]: displayName,
     [`usuarios/${uid}/creatorBio`]: bioShort,
     [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
-    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationPreference === 'monetize' ? 'pending_review' : 'disabled',
+    [`usuarios/${uid}/creatorMonetizationStatus`]: 'pending_review',
     [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
     [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
     [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
@@ -4704,13 +5325,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   }
   await db.ref().update(patch);
 
-  let notifMessage = 'Seu pedido de criador para publicar na plataforma foi enviado para analise.';
-  if (monetizationPreference === 'monetize') {
-    notifMessage = 'Seu pedido de criador com monetizacao foi enviado para analise.';
-  } else if (monetizationRequested && !isAdult) {
-    notifMessage =
-      'Voce pode publicar como criador; a monetizacao nao esta disponivel para menores de 18 anos. Seu pedido foi registrado em modo apenas publicar.';
-  }
+  const notifMessage = 'Seu pedido de criador com monetizacao foi enviado para analise.';
 
   await pushUserNotification(db, uid, {
     type: 'creator_application',
@@ -4742,218 +5357,7 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
     throw new HttpsError('not-found', 'Usuario nao encontrado.');
   }
   const row = snap.val() || {};
-  const now = Date.now();
-  const application = row?.creatorApplication && typeof row.creatorApplication === 'object'
-    ? row.creatorApplication
-    : {};
-  const displayName = String(row?.creatorDisplayName || application.displayName || row?.userName || '').trim() || 'Criador';
-  const currentUserAvatar = String(row?.userAvatar || '').trim();
-  const approvedCreatorAvatar = String(
-    application.profileImageUrl || row?.creatorPendingProfileImageUrl || row?.userAvatar || ''
-  ).trim();
-  const bioShort = String(row?.creatorBio || application.bioShort || '').trim();
-  const bannerUrl = '';
-  const instagramUrl = String(row?.instagramUrl || application?.socialLinks?.instagramUrl || '').trim();
-  const youtubeUrl = String(row?.youtubeUrl || application?.socialLinks?.youtubeUrl || '').trim();
-  const monetizationPreference = String(
-    row?.creatorMonetizationPreference || application?.monetizationPreference || 'publish_only'
-  ).trim().toLowerCase() === 'monetize'
-    ? 'monetize'
-    : 'publish_only';
-  const age = resolveCreatorAgeYears(row);
-  const isUnderage = age != null && age < 18;
-  const membershipFromRow = Number(row?.creatorMembershipPriceBRL);
-  const donationFromRow = Number(row?.creatorDonationSuggestedBRL);
-  const defaultMembershipBrl = 12;
-  const defaultDonationBrl = 7;
-  let membershipPrice = membershipFromRow;
-  let donationSuggested = donationFromRow;
-  if (monetizationPreference === 'monetize' && !isUnderage) {
-    if (!Number.isFinite(membershipPrice) || membershipPrice < 1) membershipPrice = defaultMembershipBrl;
-    if (!Number.isFinite(donationSuggested) || donationSuggested < 1) donationSuggested = defaultDonationBrl;
-  }
-  const hasMonetizationConfig =
-    monetizationPreference === 'monetize' &&
-    !isUnderage &&
-    row?.creatorMembershipEnabled !== false &&
-    Number.isFinite(membershipPrice) &&
-    membershipPrice >= 1 &&
-    Number.isFinite(donationSuggested) &&
-    donationSuggested >= 1;
-  const monetizationStatus =
-    monetizationPreference === 'monetize'
-      ? (isUnderage ? 'blocked_underage' : hasMonetizationConfig ? 'active' : 'pending_review')
-      : 'disabled';
-  const creatorUsername = slugifyCreatorUsername(displayName, uid);
-  const creatorProfile = {
-    creatorId: uid,
-    displayName,
-    username: creatorUsername,
-    bioShort,
-    bioFull: String(row?.creatorBio || '').trim(),
-    avatarUrl: approvedCreatorAvatar || '',
-    bannerUrl,
-    socialLinks: {
-      instagramUrl: instagramUrl || null,
-      youtubeUrl: youtubeUrl || null,
-    },
-    monetizationEnabled: monetizationStatus === 'active',
-    monetizationPreference,
-    monetizationStatus,
-    ageVerified: age != null,
-    status: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-    createdAt: row?.creatorProfile?.createdAt || now,
-    updatedAt: now,
-  };
-
-  await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).set({
-    role: 'mangaka',
-    permissions: defaultMangakaPermissions(),
-    updatedAt: now,
-    updatedBy: request.auth.uid,
-  });
-
-  const authUser = await getAuth().getUser(uid);
-  const prevClaims = { ...(authUser.customClaims || {}) };
-  delete prevClaims.admin;
-  prevClaims.panelRole = 'mangaka';
-  await getAuth().setCustomUserClaims(uid, prevClaims);
-  if (approvedCreatorAvatar && approvedCreatorAvatar !== authUser.photoURL) {
-    await getAuth().updateUser(uid, { photoURL: approvedCreatorAvatar });
-  }
-
-  const creatorDocApproved = assembleCreatorRecordForRtdb({
-    row,
-    birthDateIso: String(row?.birthDate || '').trim(),
-    displayName,
-    bio: bioShort,
-    instagramUrl,
-    youtubeUrl,
-    monetizationPreference,
-    creatorMonetizationStatus: monetizationStatus,
-    compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
-    now,
-  });
-
-  await db.ref().update({
-    [`usuarios/${uid}/creator`]: creatorDocApproved,
-    [`usuarios/${uid}/role`]: 'mangaka',
-    [`usuarios/${uid}/signupIntent`]: 'creator',
-    [`usuarios/${uid}/creatorApplicationStatus`]: 'approved',
-    [`usuarios/${uid}/creatorApplication/status`]: 'approved',
-    [`usuarios/${uid}/creatorApplication/updatedAt`]: now,
-    [`usuarios/${uid}/creatorApprovedAt`]: now,
-    [`usuarios/${uid}/creatorRejectedAt`]: null,
-    [`usuarios/${uid}/creatorReviewedBy`]: request.auth.uid,
-    [`usuarios/${uid}/creatorReviewReason`]: null,
-    [`usuarios/${uid}/creatorModerationAction`]: 'approved',
-    [`usuarios/${uid}/creatorModerationBy`]: request.auth.uid,
-    [`usuarios/${uid}/creatorModeratedAt`]: now,
-    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/creatorOnboardingStartedAt`]: row?.creatorOnboardingStartedAt || now,
-    [`usuarios/${uid}/creatorOnboardingCompleted`]: row?.creatorOnboardingCompleted === true,
-    [`usuarios/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
-    [`usuarios/${uid}/creatorProfile`]: creatorProfile,
-    [`usuarios/${uid}/creatorPendingProfileImageUrl`]: null,
-    [`usuarios/${uid}/creatorPendingProfileImageCrop`]: null,
-    [`usuarios/${uid}/creatorBannerUrl`]: null,
-    [`usuarios/${uid}/creatorStatus`]: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-    [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
-    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
-    [`usuarios/${uid}/creatorMembershipEnabled`]:
-      monetizationStatus === 'active' ? row?.creatorMembershipEnabled !== false : false,
-    [`usuarios/${uid}/creatorMembershipPriceBRL`]:
-      monetizationStatus === 'active' && hasMonetizationConfig ? membershipPrice : null,
-    [`usuarios/${uid}/creatorDonationSuggestedBRL`]:
-      monetizationStatus === 'active' && hasMonetizationConfig ? donationSuggested : null,
-    [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
-    [`usuarios_publicos/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
-    [`usuarios_publicos/${uid}/creatorDisplayName`]: displayName,
-    [`usuarios_publicos/${uid}/creatorUsername`]: creatorUsername,
-    [`usuarios_publicos/${uid}/creatorBio`]: bioShort,
-    [`usuarios_publicos/${uid}/creatorBannerUrl`]: null,
-    [`usuarios_publicos/${uid}/instagramUrl`]: instagramUrl || null,
-    [`usuarios_publicos/${uid}/youtubeUrl`]: youtubeUrl || null,
-    [`usuarios_publicos/${uid}/creatorStatus`]: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
-    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]:
-      monetizationStatus === 'active' ? row?.creatorMembershipEnabled !== false : false,
-    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]:
-      monetizationStatus === 'active' && hasMonetizationConfig ? membershipPrice : null,
-    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]:
-      monetizationStatus === 'active' && hasMonetizationConfig ? donationSuggested : null,
-    [`usuarios_publicos/${uid}/creatorProfile`]: {
-      creatorId: uid,
-      userId: uid,
-      displayName,
-      username: creatorUsername,
-      bioShort,
-      bioFull: String(row?.creatorBio || '').trim(),
-      avatarUrl: approvedCreatorAvatar || currentUserAvatar || '',
-      bannerUrl: '',
-      socialLinks: {
-        instagramUrl: instagramUrl || null,
-        youtubeUrl: youtubeUrl || null,
-      },
-      stats: {
-        followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
-        totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
-        totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
-        totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
-      },
-      createdAt: row?.creatorProfile?.createdAt || now,
-      updatedAt: now,
-    },
-    [`usuarios_publicos/${uid}/stats`]: {
-      followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
-      totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
-      totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
-      totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
-    },
-    [`usuarios_publicos/${uid}/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
-    [`usuarios_publicos/${uid}/userName`]: displayName,
-    [`usuarios_publicos/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
-    [`usuarios_publicos/${uid}/accountType`]: String(row?.accountType || 'comum'),
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
-    [`creators/${uid}/stats/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
-    [`creators/${uid}/stats/likesTotal`]: Number(row?.creatorProfile?.stats?.totalLikes || 0),
-    [`creators/${uid}/stats/totalViews`]: Number(row?.creatorProfile?.stats?.totalViews || 0),
-    [`creators/${uid}/stats/commentsTotal`]: Number(row?.creatorProfile?.stats?.totalComments || 0),
-    [`creators/${uid}/stats/membersCount`]: Number(row?.creatorProfile?.stats?.membersCount || 0),
-    [`creators/${uid}/stats/revenueTotal`]: Number(row?.creatorProfile?.stats?.revenueTotal || 0),
-    [`creators/${uid}/stats/uniqueReaders`]: Number(row?.creatorProfile?.stats?.uniqueReaders || 0),
-    [`creators/${uid}/stats/updatedAt`]: now,
-  });
-
-  const approvalMessage =
-    monetizationStatus === 'blocked_underage'
-      ? 'Voce foi aprovado para publicar, mas a monetizacao ficou bloqueada por idade. Sua conta esta liberada apenas para publicacao.'
-      : monetizationStatus === 'active'
-        ? 'Voce foi aprovado como criador e sua monetizacao foi ativada.'
-        : monetizationPreference === 'monetize'
-          ? 'Voce foi aprovado como criador. Agora finalize sua configuracao de membership para concluir a monetizacao.'
-          : 'Voce foi aprovado como criador para publicar na plataforma.';
-  await notifyUserByPreference(db, uid, row || {}, {
-    kind: 'creator_lifecycle',
-    notification: {
-      type: 'creator_application',
-      title: 'Solicitacao aprovada',
-      message: approvalMessage,
-      data: {
-        status: 'approved',
-        creatorStatus: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-        monetizationStatus,
-        monetizationPreference,
-        readPath: '/perfil',
-      },
-    },
-    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
-      title: 'Solicitacao aprovada',
-      subject: 'Sua solicitacao de criador foi aprovada',
-      message: approvalMessage,
-    }),
-  });
-
+  await finalizeCreatorApplicationApproval(db, uid, row, request.auth.uid, { isAutoPublishOnly: false });
   return { ok: true, uid, status: 'approved' };
 });
 
@@ -5190,6 +5594,86 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
   });
 
   return { ok: true, uid, monetizationStatus: 'disabled' };
+});
+
+function maskPixKeyForAdminSnapshot(rawPixKey) {
+  const value = String(rawPixKey || '').trim();
+  if (!value) return null;
+  if (value.length <= 6) return value;
+  return `${value.slice(0, 3)}***${value.slice(-3)}`;
+}
+
+export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  requireSuperAdmin(request.auth);
+  const uid = String(request.data?.uid || '').trim();
+  if (!uid) {
+    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
+  }
+  const db = getDatabase();
+  const [userSnap, balanceSnap] = await Promise.all([
+    db.ref(`usuarios/${uid}`).get(),
+    db.ref(`creatorData/${uid}/balance`).get(),
+  ]);
+  if (!userSnap.exists()) {
+    throw new HttpsError('not-found', 'Criador nao encontrado.');
+  }
+  const row = userSnap.val() || {};
+  if (String(row?.role || '').trim().toLowerCase() !== 'mangaka') {
+    throw new HttpsError('failed-precondition', 'Este usuario ainda nao e um criador aprovado.');
+  }
+  const balance = balanceSnap.exists() ? balanceSnap.val() || {} : {};
+  const available = round2(Number(balance?.availableBRL || 0));
+  if (!available || available <= 0) {
+    throw new HttpsError('failed-precondition', 'Este criador nao possui saldo disponivel para repasse.');
+  }
+  const requestedAmount = request.data?.amount == null ? available : round2(Number(request.data.amount));
+  if (!requestedAmount || requestedAmount <= 0) {
+    throw new HttpsError('invalid-argument', 'amount invalido.');
+  }
+  if (requestedAmount - available > 0.009) {
+    throw new HttpsError('failed-precondition', 'O valor informado excede o saldo disponivel do criador.');
+  }
+  const compliance = row?.creatorCompliance && typeof row.creatorCompliance === 'object'
+    ? row.creatorCompliance
+    : null;
+  requireMonetizationComplianceOrThrow(compliance);
+  const payoutId = await recordCreatorManualPixPayout(db, {
+    creatorId: uid,
+    amount: requestedAmount,
+    currency: 'BRL',
+    pixType: String(compliance?.payoutPixType || '').trim().toLowerCase() || null,
+    pixKeyMasked: maskPixKeyForAdminSnapshot(compliance?.payoutInstructions),
+    paidByUid: request.auth.uid,
+    externalTransferId: request.data?.externalTransferId ? String(request.data.externalTransferId) : null,
+    notes: request.data?.notes ? String(request.data.notes) : null,
+    paidAt: Date.now(),
+  });
+  if (!payoutId) {
+    throw new HttpsError('internal', 'Nao foi possivel registrar o repasse manual.');
+  }
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: 'creator_payout',
+      title: 'Repasse PIX registrado',
+      message: `Um repasse manual de ${requestedAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} foi marcado pela equipe.`,
+      data: {
+        payoutId,
+        amount: requestedAmount,
+        readPath: '/perfil',
+      },
+    },
+  });
+  return {
+    ok: true,
+    uid,
+    payoutId,
+    amount: requestedAmount,
+    remainingAvailableBRL: round2(Math.max(0, available - requestedAmount)),
+  };
 });
 
 export const markUserNotificationRead = onCall({ region: 'us-central1' }, async (request) => {
@@ -5746,6 +6230,23 @@ export const adminListVisibleStoreOrders = onCall({ region: 'us-central1' }, asy
   return { ok: true, orders: list, scopedToCreator: false };
 });
 
+export const listMyStoreOrders = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const uid = request.auth.uid;
+  const snap = await getDatabase()
+    .ref('loja/pedidos')
+    .orderByChild('uid')
+    .equalTo(uid)
+    .get();
+  const orders = snap.val() || {};
+  const list = Object.entries(orders)
+    .map(([id, row]) => ({ id, ...(row || {}) }))
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  return { ok: true, orders: list };
+});
+
 export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
@@ -5761,8 +6262,12 @@ export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, as
   }
   const statusRaw = body.status == null ? '' : String(body.status).trim();
   const trackingCode = body.trackingCode == null ? null : String(body.trackingCode || '').trim();
-  if (!statusRaw && trackingCode == null) {
-    throw new HttpsError('invalid-argument', 'Envie status ou trackingCode.');
+  const productionChecklist =
+    body.productionChecklist && typeof body.productionChecklist === 'object'
+      ? body.productionChecklist
+      : null;
+  if (!statusRaw && trackingCode == null && !productionChecklist) {
+    throw new HttpsError('invalid-argument', 'Envie status, trackingCode ou productionChecklist.');
   }
 
   const orderRef = getDatabase().ref(`loja/pedidos/${orderId}`);
@@ -5792,17 +6297,43 @@ export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, as
   }
 
   if (statusRaw) {
-    const allowed = new Set(['pending', 'paid', 'processing', 'shipped', 'delivered', 'cancelled']);
+    const allowed = new Set([
+      'pending',
+      'pending_payment',
+      'paid',
+      'order_received',
+      'processing',
+      'in_production',
+      'shipped',
+      'delivered',
+      'cancelled',
+    ]);
     if (!allowed.has(statusRaw)) {
       throw new HttpsError('invalid-argument', 'Status invalido.');
     }
     patch.status = statusRaw;
+    if (statusRaw === 'delivered') {
+      patch.payoutStatus = 'released';
+      patch.payoutReleasedAt = Date.now();
+    } else if (statusRaw === 'order_received' || statusRaw === 'processing' || statusRaw === 'in_production' || statusRaw === 'shipped') {
+      patch.payoutStatus = 'held';
+    }
   }
   if (trackingCode != null) {
     if (trackingCode.length > 80) {
       throw new HttpsError('invalid-argument', 'trackingCode muito longo.');
     }
     patch.trackingCode = trackingCode;
+  }
+  if (productionChecklist) {
+    patch.productionChecklist = {
+      printing: productionChecklist.printing === true,
+      organizing: productionChecklist.organizing === true,
+      gluing: productionChecklist.gluing === true,
+      pressing: productionChecklist.pressing === true,
+      cutting: productionChecklist.cutting === true,
+      finishing: productionChecklist.finishing === true,
+    };
   }
 
   await orderRef.update(patch);
@@ -5861,6 +6392,14 @@ export const adminRevokeAllSessions = onCall(
     return { ok: true, revoked };
   }
 );
+
+export {
+  submitPrintOnDemandOrder,
+  listMyPrintOnDemandOrders,
+  adminListPrintOnDemandOrders,
+  adminUpdatePrintOnDemandOrder,
+  adminPatchPrintOnDemandOrderSuper,
+} from './printOnDemandOrders.js';
 
 export const dashboardRollupMensal = onSchedule(
   {

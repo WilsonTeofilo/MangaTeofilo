@@ -6,8 +6,10 @@ import { db, functions } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
+import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
 import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './CriadorPublico.css';
 
 function normalizarRede(url) {
@@ -84,6 +86,8 @@ export default function CreatorPublicProfilePage({ user }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followMessage, setFollowMessage] = useState('');
+  const [followBrowserPushModalOpen, setFollowBrowserPushModalOpen] = useState(false);
+  const [followBrowserPushPermission, setFollowBrowserPushPermission] = useState('default');
   const [publicoReady, setPublicoReady] = useState(false);
   const [obrasReady, setObrasReady] = useState(false);
   const [sortObras, setSortObras] = useState('recent');
@@ -208,8 +212,12 @@ export default function CreatorPublicProfilePage({ user }) {
     String(perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar || '').trim() ||
     '/assets/fotos/shito.jpg';
   const heroBackdropUrl = creatorPublicHeroImageUrl(perfilPublico);
-  const creatorMonetizationStatus = String(perfilPublico?.creatorMonetizationStatus || '').trim().toLowerCase();
-  const membershipEnabled = creatorMonetizationStatus === 'active' && perfilPublico?.creatorMembershipEnabled === true;
+  const creatorMonetizationStatus = effectiveCreatorMonetizationStatus(
+    perfilPublico?.creatorMonetizationPreference,
+    perfilPublico?.creatorMonetizationStatus
+  );
+  const supportEnabled = creatorMonetizationStatus === 'active';
+  const membershipEnabled = supportEnabled && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
   const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
   const moderation = String(perfilPublico?.creatorModerationAction || '').trim().toLowerCase();
@@ -239,13 +247,13 @@ export default function CreatorPublicProfilePage({ user }) {
     try {
       const { data } = await toggleCreatorFollow({ creatorId: creatorUid });
       setIsFollowing(data?.isFollowing === true);
-      if (data?.isFollowing === true && typeof window !== 'undefined' && typeof Notification !== 'undefined') {
-        const wantsBrowserNotifications = window.confirm(
-          'Voce começou a seguir este criador. Deseja receber avisos no navegador quando sair capitulo novo?'
-        );
-        if (wantsBrowserNotifications && Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
+      if (data?.isFollowing === true) {
+        const perm =
+          typeof window === 'undefined' || typeof Notification === 'undefined'
+            ? 'unsupported'
+            : Notification.permission;
+        setFollowBrowserPushPermission(perm);
+        setFollowBrowserPushModalOpen(true);
       }
       setPerfilPublico((current) => {
         if (!current || typeof current !== 'object') return current;
@@ -324,6 +332,13 @@ export default function CreatorPublicProfilePage({ user }) {
 
   return (
     <main className="criador-page">
+      <BrowserPushPreferenceModal
+        open={followBrowserPushModalOpen}
+        permission={followBrowserPushPermission}
+        title="Avisos no navegador"
+        description="Você passou a seguir este criador. Quer receber notificação aqui no navegador quando sair capítulo novo?"
+        onClose={() => setFollowBrowserPushModalOpen(false)}
+      />
       <section className="criador-hero criador-hero--blur-backdrop">
         <div className="criador-hero__backdrop" aria-hidden="true">
           <div
@@ -347,9 +362,9 @@ export default function CreatorPublicProfilePage({ user }) {
                 {followBusy ? 'Atualizando...' : isFollowing ? 'Seguindo' : 'Seguir'}
               </button>
             ) : null}
-            {membershipEnabled ? (
+            {supportEnabled ? (
               <button type="button" onClick={() => navigate(apoiePathParaCriador(creatorUid))}>
-                Apoiar
+                Apoie-me
               </button>
             ) : null}
             <button
@@ -379,12 +394,17 @@ export default function CreatorPublicProfilePage({ user }) {
             </article>
             <article>
               <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : '—'}</strong>
-              <span>{membershipEnabled ? 'membership /30d' : 'apoiar no site'}</span>
+              <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponivel'}</span>
             </article>
           </div>
           <p className="criador-hero__support-copy">
             Seguir este criador ajuda a plataforma a destacar lancamentos e novidades quando estiverem ativas.
           </p>
+          {!supportEnabled ? (
+            <p className="criador-hero__support-copy">
+              Este criador esta em modo apenas publicar. Apoio e membership ainda nao estao disponiveis.
+            </p>
+          ) : null}
           {membershipEnabled ? (
             <p className="criador-hero__support-copy">
               <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias — acesso antecipado nas obras
@@ -419,7 +439,7 @@ export default function CreatorPublicProfilePage({ user }) {
               <li>Apoio direto ao trabalho autoral</li>
             </ul>
             <button type="button" className="criador-support-cta" onClick={() => navigate(apoiePathParaCriador(creatorUid))}>
-              Quero apoiar
+              Apoie-me
             </button>
           </div>
         </section>

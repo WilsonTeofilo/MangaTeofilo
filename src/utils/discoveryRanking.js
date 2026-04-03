@@ -1,4 +1,6 @@
-import { obterObraIdCapitulo, obraCreatorId } from '../config/obras';
+import { obterObraIdCapitulo } from '../config/obras';
+import { resolvePublicCreatorName } from './publicCreatorName';
+import { resolveEffectiveWorkCreatorId } from './workCreatorResolution';
 
 function parseGenres(obra) {
   if (Array.isArray(obra?.generos)) {
@@ -115,8 +117,8 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
 
   const works = obras.map((obra) => {
     const obraId = String(obra?.id || '').toLowerCase();
-    const creatorId = obraCreatorId(obra);
     const caps = chaptersByWork.get(obraId) || [];
+    const creatorId = resolveEffectiveWorkCreatorId(obra, caps);
     const publicCaps = publicChaptersByWork.get(obraId) || [];
     const ultimoCap = publicCaps[0] || null;
     const chapterViews = caps.reduce((sum, cap) => sum + chapterViewsCount(cap), 0);
@@ -176,9 +178,11 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
       const views = creatorWorks.reduce((sum, obra) => sum + numeric(obra?.totalViews), 0);
       const comments = creatorWorks.reduce((sum, obra) => sum + numeric(obra?.totalComments), 0);
       const recentWorks = creatorWorks.filter((obra) => recentBoost(obra?.lastUpdateTs) > 0).length;
-      const displayName =
-        String(profile?.creatorProfile?.displayName || profile?.creatorDisplayName || profile?.userName || '').trim() ||
-        'Criador';
+      const displayName = resolvePublicCreatorName({
+        creatorPublicProfile: profile,
+        obra: null,
+        fallback: 'Autor',
+      });
       const username = String(
         profile?.creatorProfile?.username || profile?.creatorUsername || profile?.username || creatorId
       ).trim();

@@ -46,6 +46,19 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
     callablePayload.profileImageCrop = serializeCreatorProfileCrop(
       payload.creatorProfileImageAdjustment
     );
+  } else {
+    const pass = String(payload.profileImageUrl || '').trim();
+    if (/^https:\/\//i.test(pass) && pass.length >= 12 && pass.length <= 2048) {
+      callablePayload.profileImageUrl = pass;
+    }
+    if (payload.profileImageCrop && typeof payload.profileImageCrop === 'object') {
+      callablePayload.profileImageCrop = {
+        zoom: Number(payload.profileImageCrop.zoom || 1),
+        x: Number(payload.profileImageCrop.x || 0),
+        y: Number(payload.profileImageCrop.y || 0),
+        mode: 'responsive-fit',
+      };
+    }
   }
 
   const { data } = await creatorSubmitApplication(callablePayload);
@@ -63,5 +76,8 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
     }
   }
 
-  return { data };
+  const profileImageUrl =
+    String(callablePayload.profileImageUrl || data?.application?.profileImageUrl || '').trim() || '';
+
+  return { data, profileImageUrl };
 }

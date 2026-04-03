@@ -21,6 +21,11 @@ const adminApproveCreatorApplication = httpsCallable(functions, 'adminApproveCre
 const adminRejectCreatorApplication = httpsCallable(functions, 'adminRejectCreatorApplication');
 const adminApproveCreatorMonetization = httpsCallable(functions, 'adminApproveCreatorMonetization');
 const adminRejectCreatorMonetization = httpsCallable(functions, 'adminRejectCreatorMonetization');
+const adminRecordCreatorPixPayout = httpsCallable(functions, 'adminRecordCreatorPixPayout');
+
+function brl(v) {
+  return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 function statusLabel(status) {
   const norm = String(status || '').trim().toLowerCase();
@@ -90,6 +95,13 @@ function CreatorDetailDrawer({
   onRejectApplication,
   onApproveMonetization,
   onRejectMonetization,
+  payoutAmountDraft,
+  onPayoutAmountDraftChange,
+  payoutTransferId,
+  onPayoutTransferIdChange,
+  payoutNotes,
+  onPayoutNotesChange,
+  onSubmitPayout,
 }) {
   const uid = item.uid;
   const isPending = item.creatorApplicationStatus === 'requested';
@@ -107,6 +119,10 @@ function CreatorDetailDrawer({
   const complianceGate = mon ? evaluateMonetizationComplianceAdmin(compliance) : { ok: true, reasons: [] };
   const minorMonetizeWarn = mon && ageI.isAdult === false;
   const canLiberarMonetizacao = complianceGate.ok;
+  const balance = item.creatorBalanceAdmin || null;
+  const recentPayouts = Array.isArray(item.creatorRecentPayoutsAdmin) ? item.creatorRecentPayoutsAdmin : [];
+  const availableForPayout = Number(balance?.availableBRL || 0);
+  const canRegisterPayout = availableForPayout > 0;
 
   return createPortal(
     <>
@@ -336,6 +352,90 @@ function CreatorDetailDrawer({
               ) : null}
             </dl>
           </section>
+
+          <section className="criadores-admin-section criadores-admin-section--money">
+            <h3 className="criadores-admin-section__title">Saldo e repasse manual</h3>
+            <dl className="criadores-admin-dl">
+              <div>
+                <dt>Saldo disponivel</dt>
+                <dd>{brl(balance?.availableBRL || 0)}</dd>
+              </div>
+              <div>
+                <dt>Pendente para repasse</dt>
+                <dd>{brl(balance?.pendingPayoutBRL || 0)}</dd>
+              </div>
+              <div>
+                <dt>Liquido acumulado</dt>
+                <dd>{brl(balance?.lifetimeNetBRL || 0)}</dd>
+              </div>
+              <div>
+                <dt>Ja repassado</dt>
+                <dd>{brl(balance?.paidOutBRL || 0)}</dd>
+              </div>
+            </dl>
+            {balance?.lastPayoutAt ? (
+              <p className="criadores-admin-compliance-hint">
+                Ultimo repasse registrado em {formatarDataHoraBr(balance.lastPayoutAt)}.
+              </p>
+            ) : null}
+            <div className="financeiro-grid" style={{ marginTop: 12 }}>
+              <label>
+                Valor do PIX manual
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={rowBusy || !canRegisterPayout}
+                  value={payoutAmountDraft}
+                  onChange={(e) => onPayoutAmountDraftChange(e.target.value)}
+                  placeholder={availableForPayout > 0 ? String(availableForPayout.toFixed(2)) : '0.00'}
+                />
+              </label>
+              <label>
+                Comprovante / id externo
+                <input
+                  disabled={rowBusy || !canRegisterPayout}
+                  value={payoutTransferId}
+                  onChange={(e) => onPayoutTransferIdChange(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </label>
+              <label className="financeiro-grid-full">
+                Observacoes do repasse
+                <textarea
+                  className="criadores-admin-textarea"
+                  rows={3}
+                  disabled={rowBusy || !canRegisterPayout}
+                  value={payoutNotes}
+                  onChange={(e) => onPayoutNotesChange(e.target.value)}
+                  placeholder="Ex.: PIX manual feito no banco X."
+                />
+              </label>
+            </div>
+            <div className="criadores-admin-actions-row">
+              <button
+                type="button"
+                disabled={rowBusy || !canRegisterPayout}
+                onClick={() => onSubmitPayout(uid)}
+              >
+                {rowBusy ? 'Salvando…' : 'Marcar PIX manual como pago'}
+              </button>
+            </div>
+            {!canRegisterPayout ? (
+              <p className="criadores-admin-compliance-hint">Sem saldo disponivel para repasse neste momento.</p>
+            ) : null}
+            {recentPayouts.length ? (
+              <ul className="admin-staff-stack" style={{ marginTop: 12 }}>
+                {recentPayouts.map((payout) => (
+                  <li key={payout.payoutId}>
+                    <strong>{brl(payout.amount || 0)}</strong> · {payout.status || 'pago'} ·{' '}
+                    {payout.paidAt ? formatarDataHoraBr(payout.paidAt) : 'sem data'}
+                    {payout.pixKeyMasked ? <> · PIX {payout.pixKeyMasked}</> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
         </div>
 
         <footer className="criadores-admin-drawer__foot">
@@ -435,6 +535,9 @@ export default function CriadoresAdmin() {
   const [rejectReasons, setRejectReasons] = useState({});
   const [rejectAsBan, setRejectAsBan] = useState({});
   const [monetizationReasons, setMonetizationReasons] = useState({});
+  const [payoutAmounts, setPayoutAmounts] = useState({});
+  const [payoutTransferIds, setPayoutTransferIds] = useState({});
+  const [payoutNotesByUid, setPayoutNotesByUid] = useState({});
   const [detailUid, setDetailUid] = useState('');
 
   const load = useCallback(async () => {
@@ -474,7 +577,11 @@ export default function CriadoresAdmin() {
     const approved = applications.filter((item) => item.creatorApplicationStatus === 'approved').length;
     const onboarding = applications.filter((item) => item.creatorStatus === 'onboarding').length;
     const monetizationReview = applications.filter((item) => item.creatorMonetizationStatus === 'pending_review').length;
-    return { pending, approved, onboarding, monetizationReview };
+    const availablePayout = applications.reduce(
+      (acc, item) => acc + Number(item?.creatorBalanceAdmin?.availableBRL || 0),
+      0
+    );
+    return { pending, approved, onboarding, monetizationReview, availablePayout };
   }, [applications]);
 
   const detailItem = useMemo(
@@ -572,6 +679,44 @@ export default function CriadoresAdmin() {
     }
   };
 
+  const handleSubmitPayout = async (uid) => {
+    if (!uid) return;
+    const detail = applications.find((item) => item.uid === uid);
+    const available = Number(detail?.creatorBalanceAdmin?.availableBRL || 0);
+    if (!(available > 0)) {
+      setError('Este criador nao possui saldo disponivel para repasse.');
+      return;
+    }
+    const rawAmount = String(payoutAmounts[uid] || '').trim().replace(',', '.');
+    const parsedAmount = rawAmount ? Number(rawAmount) : available;
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError('Informe um valor de repasse valido.');
+      return;
+    }
+    setBusyUid(uid);
+    setMessage('');
+    setError('');
+    try {
+      const { data } = await adminRecordCreatorPixPayout({
+        uid,
+        amount: parsedAmount,
+        externalTransferId: String(payoutTransferIds[uid] || '').trim() || null,
+        notes: String(payoutNotesByUid[uid] || '').trim() || null,
+      });
+      setMessage(
+        `Repasse PIX manual registrado em ${brl(data?.amount || parsedAmount)}. Saldo restante: ${brl(data?.remainingAvailableBRL || 0)}.`
+      );
+      setPayoutAmounts((prev) => ({ ...prev, [uid]: '' }));
+      setPayoutTransferIds((prev) => ({ ...prev, [uid]: '' }));
+      setPayoutNotesByUid((prev) => ({ ...prev, [uid]: '' }));
+      await load();
+    } catch (err) {
+      setError(mensagemErroCallable(err));
+    } finally {
+      setBusyUid('');
+    }
+  };
+
   return (
     <main className="admin-empty-page admin-team-page">
       <section className="admin-empty-card admin-team-shell">
@@ -603,6 +748,10 @@ export default function CriadoresAdmin() {
             <span>Monetizacao pendente</span>
             <strong>{summary.monetizationReview}</strong>
           </article>
+          <article className="admin-team-stat-card">
+            <span>Saldo criadores</span>
+            <strong>{brl(summary.availablePayout)}</strong>
+          </article>
         </section>
 
         <section className="admin-team-panel">
@@ -627,6 +776,7 @@ export default function CriadoresAdmin() {
                     <th>E-mail</th>
                     <th>Status</th>
                     <th>Monetização</th>
+                    <th>Saldo</th>
                     <th>Solicitado</th>
                     <th />
                   </tr>
@@ -653,6 +803,7 @@ export default function CriadoresAdmin() {
                           </span>
                         </td>
                         <td>{mon ? 'Sim' : 'Não'}</td>
+                        <td>{brl(item?.creatorBalanceAdmin?.availableBRL || 0)}</td>
                         <td>
                           {item.creatorRequestedAt
                             ? formatarDataHoraBr(item.creatorRequestedAt)
@@ -692,6 +843,13 @@ export default function CriadoresAdmin() {
           onRejectApplication={handleReject}
           onApproveMonetization={handleApproveMonetization}
           onRejectMonetization={handleRejectMonetization}
+          payoutAmountDraft={payoutAmounts[detailItem.uid] || ''}
+          onPayoutAmountDraftChange={(v) => setPayoutAmounts((p) => ({ ...p, [detailItem.uid]: v }))}
+          payoutTransferId={payoutTransferIds[detailItem.uid] || ''}
+          onPayoutTransferIdChange={(v) => setPayoutTransferIds((p) => ({ ...p, [detailItem.uid]: v }))}
+          payoutNotes={payoutNotesByUid[detailItem.uid] || ''}
+          onPayoutNotesChange={(v) => setPayoutNotesByUid((p) => ({ ...p, [detailItem.uid]: v }))}
+          onSubmitPayout={handleSubmitPayout}
         />
       ) : null}
     </main>

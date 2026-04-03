@@ -144,6 +144,10 @@
 
     "creatorData": {
       "$creatorUid": {
+        "balance": {
+          ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+          ".write": false
+        },
         "payments": {
           ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
           ".write": false,
@@ -156,6 +160,14 @@
           ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
           ".write": false,
           "$subscriptionId": {
+            ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+            ".write": false
+          }
+        },
+        "payouts": {
+          ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
+          ".write": false,
+          "$payoutId": {
             ".read": "auth != null && (auth.uid === $creatorUid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true)",
             ".write": false
           }
@@ -184,6 +196,36 @@
         ".write": false,
         "$productId": {
           ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+          "title": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length >= 2 && newData.val().length <= 120)"
+          },
+          "description": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 4000)"
+          },
+          "price": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() > 0 && newData.val() <= 50000)"
+          },
+          "costPrice": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 50000)"
+          },
+          "promoPrice": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 50000)"
+          },
+          "stock": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999)"
+          },
+          "weightGrams": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 50000)"
+          },
+          "shippingMode": {
+            ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'fixed' || newData.val() === 'region' || newData.val() === 'api'))"
+          },
+          "inventoryMode": {
+            ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'on_demand' || newData.val() === 'fixed'))"
+          },
+          "freeShippingThresholdBrl": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 50000)"
+          },
           "creatorId": {
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
           }
@@ -192,14 +234,35 @@
       "carrinhos": {
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
-          ".write": "auth != null && auth.uid === $uid"
+          ".write": "auth != null && auth.uid === $uid",
+          "updatedAt": {
+            ".validate": "!newData.exists() || newData.isNumber()"
+          },
+          "items": {
+            "$idx": {
+              "productId": {
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length >= 2 && newData.val().length <= 120)"
+              },
+              "quantity": {
+                ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 999999)"
+              },
+              "size": {
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 20)"
+              }
+            }
+          }
         }
       },
       "pedidos": {
+        ".indexOn": ["uid", "createdAt"],
         "$pedidoId": {
           ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
           ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
         }
+      },
+      "printOnDemandOrders": {
+        ".read": false,
+        ".write": false
       }
     },
 
@@ -224,6 +287,38 @@
         "creatorCompliance": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": false
+        },
+        "buyerProfile": {
+          "fullName": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 120)" },
+          "cpf": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{11}$/))" },
+          "phone": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{10,11}$/))" },
+          "postalCode": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{8}$/))" },
+          "state": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^[A-Z]{2}$/))" },
+          "city": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 80)" },
+          "neighborhood": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 80)" },
+          "addressLine1": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 180)" },
+          "addressLine2": { ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 180)" }
+        },
+        "creatorApplication": {
+          ".write": false
+        },
+        "creatorApplicationStatus": {
+          ".validate": "(newData.val() === null && (!data.exists() || data.val() === null)) || (newData.val() === 'draft' && (!data.exists() || data.val() === null || data.val() === 'draft')) || (newData.val() === data.val())"
+        },
+        "creatorRequestedAt": {
+          ".validate": "(newData.val() === null && (!data.exists() || data.val() === null)) || (newData.val() === data.val())"
+        },
+        "signupIntent": {
+          ".validate": "(newData.val() === 'reader' || newData.val() === 'creator') && (!data.exists() || newData.val() === data.val() || (data.val() === 'reader' && newData.val() === 'creator'))"
+        },
+        "creatorMonetizationPreference": {
+          ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'publish_only' || newData.val() === 'monetize'"
+        },
+        "creatorMonetizationStatus": {
+          ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'disabled' || newData.val() === 'blocked_underage' || newData.val() === 'pending_review' || newData.val() === data.val()"
+        },
+        "creatorMonetizationReviewReason": {
+          ".validate": "!newData.exists() || newData.val() === data.val()"
         },
         "creator": {
           "profile": {
@@ -318,6 +413,18 @@
         "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
         "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "signupIntent": {
+          ".validate": "(newData.val() === 'reader' || newData.val() === 'creator') && (!data.exists() || newData.val() === data.val() || (data.val() === 'reader' && newData.val() === 'creator'))"
+        },
+        "creatorMonetizationPreference": {
+          ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'publish_only' || newData.val() === 'monetize'"
+        },
+        "creatorMonetizationStatus": {
+          ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'disabled' || newData.val() === 'blocked_underage' || newData.val() === 'pending_review' || newData.val() === data.val()"
+        },
+        "creatorStatus": {
+          ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'active' || newData.val() === data.val()"
+        },
         "updatedAt":   { ".validate": "newData.isNumber()" },
         "followers": {
           ".write": false
@@ -337,8 +444,8 @@
         "stats": {
           ".read": "auth != null && auth.uid === $creatorId",
           "$field": {
-            ".validate": "$field.matches(/^(followersCount|totalViews|likesTotal|commentsTotal|uniqueReaders)$/) && newData.isNumber() && newData.val() >= 0",
-            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && $field.matches(/^(followersCount|totalViews|likesTotal|commentsTotal|uniqueReaders)$/) && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
+            ".validate": "$field.matches(/^(followersCount|totalViews|likesTotal|commentsTotal|uniqueReaders|revenueTotal|membersCount)$/) && newData.isNumber() && newData.val() >= 0",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && $field.matches(/^(followersCount|totalViews|likesTotal|commentsTotal|uniqueReaders|revenueTotal|membersCount)$/) && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
           }
         },
         "membersIndex": {
@@ -356,8 +463,8 @@
             ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
           },
           "$metric": {
-            ".validate": "$metric.matches(/^(followersAdded|totalViews|uniqueReaders|likesTotal|commentsTotal)$/) && newData.isNumber() && newData.val() >= 0",
-            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && $metric.matches(/^(followersAdded|totalViews|uniqueReaders|likesTotal|commentsTotal)$/) && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
+            ".validate": "$metric.matches(/^(followersAdded|totalViews|uniqueReaders|likesTotal|commentsTotal|revenueTotal|membersAdded)$/) && newData.isNumber() && newData.val() >= 0",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && $metric.matches(/^(followersAdded|totalViews|uniqueReaders|likesTotal|commentsTotal|revenueTotal|membersAdded)$/) && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
           }
         }
       }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
@@ -696,6 +696,26 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       { id: 5, label: 'Publicar', ok: etapa5 },
     ];
   }, [capaCapitulo, capituloEditando?.capaUrl, numeroCapitulo, titulo, totalPaginasAtual]);
+  const etapaUploadCompleta = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
+  const etapaOrganizacaoCompleta = totalPaginasAtual > 0;
+  const etapaCapaCompleta = Boolean(capaCapitulo || capituloEditando?.capaUrl);
+  const etapaRevisaoCompleta = Boolean(String(titulo || '').trim() && Number(numeroCapitulo) > 0);
+  const etapaLiberadaMax = useMemo(() => {
+    if (!etapaUploadCompleta) return 1;
+    if (!etapaOrganizacaoCompleta) return 2;
+    if (!etapaCapaCompleta) return 3;
+    if (!etapaRevisaoCompleta) return 4;
+    return 5;
+  }, [
+    etapaCapaCompleta,
+    etapaOrganizacaoCompleta,
+    etapaRevisaoCompleta,
+    etapaUploadCompleta,
+  ]);
+  const irParaEtapa = useCallback((etapaDestino) => {
+    const destino = Math.max(1, Math.min(5, Number(etapaDestino) || 1));
+    setEtapaAtiva(Math.min(destino, etapaLiberadaMax));
+  }, [etapaLiberadaMax]);
 
   useEffect(() => {
     return () => {
@@ -889,7 +909,9 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       return;
     }
     setArquivosPaginas((prev) => [...prev, ...novos]);
-    if (etapaAtiva < 2) setEtapaAtiva(2);
+    if (capaCapitulo || capituloEditando?.capaUrl) {
+      setEtapaAtiva(2);
+    }
   };
 
   const handleSelecionarCapa = (file) => {
@@ -903,7 +925,9 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     const ajustePadrao = normalizarCapaAjuste();
     setCapaAjuste(ajustePadrao);
     setCapaAjusteInicial(ajustePadrao);
-    if (etapaAtiva < 3) setEtapaAtiva(3);
+    if (totalPaginasAtual > 0) {
+      setEtapaAtiva(2);
+    }
   };
 
   const iniciarArrasteCapa = (event) => {
@@ -1191,7 +1215,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                   key={n}
                   type="button"
                   className={`editor-step-chip${etapaAtiva === n ? ' active' : ''}`}
-                  onClick={() => setEtapaAtiva(n)}
+                  disabled={n > etapaLiberadaMax}
+                  onClick={() => irParaEtapa(n)}
                 >
                   {n === 1 && '1. Upload'}
                   {n === 2 && '2. Organizar'}
@@ -1485,15 +1510,15 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 type="button"
                 className="btn-cancel"
                 disabled={etapaAtiva <= 1}
-                onClick={() => setEtapaAtiva((s) => Math.max(1, s - 1))}
+                onClick={() => irParaEtapa(etapaAtiva - 1)}
               >
                 Etapa anterior
               </button>
               <button
                 type="button"
                 className="btn-edit"
-                disabled={etapaAtiva >= 5}
-                onClick={() => setEtapaAtiva((s) => Math.min(5, s + 1))}
+                disabled={etapaAtiva >= etapaLiberadaMax}
+                onClick={() => irParaEtapa(etapaAtiva + 1)}
               >
                 Próxima etapa
               </button>

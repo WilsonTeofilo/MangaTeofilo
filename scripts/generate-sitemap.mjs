@@ -5,7 +5,7 @@ import process from 'node:process';
 const SITE_URL = (process.env.SITE_URL || 'https://mangateofilo.com').replace(/\/+$/, '');
 const DATABASE_URL = process.env.FIREBASE_DATABASE_URL || 'https://shitoproject-ed649-default-rtdb.firebaseio.com';
 
-const STATIC_ROUTES = ['/', '/works', '/mangas', '/sobre-autor', '/apoie', '/loja', '/creators'];
+const STATIC_ROUTES = ['/', '/works', '/mangas', '/sobre-autor', '/apoie', '/loja', '/print-on-demand', '/creators'];
 
 function toIso(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return new Date().toISOString();

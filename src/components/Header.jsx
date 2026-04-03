@@ -7,9 +7,12 @@ import { auth, db, functions } from '../services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from '../constants';
 import { canAccessAdminPath, canAccessCreatorPath } from '../auth/adminPermissions';
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
+import { effectiveCreatorMonetizationStatus } from '../utils/creatorMonetizationUi';
+import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../store/cartStore';
 import './HeaderV2.css';
 
-const MOBILE_BREAKPOINT = 1360;
+/** Menu hambúrguer só em viewport típica de telemóvel / tablet estreito — não em PC com janela estreita até ~laptop 13". */
+const MOBILE_BREAKPOINT = 768;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
 const ADMIN_CREATOR_QUEUE_SEEN_KEY = 'shito:admin-creator-queue-seen';
 const ADMIN_SUPPORT_QUEUE_SEEN_KEY = 'shito:admin-support-queue-seen';
@@ -49,6 +52,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [adminCreatorQueueCount, setAdminCreatorQueueCount] = useState(0);
   const [adminSupportQueueCount, setAdminSupportQueueCount] = useState(0);
+  const [storeCartItems, setStoreCartItems] = useState(() => getCartItems());
   const workspaceCloseTimer = useRef(null);
   const notificationIdsSeenRef = useRef(new Set());
   const notificationsInitializedRef = useRef(false);
@@ -69,7 +73,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
     getInitialWorkspace(location.pathname, canSeeAdminWorkspace, canSeeCreatorWorkspace)
   );
 
+  const storeCartCount = cartCount(storeCartItems);
+
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
+  const creatorMonetizationIsActive =
+    effectiveCreatorMonetizationStatus(
+      perfil?.creatorMonetizationPreference,
+      perfil?.creatorMonetizationStatus
+    ) === 'active';
 
   /** Candidatura publica: quem ja abre ADMIN (Criadores etc.) nao precisa do atalho CREATORS. */
   const showCreatorsNav = !isMangakaPanel && !canSeeAdminWorkspace;
@@ -77,6 +88,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const navItems = [
     { label: 'Lista de Mangas', path: '/works' },
     { label: 'Loja', path: '/loja' },
+    { label: 'Lance sua linha', path: '/print-on-demand' },
     ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
     ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
     { label: 'Sobre nos', path: '/sobre-autor' },
@@ -96,6 +108,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
           canAccessAdminPath('/admin/dashboard', adminAccess) ? { label: 'Financeiro global', path: '/admin/dashboard' } : null,
           canAccessAdminPath('/admin/financeiro', adminAccess) ? { label: 'Promocoes e financeiro', path: '/admin/financeiro' } : null,
           canAccessAdminPath('/admin/loja', adminAccess) ? { label: 'Loja global', path: '/admin/loja' } : null,
+          canAccessAdminPath('/admin/orders', adminAccess)
+            ? { label: 'Pedidos produção', path: '/admin/orders' }
+            : null,
           canAccessAdminPath('/admin/pedidos', adminAccess) ? { label: 'Pedidos globais', path: '/admin/pedidos' } : null,
         ].filter(Boolean),
       });
@@ -107,17 +122,24 @@ export default function Header({ usuario, perfil, adminAccess }) {
         subtitle: isMangakaPanel ? 'Meu conteudo' : 'Conteudo global',
         items: [
           canAccessCreatorPath('/creator/perfil', adminAccess) ? { label: 'Perfil', path: '/creator/perfil' } : null,
-          canAccessCreatorPath('/creator/dashboard', adminAccess) ? { label: 'Dashboard', path: '/creator/dashboard' } : null,
-          canAccessCreatorPath('/creator/audience', adminAccess) ? { label: 'Audience', path: '/creator/audience' } : null,
+          canAccessCreatorPath('/creator/dashboard', adminAccess) ? { label: 'Workspace', path: '/creator/dashboard' } : null,
+          canAccessCreatorPath('/creator/audience', adminAccess) ? { label: 'Analytics', path: '/creator/audience' } : null,
           canAccessCreatorPath('/creator/obras', adminAccess) ? { label: isMangakaPanel ? 'Minhas obras' : 'Obras', path: '/creator/obras' } : null,
           canAccessCreatorPath('/creator/capitulos', adminAccess) ? { label: 'Capitulos', path: '/creator/capitulos' } : null,
-          canAccessCreatorPath('/creator/promocoes', adminAccess) ? { label: 'Promocoes', path: '/creator/promocoes' } : null,
-          canAccessCreatorPath('/creator/loja', adminAccess) ? { label: 'Loja', path: '/creator/loja' } : null,
+          canAccessCreatorPath('/creator/promocoes', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
+            ? { label: 'Promocoes', path: '/creator/promocoes' }
+            : null,
+          canAccessCreatorPath('/creator/loja', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
+            ? { label: 'Loja', path: '/creator/loja' }
+            : null,
+          canAccessCreatorPath('/creator/print', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
+            ? { label: 'Mangá físico', path: '/print-on-demand?ctx=creator' }
+            : null,
         ].filter(Boolean),
       });
     }
     return menus;
-  }, [adminAccess, canSeeAdminWorkspace, canSeeCreatorWorkspace, isMangakaPanel]);
+  }, [adminAccess, canSeeAdminWorkspace, canSeeCreatorWorkspace, creatorMonetizationIsActive, isMangakaPanel]);
 
   const persistWorkspace = (workspaceId) => {
     setPreferredWorkspace(workspaceId);
@@ -234,6 +256,25 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, [location.pathname, canSeeAdminWorkspace, canSeeCreatorWorkspace]);
 
   useEffect(() => {
+    const syncCart = () => setStoreCartItems(getCartItems());
+    const onVis = () => {
+      if (document.visibilityState === 'visible') syncCart();
+    };
+    window.addEventListener('storage', syncCart);
+    window.addEventListener(CART_CHANGED_EVENT, syncCart);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('storage', syncCart);
+      window.removeEventListener(CART_CHANGED_EVENT, syncCart);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+
+  useEffect(() => {
+    setStoreCartItems(getCartItems());
+  }, [usuario?.uid]);
+
+  useEffect(() => {
     if (!usuario?.uid) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setHeaderNotifications([]);
@@ -263,9 +304,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
     }
     const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
       const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
-      const pending = rows.filter(
-        (item) => String(item?.creatorApplicationStatus || '').trim().toLowerCase() === 'requested'
-      ).length;
+      const pending = rows.filter((item) => {
+        const s = String(item?.creatorApplicationStatus || '').trim().toLowerCase();
+        const mon = String(item?.creatorMonetizationStatus || '').trim().toLowerCase();
+        const role = String(item?.role || '').trim().toLowerCase();
+        if (s === 'requested') return true;
+        if (s === 'approved' && mon === 'pending_review' && role === 'mangaka') return true;
+        return false;
+      }).length;
       setAdminCreatorQueueCount(pending);
     });
     return () => unsub();
@@ -560,6 +606,37 @@ export default function Header({ usuario, perfil, adminAccess }) {
         </ul>
 
         <div className="nav-auth">
+          <button
+            type="button"
+            className="header-store-cart-btn"
+            onClick={() => pushRoute('/loja/carrinho')}
+            aria-label={
+              storeCartCount ? `Carrinho da loja, ${storeCartCount} itens` : 'Carrinho da loja'
+            }
+            title="Carrinho da loja (disponível sem login; finalize após entrar)"
+          >
+            <svg
+              className="header-store-cart-icon"
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M9 22a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm10 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM1 4h2l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 8H6"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {storeCartCount > 0 ? (
+              <span className="header-store-cart-badge">
+                {storeCartCount > 99 ? '99+' : storeCartCount}
+              </span>
+            ) : null}
+          </button>
           {!usuario ? (
             <button
               className="btn-login-header"

@@ -96,6 +96,14 @@ function buildSeo(pathname) {
     };
   }
 
+  if (clean === '/print-on-demand') {
+    return {
+      ...defs,
+      title: `Produzir manga fisico | ${SITE_NAME}`,
+      description: 'Transforme sua obra em manga fisico com configuracao de formato, tiragem, preco e revisao.',
+    };
+  }
+
   if (NOINDEX_EXACT_ROUTES.has(clean) || NOINDEX_ROUTE_PREFIXES.some((prefix) => clean.startsWith(prefix))) {
     return {
       ...defs,
@@ -134,6 +142,7 @@ export default function SeoManager() {
       <meta property="og:title" content={seo.title} />
       <meta property="og:description" content={seo.description} />
       <meta property="og:image" content={seo.image} />
+      <meta property="og:image:alt" content={seo.title} />
       <meta property="og:url" content={canonical} />
       <meta property="og:locale" content="pt_BR" />
 
@@ -141,6 +150,7 @@ export default function SeoManager() {
       <meta name="twitter:title" content={seo.title} />
       <meta name="twitter:description" content={seo.description} />
       <meta name="twitter:image" content={seo.image} />
+      <meta name="twitter:image:alt" content={seo.title} />
 
       <link rel="canonical" href={canonical} />
 

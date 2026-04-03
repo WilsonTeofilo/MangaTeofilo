@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { db } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
+import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
 import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import './CriadorPublico.css';
@@ -39,22 +40,23 @@ export default function CriadorPublico() {
   const navigate = useNavigate();
   const [perfilPublico, setPerfilPublico] = useState(null);
   const [obras, setObras] = useState([]);
-  const [publicoReady, setPublicoReady] = useState(false);
-  const [obrasReady, setObrasReady] = useState(false);
+  const [publicoLoadedFor, setPublicoLoadedFor] = useState('');
+  const [obrasLoadedFor, setObrasLoadedFor] = useState('');
   const creatorUid = String(creatorId || '').trim();
+  const publicoReady = !creatorUid || publicoLoadedFor === creatorUid;
+  const obrasReady = !creatorUid || obrasLoadedFor === creatorUid;
 
   useEffect(() => {
     if (!creatorUid) return () => {};
-    setPublicoReady(false);
     const unsub = onValue(
       ref(db, `usuarios_publicos/${creatorUid}`),
       (snapshot) => {
         setPerfilPublico(snapshot.exists() ? snapshot.val() : null);
-        setPublicoReady(true);
+        setPublicoLoadedFor(creatorUid);
       },
       () => {
         setPerfilPublico(null);
-        setPublicoReady(true);
+        setPublicoLoadedFor(creatorUid);
       }
     );
     return () => unsub();
@@ -62,7 +64,6 @@ export default function CriadorPublico() {
 
   useEffect(() => {
     if (!creatorUid) return () => {};
-    setObrasReady(false);
     const unsub = onValue(
       ref(db, 'obras'),
       (snapshot) => {
@@ -72,11 +73,11 @@ export default function CriadorPublico() {
             .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
         );
-        setObrasReady(true);
+        setObrasLoadedFor(creatorUid);
       },
       () => {
         setObras([]);
-        setObrasReady(true);
+        setObrasLoadedFor(creatorUid);
       }
     );
     return () => unsub();
@@ -101,8 +102,12 @@ export default function CriadorPublico() {
     String(perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar || '').trim() ||
     '/assets/fotos/shito.jpg';
   const heroBackdropUrl = creatorPublicHeroImageUrl(perfilPublico);
-  const creatorMonetizationStatus = String(perfilPublico?.creatorMonetizationStatus || '').trim().toLowerCase();
-  const membershipEnabled = creatorMonetizationStatus === 'active' && perfilPublico?.creatorMembershipEnabled === true;
+  const creatorMonetizationStatus = effectiveCreatorMonetizationStatus(
+    perfilPublico?.creatorMonetizationPreference,
+    perfilPublico?.creatorMonetizationStatus
+  );
+  const supportEnabled = creatorMonetizationStatus === 'active';
+  const membershipEnabled = supportEnabled && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
   const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
   const moderation = String(perfilPublico?.creatorModerationAction || '').trim().toLowerCase();
@@ -164,18 +169,25 @@ export default function CriadorPublico() {
           <h1>{nomeCriador}</h1>
           <p>{bio || 'Criador autoral da plataforma MangaTeofilo.'}</p>
           <div className="criador-hero__actions">
-            {membershipEnabled ? (
+            {supportEnabled ? (
               <button type="button" onClick={() => navigate(apoiePathParaCriador(creatorUid))}>
-                Apoiar o autor
+                Apoie-me
               </button>
             ) : null}
             <button type="button" className="is-secondary" onClick={() => navigate('/works')}>
               Ver catálogo
             </button>
           </div>
-          <p className="criador-hero__support-copy">
-            Este é o link principal de apoio direto ao criador dentro da plataforma.
-          </p>
+          {supportEnabled ? (
+            <p className="criador-hero__support-copy">
+              Este é o link principal de apoio direto ao criador dentro da plataforma.
+            </p>
+          ) : null}
+          {!supportEnabled ? (
+            <p className="criador-hero__support-copy">
+              Este criador esta em modo apenas publicar. Apoio e membership ainda nao estao disponiveis.
+            </p>
+          ) : null}
           {membershipEnabled ? (
             <p className="criador-hero__support-copy">
               Membership do criador: <strong>{formatarPrecoBrl(membershipPrice)}</strong> por 30 dias. Ela libera acesso antecipado somente nas obras deste autor. Doacao sugerida: <strong>{formatarPrecoBrl(donationSuggested)}</strong>.

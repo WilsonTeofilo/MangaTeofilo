@@ -85,6 +85,22 @@ service firebase.storage {
                    && fileName.lower().matches('.*\\.webp$')));
     }
 
+    /** Miolo PDF e capa (imagem) para pedidos print-on-demand; leitura pelo dono e staff. */
+    match /print_on_demand/{ownerUid}/{fileName} {
+      allow read: if isShitoAdmin()
+                   || hasAdminPanelAccess()
+                   || (request.auth != null && request.auth.uid == ownerUid);
+      allow write: if isSafeSegment(ownerUid)
+                   && request.auth != null
+                   && request.auth.uid == ownerUid
+                   && (request.resource == null || (request.resource.size < 60 * 1024 * 1024
+                   && ((request.resource.contentType == "application/pdf"
+                        && fileName.lower().matches('.*\\.pdf$'))
+                       || (request.resource.contentType.matches('image/.*')
+                           && !request.resource.contentType.matches('.*svg.*')
+                           && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')))));
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

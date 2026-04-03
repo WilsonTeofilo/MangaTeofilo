@@ -1,3 +1,5 @@
+import { normalizeShippingRegions } from '../utils/storeShipping';
+
 /** Chaves de categoria na loja (UI + RTDB `product.category`) */
 export const STORE_CATEGORY_KEYS = {
   MANGA: 'manga',
@@ -29,6 +31,7 @@ export const STORE_DEFAULT_CONFIG = {
   storeVisibleToUsers: false,
   acceptingOrders: false,
   vipDiscountPct: 10,
+  freeShippingThresholdBrl: 150,
   /** Frete fixo em BRL (fase 1). */
   fixedShippingBrl: 0,
   /** Texto opcional exibido após compra (ex.: benefício no site). */
@@ -37,6 +40,7 @@ export const STORE_DEFAULT_CONFIG = {
   heroEyebrow: 'MangaTeofilo · Loja do universo',
   heroTitle: 'KOKUIN COLLECTION',
   heroSubtitle: 'Peças e edições do universo — streetwear, minimal e identidade de marca.',
+  shippingRegions: normalizeShippingRegions({}),
   updatedAt: Date.now(),
 };
 
@@ -47,10 +51,15 @@ export function normalizeStoreConfig(raw) {
     storeVisibleToUsers: c.storeVisibleToUsers === true,
     acceptingOrders: c.acceptingOrders === true,
     vipDiscountPct: Number.isFinite(Number(c.vipDiscountPct)) ? Number(c.vipDiscountPct) : 10,
+    freeShippingThresholdBrl: Number.isFinite(Number(c.freeShippingThresholdBrl))
+      ? Math.max(0, Number(c.freeShippingThresholdBrl))
+      : 150,
     fixedShippingBrl: Number.isFinite(Number(c.fixedShippingBrl))
       ? Math.max(0, Number(c.fixedShippingBrl))
       : 0,
     postPurchaseThanks: typeof c.postPurchaseThanks === 'string' ? c.postPurchaseThanks : '',
+    /** Espelha regiões de frete gravadas pelo admin (o cálculo final continua nas functions). */
+    shippingRegions: normalizeShippingRegions(c.shippingRegions),
     heroEyebrow:
       typeof c.heroEyebrow === 'string' && c.heroEyebrow.trim()
         ? c.heroEyebrow.trim()
@@ -70,6 +79,7 @@ export function normalizeStoreConfig(raw) {
 export function productIsVisible(product) {
   if (!product || typeof product !== 'object') return false;
   if (product.isActive === false) return false;
+  if (String(product.inventoryMode || '').toLowerCase() === 'on_demand') return true;
   const stock = Number(product.stock || 0);
   return stock > 0;
 }
@@ -128,9 +138,6 @@ export function groupStoreProductsByCollection(products) {
 export function getStoreProductBadges(product, now = Date.now()) {
   const badges = [];
   if (!product) return badges;
-  if (product.isStoreDemo === true) {
-    badges.push({ key: 'demo', label: 'Demo' });
-  }
   if (product.isOnSale === true && Number(product.promoPrice) > 0) {
     badges.push({ key: 'promo', label: 'Promo' });
   }
@@ -147,13 +154,19 @@ export function getStoreProductBadges(product, now = Date.now()) {
 /** Status do pedido para o leitor (envio manual / Correios). */
 export function formatLojaOrderStatusPt(status) {
   const v = String(status || '').toLowerCase();
-  if (v === 'pending') return 'Aguardando pagamento';
-  if (v === 'paid') return 'Confirmado';
-  if (v === 'processing') return 'Preparando envio';
+  if (v === 'pending' || v === 'pending_payment') return 'Aguardando pagamento';
+  if (v === 'paid' || v === 'order_received') return 'Pedido confirmado';
+  if (v === 'processing' || v === 'in_production') return 'Em produção';
   if (v === 'shipped') return 'Enviado · em trânsito';
   if (v === 'delivered') return 'Entregue';
   if (v === 'cancelled') return 'Cancelado';
   return 'Em andamento';
+}
+
+export function formatLojaPayoutStatusPt(status) {
+  const v = String(status || '').toLowerCase();
+  if (v === 'released') return 'Liberado ao criador';
+  return 'Retido até a entrega';
 }
 
 /** URL oficial de rastreio dos Correios (código sem espaços). */

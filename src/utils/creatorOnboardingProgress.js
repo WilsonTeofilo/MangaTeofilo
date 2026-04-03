@@ -1,5 +1,6 @@
 import { obterObraIdCapitulo } from '../config/obras';
-import { CREATOR_BIO_MIN_LENGTH } from '../constants';
+import { CREATOR_BIO_MIN_LENGTH, CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY } from '../constants';
+import { validateCreatorSocialLinks } from './creatorSocialLinks';
 import { toRecordList } from './firebaseRecordList';
 
 /**
@@ -30,17 +31,25 @@ export function buildCreatorOnboardingSteps({
   const yt = String(perfilDb.youtubeUrl || '').trim();
   const publicName = String(perfilDb.creatorDisplayName || perfilDb.userName || '').trim();
   const avatar = String(perfilDb.userAvatar || '').trim();
-  const hasBio = bio.length >= CREATOR_BIO_MIN_LENGTH;
-  const hasSocial = ig.length > 3 || yt.length > 3;
+  const monetizationPreference = String(perfilDb.creatorMonetizationPreference || 'publish_only')
+    .trim()
+    .toLowerCase();
+  const bioMin =
+    monetizationPreference === 'monetize' ? CREATOR_BIO_MIN_LENGTH : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
+  const hasBio = bio.length >= bioMin;
+  const socialValidation = validateCreatorSocialLinks({
+    instagramUrl: ig,
+    youtubeUrl: yt,
+    requireOne: false,
+  });
+  const hasSocial = Boolean(socialValidation.instagramUrl || socialValidation.youtubeUrl);
   const publicOk = publicName.length >= 3 && avatar.length > 3 && hasBio && hasSocial;
 
   const price = Number(perfilDb.creatorMembershipPriceBRL);
   const donation = Number(perfilDb.creatorDonationSuggestedBRL);
   const membershipEnabled = perfilDb.creatorMembershipEnabled !== false;
-  const monetizationPreference = String(perfilDb.creatorMonetizationPreference || 'publish_only')
-    .trim()
-    .toLowerCase();
   const monetizationStatus = String(perfilDb.creatorMonetizationStatus || '').trim().toLowerCase();
+  const monetizationActive = monetizationStatus === 'active';
   const monetizationConfigured =
     Number.isFinite(price) &&
     price >= 1 &&
@@ -58,11 +67,14 @@ export function buildCreatorOnboardingSteps({
   const meusProdutos = produtos.filter((prod) => String(prod.creatorId || '').trim() === u);
   const lojaOk = meusProdutos.length > 0 || storeSkipped;
 
-  return [
+  const steps = [
     {
       id: 'publicProfile',
       label: 'Perfil publico',
-      hint: `Nome publico, foto de perfil, bio (${CREATOR_BIO_MIN_LENGTH}+ caracteres) e pelo menos uma rede social.`,
+      hint:
+        monetizationPreference === 'monetize'
+          ? `Nome publico, foto de perfil, bio com pelo menos ${CREATOR_BIO_MIN_LENGTH} caracteres e pelo menos uma rede social valida.`
+          : `Nome publico, foto de perfil, bio com pelo menos ${CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY} caracteres e pelo menos uma rede social valida.`,
       done: publicOk,
       action: 'form',
     },
@@ -102,6 +114,8 @@ export function buildCreatorOnboardingSteps({
       optional: true,
     },
   ];
+
+  return monetizationActive ? steps : steps.filter((step) => step.id !== 'store');
 }
 
 export function onboardingRequiredDoneCount(steps) {

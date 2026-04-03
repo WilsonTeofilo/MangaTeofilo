@@ -70,8 +70,8 @@ function escapeCsv(value) {
 }
 
 function downloadCsv(filename, headers, rows) {
-  const csv = [headers.join(';'), ...rows.map((row) => row.map(escapeCsv).join(';'))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const csv = [headers.join(';'), ...rows.map((row) => row.map(escapeCsv).join(';'))].join('\r\n');
+  const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -89,6 +89,8 @@ export default function MangakaFinanceiroAdmin({ user, workspace = 'admin' }) {
   const [payments, setPayments] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
   const [promotions, setPromotions] = useState([]);
+  const [balance, setBalance] = useState(null);
+  const [payouts, setPayouts] = useState([]);
   const [titulo, setTitulo] = useState('');
   const [detalhe, setDetalhe] = useState('');
   const [busy, setBusy] = useState(false);
@@ -151,6 +153,14 @@ export default function MangakaFinanceiroAdmin({ user, workspace = 'admin' }) {
       }),
       onValue(dbRef(db, `${base}/promotions`), (snap) => {
         setPromotions(toList(snap.exists() ? snap.val() : {}));
+      }),
+      onValue(dbRef(db, `${base}/balance`), (snap) => {
+        setBalance(snap.exists() ? snap.val() || null : null);
+      }),
+      onValue(dbRef(db, `${base}/payouts`), (snap) => {
+        const rows = toList(snap.exists() ? snap.val() : {});
+        rows.sort((a, b) => Number(b.paidAt || b.createdAt || 0) - Number(a.paidAt || a.createdAt || 0));
+        setPayouts(rows);
       }),
     ];
     return () => unsubs.forEach((u) => u());
@@ -278,6 +288,11 @@ export default function MangakaFinanceiroAdmin({ user, workspace = 'admin' }) {
             Pagamentos no filtro: <strong>{pagamentosFiltrados.length}</strong> de {payments.length} • Total:{' '}
             <strong>R$ {totalPagamentosPeriodo.toFixed(2)}</strong>
           </p>
+          <ul className="admin-staff-stack" style={{ marginBottom: 12 }}>
+            <li>Saldo disponivel: <strong>R$ {Number(balance?.availableBRL || 0).toFixed(2)}</strong></li>
+            <li>Pendente para repasse manual: <strong>R$ {Number(balance?.pendingPayoutBRL || 0).toFixed(2)}</strong></li>
+            <li>Ja repassado via PIX: <strong>R$ {Number(balance?.paidOutBRL || 0).toFixed(2)}</strong></li>
+          </ul>
           {Object.keys(porTipo).length ? (
             <ul className="admin-staff-stack">
               {Object.entries(porTipo).map(([tipo, valor]) => (
@@ -411,8 +426,24 @@ export default function MangakaFinanceiroAdmin({ user, workspace = 'admin' }) {
             </ul>
           ) : null}
         </section>
+
+        <section className="financeiro-migracao">
+          <h2>Repasses PIX registrados</h2>
+          {!payouts.length ? (
+            <p className="financeiro-section-hint">Nenhum repasse manual registrado ainda.</p>
+          ) : (
+            <ul className="admin-staff-stack">
+              {payouts.map((payout) => (
+                <li key={payout.id}>
+                  <strong>{formatarDataHoraBr(payout.paidAt || payout.createdAt)}</strong> • R$ {Number(payout.amount || 0).toFixed(2)} •{' '}
+                  {payout.status || 'paid_manual_pix'}
+                  {payout.pixKeyMasked ? <> • PIX {payout.pixKeyMasked}</> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </section>
     </main>
   );
 }
-

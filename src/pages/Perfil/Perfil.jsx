@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { updateProfile } from 'firebase/auth';
 import { ref, update, get, onValue } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db, functions, storage } from '../../services/firebase';
@@ -17,6 +17,7 @@ import {
   DISPLAY_NAME_MAX_LENGTH,
   CREATOR_BIO_MAX_LENGTH,
   CREATOR_BIO_MIN_LENGTH,
+  CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY,
 } from '../../constants'; // centralizado
 import {
   podeUsarAvataresPremiumDaLoja,
@@ -36,7 +37,12 @@ import { buildCreatorRecordForProfileSave } from '../../utils/creatorRecord';
 import {
   creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
+  normalizeCreatorMonetizationPreference,
 } from '../../utils/creatorMonetizationUi';
+import { BRAZILIAN_STATES, PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
+import { normalizeBuyerProfile } from '../../utils/storeBuyerProfile';
+import { refreshAuthUser } from '../../userProfileSyncV2';
+import { validateCreatorSocialLinks } from '../../utils/creatorSocialLinks';
 import './Perfil.css';
 
 const creatorSubmitApplication = httpsCallable(functions, 'creatorSubmitApplication');
@@ -45,6 +51,7 @@ const creatorSubmitApplication = httpsCallable(functions, 'creatorSubmitApplicat
 // Nao usa mais auth.currentUser diretamente para evitar dessincronizacao
 export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [novoNome, setNovoNome]               = useState('');
   const [avatarSelecionado, setAvatarSelecionado] = useState('');
@@ -75,20 +82,36 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [creatorMembershipEnabled, setCreatorMembershipEnabled] = useState(true);
   const [creatorMembershipPriceBRL, setCreatorMembershipPriceBRL] = useState('12');
   const [creatorDonationSuggestedBRL, setCreatorDonationSuggestedBRL] = useState('7');
+  const [buyerFullName, setBuyerFullName] = useState('');
+  const [buyerCpf, setBuyerCpf] = useState('');
+  const [buyerPhone, setBuyerPhone] = useState('');
+  const [buyerPostalCode, setBuyerPostalCode] = useState('');
+  const [buyerState, setBuyerState] = useState('');
+  const [buyerCity, setBuyerCity] = useState('');
+  const [buyerNeighborhood, setBuyerNeighborhood] = useState('');
+  const [buyerAddressLine1, setBuyerAddressLine1] = useState('');
+  const [buyerAddressLine2, setBuyerAddressLine2] = useState('');
   const [creatorApplicationLoading, setCreatorApplicationLoading] = useState(false);
   const [creatorApplyModalOpen, setCreatorApplyModalOpen] = useState(false);
+  const [underageMonetizeModalOpen, setUnderageMonetizeModalOpen] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
+  const mangakaBirthInputRef = useRef(null);
   const mangakaAvatarPreserveRef = useRef(false);
-  /** Evita mandar o usuario de volta a /creators a cada salvamento enquanto candidatura ainda esta em draft. */
-  const perfilCreatorsHandoffKeyRef = useRef('');
   useEffect(() => {
     mangakaAvatarPreserveRef.current = adminAccess.isMangaka === true;
   }, [adminAccess.isMangaka]);
 
   useEffect(() => {
-    perfilCreatorsHandoffKeyRef.current =
-      user?.uid ? `shito_perfilCreatorsHandoffDone:${user.uid}` : '';
-  }, [user?.uid]);
+    const hash = String(location.hash || '').replace(/^#/, '');
+    if (hash !== PERFIL_LOJA_DADOS_HASH) return undefined;
+    const t = window.setTimeout(() => {
+      document.getElementById(PERFIL_LOJA_DADOS_HASH)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [location.hash, location.pathname]);
 
   useEffect(() => {
     const carregarPerfil = async () => {
@@ -130,6 +153,16 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setCreatorDonationSuggestedBRL(
         perfil.creatorDonationSuggestedBRL != null ? String(perfil.creatorDonationSuggestedBRL) : '7'
       );
+      const buyerProfile = normalizeBuyerProfile(perfil.buyerProfile);
+      setBuyerFullName(buyerProfile.fullName);
+      setBuyerCpf(buyerProfile.cpf);
+      setBuyerPhone(buyerProfile.phone);
+      setBuyerPostalCode(buyerProfile.postalCode);
+      setBuyerState(buyerProfile.state);
+      setBuyerCity(buyerProfile.city);
+      setBuyerNeighborhood(buyerProfile.neighborhood);
+      setBuyerAddressLine1(buyerProfile.addressLine1);
+      setBuyerAddressLine2(buyerProfile.addressLine2);
       const ua = String(perfil.userAvatar || '').trim();
       if (ua) {
         setAvatarSelecionado(ua);
@@ -215,19 +248,43 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const creatorDisplayLabel = String(creatorDisplayName || novoNome || user?.displayName || '').trim() || 'Criador';
   const creatorSupportUrl = user?.uid ? apoieUrlAbsolutaParaCriador(user.uid) : '';
   const creatorPublicPath = user?.uid ? `/criador/${encodeURIComponent(user.uid)}` : '/creator/perfil';
+  const mangakaExistingProfileImageUrl =
+    adminAccess.isMangaka && perfilDb
+      ? (() => {
+          const candidates = [
+            perfilDb?.creatorApplication?.profileImageUrl,
+            perfilDb?.userAvatar,
+            mangakaAvatarUrlDraft,
+          ];
+          for (const raw of candidates) {
+            const u = String(raw || '').trim();
+            if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
+          }
+          return '';
+        })()
+      : '';
+  const mangakaCanOpenMonetizeRequestModal =
+    adminAccess.isMangaka &&
+    creatorMonetizationStatus !== 'active' &&
+    creatorMonetizationStatus !== 'pending_review' &&
+    creatorMonetizationStatus !== 'blocked_underage';
+  const monetizacaoBloqueadaPorIdade =
+    creatorMonetizationStatus === 'blocked_underage' || isUnderageByBirthYear;
+
+  const handleMonetizarContaClick = () => {
+    if (monetizacaoBloqueadaPorIdade) {
+      setUnderageMonetizeModalOpen(true);
+      return;
+    }
+    setCreatorMonetizationPreference('monetize');
+    if (mangakaCanOpenMonetizeRequestModal) {
+      setCreatorApplyModalOpen(true);
+    }
+  };
   const creatorStatusLabel = creatorMonetizationStatusLabel(
     creatorMonetizationPreference,
     creatorMonetizationStatus
   );
-  const linkApoioCopiado = false;
-  const setLinkApoioCopiado = () => {};
-  const currentOnboardingStep = null;
-  const creatorOnboardingChecklistHidden = true;
-  const onboardingRequiredDone = 0;
-  const onboardingRequiredAll = 0;
-  const onboardingAllRequiredComplete = false;
-  const onboardingSteps = [];
-  const onboardingUiBusy = false;
   const premiumAtivo = false;
   const premiumEntitlement = null;
   const membershipCriadorAtiva = false;
@@ -303,9 +360,11 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     }
     if (adminAccess.isMangaka) {
       const bioLen = String(creatorBio || '').trim().length;
-      if (bioLen < CREATOR_BIO_MIN_LENGTH || bioLen > CREATOR_BIO_MAX_LENGTH) {
+      const bioMinMangaka =
+        creatorMonetizationPreference === 'monetize' ? CREATOR_BIO_MIN_LENGTH : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
+      if (bioLen < bioMinMangaka || bioLen > CREATOR_BIO_MAX_LENGTH) {
         setMensagem({
-          texto: `A bio do criador deve ter entre ${CREATOR_BIO_MIN_LENGTH} e ${CREATOR_BIO_MAX_LENGTH} caracteres.`,
+          texto: `A bio do criador deve ter entre ${bioMinMangaka} e ${CREATOR_BIO_MAX_LENGTH} caracteres.`,
           tipo: 'erro',
         });
         return;
@@ -377,15 +436,35 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       const creatorPublicName = String(creatorDisplayName || novoNome || '').trim();
       const creatorStatusNext = adminAccess.isMangaka ? 'active' : null;
       const ageForMonet = birthIsoForSave ? ageFromBirthDateLocal(birthIsoForSave) : null;
-      const creatorMonetizationStatusNext = !adminAccess.isMangaka
-        ? null
-        : creatorMonetizationPreference !== 'monetize'
+      const creatorMonetizationRequestNeedsModal =
+        adminAccess.isMangaka &&
+        creatorMonetizationPreference === 'monetize' &&
+        creatorMonetizationStatus !== 'active' &&
+        creatorMonetizationStatus !== 'pending_review';
+      const creatorMonetizationPreferenceNext = !adminAccess.isMangaka
+        ? creatorMonetizationPreference
+        : normalizeCreatorMonetizationPreference(creatorMonetizationPreference);
+    const creatorMonetizationStatusNext = !adminAccess.isMangaka
+      ? null
+      : creatorMonetizationPreferenceNext !== 'monetize'
           ? 'disabled'
           : ageForMonet != null && ageForMonet < 18
             ? 'blocked_underage'
             : creatorMonetizationStatus === 'active'
               ? 'active'
-              : 'pending_review';
+              : creatorMonetizationStatus === 'pending_review'
+                ? 'pending_review'
+                : 'disabled';
+      const socialValidation = validateCreatorSocialLinks({
+        instagramUrl,
+        youtubeUrl,
+        requireOne: adminAccess.isMangaka && creatorMonetizationPreferenceNext === 'monetize',
+      });
+      if (!socialValidation.ok) {
+        setMensagem({ texto: socialValidation.message, tipo: 'erro' });
+        setLoading(false);
+        return;
+      }
 
       const creatorCanonicalDoc = adminAccess.isMangaka
         ? buildCreatorRecordForProfileSave({
@@ -393,13 +472,24 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             birthDateIso: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : '',
             displayName: creatorPublicName,
             bio: String(creatorBio || '').trim(),
-            instagramUrl,
-            youtubeUrl,
-            monetizationPreference: creatorMonetizationPreference,
+            instagramUrl: socialValidation.instagramUrl,
+            youtubeUrl: socialValidation.youtubeUrl,
+            monetizationPreference: creatorMonetizationPreferenceNext,
             monetizationStatus: creatorMonetizationStatusNext,
             now: Date.now(),
           })
         : null;
+      const buyerProfile = normalizeBuyerProfile({
+        fullName: buyerFullName,
+        cpf: buyerCpf,
+        phone: buyerPhone,
+        postalCode: buyerPostalCode,
+        state: buyerState,
+        city: buyerCity,
+        neighborhood: buyerNeighborhood,
+        addressLine1: buyerAddressLine1,
+        addressLine2: buyerAddressLine2,
+      });
 
       // 1. Atualiza no Firebase Auth
       await updateProfile(user, {
@@ -419,15 +509,31 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         birthYear: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? ano : null,
         creatorDisplayName: creatorPublicName,
         creatorTermsAccepted: creatorTermsAccepted === true,
-        creatorMonetizationPreference: creatorMonetizationPreference,
+        creatorMonetizationPreference: creatorMonetizationPreferenceNext,
         creatorMonetizationStatus: creatorMonetizationStatusNext,
         creatorBio: String(creatorBio || '').trim(),
+        buyerProfile,
         creatorBannerUrl: null,
         instagramUrl: String(instagramUrl || '').trim(),
         youtubeUrl: String(youtubeUrl || '').trim(),
-        creatorMembershipEnabled: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? creatorMembershipEnabled : false,
-        creatorMembershipPriceBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(membershipPrice * 100) / 100 : null,
-        creatorDonationSuggestedBRL: adminAccess.isMangaka && creatorMonetizationPreference === 'monetize' ? Math.round(suggestedDonation * 100) / 100 : null,
+        creatorMembershipEnabled:
+          adminAccess.isMangaka &&
+          creatorMonetizationPreferenceNext === 'monetize' &&
+          (creatorMonetizationStatus === 'active' || creatorMonetizationStatus === 'pending_review')
+            ? creatorMembershipEnabled
+            : false,
+        creatorMembershipPriceBRL:
+          adminAccess.isMangaka &&
+          creatorMonetizationPreferenceNext === 'monetize' &&
+          (creatorMonetizationStatus === 'active' || creatorMonetizationStatus === 'pending_review')
+            ? Math.round(membershipPrice * 100) / 100
+            : null,
+        creatorDonationSuggestedBRL:
+          adminAccess.isMangaka &&
+          creatorMonetizationPreferenceNext === 'monetize' &&
+          (creatorMonetizationStatus === 'active' || creatorMonetizationStatus === 'pending_review')
+            ? Math.round(suggestedDonation * 100) / 100
+            : null,
         creatorOnboardingCompleted: adminAccess.isMangaka ? true : null,
         creatorOnboardingCompletedAt: adminAccess.isMangaka ? Number(perfilDb?.creatorOnboardingCompletedAt || Date.now()) : null,
         creatorStatus: creatorStatusNext,
@@ -447,7 +553,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             youtubeUrl: String(youtubeUrl || '').trim() || null,
           },
           monetizationEnabled: creatorMonetizationStatusNext === 'active',
-          monetizationPreference: creatorMonetizationPreference,
+          monetizationPreference: creatorMonetizationPreferenceNext,
           monetizationStatus: creatorMonetizationStatusNext,
           ageVerified: Boolean(birthIsoForSave && parseBirthDateLocal(birthIsoForSave)),
           status: creatorStatusNext,
@@ -472,7 +578,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         creatorBannerUrl: null,
         instagramUrl: String(instagramUrl || '').trim(),
         youtubeUrl: String(youtubeUrl || '').trim(),
-        creatorMonetizationPreference: creatorMonetizationPreference,
+        creatorMonetizationPreference: creatorMonetizationPreferenceNext,
         creatorMonetizationStatus: creatorMonetizationStatusNext,
         creatorMembershipEnabled: creatorMonetizationStatusNext === 'active' && creatorMembershipEnabled === true,
         creatorMembershipPriceBRL: creatorMonetizationStatusNext === 'active' ? Math.round(membershipPrice * 100) / 100 : null,
@@ -516,6 +622,9 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
 
       setAvatarSelecionado(finalAvatar);
       setMangakaAvatarFile(null);
+      if (creatorMonetizationRequestNeedsModal) {
+        setCreatorMonetizationPreference('publish_only');
+      }
       if (listaAvatares.some((i) => i.url === finalAvatar)) {
         setMangakaAvatarUrlDraft('');
       } else if (adminAccess.isMangaka && /^https:\/\//i.test(finalAvatar)) {
@@ -526,22 +635,13 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setBirthDate(savedBirth);
       setBirthDateDraft(savedBirth ? formatBirthDateIsoToBr(savedBirth) : '');
 
-      setMensagem({ texto: 'Perfil atualizado com sucesso!', tipo: 'sucesso' });
-      const handoffKey = perfilCreatorsHandoffKeyRef.current;
-      const shouldHandoffToCreators =
-        !adminAccess.isMangaka &&
-        creatorModerationAction !== 'banned' &&
-        handoffKey &&
-        typeof sessionStorage !== 'undefined' &&
-        !sessionStorage.getItem(handoffKey) &&
-        creatorSignupIntent === 'creator' &&
-        creatorApplicationStatus === 'draft';
-      if (shouldHandoffToCreators) {
-        sessionStorage.setItem(handoffKey, '1');
-        setTimeout(() => navigate('/creators', { replace: true }), 900);
-      } else {
-        setTimeout(() => navigate(adminAccess.isMangaka ? '/perfil' : '/'), 1200);
-      }
+      setMensagem({
+        texto: creatorMonetizationRequestNeedsModal
+          ? 'Perfil atualizado. Para pedir monetizacao, use o formulario de creator e envie nome legal, CPF e chave PIX; ate la voce continua publicando normalmente sem monetizacao.'
+          : 'Perfil atualizado com sucesso!',
+        tipo: 'sucesso',
+      });
+      setTimeout(() => navigate('/perfil', { replace: true }), 900);
 
     } catch (error) {
       console.error('Erro na forja:', error);
@@ -555,7 +655,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     setCreatorApplicationLoading(true);
     setMensagem({ texto: '', tipo: '' });
     try {
-      const { data } = await submitCreatorApplicationPayload({
+      const { data, profileImageUrl } = await submitCreatorApplicationPayload({
         creatorSubmitApplication,
         payload,
         uid: user.uid,
@@ -570,12 +670,81 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setCreatorMonetizationPreference(payload.monetizationPreference);
       setCreatorTermsAccepted(payload.acceptTerms);
       setCreatorApplyModalOpen(false);
-      if (data?.alreadyMangaka) {
+      setPerfilDb((prev) => {
+        const current = prev && typeof prev === 'object' ? prev : {};
+        const nextAvatar =
+          data?.autoApproved && payload.monetizationPreference === 'publish_only' && profileImageUrl
+            ? profileImageUrl
+            : current.userAvatar;
+        const nextStatus = data?.autoApproved
+          ? 'approved'
+          : data?.alreadyPending
+            ? 'requested'
+            : current.creatorApplicationStatus;
+        const nextRole = data?.autoApproved ? 'mangaka' : current.role;
+        return {
+          ...current,
+          role: nextRole,
+          signupIntent: 'creator',
+          creatorApplicationStatus: nextStatus,
+          creatorDisplayName: payload.displayName,
+          creatorBio: payload.bioShort,
+          creatorTermsAccepted: payload.acceptTerms === true,
+          creatorMonetizationPreference: payload.monetizationPreference,
+          creatorMonetizationStatus:
+            payload.monetizationPreference === 'monetize'
+              ? (data?.alreadyMangaka ? 'pending_review' : 'pending_review')
+              : (data?.autoApproved ? 'disabled' : (current.creatorMonetizationStatus || 'disabled')),
+          instagramUrl: payload.instagramUrl || null,
+          youtubeUrl: payload.youtubeUrl || null,
+          birthDate: parseBirthDateLocal(pbd) ? pbd : current.birthDate || '',
+          birthYear: parseBirthDateLocal(pbd) ? Number(pbd.slice(0, 4)) : current.birthYear || null,
+          userAvatar: nextAvatar || current.userAvatar || '',
+        };
+      });
+      if (data?.autoApproved && payload.monetizationPreference === 'publish_only' && profileImageUrl) {
+        try {
+          setAvatarSelecionado(profileImageUrl);
+          setMangakaAvatarUrlDraft(profileImageUrl);
+          await updateProfile(user, { photoURL: profileImageUrl });
+          await refreshAuthUser(user);
+        } catch (avErr) {
+          console.warn('[Perfil] Nao foi possivel sincronizar avatar local apos candidatura:', avErr);
+        }
+      }
+      if (data?.autoApproved) {
+        setMensagem({
+          texto: 'Acesso de criador liberado. Atualizando seu perfil para abrir o painel certo...',
+          tipo: 'sucesso',
+        });
+        if (typeof window !== 'undefined') {
+          window.setTimeout(() => {
+            window.location.assign('/perfil');
+          }, 700);
+        }
+      } else if (data?.alreadyMangaka && data?.monetizationPendingReviewSubmitted) {
+        setMensagem({
+          texto:
+            'Dados de monetizacao enviados. Voce continua publicando normalmente; a equipe revisara antes de ativar repasses.',
+          tipo: 'sucesso',
+        });
+      } else if (data?.alreadyMangaka && data?.monetizationPendingReview) {
+        setMensagem({
+          texto: 'Sua monetizacao ja esta em analise pela equipe.',
+          tipo: 'sucesso',
+        });
+      } else if (data?.alreadyMangaka && data?.monetizationAlreadyActive) {
+        setMensagem({ texto: 'Sua monetizacao ja esta ativa.', tipo: 'sucesso' });
+      } else if (data?.alreadyMangaka) {
         setMensagem({ texto: 'Sua conta ja esta aprovada como criador.', tipo: 'sucesso' });
       } else if (data?.alreadyPending) {
         setMensagem({ texto: 'Sua solicitacao de criador ja esta em analise.', tipo: 'sucesso' });
       } else {
-        setMensagem({ texto: 'Solicitacao enviada. A equipe vai revisar seu acesso de criador.', tipo: 'sucesso' });
+        setMensagem({
+          texto:
+            'Solicitacao enviada com monetizacao. A equipe vai revisar seus dados legais e repasse antes de ativar.',
+          tipo: 'sucesso',
+        });
       }
     } catch (err) {
       const msg = err?.message || 'Nao foi possivel enviar sua solicitacao agora.';
@@ -584,10 +753,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     } finally {
       setCreatorApplicationLoading(false);
     }
-  };
-
-  const scrollToMangakaFields = () => {
-    mangakaFormAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleCopyCreatorSupportLink = async () => {
@@ -599,10 +764,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setMensagem({ texto: 'Nao foi possivel copiar o link agora.', tipo: 'erro' });
     }
   };
-
-  const handleOcultarOnboardingChecklist = () => {};
-  const handleMostrarOnboardingChecklist = () => {};
-  const handlePularLojaOnboarding = () => {};
 
   if (!user) return null; // guard enquanto o useEffect redireciona
 
@@ -632,9 +793,11 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                   <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate(creatorPublicPath)}>
                     Ver pagina publica
                   </button>
-                  <button type="button" className="perfil-mangaka-apoio-copy" onClick={handleCopyCreatorSupportLink}>
-                    Copiar link de apoio
-                  </button>
+                  {creatorMonetizationStatusEffective === 'active' ? (
+                    <button type="button" className="perfil-mangaka-apoio-copy" onClick={handleCopyCreatorSupportLink}>
+                      Copiar link de apoio
+                    </button>
+                  ) : null}
                   <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate('/creator/dashboard')}>
                     Dashboard
                   </button>
@@ -751,6 +914,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               <div className="input-group">
                 <label>DATA DE NASCIMENTO</label>
                 <input
+                  ref={mangakaBirthInputRef}
                   type="text"
                   inputMode="numeric"
                   autoComplete="bday"
@@ -790,16 +954,31 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                   <button
                     type="button"
                     className="perfil-mangaka-apoio-copy"
-                    onClick={() => setCreatorMonetizationPreference('monetize')}
-                    disabled={isUnderageByBirthYear}
+                    onClick={handleMonetizarContaClick}
                   >
                     Monetizar
                   </button>
                 </div>
+                {mangakaCanOpenMonetizeRequestModal ? (
+                  <p className="perfil-mangaka-apoio-label" style={{ marginTop: 10 }}>
+                    Ao tocar em «Monetizar», abrimos o formulário para você enviar nome legal, CPF e PIX à equipe (foto HTTPS
+                    do perfil conta como imagem se você não trocar).
+                  </p>
+                ) : null}
+                {monetizacaoBloqueadaPorIdade ? (
+                  <p className="perfil-mangaka-apoio-label perfil-mangaka-apoio-label--warn" style={{ marginTop: 10 }}>
+                    Monetização não está disponível para menores de 18 anos. Toque em «Monetizar» para ver o motivo e o que
+                    você ainda pode fazer na plataforma.
+                  </p>
+                ) : null}
               </div>
 
               {creatorMonetizationPreference === 'monetize' ? (
                 <>
+                  <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 12 }}>
+                    Valores e membership abaixo valem depois que a equipe aprovar sua monetizacao. Ate la voce publica
+                    normalmente, sem receber repasses.
+                  </p>
                   <div className="input-group">
                     <label className="notify-label">
                       <input
@@ -847,6 +1026,62 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </div>
             </section>
 
+            <section className="perfil-creator-panel" id={PERFIL_LOJA_DADOS_HASH}>
+              <div className="input-group perfil-creator-section-title">
+                <label>DADOS DE COMPRA</label>
+                <p>Esses dados so ficam obrigatorios quando voce for comprar na loja.</p>
+              </div>
+
+              <div className="input-group">
+                <label>NOME COMPLETO</label>
+                <input type="text" className="perfil-input" value={buyerFullName} onChange={(e) => setBuyerFullName(e.target.value)} placeholder="Nome para entrega" />
+              </div>
+              <div className="input-group">
+                <label>CPF</label>
+                <input type="text" inputMode="numeric" className="perfil-input" value={buyerCpf} onChange={(e) => setBuyerCpf(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="Somente numeros" />
+              </div>
+              <div className="input-group">
+                <label>TELEFONE</label>
+                <input type="text" inputMode="tel" className="perfil-input" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="DDD + numero" />
+              </div>
+              <div className="input-group">
+                <label>CEP</label>
+                <input type="text" inputMode="numeric" className="perfil-input" value={buyerPostalCode} onChange={(e) => setBuyerPostalCode(e.target.value.replace(/\D+/g, '').slice(0, 8))} placeholder="Somente numeros" />
+              </div>
+              <div className="input-group">
+                <label>ESTADO</label>
+                <select
+                  className="perfil-input"
+                  value={buyerState}
+                  onChange={(e) => setBuyerState(e.target.value)}
+                  aria-label="Estado (UF)"
+                >
+                  <option value="">Selecione o estado</option>
+                  {BRAZILIAN_STATES.map(({ uf, name }) => (
+                    <option key={uf} value={uf}>
+                      {uf} — {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="input-group">
+                <label>CIDADE</label>
+                <input type="text" className="perfil-input" value={buyerCity} onChange={(e) => setBuyerCity(e.target.value)} placeholder="Sua cidade" />
+              </div>
+              <div className="input-group">
+                <label>BAIRRO</label>
+                <input type="text" className="perfil-input" value={buyerNeighborhood} onChange={(e) => setBuyerNeighborhood(e.target.value)} placeholder="Seu bairro" />
+              </div>
+              <div className="input-group">
+                <label>ENDERECO</label>
+                <input type="text" className="perfil-input" value={buyerAddressLine1} onChange={(e) => setBuyerAddressLine1(e.target.value)} placeholder="Rua, numero e complemento principal" />
+              </div>
+              <div className="input-group">
+                <label>COMPLEMENTO</label>
+                <input type="text" className="perfil-input" value={buyerAddressLine2} onChange={(e) => setBuyerAddressLine2(e.target.value)} placeholder="Opcional" />
+              </div>
+            </section>
+
             {mensagem.texto ? (
               <p className={`feedback-msg ${mensagem.tipo}`}>{mensagem.texto}</p>
             ) : null}
@@ -860,6 +1095,88 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </button>
             </div>
           </form>
+
+          {underageMonetizeModalOpen ? (
+            <div
+              className="perfil-modal-root"
+              role="presentation"
+              onClick={(e) => e.target === e.currentTarget && setUnderageMonetizeModalOpen(false)}
+            >
+              <div className="perfil-modal" role="dialog" aria-modal="true" aria-labelledby="perfil-underage-mz-title">
+                <h2 id="perfil-underage-mz-title" className="perfil-modal__title">
+                  Monetização indisponível (idade)
+                </h2>
+                <div className="perfil-modal__body">
+                  <p>
+                    Na MangaTeofilo, <strong>repasses financeiros</strong> (CPF, chave PIX, contrato de criador) exigem{' '}
+                    <strong>maioridade (18 anos ou mais)</strong>, por exigência legal e política da plataforma.
+                  </p>
+                  {isUnderageByBirthYear ? (
+                    <p>
+                      A <strong>data de nascimento</strong> que você informou acima indica menos de 18 anos. Você pode
+                      continuar <strong>publicando obras</strong> normalmente; quando for maior de idade, volte aqui e
+                      solicite monetização.
+                    </p>
+                  ) : null}
+                  {creatorMonetizationStatus === 'blocked_underage' ? (
+                    <p>
+                      Sua conta está com monetização <strong>bloqueada por idade</strong> no cadastro. Se a data de
+                      nascimento estiver errada, corrija o campo <strong>Data de nascimento</strong> nesta página, salve o
+                      perfil e aguarde análise da equipe, se aplicável.
+                    </p>
+                  ) : null}
+                  <p className="perfil-modal__hint">
+                    Dúvidas ou correção de dados: use o suporte da plataforma ou fale com a equipe pelo canal oficial.
+                  </p>
+                </div>
+                <div className="perfil-modal__actions">
+                  <button type="button" className="btn-cancel-perfil" onClick={() => setUnderageMonetizeModalOpen(false)}>
+                    Fechar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-save-perfil"
+                    onClick={() => {
+                      setUnderageMonetizeModalOpen(false);
+                      mangakaBirthInputRef.current?.focus?.();
+                      mangakaBirthInputRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+                    }}
+                  >
+                    Ir para data de nascimento
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <CreatorApplicationModal
+            open={creatorApplyModalOpen}
+            intent="mangaka_monetize"
+            onClose={() => {
+              if (!creatorApplicationLoading) {
+                setCreatorApplyModalOpen(false);
+                const pref = String(perfilDb?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
+                setCreatorMonetizationPreference(pref === 'monetize' ? 'monetize' : 'publish_only');
+              }
+            }}
+            loading={creatorApplicationLoading}
+            initial={{
+              displayName: creatorDisplayName,
+              bio: creatorBio,
+              instagramUrl,
+              youtubeUrl,
+              monetizationPreference: 'monetize',
+              termsAccepted: creatorTermsAccepted,
+              birthDate: birthDate || perfilDb?.birthDate || '',
+              legalFullName: String(perfilDb?.creatorCompliance?.legalFullName || '').trim(),
+              taxId: String(perfilDb?.creatorCompliance?.taxId || '').trim(),
+              payoutInstructions: String(perfilDb?.creatorCompliance?.payoutInstructions || '').trim(),
+              payoutPixType: String(perfilDb?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
+              profileImageCrop: perfilDb?.creatorApplication?.profileImageCrop || null,
+              existingProfileImageUrl: mangakaExistingProfileImageUrl,
+            }}
+            onSubmit={handleCreatorApplicationModalSubmit}
+          />
         </div>
       </main>
     );
@@ -868,72 +1185,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   return (
     <main className="perfil-page">
       <div className="perfil-card">
-        <h1 className="perfil-title">{adminAccess.isMangaka ? 'Meu perfil de criador' : 'Meu perfil'}</h1>
-        <p className="perfil-subtitle">
-          {adminAccess.isMangaka ? 'Sua vitrine publica com edicao limpa e direta.' : 'Atualize seus dados e preferencias da conta.'}
-        </p>
-
-        {adminAccess.isMangaka && user?.uid ? (
-          <div className="perfil-mangaka-apoio">
-            <p className="perfil-mangaka-apoio-label">
-              Seu link de apoio (doações e premium atribuídos a você ao usar este link):
-            </p>
-            <div className="perfil-mangaka-apoio-row">
-              <input
-                type="text"
-                readOnly
-                className="perfil-mangaka-apoio-input"
-                value={apoieUrlAbsolutaParaCriador(user.uid)}
-                aria-label="URL de apoio com atribuição ao seu perfil"
-              />
-              <button
-                type="button"
-                className="perfil-mangaka-apoio-copy"
-                onClick={async () => {
-                  const url = apoieUrlAbsolutaParaCriador(user.uid);
-                  try {
-                    await navigator.clipboard.writeText(url);
-                    setLinkApoioCopiado(true);
-                    setTimeout(() => setLinkApoioCopiado(false), 2500);
-                  } catch {
-                    setMensagem({ texto: 'Não foi possível copiar. Selecione o link manualmente.', tipo: 'erro' });
-                  }
-                }}
-              >
-                {linkApoioCopiado ? 'Copiado' : 'Copiar'}
-              </button>
-              <button
-                type="button"
-                className="perfil-mangaka-apoio-copy"
-                onClick={() => navigate(`/criador/${encodeURIComponent(user.uid)}`)}
-              >
-                Ver página pública
-              </button>
-            </div>
-            <p className="perfil-mangaka-apoio-label">
-              Monetizacao: <strong>{creatorMonetizationStatusEffective || 'disabled'}</strong>
-              {creatorMonetizationStatusEffective === 'blocked_underage'
-                ? isUnderageByBirthYear
-                  ? ' - voce pode publicar, mas nao pode receber por ser menor de idade.'
-                  : ' - bloqueio anterior; com 18+ na data do perfil, use Monetizar e salve para revisao.'
-                : creatorMonetizationStatusEffective === 'active'
-                  ? ' - membership e ganhos estao liberados.'
-                  : creatorMonetizationStatusEffective === 'pending_review'
-                    ? ' - sua monetizacao aguarda validacao da equipe.'
-                    : ' - sua conta esta no modo apenas publicar.'}
-            </p>
-            {creatorMonetizationReviewReason ? (
-              <p className="perfil-mangaka-apoio-label">
-                Ultima decisao de monetizacao: {creatorMonetizationReviewReason}
-              </p>
-            ) : null}
-            {currentOnboardingStep ? (
-              <p className="perfil-mangaka-apoio-label">
-                Etapa atual do onboarding: <strong>{currentOnboardingStep.label}</strong>. {currentOnboardingStep.hint}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        <h1 className="perfil-title">Meu perfil</h1>
+        <p className="perfil-subtitle">Atualize seus dados e preferencias da conta.</p>
 
         {!adminAccess.isMangaka && !adminAccess.canAccessAdmin ? (
           <div className="perfil-mangaka-apoio">
@@ -997,133 +1250,17 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             payoutInstructions: String(perfilDb?.creatorCompliance?.payoutInstructions || '').trim(),
             payoutPixType: String(perfilDb?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
             profileImageCrop: perfilDb?.creatorApplication?.profileImageCrop || null,
+            existingProfileImageUrl: (() => {
+              const candidates = [perfilDb?.creatorApplication?.profileImageUrl, perfilDb?.userAvatar];
+              for (const raw of candidates) {
+                const u = String(raw || '').trim();
+                if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
+              }
+              return '';
+            })(),
           }}
           onSubmit={handleCreatorApplicationModalSubmit}
         />
-
-        {adminAccess.isMangaka ? (
-          <>
-            {!creatorOnboardingChecklistHidden ? (
-              <section className="perfil-onboarding" aria-label="Onboarding do criador">
-                <div className="perfil-onboarding-head">
-                  <h2 className="perfil-onboarding-title">Checklist do criador</h2>
-                  <p className="perfil-onboarding-sub">
-                    Conclua os passos para operar com perfil publico, catalogo e monetizacao. O progresso atualiza em
-                    tempo real.
-                  </p>
-                  <div
-                    className="perfil-onboarding-progress"
-                    role="progressbar"
-                    aria-valuenow={onboardingRequiredDone}
-                    aria-valuemin={0}
-                    aria-valuemax={onboardingRequiredAll}
-                  >
-                    <div
-                      className="perfil-onboarding-progress-fill"
-                      style={{
-                        width: `${onboardingRequiredAll ? (100 * onboardingRequiredDone) / onboardingRequiredAll : 0}%`,
-                      }}
-                    />
-                  </div>
-                  <p className="perfil-onboarding-progress-label">
-                    {onboardingRequiredDone}/{onboardingRequiredAll} obrigatorios
-                    {onboardingAllRequiredComplete ? ' - tudo pronto para ir ao ar.' : ''}
-                  </p>
-                </div>
-                <ol className="perfil-onboarding-steps">
-                  {onboardingSteps.map((step) => (
-                    <li
-                      key={step.id}
-                      className={`perfil-onboarding-step ${step.done ? 'is-done' : ''} ${step.optional ? 'is-optional' : ''}`}
-                    >
-                      <span className="perfil-onboarding-step-status" aria-hidden="true">
-                        {step.done ? 'OK' : step.optional ? 'Opc.' : '-'}
-                      </span>
-                      <div className="perfil-onboarding-step-body">
-                        <div className="perfil-onboarding-step-title-row">
-                          <strong>{step.label}</strong>
-                          {step.optional ? <span className="perfil-onboarding-optional-tag">Opcional</span> : null}
-                        </div>
-                        <p className="perfil-onboarding-step-hint">{step.hint}</p>
-                        <div className="perfil-onboarding-step-actions">
-                          {step.path ? (
-                            <button
-                              type="button"
-                              className="perfil-onboarding-btn"
-                              onClick={() => navigate(step.path)}
-                            >
-                              Abrir
-                            </button>
-                          ) : null}
-                          {step.action === 'form' ? (
-                            <button type="button" className="perfil-onboarding-btn" onClick={scrollToMangakaFields}>
-                              Ir ao formulario
-                            </button>
-                          ) : null}
-                          {step.id === 'store' && !step.done ? (
-                            <button
-                              type="button"
-                              className="perfil-onboarding-btn perfil-onboarding-btn--ghost"
-                              disabled={onboardingUiBusy}
-                              onClick={handlePularLojaOnboarding}
-                            >
-                              Nao vou usar loja agora
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-                <div className="perfil-onboarding-foot">
-                  <button
-                    type="button"
-                    className="perfil-onboarding-btn perfil-onboarding-btn--ghost"
-                    disabled={onboardingUiBusy}
-                    onClick={handleOcultarOnboardingChecklist}
-                  >
-                    Ocultar checklist
-                  </button>
-                  <div className="perfil-onboarding-shortcuts">
-                    <button type="button" className="perfil-onboarding-btn" onClick={() => navigate('/creator/obras')}>
-                      Obras
-                    </button>
-                    <button type="button" className="perfil-onboarding-btn" onClick={() => navigate('/creator/capitulos')}>
-                      Capitulos
-                    </button>
-                    <button
-                      type="button"
-                      className="perfil-onboarding-btn"
-                      onClick={() => navigate('/creator/promocoes')}
-                    >
-                      Monetizacao
-                    </button>
-                  </div>
-                </div>
-              </section>
-            ) : (
-              <div className="perfil-mangaka-apoio">
-                <p className="perfil-mangaka-apoio-label">Checklist do criador oculto.</p>
-                <div className="perfil-mangaka-apoio-row">
-                  <button
-                    type="button"
-                    className="perfil-mangaka-apoio-copy"
-                    disabled={onboardingUiBusy}
-                    onClick={handleMostrarOnboardingChecklist}
-                  >
-                    Mostrar checklist
-                  </button>
-                  <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate('/creator/obras')}>
-                    Obras
-                  </button>
-                  <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate('/creator/capitulos')}>
-                    Capitulos
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
-        ) : null}
 
         <form onSubmit={handleSalvar}>
           <div className="avatar-big-preview">
@@ -1206,159 +1343,73 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 ? 'Conta Admin'
                 : accountType === 'membro' || accountType === 'premium'
                   ? 'Conta Premium'
-                  : 'Conta Comum'}
+              : 'Conta Comum'}
             </div>
           </div>
 
-            {adminAccess.isMangaka ? (
-              <>
-                <div ref={mangakaFormAnchorRef} className="perfil-mangaka-fields-anchor" aria-hidden="true" />
-                <div className="input-group">
-                  <label>NOME PUBLICO DO CRIADOR</label>
-                  <input
-                    type="text"
-                    className="perfil-input"
-                    value={creatorDisplayName}
-                    onChange={(e) => setCreatorDisplayName(e.target.value)}
-                    placeholder="Como seu nome deve aparecer para leitores"
-                    maxLength={60}
-                  />
-                </div>
-                <div className="input-group">
-                  <label>MONETIZACAO DO CRIADOR</label>
-                  <div className="perfil-mangaka-apoio-row">
-                    <button
-                      type="button"
-                      className="perfil-mangaka-apoio-copy"
-                      onClick={() => setCreatorMonetizationPreference('publish_only')}
-                    >
-                      Apenas publicar
-                    </button>
-                    <button
-                      type="button"
-                      className="perfil-mangaka-apoio-copy"
-                      onClick={() => setCreatorMonetizationPreference('monetize')}
-                      disabled={isUnderageByBirthYear}
-                    >
-                      Monetizar
-                    </button>
-                  </div>
-                  <p className="perfil-mangaka-apoio-label">
-                    {isUnderageByBirthYear
-                      ? 'Monetizacao so para maiores de 18 (conforme a data de nascimento acima).'
-                      : creatorMonetizationPreference === 'monetize' &&
-                          creatorMonetizationStatus === 'blocked_underage'
-                        ? 'Status anterior era bloqueio por idade. Com 18+ na data acima, escolha Monetizar e salve para solicitar revisao.'
-                        : creatorMonetizationPreference === 'monetize'
-                          ? 'Membership e ganhos ficam disponiveis apenas com validacao da equipe.'
-                          : 'Modo publicar: voce pode postar normalmente sem receber pelas obras.'}
-                  </p>
-                </div>
+          <section id={PERFIL_LOJA_DADOS_HASH} className="perfil-section-loja-dados">
+            <div className="input-group perfil-creator-section-title">
+              <label>DADOS PARA COMPRA NA LOJA</label>
+              <p>Obrigatórios para finalizar pedidos físicos; você pode preencher com calma.</p>
+            </div>
 
-                <div className="input-group">
-                <label>BIO PÚBLICA DO CRIADOR</label>
-                  <textarea
-                  className="perfil-input"
-                  rows={4}
-                  value={creatorBio}
-                  maxLength={CREATOR_BIO_MAX_LENGTH}
-                  onChange={(e) => setCreatorBio(e.target.value.slice(0, CREATOR_BIO_MAX_LENGTH))}
-                  placeholder="Apresente seu universo, seu estilo e o que voce publica."
-                />
-              </div>
+            <div className="input-group">
+              <label>NOME COMPLETO PARA COMPRA</label>
+              <input type="text" className="perfil-input" value={buyerFullName} onChange={(e) => setBuyerFullName(e.target.value)} placeholder="Usado em pedidos da loja" />
+            </div>
 
-              <div className="input-group">
-                <label>INSTAGRAM</label>
-                <input
-                  type="text"
-                  className="perfil-input"
-                  value={instagramUrl}
-                  onChange={(e) => setInstagramUrl(e.target.value)}
-                  placeholder="instagram.com/seuperfil"
-                />
-              </div>
+            <div className="input-group">
+              <label>CPF</label>
+              <input type="text" inputMode="numeric" className="perfil-input" value={buyerCpf} onChange={(e) => setBuyerCpf(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="Somente numeros" />
+            </div>
 
-              <div className="input-group">
-                <label>YOUTUBE</label>
-                <input
-                  type="text"
-                  className="perfil-input"
-                  value={youtubeUrl}
-                  onChange={(e) => setYoutubeUrl(e.target.value)}
-                  placeholder="youtube.com/@seucanal"
-                />
-              </div>
+            <div className="input-group">
+              <label>TELEFONE</label>
+              <input type="text" inputMode="tel" className="perfil-input" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="DDD + numero" />
+            </div>
 
-              <div className="input-group">
-                <label>FOTO DE PERFIL (CRIADOR)</label>
-                <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
-                  O banner publico e gerado automaticamente com desfoque desta imagem. Envie arquivo (WebP otimizado) ou
-                  cole URL HTTPS.
-                </p>
-                <input
-                  type="url"
-                  className="perfil-input"
-                  value={mangakaAvatarUrlDraft}
-                  onChange={(e) => {
-                    setMangakaAvatarUrlDraft(e.target.value);
-                    setMangakaAvatarFile(null);
-                  }}
-                  placeholder="https://..."
-                />
-                <input
-                  type="file"
-                  className="perfil-input"
-                  style={{ marginTop: 8 }}
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    setMangakaAvatarFile(f || null);
-                    if (f) setMangakaAvatarUrlDraft('');
-                  }}
-                />
-              </div>
+            <div className="input-group">
+              <label>CEP</label>
+              <input type="text" inputMode="numeric" className="perfil-input" value={buyerPostalCode} onChange={(e) => setBuyerPostalCode(e.target.value.replace(/\D+/g, '').slice(0, 8))} placeholder="Somente numeros" />
+            </div>
 
-              {creatorMonetizationPreference === 'monetize' ? (
-              <div className="input-group">
-                <label>MEMBERSHIP DO CRIADOR</label>
-                <label className="notify-label">
-                  <input
-                    type="checkbox"
-                    checked={creatorMembershipEnabled}
-                    onChange={(e) => setCreatorMembershipEnabled(e.target.checked)}
-                  />
-                  Ativar assinatura do criador na página pública
-                </label>
-              </div>
-              ) : null}
+            <div className="input-group">
+              <label>ESTADO</label>
+              <select
+                className="perfil-input"
+                value={buyerState}
+                onChange={(e) => setBuyerState(e.target.value)}
+                aria-label="Estado (UF)"
+              >
+                <option value="">Selecione o estado</option>
+                {BRAZILIAN_STATES.map(({ uf, name }) => (
+                  <option key={uf} value={uf}>
+                    {uf} — {name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-              {creatorMonetizationPreference === 'monetize' ? (
-              <div className="input-group">
-                <label>VALOR DA MEMBERSHIP (R$)</label>
-                <input
-                  type="text"
-                  className="perfil-input"
-                  value={creatorMembershipPriceBRL}
-                  onChange={(e) => setCreatorMembershipPriceBRL(e.target.value)}
-                  placeholder="12,00"
-                />
-              </div>
-              ) : null}
+            <div className="input-group">
+              <label>CIDADE</label>
+              <input type="text" className="perfil-input" value={buyerCity} onChange={(e) => setBuyerCity(e.target.value)} placeholder="Sua cidade" />
+            </div>
 
-              {creatorMonetizationPreference === 'monetize' ? (
-              <div className="input-group">
-                <label>DOAÇÃO SUGERIDA (R$)</label>
-                <input
-                  type="text"
-                  className="perfil-input"
-                  value={creatorDonationSuggestedBRL}
-                  onChange={(e) => setCreatorDonationSuggestedBRL(e.target.value)}
-                  placeholder="7,00"
-                />
-              </div>
-              ) : null}
-            </>
-          ) : null}
+            <div className="input-group">
+              <label>BAIRRO</label>
+              <input type="text" className="perfil-input" value={buyerNeighborhood} onChange={(e) => setBuyerNeighborhood(e.target.value)} placeholder="Seu bairro" />
+            </div>
+
+            <div className="input-group">
+              <label>ENDERECO</label>
+              <input type="text" className="perfil-input" value={buyerAddressLine1} onChange={(e) => setBuyerAddressLine1(e.target.value)} placeholder="Rua, numero e complemento principal" />
+            </div>
+
+            <div className="input-group">
+              <label>COMPLEMENTO</label>
+              <input type="text" className="perfil-input" value={buyerAddressLine2} onChange={(e) => setBuyerAddressLine2(e.target.value)} placeholder="Opcional" />
+            </div>
+          </section>
 
           {premiumAtivo && typeof premiumEntitlement?.memberUntil === 'number' && (() => {
             const tempo = formatarTempoRestanteAssinatura(premiumEntitlement.memberUntil);

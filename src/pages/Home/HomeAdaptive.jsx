@@ -16,6 +16,7 @@ import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import { resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
 import ShitoManga from './ShitoManga';
 import './HomeAdaptive.css';
 
@@ -110,16 +111,7 @@ export default function HomeAdaptive({ user }) {
     );
   }, [categoriaAtiva, dadosMulti.obrasComStats]);
 
-  const nomeCriador = (obra) => {
-    const creatorId = obraCreatorId(obra);
-    const profile = creatorsMap?.[creatorId] || null;
-    return (
-      profile?.creatorProfile?.displayName ||
-      profile?.creatorDisplayName ||
-      profile?.userName ||
-      'Criador'
-    );
-  };
+  const nomeCriador = (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos);
 
   const registrarEventoHome = async (eventType, blockId, targetId = 'na') => {
     try {
@@ -285,10 +277,12 @@ export default function HomeAdaptive({ user }) {
               >
                 <span className="home-rank-pos">{idx + 1}</span>
                 <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
-                <div>
+                <div className="home-rank-item__text">
                   <strong>{obra.titulo || obra.id}</strong>
-                  <span>por {nomeCriador(obra)}</span>
-                  <span>{Math.round(obra.totalViews || 0)} views · {obra.totalLikes || 0} likes</span>
+                  <span className="home-rank-item__author">por {nomeCriador(obra)}</span>
+                  <span className="home-rank-item__stats">
+                    {Math.round(obra.totalViews || 0)} views · {obra.totalLikes || 0} likes
+                  </span>
                   <button
                     type="button"
                     className="home-rank-creator-btn"

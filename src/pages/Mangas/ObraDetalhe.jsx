@@ -25,6 +25,7 @@ import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada } from '../../utils/obraCatalogo';
 import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
+import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './ObraDetalhe.css';
 
 function usuarioPodeVerObraArquivada(user, adminAccess, obra) {
@@ -62,6 +63,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [isSubscribedWork, setIsSubscribedWork] = useState(false);
   const [workNotificationBusy, setWorkNotificationBusy] = useState(false);
+  const [workBrowserPushModalOpen, setWorkBrowserPushModalOpen] = useState(false);
+  const [workBrowserPushPermission, setWorkBrowserPushPermission] = useState('default');
   const upsertNotificationSubscription = useMemo(
     () => httpsCallable(functions, 'upsertNotificationSubscription'),
     []
@@ -295,13 +298,13 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
         targetId: obraId,
         enabled: nextEnabled,
       });
-      if (nextEnabled && typeof window !== 'undefined' && typeof Notification !== 'undefined') {
-        const wantsBrowserNotifications = window.confirm(
-          'Obra acompanhada. Deseja receber avisos no navegador quando sair o proximo capitulo?'
-        );
-        if (wantsBrowserNotifications && Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
+      if (nextEnabled) {
+        const perm =
+          typeof window === 'undefined' || typeof Notification === 'undefined'
+            ? 'unsupported'
+            : Notification.permission;
+        setWorkBrowserPushPermission(perm);
+        setWorkBrowserPushModalOpen(true);
       }
     } finally {
       setWorkNotificationBusy(false);
@@ -347,6 +350,13 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
   return (
     <main className="obra-page">
+      <BrowserPushPreferenceModal
+        open={workBrowserPushModalOpen}
+        permission={workBrowserPushPermission}
+        title="Avisos no navegador"
+        description="Obra acompanhada. Quer receber notificação aqui no navegador quando sair capítulo novo?"
+        onClose={() => setWorkBrowserPushModalOpen(false)}
+      />
       {obraSeo ? (
         <Helmet prioritizeSeoTags>
           <title>{obraSeo.title}</title>

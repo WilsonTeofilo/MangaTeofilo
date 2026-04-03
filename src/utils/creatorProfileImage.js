@@ -5,10 +5,19 @@ import {
   normalizeResponsiveCropAdjustment,
 } from './responsiveCrop';
 
-const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const IMAGE_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/pjpeg',
+  'image/x-png',
+];
 
-export const CREATOR_PROFILE_IMAGE_MAX_INPUT_BYTES = Math.floor(1.2 * 1024 * 1024);
-export const CREATOR_PROFILE_IMAGE_TARGET_OUTPUT_BYTES = 300 * 1024;
+export const CREATOR_PROFILE_IMAGE_MAX_INPUT_BYTES = Math.floor(1.5 * 1024 * 1024);
+/** Saida WebP: tenta ficar nesta faixa (qualidade sobe se ficar pequeno demais). */
+export const CREATOR_PROFILE_IMAGE_OUTPUT_MIN_BYTES = 250 * 1024;
+export const CREATOR_PROFILE_IMAGE_OUTPUT_MAX_BYTES = 400 * 1024;
 export const CREATOR_PROFILE_EDITOR_CONFIG = {
   outputW: 900,
   outputH: 1200,
@@ -18,12 +27,23 @@ export const CREATOR_HERO_EDITOR_CONFIG = {
   outputH: 900,
 };
 
+function extensionLooksLikeRasterImage(name) {
+  return /\.(jpe?g|png|webp)$/i.test(String(name || ''));
+}
+
 export function validateCreatorProfileImageFile(file) {
   if (!file) return 'Selecione uma imagem para o perfil.';
-  if (!IMAGE_TYPES.includes(file.type)) return 'Use JPG, PNG ou WEBP.';
-  if (file.size > CREATOR_PROFILE_IMAGE_MAX_INPUT_BYTES) {
-    return 'A foto precisa ter no maximo 1,2MB.';
+  const size = Number(file.size);
+  if (!Number.isFinite(size) || size <= 0) {
+    return 'Nao foi possivel ler o arquivo. Tente outra foto ou outro navegador.';
   }
+  if (size > CREATOR_PROFILE_IMAGE_MAX_INPUT_BYTES) {
+    return 'A foto precisa ter no maximo 1,5 MB.';
+  }
+  const type = String(file.type || '').trim().toLowerCase();
+  const typeOk = IMAGE_TYPES.includes(type);
+  const emptyMimeOk = !type && extensionLooksLikeRasterImage(file.name);
+  if (!typeOk && !emptyMimeOk) return 'Use JPG, PNG ou WebP.';
   return '';
 }
 
@@ -79,6 +99,63 @@ export function loadCreatorProfileImageFromFile(file) {
     };
     img.src = url;
   });
+}
+
+/**
+ * Carrega imagem remota (ex.: URL HTTPS do Storage) para uso em canvas (crop / preview).
+ * Tenta fetch+CORS primeiro; fallback em Image com crossOrigin.
+ */
+export async function loadCreatorProfileImageFromUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) throw new Error('URL vazia.');
+  try {
+    const res = await fetch(u, { mode: 'cors', credentials: 'omit', cache: 'force-cache' });
+    if (!res.ok) throw new Error('fetch');
+    const blob = await res.blob();
+    if (!blob?.size) throw new Error('empty');
+    const obj = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error('decode'));
+        i.src = obj;
+      });
+      return img;
+    } finally {
+      URL.revokeObjectURL(obj);
+    }
+  } catch {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Nao foi possivel carregar a imagem do perfil.'));
+      img.src = u;
+    });
+  }
+}
+
+async function encodeWebpToOutputBand(canvas, startQuality = 0.88) {
+  const minB = CREATOR_PROFILE_IMAGE_OUTPUT_MIN_BYTES;
+  const maxB = CREATOR_PROFILE_IMAGE_OUTPUT_MAX_BYTES;
+  let quality = startQuality;
+  let blob = await canvasToWebpBlob(canvas, quality);
+  while (blob.size > maxB && quality > 0.42) {
+    quality -= 0.05;
+    blob = await canvasToWebpBlob(canvas, quality);
+  }
+  if (blob.size < minB && quality < 0.93) {
+    let q = quality;
+    while (blob.size < minB && q < 0.95) {
+      q = Math.min(0.95, q + 0.04);
+      const next = await canvasToWebpBlob(canvas, q);
+      if (next.size > maxB) break;
+      blob = next;
+      quality = q;
+    }
+  }
+  return blob;
 }
 
 function canvasToWebpBlob(canvas, quality = 0.88) {
@@ -142,26 +219,26 @@ export async function processCreatorProfileImageToWebp(file, adjustment = null) 
     normalizeCreatorProfileAdjustment(adjustment, dimensions)
   );
 
-  let quality = 0.9;
-  let blob = await canvasToWebpBlob(canvas, quality);
-  while (blob.size > CREATOR_PROFILE_IMAGE_TARGET_OUTPUT_BYTES && quality > 0.42) {
-    quality -= 0.06;
-    blob = await canvasToWebpBlob(canvas, quality);
-  }
+  let blob = await encodeWebpToOutputBand(canvas, 0.9);
 
-  if (blob.size > CREATOR_PROFILE_IMAGE_TARGET_OUTPUT_BYTES) {
+  if (blob.size > CREATOR_PROFILE_IMAGE_OUTPUT_MAX_BYTES) {
     const smallerCanvas = document.createElement('canvas');
     smallerCanvas.width = 720;
     smallerCanvas.height = 960;
     const smallerCtx = smallerCanvas.getContext('2d', { alpha: false });
     if (!smallerCtx) throw new Error('Canvas indisponivel.');
     smallerCtx.drawImage(canvas, 0, 0, smallerCanvas.width, smallerCanvas.height);
-    quality = 0.84;
-    blob = await canvasToWebpBlob(smallerCanvas, quality);
-    while (blob.size > CREATOR_PROFILE_IMAGE_TARGET_OUTPUT_BYTES && quality > 0.4) {
-      quality -= 0.06;
-      blob = await canvasToWebpBlob(smallerCanvas, quality);
-    }
+    blob = await encodeWebpToOutputBand(smallerCanvas, 0.84);
+  }
+
+  if (blob.size > CREATOR_PROFILE_IMAGE_OUTPUT_MAX_BYTES) {
+    const tinyCanvas = document.createElement('canvas');
+    tinyCanvas.width = 600;
+    tinyCanvas.height = 800;
+    const tinyCtx = tinyCanvas.getContext('2d', { alpha: false });
+    if (!tinyCtx) throw new Error('Canvas indisponivel.');
+    tinyCtx.drawImage(canvas, 0, 0, tinyCanvas.width, tinyCanvas.height);
+    blob = await encodeWebpToOutputBand(tinyCanvas, 0.8);
   }
 
   return blob;

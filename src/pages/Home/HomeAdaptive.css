@@ -292,6 +292,10 @@
   border-radius: 7px;
 }
 
+.home-rank-item__text {
+  min-width: 0;
+}
+
 .home-rank-item strong {
   font-size: 0.82rem;
   color: var(--text-pure);
@@ -301,6 +305,16 @@
 .home-rank-item span {
   color: #878787;
   font-size: 0.7rem;
+}
+
+.home-rank-item__author,
+.home-rank-item__stats {
+  display: block;
+  line-height: 1.35;
+}
+
+.home-rank-item__stats {
+  margin-top: 2px;
 }
 
 .home-rank-creator-btn {

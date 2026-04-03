@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
-import { CREATOR_BIO_MIN_LENGTH } from '../../constants';
+import { CREATOR_BIO_MIN_LENGTH, CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY } from '../../constants';
 import { db } from '../../services/firebase';
 import {
   buildCreatorOnboardingSteps,
@@ -14,6 +14,7 @@ import {
 import {
   creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
+  normalizeCreatorMonetizationPreference,
 } from '../../utils/creatorMonetizationUi';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import './CreatorWorkspace.css';
@@ -23,7 +24,6 @@ export default function CreatorWorkspace({ user, perfil }) {
   const [obrasVal, setObrasVal] = useState({});
   const [capsVal, setCapsVal] = useState({});
   const [produtosVal, setProdutosVal] = useState({});
-  const [audienceStats, setAudienceStats] = useState({});
 
   useEffect(() => {
     if (!user?.uid) return () => {};
@@ -36,14 +36,10 @@ export default function CreatorWorkspace({ user, perfil }) {
     const unsubProdutos = onValue(ref(db, 'loja/produtos'), (snap) => {
       setProdutosVal(snap.exists() ? snap.val() : {});
     });
-    const unsubAudience = onValue(ref(db, `creators/${user.uid}/stats`), (snap) => {
-      setAudienceStats(snap.exists() ? snap.val() || {} : {});
-    });
     return () => {
       unsubObras();
       unsubCaps();
       unsubProdutos();
-      unsubAudience();
     };
   }, [user?.uid]);
 
@@ -90,6 +86,11 @@ export default function CreatorWorkspace({ user, perfil }) {
     perfil?.creatorMonetizationPreference,
     perfil?.creatorMonetizationStatus
   );
+  const creatorMonetizationIsActive = monetizationStatus === 'active';
+  const bioMinForCheck =
+    normalizeCreatorMonetizationPreference(perfil?.creatorMonetizationPreference) === 'monetize'
+      ? CREATOR_BIO_MIN_LENGTH
+      : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
   const monetizationPrimaryLabel =
     monetizationStatus === 'active'
       ? 'Abrir ganhos'
@@ -97,7 +98,7 @@ export default function CreatorWorkspace({ user, perfil }) {
         ? 'Ver revisao'
         : monetizationStatus === 'blocked_underage'
           ? 'Entender bloqueio'
-          : 'Configurar apoio';
+          : 'Monetizacao no perfil';
 
   return (
     <main className="creator-workspace-page">
@@ -133,37 +134,15 @@ export default function CreatorWorkspace({ user, perfil }) {
             <span>Capitulos</span>
             <strong>{metrics.caps.length}</strong>
           </article>
-          <article className="creator-workspace-stat">
-            <span>Produtos</span>
-            <strong>{metrics.produtos.length}</strong>
-          </article>
+          {creatorMonetizationIsActive ? (
+            <article className="creator-workspace-stat">
+              <span>Produtos</span>
+              <strong>{metrics.produtos.length}</strong>
+            </article>
+          ) : null}
           <article className="creator-workspace-stat">
             <span>Monetizacao</span>
             <strong>{monetizationLabel}</strong>
-          </article>
-        </section>
-
-        <section className="creator-workspace-overview creator-workspace-overview--audience">
-          <article className="creator-workspace-stat">
-            <span>Seguidores</span>
-            <strong>{Number(audienceStats?.followersCount || 0)}</strong>
-          </article>
-          <article className="creator-workspace-stat">
-            <span>Views totais</span>
-            <strong>{Number(audienceStats?.totalViews || 0)}</strong>
-          </article>
-          <article className="creator-workspace-stat">
-            <span>Membros</span>
-            <strong>{Number(audienceStats?.membersCount || 0)}</strong>
-          </article>
-          <article className="creator-workspace-stat">
-            <span>Receita</span>
-            <strong>
-              {new Intl.NumberFormat('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              }).format(Number(audienceStats?.revenueTotal || 0))}
-            </strong>
           </article>
         </section>
 
@@ -207,7 +186,7 @@ export default function CreatorWorkspace({ user, perfil }) {
             <ul className="creator-pillar-list">
               <li>{String(perfil?.creatorDisplayName || '').trim() ? 'Nome publico definido' : 'Nome publico pendente'}</li>
               <li>
-                {String(perfil?.creatorBio || '').trim().length >= CREATOR_BIO_MIN_LENGTH
+                {String(perfil?.creatorBio || '').trim().length >= bioMinForCheck
                   ? 'Bio pronta'
                   : 'Bio ainda curta'}
               </li>
@@ -244,11 +223,11 @@ export default function CreatorWorkspace({ user, perfil }) {
           <article className="creator-pillar-card">
             <div className="creator-pillar-card-head">
               <p>Monetizacao</p>
-              <strong>Apoio e membership</strong>
+              <strong>Receber na plataforma</strong>
             </div>
             <p className="creator-pillar-copy">
-              Publicar e monetizar sao escolhas separadas. Quando ativada, a monetizacao precisa estar coerente com
-              sua configuracao e validacao.
+              Publicar e monetizar sao separados: pedir monetizacao e ajustar valores fica no seu perfil; a equipe revisa
+              antes de ativar repasses. Sem monetizacao ativa, voce so publica.
             </p>
             <ul className="creator-pillar-list">
               <li>Modo atual: {monetizationLabel}</li>
@@ -269,11 +248,13 @@ export default function CreatorWorkspace({ user, perfil }) {
             </ul>
             <div className="creator-pillar-actions">
               <button type="button" className="creator-workspace-btn" onClick={() => navigate('/perfil?onboarding=creator')}>
-                Configurar apoio
+                Perfil e monetizacao
               </button>
-              <button type="button" className="creator-workspace-btn" onClick={() => navigate('/creator/promocoes')}>
-                {monetizationPrimaryLabel}
-              </button>
+              {creatorMonetizationIsActive ? (
+                <button type="button" className="creator-workspace-btn" onClick={() => navigate('/creator/promocoes')}>
+                  {monetizationPrimaryLabel}
+                </button>
+              ) : null}
             </div>
           </article>
 
@@ -295,6 +276,7 @@ export default function CreatorWorkspace({ user, perfil }) {
             </button>
           </article>
 
+          {creatorMonetizationIsActive ? (
           <article className="creator-pillar-card">
             <div className="creator-pillar-card-head">
               <p>Operacao</p>
@@ -312,6 +294,7 @@ export default function CreatorWorkspace({ user, perfil }) {
               Abrir operacao
             </button>
           </article>
+          ) : null}
         </section>
       </section>
     </main>

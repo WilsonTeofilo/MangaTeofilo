@@ -21,7 +21,7 @@ export default function CreatorMonetizationPage({ user }) {
           </div>
           <div className="creator-frame-actions">
             <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/perfil')}>
-              Configurar apoio
+              Perfil do criador
             </button>
             <button
               type="button"

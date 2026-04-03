@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { toRecordList } from '../../utils/firebaseRecordList';
+import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
 import './CreatorFrame.css';
 
 function safeNumber(value) {
@@ -105,6 +106,11 @@ function AudienceLineChart({ rows }) {
 export default function CreatorAudiencePage({ user, perfil }) {
   const navigate = useNavigate();
   const uid = String(user?.uid || '').trim();
+  const creatorMonetizationIsActive =
+    effectiveCreatorMonetizationStatus(
+      perfil?.creatorMonetizationPreference,
+      perfil?.creatorMonetizationStatus
+    ) === 'active';
   const [range, setRange] = useState('30d');
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillMessage, setBackfillMessage] = useState('');
@@ -433,9 +439,9 @@ export default function CreatorAudiencePage({ user, perfil }) {
             <button type="button" className="creator-frame-btn" onClick={handleRunBackfill} disabled={backfillBusy}>
               {backfillBusy ? 'Reconstruindo...' : 'Rodar backfill'}
             </button>
-            <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/promocoes')}>
+            {creatorMonetizationIsActive ? <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/promocoes')}>
               Ver monetização
-            </button>
+            </button> : null}
             <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/dashboard')}>
               Voltar ao workspace
             </button>

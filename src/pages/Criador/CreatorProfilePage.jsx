@@ -15,7 +15,7 @@ export default function CreatorProfilePage({ user, adminAccess }) {
             <p className="creator-frame-eyebrow">Creator Identity</p>
             <h1>Perfil e presença pública</h1>
             <p>
-              Ajuste seu nome artístico, bio, redes, avatar e configuração de apoio no mesmo lugar.
+              Ajuste seu nome artístico, bio, redes, avatar e opção de monetização no mesmo lugar.
               Esta é a base do seu perfil público e também do onboarding do criador.
             </p>
           </div>
@@ -44,7 +44,7 @@ export default function CreatorProfilePage({ user, adminAccess }) {
           </article>
           <article className="creator-frame-note">
             <strong>Monetização</strong>
-            <p>A escolha entre apenas publicar e monetizar fica aqui, junto com a configuração de apoio.</p>
+            <p>A escolha entre apenas publicar e pedir monetização fica aqui; repasses só após aprovação da equipe.</p>
           </article>
           <article className="creator-frame-note">
             <strong>Onboarding</strong>

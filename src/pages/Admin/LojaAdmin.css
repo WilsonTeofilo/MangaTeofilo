@@ -248,3 +248,196 @@
   border: 1px solid #333;
 }
 
+.loja-admin-product-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.loja-admin-product-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.loja-admin-product-form,
+.loja-admin-product-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.loja-admin-editor-section,
+.loja-admin-preview-card,
+.loja-admin-finance-card {
+  border: 1px solid #292929;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(27, 27, 27, 0.96), rgba(16, 16, 16, 0.96));
+  padding: 16px;
+}
+
+.loja-admin-editor-section h3,
+.loja-admin-finance-card h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+}
+
+.loja-admin-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.loja-admin-editor-grid--compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.loja-admin-field--full {
+  max-width: none;
+  grid-column: 1 / -1;
+}
+
+.loja-admin-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 6px 0 12px;
+}
+
+.loja-admin-toggle-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #303030;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.loja-admin-money-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.loja-admin-money-card {
+  border: 1px solid #2d2d2d;
+  border-radius: 14px;
+  background: #101010;
+  padding: 14px;
+}
+
+.loja-admin-money-card span {
+  display: block;
+  color: #9f9f9f;
+  font-size: 0.8rem;
+}
+
+.loja-admin-money-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.2rem;
+}
+
+.loja-admin-money-card.is-positive strong {
+  color: #8ff0a4;
+}
+
+.loja-admin-money-card.is-negative strong {
+  color: #ff8a8a;
+}
+
+.loja-admin-preview-card {
+  position: sticky;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.loja-admin-preview-image {
+  min-height: 320px;
+  border-radius: 16px;
+  border: 1px dashed #454545;
+  background:
+    radial-gradient(circle at top, rgba(255, 204, 0, 0.16), transparent 42%),
+    linear-gradient(180deg, #1d1d1d, #0d0d0d);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.loja-admin-preview-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.loja-admin-preview-image span {
+  color: #8a8a8a;
+  font-weight: 700;
+}
+
+.loja-admin-preview-card p {
+  margin: 8px 0 0;
+  color: #bcbcbc;
+  line-height: 1.5;
+}
+
+.loja-admin-preview-card span {
+  display: inline-block;
+  margin-top: 12px;
+  color: #ffe9a8;
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+
+.loja-admin-finance-card dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.loja-admin-finance-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #232323;
+}
+
+.loja-admin-finance-card dl div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.loja-admin-finance-card dt {
+  color: #969696;
+}
+
+.loja-admin-finance-card dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .loja-admin-product-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .loja-admin-editor-grid,
+  .loja-admin-editor-grid--compact,
+  .loja-admin-money-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .loja-admin-preview-card {
+    position: static;
+  }
+}
+

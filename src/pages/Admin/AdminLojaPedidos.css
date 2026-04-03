@@ -250,3 +250,76 @@
   font-weight: 600;
   font-size: 0.82rem;
 }
+
+.admin-loja-pedidos__kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-loja-pedidos__kpis article {
+  border: 1px solid #2f2f2f;
+  border-radius: 14px;
+  background: #131313;
+  padding: 14px;
+}
+
+.admin-loja-pedidos__kpis span {
+  display: block;
+  color: #9a9a9a;
+  font-size: 0.82rem;
+}
+
+.admin-loja-pedidos__kpis strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.25rem;
+}
+
+.admin-loja-pedidos__actions input {
+  min-width: 280px;
+  background: #101010;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #f2f2f2;
+}
+
+.admin-loja-pedidos__status--pending_payment,
+.admin-loja-pedidos__status--order_received {
+  color: #b7c5ff;
+}
+
+.admin-loja-pedidos__status--in_production,
+.admin-loja-pedidos__status--processing {
+  color: #ffd26a;
+}
+
+.admin-loja-pedidos__status--shipped {
+  color: #7ee1c1;
+}
+
+.admin-loja-pedidos__status--delivered {
+  color: #9fe28e;
+}
+
+.admin-loja-pedidos__status--cancelled {
+  color: #ff9e9e;
+}
+
+.admin-loja-pedidos__checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-loja-pedidos__checkitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #2d2d2d;
+  border-radius: 10px;
+  background: #101010;
+}

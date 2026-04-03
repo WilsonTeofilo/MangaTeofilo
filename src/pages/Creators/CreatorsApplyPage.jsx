@@ -37,6 +37,14 @@ export default function CreatorsApplyPage({ user, perfil, adminAccess }) {
       payoutInstructions: String(perfil?.creatorCompliance?.payoutInstructions || '').trim(),
       payoutPixType: String(perfil?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
       profileImageCrop: perfil?.creatorApplication?.profileImageCrop || null,
+      existingProfileImageUrl: (() => {
+        const candidates = [perfil?.creatorApplication?.profileImageUrl, perfil?.userAvatar];
+        for (const raw of candidates) {
+          const u = String(raw || '').trim();
+          if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
+        }
+        return '';
+      })(),
     }),
     [perfil, user]
   );
@@ -63,11 +71,11 @@ export default function CreatorsApplyPage({ user, perfil, adminAccess }) {
           </p>
           <ul className="creators-apply-guest__bullets">
             <li>Foto de perfil e identidade de criador</li>
-            <li>Revisão humana antes de liberar o painel</li>
-            <li>Monetização opcional e separada da publicação</li>
+            <li>Publicar sem monetização: acesso liberado na hora</li>
+            <li>Monetização com dados legais e PIX passa por revisão da equipe</li>
           </ul>
           <div className="creators-apply-guest__actions">
-            <button type="button" className="creators-apply-guest__primary" onClick={() => navigate(buildLoginUrlWithRedirect('/creators'))}>
+            <button type="button" className="creators-apply-guest__primary" onClick={() => navigate(buildLoginUrlWithRedirect('/perfil'))}>
               Entrar ou cadastrar
             </button>
             <button type="button" className="creators-apply-guest__secondary" onClick={() => navigate('/')}>
@@ -90,11 +98,15 @@ export default function CreatorsApplyPage({ user, perfil, adminAccess }) {
   const handleSubmit = async (payload) => {
     setLoading(true);
     try {
-      await submitCreatorApplicationPayload({
+      const { data } = await submitCreatorApplicationPayload({
         creatorSubmitApplication,
         payload,
         uid: user.uid,
       });
+      if (data?.autoApproved && typeof window !== 'undefined') {
+        window.location.assign('/perfil');
+        return;
+      }
       navigate('/perfil');
     } catch (err) {
       const msg = err?.message || 'Não foi possível enviar sua solicitação agora.';

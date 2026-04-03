@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { onValue, ref } from 'firebase/database';
@@ -27,6 +27,7 @@ import {
 } from '../../utils/trafficAttribution';
 import { formatarDataLongaBr, formatarHoraBr } from '../../utils/datasBr';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
+import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
@@ -53,6 +54,12 @@ function formatarPrecoBrl(valor) {
     style: 'currency',
     currency: 'BRL',
   }).format(n);
+}
+
+function sanitizeCreatorId(raw) {
+  const c = String(raw || '').trim();
+  if (c.length < 10 || c.length > 128) return null;
+  return /^[a-zA-Z0-9_-]+$/.test(c) ? c : null;
 }
 
 export default function Apoie({ user, perfil }) {
@@ -209,11 +216,11 @@ export default function Apoie({ user, perfil }) {
     setModalAgradecimento({ aberto: true, titulo, texto });
   }, [mpRetorno, searchParams]);
 
-  const fecharModalELimparUrl = () => {
+  const fecharModalELimparUrl = useCallback(() => {
     setModalAgradecimento((m) => ({ ...m, aberto: false }));
     navigate('/apoie', { replace: true });
     jaMostrouAgradecimento.current = false;
-  };
+  }, [navigate]);
 
   useEffect(() => {
     if (!modalAgradecimento.aberto) return undefined;
@@ -258,7 +265,7 @@ export default function Apoie({ user, perfil }) {
         modalLastFocusedRef.current.focus();
       }
     };
-  }, [modalAgradecimento.aberto]);
+  }, [fecharModalELimparUrl, modalAgradecimento.aberto]);
 
   useEffect(() => {
     if (!acompanhamentoPremium.ativo || acompanhamentoPremium.confirmado) return;
@@ -450,7 +457,14 @@ export default function Apoie({ user, perfil }) {
 
   const premiumAtivo = assinaturaPremiumAtiva(perfil);
   const premiumEntitlement = obterEntitlementPremiumGlobal(perfil);
-  const creatorIdNaSessao = String(searchParams.get('creatorId') || searchParams.get('criador') || '').trim();
+  const attributionPersistida = useMemo(() => getAttribution(), []);
+  const attributionCreatorIdParaCheckout = useMemo(() => {
+    const fromUrl = sanitizeCreatorId(searchParams.get('creatorId') || searchParams.get('criador'));
+    if (fromUrl) return fromUrl;
+    const fromCache = sanitizeCreatorId(attributionPersistida?.creatorId);
+    return fromCache || null;
+  }, [attributionPersistida, searchParams]);
+  const creatorIdNaSessao = attributionCreatorIdParaCheckout || '';
   const membershipCriadorAtiva =
     creatorIdNaSessao && perfil
       ? creatorMembershipAtiva(perfil, creatorIdNaSessao)
@@ -479,12 +493,6 @@ export default function Apoie({ user, perfil }) {
   const textoTerminaPromo = textoCountdownPromoSegundos(segundosRestantes);
 
   /** Atribuição de apoio/premium a um mangaká (links: ?creatorId=UID ou ?criador=UID). */
-  const attributionCreatorIdParaCheckout = useMemo(() => {
-    const c = String(searchParams.get('creatorId') || searchParams.get('criador') || '').trim();
-    if (c.length < 10 || c.length > 128) return null;
-    if (!/^[a-zA-Z0-9_-]+$/.test(c)) return null;
-    return c;
-  }, [searchParams]);
 
   useEffect(() => {
     if (!attributionCreatorIdParaCheckout) {
@@ -493,6 +501,14 @@ export default function Apoie({ user, perfil }) {
     }
     const unsub = onValue(ref(db, `usuarios_publicos/${attributionCreatorIdParaCheckout}`), (snapshot) => {
       const row = snapshot.exists() ? snapshot.val() || {} : {};
+      const monetizationStatus = effectiveCreatorMonetizationStatus(
+        row.creatorMonetizationPreference,
+        row.creatorMonetizationStatus
+      );
+      if (monetizationStatus !== 'active') {
+        setCreatorOffer(null);
+        return;
+      }
       setCreatorOffer({
         creatorId: attributionCreatorIdParaCheckout,
         creatorName: String(row.creatorDisplayName || row.userName || 'Criador').trim() || 'Criador',

@@ -454,11 +454,20 @@ export default function DashboardAdmin() {
     return series.slice(-6);
   }, [dados]);
 
-  const analytics = dados?.analytics || {};
-  const acquisition = analytics.acquisition || { promo: {}, chapter: {} };
-  const subscriptionStats = analytics.subscriptionStats || [];
-  const donationStats = analytics.donationStats || [];
-  const historyByUid = analytics.userHistoryByUid || {};
+  const analytics = useMemo(() => dados?.analytics || {}, [dados]);
+  const acquisition = useMemo(() => analytics.acquisition || { promo: {}, chapter: {} }, [analytics]);
+  const subscriptionStats = useMemo(
+    () => analytics.subscriptionStats || [],
+    [analytics]
+  );
+  const donationStats = useMemo(
+    () => analytics.donationStats || [],
+    [analytics]
+  );
+  const historyByUid = useMemo(
+    () => analytics.userHistoryByUid || {},
+    [analytics]
+  );
   const subsByUid = useMemo(
     () => Object.fromEntries(subscriptionStats.map((r) => [r.uid, r])),
     [subscriptionStats]

@@ -27,6 +27,7 @@ import {
   creatorOnboardingIsRequiredComplete,
   creatorOnboardingPrimaryNextPath,
 } from './utils/creatorOnboardingProgress';
+import { effectiveCreatorMonetizationStatus } from './utils/creatorMonetizationUi';
 
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
@@ -43,6 +44,7 @@ const LojaCatalogo = lazy(() => import('./pages/Loja/LojaCatalogo.jsx'));
 const LojaProduto = lazy(() => import('./pages/Loja/LojaProduto.jsx'));
 const LojaCarrinho = lazy(() => import('./pages/Loja/LojaCarrinho.jsx'));
 const LojaPedidos = lazy(() => import('./pages/Loja/LojaPedidos.jsx'));
+const PrintOnDemandPage = lazy(() => import('./pages/Loja/PrintOnDemandPage.jsx'));
 const Login = lazy(() => import('./pages/Auth/Login.jsx'));
 const Perfil = lazy(() => import('./pages/Perfil/Perfil.jsx'));
 const Leitor = lazy(() => import('./pages/Leitor/Leitor.jsx'));
@@ -63,6 +65,7 @@ const DashboardAdmin = lazy(() => import('./pages/Admin/DashboardAdmin.jsx'));
 const FinanceiroAdmin = lazy(() => import('./pages/Admin/FinanceiroAdmin.jsx'));
 const LojaAdmin = lazy(() => import('./pages/Admin/LojaAdmin.jsx'));
 const AdminLojaPedidos = lazy(() => import('./pages/Admin/AdminLojaPedidos.jsx'));
+const PrintOnDemandAdmin = lazy(() => import('./pages/Admin/PrintOnDemandAdmin.jsx'));
 const EquipeAdmin = lazy(() => import('./pages/Admin/EquipeAdmin.jsx'));
 const SessoesAdmin = lazy(() => import('./pages/Admin/SessoesAdmin.jsx'));
 const MangakaFinanceiroAdmin = lazy(() => import('./pages/Admin/MangakaFinanceiroAdmin.jsx'));
@@ -77,9 +80,20 @@ function RedirectToLogin() {
 function LoginRoute({ podeAcessarApp }) {
   const [sp] = useSearchParams();
   if (podeAcessarApp) {
-    return <Navigate to={resolveSafeInternalRedirect(sp.get('redirect'))} replace />;
+    const raw = sp.get('redirect');
+    const target =
+      raw != null && String(raw).trim() !== ''
+        ? resolveSafeInternalRedirect(raw)
+        : '/perfil';
+    return <Navigate to={target} replace />;
   }
   return <Login />;
+}
+
+/** URL canónica pública do POD; `/creator/print` redireciona para `?ctx=creator`. */
+function LegacyPrintOnDemandRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/print-on-demand${search}`} replace />;
 }
 
 function computePodeAcessarApp(usuario, perfilUsuario) {
@@ -98,7 +112,7 @@ function AppRoutes() {
   const [carregando, setCarregando] = useState(true);
 
   const [perfilUsuario, setPerfilUsuario] = useState(null);
-  const [perfilCarregando, setPerfilCarregando] = useState(false);
+  const [perfilLoadedUid, setPerfilLoadedUid] = useState('');
   const [adminAccess, setAdminAccess] = useState(emptyAdminAccess());
   const [creatorObrasVal, setCreatorObrasVal] = useState(null);
   const [creatorCapsVal, setCreatorCapsVal] = useState(null);
@@ -107,6 +121,14 @@ function AppRoutes() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUsuario(user);
+      if (!user) {
+        setPerfilUsuario(null);
+        setPerfilLoadedUid('');
+        setAdminAccess(emptyAdminAccess());
+        setCreatorObrasVal(null);
+        setCreatorCapsVal(null);
+        setCreatorProdutosVal(null);
+      }
       setCarregando(false);
     });
     const timer = setTimeout(() => setCarregando(false), 3000);
@@ -118,26 +140,18 @@ function AppRoutes() {
 
   useEffect(() => {
     if (!usuario?.uid) {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      setPerfilUsuario(null);
-      setPerfilCarregando(false);
-      setAdminAccess(emptyAdminAccess());
-      return;
+      return () => {};
     }
-    setPerfilCarregando(true);
     const r = ref(db, `usuarios/${usuario.uid}`);
     const unsub = onValue(r, (snap) => {
       setPerfilUsuario(snap.exists() ? snap.val() : null);
-      setPerfilCarregando(false);
+      setPerfilLoadedUid(usuario.uid);
     });
     return () => unsub();
   }, [usuario?.uid]);
 
   useEffect(() => {
     if (!usuario?.uid || !adminAccess.isMangaka) {
-      setCreatorObrasVal(null);
-      setCreatorCapsVal(null);
-      setCreatorProdutosVal(null);
       return () => {};
     }
     const unsubObras = onValue(ref(db, 'obras'), (snap) => {
@@ -164,7 +178,6 @@ function AppRoutes() {
   useEffect(() => {
     let ativo = true;
     if (!usuario) {
-      setAdminAccess(emptyAdminAccess());
       return () => {};
     }
     resolveAdminAccess(usuario)
@@ -185,6 +198,7 @@ function AppRoutes() {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
+  const perfilCarregando = Boolean(usuario?.uid) && perfilLoadedUid !== usuario.uid;
   if (usuario && perfilCarregando) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
@@ -216,6 +230,11 @@ function AppRoutes() {
   const creatorOnboardingComplete =
     !adminAccess.isMangaka || creatorOnboardingIsRequiredComplete(creatorOnboardingSteps);
   const creatorOnboardingNextPath = creatorOnboardingPrimaryNextPath(creatorOnboardingSteps);
+  const creatorMonetizationIsActive =
+    effectiveCreatorMonetizationStatus(
+      perfilUsuario?.creatorMonetizationPreference,
+      perfilUsuario?.creatorMonetizationStatus
+    ) === 'active';
   const adminAccessReady = !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist;
   const adminPathOk = (path) => canAccessAdminPath(path, adminAccess);
   const creatorPathOk = (path) => canAccessCreatorPath(path, adminAccess);
@@ -324,6 +343,18 @@ function AppRoutes() {
               />
             }
           />
+          <Route path="/store/print-on-demand" element={<LegacyPrintOnDemandRedirect />} />
+          <Route
+            path="/print-on-demand"
+            element={
+              <PrintOnDemandPage
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+                adminAccess={adminAccess}
+              />
+            }
+          />
+          <Route path="/creator/print" element={<Navigate to="/print-on-demand?ctx=creator" replace />} />
           <Route
             path="/capitulos"
             element={<Navigate to="/works" replace />}
@@ -525,6 +556,19 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/admin/orders"
+            element={
+              !adminAccessReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/orders') ? (
+                <PrintOnDemandAdmin user={usuario} adminAccess={adminAccess} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route path="/admin/producao-fisica" element={<Navigate to="/admin/orders" replace />} />
+          <Route
             path="/admin/sessoes"
             element={
               !adminAccessReady ? (
@@ -645,7 +689,11 @@ function AppRoutes() {
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/promocoes') ? (
                 adminAccess?.isMangaka ? (
-                  <CreatorMonetizationPage user={usuario} />
+                  creatorMonetizationIsActive ? (
+                    <CreatorMonetizationPage user={usuario} />
+                  ) : (
+                    <Navigate to="/creator/dashboard" replace />
+                  )
                 ) : (
                   <FinanceiroAdmin />
                 )
@@ -661,7 +709,11 @@ function AppRoutes() {
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/loja') ? (
                 adminAccess?.isMangaka ? (
-                  <CreatorStorePage user={usuario} adminAccess={adminAccess} />
+                  creatorMonetizationIsActive ? (
+                    <CreatorStorePage user={usuario} adminAccess={adminAccess} />
+                  ) : (
+                    <Navigate to="/creator/dashboard" replace />
+                  )
                 ) : adminPathOk('/admin/pedidos') ? (
                   <AdminLojaPedidos user={usuario} adminAccess={adminAccess} />
                 ) : (

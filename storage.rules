@@ -104,15 +104,19 @@ service firebase.storage {
       allow read: if isShitoAdmin()
                    || hasAdminPanelAccess()
                    || (request.auth != null && request.auth.uid == ownerUid);
+      /** Mesmo limite do cliente: PDF ate 55 MB na UI; capa ate 8 MB. */
       allow write: if isSafeSegment(ownerUid)
                    && request.auth != null
                    && request.auth.uid == ownerUid
-                   && (request.resource == null || (request.resource.size < 60 * 1024 * 1024
-                   && ((request.resource.contentType == "application/pdf"
-                        && fileName.lower().matches('.*\\.pdf$'))
-                       || (request.resource.contentType.matches('image/.*')
-                           && !request.resource.contentType.matches('.*svg.*')
-                           && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')))));
+                   && (request.resource == null || (
+                        (request.resource.contentType == "application/pdf"
+                         && request.resource.size < 56 * 1024 * 1024
+                         && fileName.lower().matches('.*\\.pdf$'))
+                        || (request.resource.contentType.matches('image/.*')
+                            && !request.resource.contentType.matches('.*svg.*')
+                            && request.resource.size < 8 * 1024 * 1024
+                            && fileName.lower().matches('.*\\.(jpe?g|png|webp)$'))
+                      ));
     }
 
     match /{allPaths=**} {

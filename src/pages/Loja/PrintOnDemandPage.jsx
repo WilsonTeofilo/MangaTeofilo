@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { onValue, ref as dbRef } from 'firebase/database';
 
-import { functions, storage } from '../../services/firebase';
+import { db, functions, storage } from '../../services/firebase';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import {
   BOOK_FORMAT,
@@ -13,8 +14,11 @@ import {
   PERSONAL_QUANTITIES,
   PLATFORM_RETAIL_UNIT_BRL,
   PERSONAL_UNIT_BRL,
+  STORE_PROMO_FIXED_RETAIL_UNIT_BRL,
   computePlatformOrder,
   computePersonalOrder,
+  computeStorePromoOrder,
+  computeStorePromoEligibilityClient,
   formatBRL,
   getProductionDaysRange,
   computePlatformCreatorProfit,
@@ -51,12 +55,43 @@ function formatLabel(id) {
 }
 
 function saleModelLabel(m) {
-  return m === SALE_MODEL.PLATFORM ? 'Venda pela plataforma' : 'Comprar para mim';
+  if (m === SALE_MODEL.PLATFORM) return 'Venda pela plataforma';
+  if (m === SALE_MODEL.STORE_PROMO) return 'Divulgação (sem lucro)';
+  return 'Comprar para mim';
 }
 
-export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
+function fmtCountPt(n) {
+  return new Intl.NumberFormat('pt-BR').format(Math.max(0, Math.floor(Number(n) || 0)));
+}
+
+function PodMetricBar({ label, current, max }) {
+  const cap = Math.max(1, Number(max) || 1);
+  const cur = Math.max(0, Number(current) || 0);
+  const pct = Math.min(100, Math.round((cur / cap) * 100));
+  return (
+    <div className="pod-metric">
+      <div className="pod-metric__head">
+        <span className="pod-metric__label">{label}</span>
+        <span className="pod-metric__nums">
+          {fmtCountPt(cur)} / {fmtCountPt(cap)}
+        </span>
+      </div>
+      <div
+        className="pod-metric__bar"
+        role="progressbar"
+        aria-valuenow={cur}
+        aria-valuemin={0}
+        aria-valuemax={cap}
+        aria-label={`${label}: ${fmtCountPt(cur)} de ${fmtCountPt(cap)}`}
+      >
+        <div className="pod-metric__fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal = null, capsVal = null }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const canonicalUrl = 'https://mangateofilo.com/print-on-demand';
 
@@ -68,6 +103,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   }, [creatorContext]);
   const loginContinueUrl = podContinueUrl;
 
+  const obraRef = useRef(null);
   const modeloRef = useRef(null);
   const vendaRef = useRef(null);
   const quantidadeRef = useRef(null);
@@ -76,6 +112,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
 
   const sectionRefMap = useMemo(
     () => ({
+      obra: obraRef,
       modelo: modeloRef,
       venda: vendaRef,
       quantidade: quantidadeRef,
@@ -120,6 +157,8 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   const [modal, setModal] = useState(null);
   const [successOrderId, setSuccessOrderId] = useState('');
   const pendingNavRef = useRef(null);
+  const [linkedWorkId, setLinkedWorkId] = useState('');
+  const [followerCount, setFollowerCount] = useState(0);
 
   const isMangakaUser = useMemo(
     () =>
@@ -137,6 +176,64 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   );
   const platformSaleBlocked =
     isMangakaUser && (perfil == null || !creatorMonetizationActive);
+  const storePromoModeAvailable = platformSaleBlocked;
+
+  const flowSteps = useMemo(() => {
+    if (saleModel === SALE_MODEL.STORE_PROMO) {
+      return [{ id: 'obra', label: 'Obra' }, ...STEPS];
+    }
+    return STEPS;
+  }, [saleModel]);
+
+  const myWorks = useMemo(() => {
+    if (!user?.uid || !obrasVal || typeof obrasVal !== 'object') return [];
+    const uid = user.uid;
+    return Object.entries(obrasVal)
+      .map(([id, row]) => ({ id, ...(row && typeof row === 'object' ? row : {}) }))
+      .filter((w) => String(w.creatorId || '').trim() === uid)
+      .sort((a, b) =>
+        String(a.title || a.nome || a.name || '').localeCompare(
+          String(b.title || b.nome || b.name || ''),
+          'pt'
+        )
+      );
+  }, [obrasVal, user?.uid]);
+
+  const selectedObraRow = useMemo(() => {
+    if (!linkedWorkId || !obrasVal || typeof obrasVal !== 'object') return null;
+    const row = obrasVal[linkedWorkId];
+    if (!row || typeof row !== 'object') return null;
+    return row;
+  }, [linkedWorkId, obrasVal]);
+
+  const storePromoMetrics = useMemo(
+    () =>
+      computeStorePromoEligibilityClient({
+        obra: selectedObraRow,
+        workId: linkedWorkId,
+        capsVal,
+        followersCount: followerCount,
+      }),
+    [selectedObraRow, linkedWorkId, capsVal, followerCount]
+  );
+
+  useEffect(() => {
+    if (!user?.uid || !isMangakaUser) {
+      setFollowerCount(0);
+      return undefined;
+    }
+    const r = dbRef(db, `creators/${user.uid}/stats/followersCount`);
+    const unsub = onValue(r, (snap) => {
+      setFollowerCount(snap.exists() ? Number(snap.val() || 0) : 0);
+    });
+    return () => unsub();
+  }, [user?.uid, isMangakaUser]);
+
+  useEffect(() => {
+    if (saleModel !== SALE_MODEL.STORE_PROMO) {
+      setLinkedWorkId('');
+    }
+  }, [saleModel]);
 
   const coverPreviewUrl = useRef(null);
   const [coverPreviewRev, setCoverPreviewRev] = useState(0);
@@ -169,14 +266,17 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   }, [format]);
 
   useEffect(() => {
-    if (saleModel === SALE_MODEL.PLATFORM) {
+    if (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO) {
       setQuantity((q) => (PLATFORM_QUANTITIES.includes(q) ? q : 10));
     } else {
       setQuantity((q) => (PERSONAL_QUANTITIES.includes(q) ? q : 10));
     }
   }, [saleModel]);
 
-  const qtyOptions = saleModel === SALE_MODEL.PLATFORM ? PLATFORM_QUANTITIES : PERSONAL_QUANTITIES;
+  const qtyOptions =
+    saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
+      ? PLATFORM_QUANTITIES
+      : PERSONAL_QUANTITIES;
 
   const retail = PLATFORM_RETAIL_UNIT_BRL[format];
 
@@ -188,6 +288,11 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   const personalCalc = useMemo(() => {
     if (saleModel !== SALE_MODEL.PERSONAL) return null;
     return computePersonalOrder(format, quantity);
+  }, [saleModel, format, quantity]);
+
+  const storePromoCalc = useMemo(() => {
+    if (saleModel !== SALE_MODEL.STORE_PROMO) return null;
+    return computeStorePromoOrder(format, quantity);
   }, [saleModel, format, quantity]);
 
   const prodDays = useMemo(
@@ -210,6 +315,13 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
     setAddrZip('');
     setAddrComp('');
   }, [saleModel]);
+
+  const obraDisplayName = useMemo(() => {
+    if (!selectedObraRow) return '';
+    return String(
+      selectedObraRow.title || selectedObraRow.nome || selectedObraRow.name || 'Obra'
+    ).trim();
+  }, [selectedObraRow]);
 
   useEffect(() => {
     if (!platformSaleBlocked) return;
@@ -311,6 +423,23 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
         return false;
       }
     }
+    if (saleModel === SALE_MODEL.STORE_PROMO) {
+      if (!String(linkedWorkId).trim()) {
+        showToast('Selecione a obra vinculada.');
+        scrollToStep('obra');
+        return false;
+      }
+      if (!storePromoMetrics.ok) {
+        showToast('Requisitos de divulgação ainda não atingidos.');
+        scrollToStep('obra');
+        return false;
+      }
+      if (!storePromoCalc) {
+        showToast('Quantidade inválida para divulgação na loja.');
+        scrollToStep('quantidade');
+        return false;
+      }
+    }
     return true;
   };
 
@@ -327,6 +456,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
         pdfUrl,
         coverUrl,
         unitSalePriceBRL: saleModel === SALE_MODEL.PLATFORM ? clampPrice(unitSalePrice) : undefined,
+        linkedWorkId: saleModel === SALE_MODEL.STORE_PROMO ? String(linkedWorkId).trim() : undefined,
         shippingAddress:
           saleModel === SALE_MODEL.PERSONAL
             ? {
@@ -351,13 +481,19 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
       setPdfFile(null);
       setCoverFile(null);
       await loadMine();
-      setModal(saleModel === SALE_MODEL.PLATFORM ? 'success_platform' : 'success_personal');
+      setModal(
+        saleModel === SALE_MODEL.PLATFORM
+          ? 'success_platform'
+          : saleModel === SALE_MODEL.STORE_PROMO
+            ? 'success_store_promo'
+            : 'success_personal'
+      );
     } catch (err) {
       const code = String(err?.code || '');
       const msg = err?.message || 'Não foi possível enviar o pedido.';
       if (
-        code.includes('failed-precondition') ||
-        /monetiz|repasse|Venda na loja/i.test(msg)
+        saleModel !== SALE_MODEL.STORE_PROMO &&
+        (code.includes('failed-precondition') || /monetiz|repasse|Venda na loja/i.test(msg))
       ) {
         setModal('monetization');
       } else {
@@ -371,7 +507,9 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   const handleConfirmProduction = () => {
     if (!validateBeforeSubmit()) return;
     const ok = window.confirm(
-      'Confirmar pedido de produção? Em seguida você verá o resumo e poderá seguir para o pagamento quando o checkout estiver disponível.'
+      saleModel === SALE_MODEL.STORE_PROMO
+        ? 'Enviar solicitação de publicação em modo divulgação? Depois do pagamento, o admin analisa o material antes do produto entrar na loja. Você não recebe repasse sobre vendas deste item.'
+        : 'Confirmar pedido de produção? Em seguida você verá o resumo e poderá seguir para o pagamento quando o checkout estiver disponível.'
     );
     if (!ok) return;
     runSubmit();
@@ -390,6 +528,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
       setModal('monetization');
       return;
     }
+    if (m === SALE_MODEL.STORE_PROMO && !storePromoModeAvailable) return;
     setSaleModel(m);
   };
 
@@ -418,14 +557,18 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   };
 
   const sidebarTotal =
-    saleModel === SALE_MODEL.PLATFORM ? platformCalc?.amountDueBRL : personalCalc?.amountDueBRL;
+    saleModel === SALE_MODEL.PLATFORM
+      ? platformCalc?.amountDueBRL
+      : saleModel === SALE_MODEL.STORE_PROMO
+        ? storePromoCalc?.amountDueBRL
+        : personalCalc?.amountDueBRL;
   const sidebarLucro =
     saleModel === SALE_MODEL.PLATFORM ? platformCalc?.creatorProfitTotalIfAllSoldBRL ?? null : null;
   const sidebarLucroUnit =
     saleModel === SALE_MODEL.PLATFORM ? platformCalc?.creatorProfitPerSoldUnitBRL ?? null : null;
   const prazoLabel =
     prodDays.low && prodDays.high
-      ? saleModel === SALE_MODEL.PLATFORM
+      ? saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
         ? `até ${prodDays.high} dias úteis para aprovação`
         : `${prodDays.low}–${prodDays.high} dias úteis`
       : '—';
@@ -433,7 +576,17 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
   const shippingLine =
     saleModel === SALE_MODEL.PLATFORM
       ? platformCalc?.shippingNote
-      : personalCalc?.shippingNote;
+      : saleModel === SALE_MODEL.STORE_PROMO
+        ? storePromoCalc?.shippingNote
+        : personalCalc?.shippingNote;
+
+  const stepIndex = useCallback(
+    (id) => {
+      const i = flowSteps.findIndex((s) => s.id === id);
+      return i >= 0 ? i + 1 : 1;
+    },
+    [flowSteps]
+  );
 
   return (
     <main className="pod-page">
@@ -492,6 +645,12 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
               <p className="pod-modal__hint">
                 Enquanto isso, você pode usar <strong>Comprar para mim</strong> e receber o lote no seu endereço.
               </p>
+              {storePromoModeAvailable ? (
+                <p className="pod-modal__hint">
+                  Se quiser aparecer na vitrine sem repasse, use também <strong>Divulgação na loja</strong> (preço fixo,
+                  sujeito a requisitos de engajamento).
+                </p>
+              ) : null}
             </div>
             <div className="pod-modal__actions">
               <button type="button" className="pod-btn pod-btn--ghost" onClick={() => setModal(null)}>
@@ -500,6 +659,37 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
               <Link to="/perfil" className="pod-btn pod-btn--primary pod-modal__link-btn" onClick={() => setModal(null)}>
                 Abrir perfil
               </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {modal === 'success_store_promo' && successOrderId ? (
+        <div
+          className="pod-modal-root"
+          role="presentation"
+          onClick={(e) => e.target === e.currentTarget && closeSuccessModal()}
+        >
+          <div className="pod-modal" role="dialog" aria-modal="true" aria-labelledby="pod-modal-ok-promo-title">
+            <h2 id="pod-modal-ok-promo-title" className="pod-modal__title">
+              Solicitação registrada
+            </h2>
+            <div className="pod-modal__body">
+              <p>
+                Seu pedido em modo <strong>divulgação</strong> foi criado (
+                <strong>#{successOrderId.slice(-8).toUpperCase()}</strong>). Você <strong>não recebe lucro</strong> com as
+                vendas deste produto na loja.
+              </p>
+              <p>
+                Próximos passos: pagamento quando o checkout estiver disponível; em seguida a equipe analisa o material
+                em até <strong>2 dias úteis</strong> antes de liberar na vitrine.
+              </p>
+              <p className="pod-modal__hint">Você será avisado por notificação quando houver atualização.</p>
+            </div>
+            <div className="pod-modal__actions">
+              <button type="button" className="pod-btn pod-btn--primary" onClick={closeSuccessModal}>
+                Continuar
+              </button>
             </div>
           </div>
         </div>
@@ -565,9 +755,16 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
         <div className="pod-layout__main">
           <header className="pod-hero">
             <h1 className="pod-hero__title">Lance sua linha conosco</h1>
-            <p className="pod-hero__sub">Escolha o formato, veja quanto custa produzir e decida se quer vender na MangaTeofilo ou pedir seu lote para casa.</p>
+            <p className="pod-hero__sub">
+              Escolha o formato, veja quanto custa produzir e decida se quer vender na MangaTeofilo, divulgar sem repasse
+              (se disponível) ou pedir seu lote para casa.
+            </p>
 
-            <div className="pod-mode-grid" role="group" aria-label="Modo de pedido">
+            <div
+              className={`pod-mode-grid${storePromoModeAvailable ? ' pod-mode-grid--three' : ''}`}
+              role="group"
+              aria-label="Modo de pedido"
+            >
               <button
                 type="button"
                 className={`pod-mode-card ${saleModel === SALE_MODEL.PLATFORM ? 'is-selected' : ''} ${platformSaleBlocked ? 'pod-mode-card--blocked' : ''}`}
@@ -592,11 +789,24 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   Você encomenda direto com a gente para receber em um único endereço e vender por conta própria.
                 </p>
               </button>
+              {storePromoModeAvailable ? (
+                <button
+                  type="button"
+                  className={`pod-mode-card ${saleModel === SALE_MODEL.STORE_PROMO ? 'is-selected' : ''}`}
+                  onClick={() => selectSaleModel(SALE_MODEL.STORE_PROMO)}
+                >
+                  <h2 className="pod-mode-card__title">Divulgação na loja</h2>
+                  <p className="pod-mode-card__desc">
+                    Preço fixo na vitrine para divulgar sua obra. Você não recebe repasse sobre as vendas deste produto —
+                    serve apenas para exposição do trabalho.
+                  </p>
+                </button>
+              ) : null}
             </div>
           </header>
 
           <nav className="pod-stepper" aria-label="Etapas">
-            {STEPS.map((s, i) => (
+            {flowSteps.map((s, i) => (
               <button key={s.id} type="button" className="pod-stepper__step" onClick={() => scrollToStep(s.id)}>
                 <span className="pod-stepper__n">{i + 1}</span>
                 <span className="pod-stepper__label">{s.label}</span>
@@ -604,8 +814,79 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
             ))}
           </nav>
 
+          {saleModel === SALE_MODEL.STORE_PROMO ? (
+            <section ref={obraRef} id="pod-step-obra" className="pod-panel pod-panel--obra">
+              <h2 className="pod-panel__title">
+                {stepIndex('obra')} · Obra vinculada
+              </h2>
+              <p className="pod-panel__hint">O produto físico precisa estar ligado a uma obra sua para métricas e análise.</p>
+              <label className="pod-field pod-field--select">
+                <span className="pod-field__label">Obra vinculada</span>
+                <select
+                  className="pod-select"
+                  value={linkedWorkId}
+                  onChange={(e) => setLinkedWorkId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione…</option>
+                  {myWorks.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {String(w.title || w.nome || w.name || w.id).trim()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {linkedWorkId ? (
+                <>
+                  <p className="pod-obra-picked">
+                    Obra selecionada: <strong>{obraDisplayName || '—'}</strong>
+                  </p>
+                  <div className="pod-promo-metrics" aria-live="polite">
+                    <PodMetricBar
+                      label="Seguidores"
+                      current={storePromoMetrics.followers}
+                      max={storePromoMetrics.thresholds.followers}
+                    />
+                    <PodMetricBar
+                      label="Views (obra + capítulos)"
+                      current={storePromoMetrics.views}
+                      max={storePromoMetrics.thresholds.views}
+                    />
+                    <PodMetricBar
+                      label="Likes (obra + capítulos)"
+                      current={storePromoMetrics.likes}
+                      max={storePromoMetrics.thresholds.likes}
+                    />
+                  </div>
+                  <div className="pod-promo-warn" role="alert">
+                    <strong>Atenção:</strong> você não receberá lucro com essas vendas. Este produto será vendido apenas
+                    para divulgação da sua obra.
+                  </div>
+                  {!storePromoMetrics.ok ? (
+                    <div className="pod-promo-gate">
+                      <p className="pod-promo-lock">
+                        <span aria-hidden="true">🔒</span> Bloqueado até atingir os requisitos acima.
+                      </p>
+                      <button type="button" className="pod-btn pod-btn--ghost" disabled>
+                        Bloqueado — requisitos não atingidos
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="pod-promo-gate">
+                      <button type="button" className="pod-btn pod-btn--primary" onClick={() => scrollToStep('modelo')}>
+                        Continuar
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="pod-panel__hint">Escolha uma obra para ver seguidores, views e likes.</p>
+              )}
+            </section>
+          ) : null}
+
           <section ref={modeloRef} id="pod-step-modelo" className="pod-panel">
-            <h2 className="pod-panel__title">1 · Modelo</h2>
+            <h2 className="pod-panel__title">{stepIndex('modelo')} · Modelo</h2>
             <p className="pod-panel__hint">Escolha o formato do volume.</p>
             <div className="pod-format-grid">
               {FORMAT_CARDS.map((c) => (
@@ -627,7 +908,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
           </section>
 
           <section ref={vendaRef} id="pod-step-venda" className="pod-panel">
-            <h2 className="pod-panel__title">2 · Venda</h2>
+            <h2 className="pod-panel__title">{stepIndex('venda')} · {saleModel === SALE_MODEL.STORE_PROMO ? 'Preço na loja' : 'Venda'}</h2>
             {saleModel === SALE_MODEL.PLATFORM ? (
               <>
                 <p className="pod-panel__hint">Defina o preço da vitrine dentro da faixa permitida. O lote já é pago agora e o seu lucro aparece por unidade vendida.</p>
@@ -680,6 +961,17 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   </p>
                 </div>
               </>
+            ) : saleModel === SALE_MODEL.STORE_PROMO ? (
+              <div className="pod-price-block pod-price-block--fixed">
+                <div className="pod-price-row">
+                  <span className="pod-price-label">Preço na loja</span>
+                  <div className="pod-price-value">
+                    {formatBRL(STORE_PROMO_FIXED_RETAIL_UNIT_BRL[format] ?? 0)}
+                  </div>
+                </div>
+                <p className="pod-footnote pod-footnote--tight">Preço fixo definido pela plataforma.</p>
+                {storePromoCalc?.shippingNote ? <p className="pod-footnote">{storePromoCalc.shippingNote}</p> : null}
+              </div>
             ) : (
               <div className="pod-personal-price">
                 <p className="pod-panel__hint">Preço fechado por unidade para você receber o lote em casa.</p>
@@ -695,7 +987,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
           </section>
 
           <section ref={quantidadeRef} id="pod-step-quantidade" className="pod-panel">
-            <h2 className="pod-panel__title">3 · Quantidade</h2>
+            <h2 className="pod-panel__title">{stepIndex('quantidade')} · Quantidade</h2>
             <p className="pod-panel__hint">Toque no lote desejado.</p>
             <div className="pod-qty-grid">
               {qtyOptions.map((q) => (
@@ -721,7 +1013,9 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                     ? 'Grátis (lote)'
                     : saleModel === SALE_MODEL.PERSONAL
                       ? 'Calculado no checkout'
-                      : 'Não se aplica'}
+                      : saleModel === SALE_MODEL.STORE_PROMO
+                        ? 'Não se aplica'
+                        : 'Não se aplica'}
                 </strong>
               </div>
               <div>
@@ -732,8 +1026,12 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
           </section>
 
           <section ref={arquivosRef} id="pod-step-arquivos" className="pod-panel">
-            <h2 className="pod-panel__title">4 · Arquivos</h2>
-            <p className="pod-panel__hint">PDF do miolo e imagem da capa. Arraste ou clique para enviar.</p>
+            <h2 className="pod-panel__title">{stepIndex('arquivos')} · Arquivos</h2>
+            <p className="pod-panel__hint">
+              {saleModel === SALE_MODEL.STORE_PROMO
+                ? 'PDF do miolo e imagem da capa.'
+                : 'PDF do miolo e imagem da capa. Arraste ou clique para enviar.'}
+            </p>
 
             <div
               className={`pod-drop ${dragTarget === 'pdf' ? 'is-drag' : ''}`}
@@ -758,7 +1056,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   <span className="pod-muted">{(pdfFile.size / (1024 * 1024)).toFixed(1)} MB</span>
                 </div>
               ) : (
-                <span className="pod-drop__cta">Solte o PDF aqui</span>
+                <span className="pod-drop__cta">{saleModel === SALE_MODEL.STORE_PROMO ? 'Soltar PDF' : 'Solte o PDF aqui'}</span>
               )}
             </div>
 
@@ -785,7 +1083,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   <span className="pod-muted">{(coverFile.size / 1024).toFixed(0)} KB</span>
                 </div>
               ) : (
-                <span className="pod-drop__cta">Solte a imagem aqui</span>
+                <span className="pod-drop__cta">{saleModel === SALE_MODEL.STORE_PROMO ? 'Soltar imagem' : 'Solte a imagem aqui'}</span>
               )}
               {coverPreviewUrl.current ? (
                 <img
@@ -799,7 +1097,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
           </section>
 
           <section ref={revisaoRef} id="pod-step-revisao" className="pod-panel pod-panel--review">
-            <h2 className="pod-panel__title">5 · Revisão</h2>
+            <h2 className="pod-panel__title">{stepIndex('revisao')} · Revisão</h2>
             <div className="pod-review-card">
               <dl className="pod-review-dl">
                 <div>
@@ -810,16 +1108,24 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   <dt>Tipo</dt>
                   <dd>{saleModelLabel(saleModel)}</dd>
                 </div>
+                {saleModel === SALE_MODEL.STORE_PROMO && linkedWorkId ? (
+                  <div>
+                    <dt>Obra</dt>
+                    <dd>{obraDisplayName || linkedWorkId}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Quantidade</dt>
                   <dd>{quantity} un.</dd>
                 </div>
                 <div>
-                  <dt>Preço unitário</dt>
+                  <dt>{saleModel === SALE_MODEL.STORE_PROMO ? 'Preço fixo de venda' : 'Preço unitário'}</dt>
                   <dd>
                     {saleModel === SALE_MODEL.PLATFORM
                       ? formatBRL(unitSalePrice)
-                      : formatBRL(personalCalc?.unitCostBRL ?? 0)}
+                      : saleModel === SALE_MODEL.STORE_PROMO
+                        ? formatBRL(STORE_PROMO_FIXED_RETAIL_UNIT_BRL[format] ?? 0)
+                        : formatBRL(personalCalc?.unitCostBRL ?? 0)}
                   </dd>
                 </div>
                 <div>
@@ -845,7 +1151,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                 <div>
                   <dt>Prazo</dt>
                   <dd>
-                    {saleModel === SALE_MODEL.PLATFORM
+                    {saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
                       ? 'Até 2 dias úteis para aprovação do admin e liberação na loja'
                       : `${prazoLabel} (produção + entrega)`}
                   </dd>
@@ -858,6 +1164,11 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                 ) : null}
               </dl>
               {shippingLine ? <p className="pod-footnote">{shippingLine}</p> : null}
+              {saleModel === SALE_MODEL.STORE_PROMO ? (
+                <p className="pod-footnote pod-footnote--tight">
+                  O produto será analisado pelo admin antes de entrar na loja.
+                </p>
+              ) : null}
             </div>
 
             {saleModel === SALE_MODEL.PERSONAL ? (
@@ -903,6 +1214,14 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   onChange={(e) => setAddrComp(e.target.value)}
                 />
               </div>
+            ) : saleModel === SALE_MODEL.STORE_PROMO ? (
+              <div className="pod-address pod-address--optional">
+                <h3 className="pod-address__title">Sem endereço neste modo</h3>
+                <p className="pod-panel__hint">
+                  Você paga o lote de produção; o material segue para análise e, após aprovação, o volume pode aparecer na
+                  vitrine no preço fixo indicado, sem repasse de vendas a você.
+                </p>
+              </div>
             ) : (
               <div className="pod-address pod-address--optional">
                 <h3 className="pod-address__title">Sem endereço neste modo</h3>
@@ -919,11 +1238,17 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
             <button
               type="button"
               className="pod-btn pod-btn--primary pod-btn--cta"
-              disabled={busy}
+              disabled={
+                busy ||
+                (saleModel === SALE_MODEL.STORE_PROMO && (!storePromoMetrics.ok || !String(linkedWorkId).trim()))
+              }
               onClick={handleConfirmProduction}
             >
-              {busy ? 'Enviando…' : 'Confirmar produção'}
+              {busy ? 'Enviando…' : saleModel === SALE_MODEL.STORE_PROMO ? 'Solicitar publicação' : 'Confirmar produção'}
             </button>
+            {saleModel === SALE_MODEL.STORE_PROMO ? (
+              <p className="pod-cta-note">O produto será analisado pelo admin antes de entrar na loja.</p>
+            ) : null}
           </section>
 
           {user && myOrders.length > 0 ? (
@@ -954,7 +1279,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
               </div>
               <div>
                 <dt>Modo</dt>
-                <dd>{saleModel === SALE_MODEL.PLATFORM ? 'Venda pela plataforma' : 'Comprar para mim'}</dd>
+                <dd>{saleModelLabel(saleModel)}</dd>
               </div>
               <div>
                 <dt>Quantidade</dt>
@@ -976,10 +1301,16 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess }) {
                   <dd>{formatBRL(sidebarLucroUnit ?? 0)}</dd>
                 </div>
               ) : null}
+              {saleModel === SALE_MODEL.STORE_PROMO ? (
+                <div>
+                  <dt>Preço fixo na loja</dt>
+                  <dd>{formatBRL(STORE_PROMO_FIXED_RETAIL_UNIT_BRL[format] ?? 0)}</dd>
+                </div>
+              ) : null}
               <div className="pod-summary__row--prazo">
                 <dt>Prazo</dt>
                 <dd>
-                  {saleModel === SALE_MODEL.PLATFORM
+                  {saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
                     ? 'Aprovação em até 2 dias úteis'
                     : `${prazoLabel} (produção + entrega)`}
                 </dd>

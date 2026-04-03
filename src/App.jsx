@@ -153,7 +153,8 @@ function AppRoutes() {
   }, [usuario?.uid]);
 
   useEffect(() => {
-    if (!usuario?.uid || !adminAccess.isMangaka) {
+    const roleMk = String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka';
+    if (!usuario?.uid || (!adminAccess.isMangaka && !roleMk)) {
       return () => {};
     }
     const unsubObras = onValue(ref(db, 'obras'), (snap) => {
@@ -170,7 +171,7 @@ function AppRoutes() {
       unsubCaps();
       unsubProdutos();
     };
-  }, [usuario?.uid, adminAccess.isMangaka]);
+  }, [usuario?.uid, adminAccess.isMangaka, perfilUsuario?.role]);
 
   useEffect(() => {
     if (!usuario?.uid) return;
@@ -353,6 +354,8 @@ function AppRoutes() {
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
                 adminAccess={adminAccess}
+                obrasVal={creatorObrasVal}
+                capsVal={creatorCapsVal}
               />
             }
           />

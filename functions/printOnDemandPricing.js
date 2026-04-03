@@ -1,6 +1,8 @@
 export const SALE_MODEL = {
   PLATFORM: 'platform',
   PERSONAL: 'personal',
+  /** Vitrine com preço fixo; criador não monetizado não recebe repasse. */
+  STORE_PROMO: 'store_promo',
 };
 
 export const BOOK_FORMAT = {
@@ -15,6 +17,12 @@ export const PLATFORM_BATCH_COST_TOTAL_BRL = {
 
 export const PLATFORM_QUANTITIES = [10, 20, 30];
 export const PERSONAL_QUANTITIES = [5, 10, 15, 20, 25, 30];
+
+/** Preço fixo na loja (sem repasse ao criador). */
+export const STORE_PROMO_FIXED_RETAIL_UNIT_BRL = {
+  [BOOK_FORMAT.TANKOBON]: 43,
+  [BOOK_FORMAT.MEIO_TANKO]: 26.5,
+};
 
 export const PLATFORM_RETAIL_UNIT_BRL = {
   [BOOK_FORMAT.TANKOBON]: { baseCost: 37.2, defaultPrice: 56, min: 46, max: 70 },
@@ -59,8 +67,10 @@ export function productionDays(saleModel, format, quantity) {
   const rules = PRODUCTION_TIME_RULES[format] || PRODUCTION_TIME_RULES[BOOK_FORMAT.TANKOBON];
   const totalHours =
     qty * rules.hoursPerUnit +
-    (saleModel === SALE_MODEL.PLATFORM ? rules.platformBatchOverheadHours : rules.personalBatchOverheadHours);
-  if (saleModel === SALE_MODEL.PLATFORM) {
+    (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
+      ? rules.platformBatchOverheadHours
+      : rules.personalBatchOverheadHours);
+  if (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO) {
     return {
       low: PLATFORM_APPROVAL_SLA_DAYS,
       high: PLATFORM_APPROVAL_SLA_DAYS,
@@ -96,6 +106,27 @@ export function computePlatformOrder(format, quantity, unitSalePriceBRL) {
     creatorProfitTotalIfAllSoldBRL: Math.round(creatorProfit.creator * qty * 100) / 100,
     grossRetailTotalBRL: Math.round(unit * qty * 100) / 100,
     shippingNote: 'Sem frete nesta etapa. Depois do pagamento, o admin tem ate 2 dias uteis para aprovar e liberar o produto na loja.',
+    creatorProductKind: 'monetized',
+  };
+}
+
+export function computeStorePromoOrder(format, quantity) {
+  const qty = Number(quantity);
+  const batchTotal = PLATFORM_BATCH_COST_TOTAL_BRL[format]?.[qty];
+  const unitFixed = STORE_PROMO_FIXED_RETAIL_UNIT_BRL[format];
+  const retail = PLATFORM_RETAIL_UNIT_BRL[format];
+  if (batchTotal == null || unitFixed == null || !retail) return null;
+  return {
+    productionCostTotalBRL: batchTotal,
+    amountDueBRL: batchTotal,
+    unitSalePriceBRL: unitFixed,
+    unitProductionCostBRL: retail.baseCost,
+    creatorProfitPerSoldUnitBRL: 0,
+    creatorProfitTotalIfAllSoldBRL: 0,
+    grossRetailTotalBRL: Math.round(unitFixed * qty * 100) / 100,
+    shippingNote:
+      'Modo divulgacao: preco fixo na loja, sem repasse. Apos o pagamento, o admin analisa antes de liberar na vitrine.',
+    creatorProductKind: 'non_monetized_promo',
   };
 }
 
@@ -114,6 +145,7 @@ export function computePersonalOrder(format, quantity) {
     amountDueBRL: goodsTotal,
     freeShipping,
     freeShippingAt: row.freeShippingAt,
+    creatorProductKind: 'personal_purchase',
     shippingNote: freeShipping
       ? `Frete gratis a partir de ${row.freeShippingAt} unidades. O prazo abaixo ja considera producao + entrega.`
       : `Frete a parte: abaixo de ${row.freeShippingAt} unidades o frete e cobrado separadamente.`,

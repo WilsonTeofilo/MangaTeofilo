@@ -29,6 +29,25 @@ function shortId(id) {
   return String(id || '').slice(-8).toUpperCase();
 }
 
+/** Monetização / tipo de produto no catálogo (análise). */
+function podTipoDisplay(snap) {
+  const sm = String(snap?.saleModel || '');
+  const k = String(snap?.creatorProductKind || '');
+  if (sm === 'store_promo' || k === 'non_monetized_promo') return 'Não monetizado';
+  if (sm === 'personal' || k === 'personal_purchase') return '—';
+  if (k === 'monetized' || sm === 'platform') return 'Monetizado';
+  return '—';
+}
+
+/** Canal do pedido (análise operacional). */
+function podOrigemDisplay(snap) {
+  const sm = String(snap?.saleModel || '');
+  if (sm === 'store_promo') return 'Não monetizado';
+  if (sm === 'personal') return 'Compra própria';
+  if (sm === 'platform') return 'Venda pela plataforma';
+  return '—';
+}
+
 function formatTs(ms) {
   if (!ms) return '—';
   return new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -383,11 +402,12 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               </select>
             </label>
             <label>
-              Tipo
+              Tipo (canal)
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
                 <option value="">Todos</option>
-                <option value="platform">Plataforma</option>
-                <option value="personal">Próprio</option>
+                <option value="platform">Venda pela plataforma</option>
+                <option value="personal">Compra própria</option>
+                <option value="store_promo">Divulgação (não monetizado)</option>
               </select>
             </label>
             <label>
@@ -416,7 +436,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <th>ID</th>
                 <th>Criador</th>
                 <th>Modelo</th>
-                <th>Tipo</th>
+                <th>Monetização</th>
+                <th>Origem</th>
                 <th>Qtd</th>
                 <th>Valor</th>
                 <th>Status</th>
@@ -447,7 +468,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     <td className="po-table__mono">#{shortId(o.id)}</td>
                     <td title={uid}>{creatorLabel}</td>
                     <td>{snap.format === 'meio_tanko' ? 'Meio-Tankō' : 'Tankōbon'}</td>
-                    <td>{snap.saleModel === 'personal' ? 'Comprar para mim' : 'Venda pela plataforma'}</td>
+                    <td>{podTipoDisplay(snap)}</td>
+                    <td>{podOrigemDisplay(snap)}</td>
                     <td>{snap.quantity}</td>
                     <td>{total}</td>
                     <td>
@@ -541,12 +563,39 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   <dd>{creatorNames[selected.creatorUid] || selected.creatorUid}</dd>
                   <dt>UID</dt>
                   <dd className="po-table__mono">{selected.creatorUid}</dd>
-                  <dt>Tipo</dt>
-                  <dd>{selected.snapshot?.saleModel === 'personal' ? 'Comprar para mim' : 'Venda pela plataforma'}</dd>
+                  <dt>Monetização (tipo)</dt>
+                  <dd>{podTipoDisplay(selected.snapshot)}</dd>
+                  <dt>Origem (canal)</dt>
+                  <dd>{podOrigemDisplay(selected.snapshot)}</dd>
+                  <dt>saleModel (raw)</dt>
+                  <dd className="po-table__mono">{String(selected.snapshot?.saleModel || '—')}</dd>
+                  <dt>creatorProductKind</dt>
+                  <dd className="po-table__mono">{String(selected.snapshot?.creatorProductKind || '—')}</dd>
                   <dt>Modelo</dt>
                   <dd>{selected.snapshot?.format === 'meio_tanko' ? 'Meio-Tankō' : 'Tankōbon'}</dd>
                   <dt>Quantidade</dt>
                   <dd>{selected.snapshot?.quantity}</dd>
+                  {selected.linkedWorkId || selected.snapshot?.linkedWorkId ? (
+                    <>
+                      <dt>Obra vinculada</dt>
+                      <dd className="po-table__mono">
+                        {String(selected.linkedWorkId || selected.snapshot?.linkedWorkId || '')}
+                      </dd>
+                    </>
+                  ) : null}
+                  {selected.snapshot?.storePromoMetrics ? (
+                    <>
+                      <dt>Métricas (divulgação)</dt>
+                      <dd>
+                        Seguidores: {selected.snapshot.storePromoMetrics.followers} /{' '}
+                        {selected.snapshot.storePromoMetrics.thresholds?.followers ?? '—'} · Views:{' '}
+                        {selected.snapshot.storePromoMetrics.views} /{' '}
+                        {selected.snapshot.storePromoMetrics.thresholds?.views ?? '—'} · Likes:{' '}
+                        {selected.snapshot.storePromoMetrics.likes} /{' '}
+                        {selected.snapshot.storePromoMetrics.thresholds?.likes ?? '—'}
+                      </dd>
+                    </>
+                  ) : null}
                   {selected.snapshot?.unitSalePriceBRL != null ? (
                     <>
                       <dt>Preço unitário (loja)</dt>

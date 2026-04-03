@@ -8,8 +8,79 @@ import {
   SALE_MODEL,
   computePersonalOrder,
   computePlatformOrder,
+  computeStorePromoOrder,
   productionDays,
 } from './printOnDemandPricing.js';
+
+const STORE_PROMO_THRESHOLDS = { followers: 100, views: 30000, likes: 200 };
+/** Alinhado a database.rules.json em obras/$obraId */
+const OBRA_ID_RE = /^[a-z0-9_-]{2,40}$/;
+
+async function verifyStorePromoEligibility(db, uid, workId) {
+  const wid = String(workId || '').trim();
+  if (!wid) {
+    return {
+      ok: false,
+      code: 'missing_work',
+      followers: 0,
+      views: 0,
+      likes: 0,
+      thresholds: STORE_PROMO_THRESHOLDS,
+    };
+  }
+  const obraSnap = await db.ref(`obras/${wid}`).get();
+  if (!obraSnap.exists()) {
+    return {
+      ok: false,
+      code: 'obra_not_found',
+      followers: 0,
+      views: 0,
+      likes: 0,
+      thresholds: STORE_PROMO_THRESHOLDS,
+    };
+  }
+  const obra = obraSnap.val() || {};
+  if (String(obra.creatorId || '').trim() !== uid) {
+    return {
+      ok: false,
+      code: 'not_owner',
+      followers: 0,
+      views: 0,
+      likes: 0,
+      thresholds: STORE_PROMO_THRESHOLDS,
+    };
+  }
+  let followers = 0;
+  const st = await db.ref(`creators/${uid}/stats`).get();
+  if (st.exists()) {
+    followers = Number(st.val()?.followersCount || 0);
+  }
+  let views = Number(obra.viewsCount ?? obra.visualizacoes ?? 0);
+  let likes = Number(obra.likesCount ?? obra.curtidas ?? obra.favoritesCount ?? 0);
+  const capsSnap = await db.ref('capitulos').get();
+  if (capsSnap.exists()) {
+    const caps = capsSnap.val() || {};
+    for (const row of Object.values(caps)) {
+      const cap = row && typeof row === 'object' ? row : {};
+      const oid = String(cap.obraId || cap.workId || '').trim();
+      if (oid !== wid) continue;
+      views += Number(cap.viewsCount ?? cap.visualizacoes ?? 0);
+      likes += Number(cap.likesCount ?? cap.curtidas ?? 0);
+    }
+  }
+  const ok =
+    followers >= STORE_PROMO_THRESHOLDS.followers &&
+    views >= STORE_PROMO_THRESHOLDS.views &&
+    likes >= STORE_PROMO_THRESHOLDS.likes;
+  return {
+    ok,
+    code: ok ? 'ok' : 'thresholds',
+    followers,
+    views,
+    likes,
+    thresholds: STORE_PROMO_THRESHOLDS,
+  };
+}
 
 /**
  * Pipeline de POD: estados pending_payment → paid → … cobrem pagamento e produção.
@@ -19,6 +90,56 @@ import {
 function isHttpsUrl(s, maxLen = 2048) {
   const t = String(s || '').trim();
   return t.length >= 12 && t.length <= maxLen && /^https:\/\//i.test(t);
+}
+
+/** Buckets do projeto (getDownloadURL do SDK Web usa host firebasestorage.googleapis.com). */
+const POD_STORAGE_BUCKETS = new Set([
+  'shitoproject-ed649.firebasestorage.app',
+  'shitoproject-ed649.appspot.com',
+]);
+
+/**
+ * Garante que o arquivo esta em print_on_demand/{uid}/... no Storage do projeto (anti URL externa).
+ */
+function isFirebaseStoragePrintOnDemandObjectForUser(uid, urlStr) {
+  if (!isHttpsUrl(urlStr)) return false;
+  const owner = String(uid || '').trim();
+  if (!owner || owner.includes('/') || owner.includes('..')) return false;
+  let u;
+  try {
+    u = new URL(urlStr);
+  } catch {
+    return false;
+  }
+  if (u.hostname !== 'firebasestorage.googleapis.com') return false;
+  const m = u.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/);
+  if (!m) return false;
+  const bucket = m[1];
+  const encodedObject = m[2];
+  if (!POD_STORAGE_BUCKETS.has(bucket)) return false;
+  let objectPath;
+  try {
+    objectPath = decodeURIComponent(encodedObject.replace(/\+/g, ' '));
+  } catch {
+    return false;
+  }
+  if (objectPath.includes('..') || objectPath.includes('//') || objectPath.startsWith('/')) return false;
+  const prefix = `print_on_demand/${owner}/`;
+  if (!objectPath.startsWith(prefix)) return false;
+  const rest = objectPath.slice(prefix.length);
+  if (!rest || rest.includes('/')) return false;
+  return true;
+}
+
+function assertPodUrlsInUserStorage(uid, pdfUrl, coverUrl) {
+  const pdfOk = isFirebaseStoragePrintOnDemandObjectForUser(uid, pdfUrl);
+  const coverOk = isFirebaseStoragePrintOnDemandObjectForUser(uid, coverUrl);
+  if (!pdfOk || !coverOk) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Envie o PDF e a capa pelo formulario: os links precisam ser do armazenamento do app na sua pasta print_on_demand.'
+    );
+  }
 }
 
 function usuarioIsMangaka(row) {
@@ -81,19 +202,32 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
   const format = String(body.format || '').trim().toLowerCase();
   const quantity = Number(body.quantity);
 
-  if (saleModel !== SALE_MODEL.PLATFORM && saleModel !== SALE_MODEL.PERSONAL) {
+  if (
+    saleModel !== SALE_MODEL.PLATFORM &&
+    saleModel !== SALE_MODEL.PERSONAL &&
+    saleModel !== SALE_MODEL.STORE_PROMO
+  ) {
     throw new HttpsError('invalid-argument', 'Modelo de venda invalido.');
   }
   if (format !== BOOK_FORMAT.TANKOBON && format !== BOOK_FORMAT.MEIO_TANKO) {
     throw new HttpsError('invalid-argument', 'Formato invalido.');
   }
 
-  if (saleModel === SALE_MODEL.PLATFORM) {
+  if (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO) {
     if (!PLATFORM_QUANTITIES.includes(quantity)) {
-      throw new HttpsError('invalid-argument', 'Quantidade invalida para venda na plataforma.');
+      throw new HttpsError('invalid-argument', 'Quantidade invalida para este modo de loja.');
     }
   } else if (!PERSONAL_QUANTITIES.includes(quantity)) {
     throw new HttpsError('invalid-argument', 'Quantidade invalida para compra pessoal.');
+  }
+
+  const linkedWorkId =
+    saleModel === SALE_MODEL.STORE_PROMO ? String(body.linkedWorkId || '').trim() : '';
+  if (saleModel === SALE_MODEL.STORE_PROMO && !linkedWorkId) {
+    throw new HttpsError('invalid-argument', 'Selecione a obra vinculada ao pedido.');
+  }
+  if (saleModel === SALE_MODEL.STORE_PROMO && !OBRA_ID_RE.test(linkedWorkId)) {
+    throw new HttpsError('invalid-argument', 'ID da obra invalido.');
   }
 
   const pdfUrl = String(body.pdfUrl || '').trim();
@@ -101,6 +235,7 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
   if (!isHttpsUrl(pdfUrl) || !isHttpsUrl(coverUrl)) {
     throw new HttpsError('invalid-argument', 'Envie URLs HTTPS validas do miolo (PDF) e da capa.');
   }
+  assertPodUrlsInUserStorage(uid, pdfUrl, coverUrl);
 
   const addr = body.shippingAddress && typeof body.shippingAddress === 'object' ? body.shippingAddress : {};
   const needAddress = saleModel === SALE_MODEL.PERSONAL;
@@ -118,11 +253,37 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
   const pr = productionDays(saleModel, format, quantity);
   const now = Date.now();
   const db = getDatabase();
+  const userSnap = await db.ref(`usuarios/${uid}`).get();
+  const userRow = userSnap.exists() ? userSnap.val() || {} : {};
+  let storePromoElig = null;
+
+  if (saleModel === SALE_MODEL.STORE_PROMO) {
+    if (!usuarioIsMangaka(userRow)) {
+      throw new HttpsError('permission-denied', 'Apenas criadores (mangaka) podem usar divulgacao na loja.');
+    }
+    if (usuarioMonetizacaoAtiva(userRow)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Com monetizacao ativa use "Venda pela plataforma" para precos com repasse ao autor.'
+      );
+    }
+    storePromoElig = await verifyStorePromoEligibility(db, uid, linkedWorkId);
+    if (!storePromoElig.ok) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Requisitos de divulgacao nao atingidos: e preciso 100 seguidores, 30 mil views na obra e 200 likes somando capitulos.'
+      );
+    }
+  }
 
   if (saleModel === SALE_MODEL.PLATFORM) {
-    const userSnap = await db.ref(`usuarios/${uid}`).get();
-    const userRow = userSnap.exists() ? userSnap.val() || {} : {};
-    if (usuarioIsMangaka(userRow) && !usuarioMonetizacaoAtiva(userRow)) {
+    if (!usuarioIsMangaka(userRow)) {
+      throw new HttpsError(
+        'permission-denied',
+        'Venda pela plataforma e exclusiva de criadores com perfil mangaka.'
+      );
+    }
+    if (!usuarioMonetizacaoAtiva(userRow)) {
       throw new HttpsError(
         'failed-precondition',
         'Venda na loja exige monetizacao ativa e dados para repasse. Use Comprar para mim ou ative a monetizacao no perfil e aguarde aprovacao do admin.'
@@ -131,7 +292,31 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
   }
 
   let snapshot = null;
-  if (saleModel === SALE_MODEL.PLATFORM) {
+  if (saleModel === SALE_MODEL.STORE_PROMO) {
+    const calc = computeStorePromoOrder(format, quantity);
+    if (!calc) throw new HttpsError('invalid-argument', 'Nao foi possivel calcular o pedido (divulgacao).');
+    const elig = storePromoElig;
+    snapshot = {
+      saleModel,
+      format,
+      quantity,
+      linkedWorkId,
+      storePromoMetrics: {
+        followers: elig.followers,
+        views: elig.views,
+        likes: elig.likes,
+        thresholds: elig.thresholds,
+      },
+      ...calc,
+      platformApprovalDays: pr.high,
+      platformListingUnlocksOnStatus: 'paid',
+      estimatedProductionDaysLow: pr.low,
+      estimatedProductionDaysHigh: pr.high,
+      estimatedProductionHours: 0,
+      manualProductionHours: pr.productionHours || 0,
+      estimateKind: pr.kind || 'approval',
+    };
+  } else if (saleModel === SALE_MODEL.PLATFORM) {
     const unitSale = Number(body.unitSalePriceBRL);
     const calc = computePlatformOrder(format, quantity, unitSale);
     if (!calc) throw new HttpsError('invalid-argument', 'Nao foi possivel calcular o pedido (plataforma).');
@@ -173,20 +358,20 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
   const order = {
     id: orderId,
     creatorUid: uid,
+    linkedWorkId: saleModel === SALE_MODEL.STORE_PROMO ? linkedWorkId : null,
     status: 'pending_payment',
     pdfUrl,
     coverUrl,
-    shippingAddress:
-      needAddress || street
-        ? {
-            name,
-            street,
-            city,
-            state,
-            zip,
-            complement: String(addr.complement || addr.complemento || '').trim(),
-          }
-        : null,
+    shippingAddress: needAddress
+      ? {
+          name,
+          street,
+          city,
+          state,
+          zip,
+          complement: String(addr.complement || addr.complemento || '').trim(),
+        }
+      : null,
     snapshot,
     productionChecklist: emptyChecklist(),
     trackingCode: '',

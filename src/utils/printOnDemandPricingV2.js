@@ -5,6 +5,8 @@
 export const SALE_MODEL = {
   PLATFORM: 'platform',
   PERSONAL: 'personal',
+  /** Vitrine com preço fixo; criador não monetizado não recebe repasse. */
+  STORE_PROMO: 'store_promo',
 };
 
 export const BOOK_FORMAT = {
@@ -18,6 +20,18 @@ export const PLATFORM_BATCH_COST_TOTAL_BRL = {
 };
 
 export const PLATFORM_QUANTITIES = [10, 20, 30];
+
+/** Preço fixo na loja (modo divulgação, sem repasse). */
+export const STORE_PROMO_FIXED_RETAIL_UNIT_BRL = {
+  [BOOK_FORMAT.TANKOBON]: 43,
+  [BOOK_FORMAT.MEIO_TANKO]: 26.5,
+};
+
+export const STORE_PROMO_THRESHOLDS = {
+  followers: 100,
+  views: 30000,
+  likes: 200,
+};
 
 export const PLATFORM_RETAIL_UNIT_BRL = {
   [BOOK_FORMAT.TANKOBON]: { baseCost: 37.2, defaultPrice: 56, min: 46, max: 70 },
@@ -83,8 +97,10 @@ export function getProductionDaysRange(saleModel, format, quantity) {
   const rules = PRODUCTION_TIME_RULES[format] || PRODUCTION_TIME_RULES[BOOK_FORMAT.TANKOBON];
   const totalHours =
     qty * rules.hoursPerUnit +
-    (saleModel === SALE_MODEL.PLATFORM ? rules.platformBatchOverheadHours : rules.personalBatchOverheadHours);
-  if (saleModel === SALE_MODEL.PLATFORM) {
+    (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
+      ? rules.platformBatchOverheadHours
+      : rules.personalBatchOverheadHours);
+  if (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO) {
     return {
       low: PLATFORM_APPROVAL_SLA_DAYS,
       high: PLATFORM_APPROVAL_SLA_DAYS,
@@ -121,6 +137,27 @@ export function computePlatformOrder(format, quantity, unitSalePriceBRL) {
     creatorProfitTotalIfAllSoldBRL: Math.round(creatorProfit.creator * qty * 100) / 100,
     grossRetailTotalBRL: Math.round(unit * qty * 100) / 100,
     shippingNote: 'Sem frete nesta etapa. Depois do pagamento, o admin tem ate 2 dias uteis para aprovar e liberar o produto na loja.',
+    creatorProductKind: 'monetized',
+  };
+}
+
+export function computeStorePromoOrder(format, quantity) {
+  const qty = Number(quantity);
+  const batchTotal = PLATFORM_BATCH_COST_TOTAL_BRL[format]?.[qty];
+  const unitFixed = STORE_PROMO_FIXED_RETAIL_UNIT_BRL[format];
+  const retail = PLATFORM_RETAIL_UNIT_BRL[format];
+  if (batchTotal == null || unitFixed == null || !retail) return null;
+  return {
+    productionCostTotalBRL: batchTotal,
+    amountDueBRL: batchTotal,
+    unitSalePriceBRL: unitFixed,
+    unitProductionCostBRL: retail.baseCost,
+    creatorProfitPerSoldUnitBRL: 0,
+    creatorProfitTotalIfAllSoldBRL: 0,
+    grossRetailTotalBRL: Math.round(unitFixed * qty * 100) / 100,
+    shippingNote:
+      'Modo divulgacao: preco fixo na loja, sem repasse. Apos o pagamento, o admin analisa antes de liberar na vitrine.',
+    creatorProductKind: 'non_monetized_promo',
   };
 }
 
@@ -139,6 +176,7 @@ export function computePersonalOrder(format, quantity) {
     amountDueBRL: goodsTotal,
     freeShipping,
     freeShippingAt: row.freeShippingAt,
+    creatorProductKind: 'personal_purchase',
     shippingNote: freeShipping
       ? `Frete gratis a partir de ${row.freeShippingAt} unidades. O prazo abaixo ja considera producao + entrega.`
       : `Frete a parte: abaixo de ${row.freeShippingAt} unidades o frete e cobrado separadamente.`,
@@ -147,4 +185,43 @@ export function computePersonalOrder(format, quantity) {
 
 export function formatBRL(n) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(n) || 0);
+}
+
+/** Soma views/likes dos capítulos vinculados à obra (mesma lógica do backend). */
+export function aggregateChapterStatsForWork(capsVal, workId) {
+  let views = 0;
+  let likes = 0;
+  const wid = String(workId || '').trim();
+  if (!wid || !capsVal || typeof capsVal !== 'object') return { views, likes };
+  for (const row of Object.values(capsVal)) {
+    const cap = row && typeof row === 'object' ? row : {};
+    const oid = String(cap.obraId || cap.workId || '').trim();
+    if (oid !== wid) continue;
+    views += Number(cap.viewsCount ?? cap.visualizacoes ?? 0);
+    likes += Number(cap.likesCount ?? cap.curtidas ?? 0);
+  }
+  return { views, likes };
+}
+
+/** Métricas e elegibilidade para divulgação na loja (espelho do servidor para UI). */
+export function computeStorePromoEligibilityClient({ obra, workId, capsVal, followersCount }) {
+  const t = STORE_PROMO_THRESHOLDS;
+  const wid = String(workId || '').trim();
+  if (!obra || !wid) {
+    return {
+      ok: false,
+      followers: Math.max(0, Number(followersCount) || 0),
+      views: 0,
+      likes: 0,
+      thresholds: t,
+    };
+  }
+  const chap = aggregateChapterStatsForWork(capsVal, wid);
+  const views =
+    Number(obra.viewsCount ?? obra.visualizacoes ?? 0) + chap.views;
+  const likes =
+    Number(obra.likesCount ?? obra.curtidas ?? obra.favoritesCount ?? 0) + chap.likes;
+  const followers = Math.max(0, Number(followersCount) || 0);
+  const ok = followers >= t.followers && views >= t.views && likes >= t.likes;
+  return { ok, followers, views, likes, thresholds: t };
 }

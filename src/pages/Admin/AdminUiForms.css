@@ -1,0 +1,360 @@
+/**
+ * Form controls across admin surfaces (loja, painel, financeiro, POD…).
+ * Prefixo `body` para vencer CSS lazy-loaded dos chunks.
+ */
+
+:root {
+  --admin-ctrl-bg: #111318;
+  --admin-ctrl-bg-hover: #151922;
+  --admin-ctrl-border: rgba(255, 255, 255, 0.08);
+  --admin-ctrl-border-hover: rgba(255, 255, 255, 0.14);
+  --admin-ctrl-text: #e6e6e6;
+  --admin-ctrl-placeholder: rgba(255, 255, 255, 0.35);
+  --admin-ctrl-focus: #eab308;
+  --admin-ctrl-focus-ring: rgba(234, 179, 8, 0.18);
+  --admin-ctrl-radius: 12px;
+  --admin-ctrl-pad-y: 12px;
+  --admin-ctrl-pad-x: 14px;
+  --admin-select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23a1a1aa' d='M1.41 0 6 4.58 10.59 0 12 1.41l-6 6-6-6z'/%3E%3C/svg%3E");
+}
+
+body .loja-admin-page,
+body .admin-panel,
+body .admin-empty-page,
+body .admin-loja-pedidos,
+body .admin-pedidos-hub,
+body .po-orders {
+  --admin-ctrl-bg: #111318;
+}
+
+body .loja-admin-page .loja-admin-editor-grid {
+  gap: 18px;
+}
+
+body .loja-admin-page .loja-admin-field {
+  gap: 8px;
+  max-width: 100%;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+body .loja-admin-page .loja-admin-toggle-row label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* ---- Base: text-like inputs ---- */
+body .loja-admin-page input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']):not([type='button']):not([type='submit']):not([type='image']),
+body .loja-admin-page textarea,
+body .loja-admin-page select,
+body .admin-panel .admin-form input:not([type='file']):not([type='range']):not([type='checkbox']):not([type='radio']):not([type='hidden']),
+body .admin-empty-page input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']):not([type='button']):not([type='submit']),
+body .admin-empty-page textarea,
+body .admin-empty-page select,
+body .admin-loja-pedidos input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
+body .admin-pedidos-hub .admin-pedidos-hub__panel input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
+body .po-orders input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
+body .po-orders textarea,
+body .po-orders select,
+body .store-settings-section input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']):not([type='range']),
+body .store-settings-section textarea,
+body .store-settings-section select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 46px;
+  padding: var(--admin-ctrl-pad-y) var(--admin-ctrl-pad-x);
+  border-radius: var(--admin-ctrl-radius);
+  border: 1px solid var(--admin-ctrl-border);
+  background-color: var(--admin-ctrl-bg);
+  background-clip: padding-box;
+  color: var(--admin-ctrl-text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+body .po-orders .po-search input {
+  max-width: 420px;
+}
+
+body .po-orders .po-orders__filters select,
+body .po-orders .po-orders__filters input[type='date'] {
+  min-width: 150px;
+  width: auto;
+}
+
+body .loja-admin-page textarea,
+body .admin-empty-page textarea,
+body .po-orders textarea,
+body .store-settings-section textarea {
+  min-height: 120px;
+  resize: vertical;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+body .loja-admin-page textarea::-webkit-scrollbar,
+body .admin-empty-page textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+body .loja-admin-page textarea::-webkit-scrollbar-thumb,
+body .admin-empty-page textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 99px;
+}
+
+body .loja-admin-page input::placeholder,
+body .loja-admin-page textarea::placeholder,
+body .admin-panel .admin-form input::placeholder,
+body .admin-empty-page input::placeholder,
+body .admin-empty-page textarea::placeholder,
+body .po-orders input::placeholder {
+  color: var(--admin-ctrl-placeholder);
+}
+
+body .loja-admin-page input:hover:not(:disabled),
+body .loja-admin-page textarea:hover:not(:disabled),
+body .loja-admin-page select:hover:not(:disabled),
+body .admin-panel .admin-form input:hover:not(:disabled),
+body .admin-empty-page input:hover:not(:disabled),
+body .admin-empty-page textarea:hover:not(:disabled),
+body .admin-empty-page select:hover:not(:disabled),
+body .admin-loja-pedidos input:hover:not(:disabled),
+body .po-orders input:hover:not(:disabled),
+body .po-orders select:hover:not(:disabled),
+body .store-settings-section input:hover:not(:disabled),
+body .store-settings-section textarea:hover:not(:disabled),
+body .store-settings-section select:hover:not(:disabled) {
+  border-color: var(--admin-ctrl-border-hover);
+  background-color: var(--admin-ctrl-bg-hover);
+}
+
+body .loja-admin-page input:focus-visible,
+body .loja-admin-page textarea:focus-visible,
+body .loja-admin-page select:focus-visible,
+body .admin-panel .admin-form input:focus-visible,
+body .admin-empty-page input:focus-visible,
+body .admin-empty-page textarea:focus-visible,
+body .admin-empty-page select:focus-visible,
+body .admin-loja-pedidos input:focus-visible,
+body .po-orders input:focus-visible,
+body .po-orders textarea:focus-visible,
+body .po-orders select:focus-visible,
+body .store-settings-section input:focus-visible,
+body .store-settings-section textarea:focus-visible,
+body .store-settings-section select:focus-visible {
+  outline: none;
+  border-color: var(--admin-ctrl-focus);
+  box-shadow:
+    0 0 0 2px var(--admin-ctrl-focus-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+body .loja-admin-page input:disabled,
+body .loja-admin-page textarea:disabled,
+body .loja-admin-page select:disabled,
+body .admin-panel .admin-form input:disabled,
+body .admin-empty-page input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Select: custom chevron */
+body .loja-admin-page select,
+body .admin-empty-page select,
+body .po-orders select,
+body .store-settings-section select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: var(--admin-select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 40px;
+  cursor: pointer;
+}
+
+body .loja-admin-page select option,
+body .admin-empty-page select option,
+body .po-orders select option {
+  background: #1a1d24;
+  color: #eee;
+}
+
+/* AdminPanel: número em destaque (mantém hierarquia) */
+body .admin-panel .admin-form input[type='number'] {
+  text-align: center;
+  font-weight: 800;
+  color: var(--accent, #ffd447);
+}
+
+/* Range: sem “caixa” */
+body .admin-panel .admin-form input[type='range'],
+body .modal-preview-zoom input[type='range'] {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Cards antigos da loja */
+body .loja-admin-page .loja-admin-card input:not([type='checkbox']):not([type='radio']):not([type='file']),
+body .loja-admin-page .loja-admin-card textarea {
+  min-height: 46px;
+}
+
+body .loja-admin-page .loja-admin-card textarea {
+  min-height: 120px;
+}
+
+/* ---- Financeiro produto: custo / preço / peso ---- */
+body .loja-admin-page .sa-pe-finance-trio {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.75fr);
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: end;
+}
+
+@media (max-width: 900px) {
+  body .loja-admin-page .sa-pe-finance-trio {
+    grid-template-columns: 1fr;
+  }
+}
+
+body .loja-admin-page .sa-pe-money-box label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.52);
+  margin-bottom: 8px;
+}
+
+body .loja-admin-page .sa-pe-money-box input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 14px 16px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  border-radius: 12px;
+  border: 1px solid var(--admin-ctrl-border);
+  background: var(--admin-ctrl-bg);
+  color: #fff;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+body .loja-admin-page .sa-pe-money-box--weight input {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+body .loja-admin-page .sa-pe-money-box input:hover {
+  border-color: var(--admin-ctrl-border-hover);
+  background: var(--admin-ctrl-bg-hover);
+}
+
+body .loja-admin-page .sa-pe-money-box input:focus-visible {
+  outline: none;
+  border-color: var(--admin-ctrl-focus);
+  box-shadow: 0 0 0 2px var(--admin-ctrl-focus-ring);
+}
+
+/* Upload zones */
+body .loja-admin-page .sa-pe-upload-zone {
+  margin-top: 16px;
+  padding: 22px 20px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.2));
+  text-align: center;
+  transition:
+    border-color 0.22s ease,
+    background 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+body .loja-admin-page .sa-pe-upload-zone:hover {
+  border-color: rgba(234, 179, 8, 0.35);
+  background: linear-gradient(165deg, rgba(234, 179, 8, 0.06), rgba(0, 0, 0, 0.22));
+  box-shadow: 0 0 28px rgba(234, 179, 8, 0.08);
+}
+
+body .loja-admin-page .sa-pe-upload-zone__title {
+  margin: 0;
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.88);
+  letter-spacing: 0.02em;
+}
+
+body .loja-admin-page .sa-pe-file-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+  padding: 11px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(234, 179, 8, 0.45);
+  background: rgba(234, 179, 8, 0.1);
+  color: #fde68a;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+body .loja-admin-page .sa-pe-file-trigger:hover {
+  background: rgba(234, 179, 8, 0.16);
+  border-color: rgba(253, 224, 71, 0.55);
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.12);
+}
+
+body .loja-admin-page .sa-pe-file-trigger:active {
+  transform: scale(0.98);
+}
+
+body .loja-admin-page .sa-pe-upload-zone .loja-admin-hint {
+  margin-top: 8px;
+}
+
+body .loja-admin-page .sa-pe-upload-zone img {
+  margin-top: 14px;
+}
+
+/* Legado: tile antigo ainda usado em alguns blocos */
+body .loja-admin-page .sa-pe-upload-tile {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+body .loja-admin-page .sa-pe-upload-tile:hover {
+  border-color: rgba(234, 179, 8, 0.28);
+  box-shadow: 0 0 24px rgba(234, 179, 8, 0.06);
+}

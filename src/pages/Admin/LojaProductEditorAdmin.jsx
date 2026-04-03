@@ -225,7 +225,7 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
               </label>
               <label className="loja-admin-field loja-admin-field--full">
                 Descrição
-                <textarea rows={5} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+                <textarea rows={7} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
               </label>
               <label className="loja-admin-field">
                 Tipo
@@ -266,12 +266,10 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
               ) : null}
             </div>
 
-            <div className="sa-pe-upload-tile" style={{ marginTop: 16 }}>
-              <p style={{ margin: 0, fontWeight: 700, color: '#ccc' }}>Capa da vitrine</p>
-              <p className="loja-admin-hint" style={{ marginTop: 6 }}>
-                JPG, PNG ou WebP. Substitui a primeira imagem do produto.
-              </p>
-              <label className="loja-admin-btn-primary" style={{ display: 'inline-block', marginTop: 10, cursor: 'pointer' }}>
+            <div className="sa-pe-upload-zone">
+              <p className="sa-pe-upload-zone__title">Capa da vitrine</p>
+              <p className="loja-admin-hint">JPG, PNG ou WebP. Substitui a primeira imagem do produto.</p>
+              <label className="sa-pe-file-trigger">
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
@@ -290,7 +288,7 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
 
           <section className="sa-pe-block">
             <h2 className="sa-pe-block__title">Financeiro</h2>
-            <div className="sa-pe-money-row">
+            <div className="sa-pe-finance-trio">
               <div className="sa-pe-money-box">
                 <label htmlFor="sa-cost">Custo</label>
                 <input
@@ -303,7 +301,7 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
                 />
               </div>
               <div className="sa-pe-money-box">
-                <label htmlFor="sa-price">Venda</label>
+                <label htmlFor="sa-price">Preço de venda</label>
                 <input
                   id="sa-price"
                   type="number"
@@ -313,21 +311,22 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
                   onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value || 0) }))}
                 />
               </div>
+              <div className="sa-pe-money-box sa-pe-money-box--weight">
+                <label htmlFor="sa-weight">Peso (g)</label>
+                <input
+                  id="sa-weight"
+                  type="number"
+                  min={0}
+                  value={form.weightGrams}
+                  onChange={(e) => setForm((f) => ({ ...f, weightGrams: Number(e.target.value || 0) }))}
+                />
+              </div>
             </div>
             <div className={`sa-pe-profit-panel ${profitBrl < 0 ? 'is-negative' : ''}`}>
               <div className="sa-pe-profit-label">Lucro bruto</div>
               <div className="sa-pe-profit-value">{formatBRL(profitBrl)}</div>
               <div className="sa-pe-margin">Margem: {Number.isFinite(marginPct) ? `${marginPct}%` : '0%'}</div>
             </div>
-            <label className="loja-admin-field" style={{ marginTop: 16 }}>
-              Peso (g)
-              <input
-                type="number"
-                min={0}
-                value={form.weightGrams}
-                onChange={(e) => setForm((f) => ({ ...f, weightGrams: Number(e.target.value || 0) }))}
-              />
-            </label>
             <div className="loja-admin-toggle-row" style={{ marginTop: 12 }}>
               <label>
                 <input
@@ -447,9 +446,9 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
             ) : (
               <p className="loja-admin-hint">Produção disparada após a compra.</p>
             )}
-            <div className="sa-pe-upload-tile" style={{ marginTop: 14 }}>
-              <p style={{ margin: 0, fontWeight: 700 }}>PDF do miolo (opcional)</p>
-              <label className="loja-admin-btn-primary" style={{ display: 'inline-block', marginTop: 10, cursor: 'pointer' }}>
+            <div className="sa-pe-upload-zone" style={{ marginTop: 14 }}>
+              <p className="sa-pe-upload-zone__title">PDF do miolo (opcional)</p>
+              <label className="sa-pe-file-trigger">
                 <input type="file" accept="application/pdf,.pdf" hidden onChange={(e) => setPdfFile(e.target.files?.[0] || null)} />
                 Enviar PDF
               </label>

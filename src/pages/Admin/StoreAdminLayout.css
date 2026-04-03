@@ -197,33 +197,7 @@
   color: #7a7a7a;
 }
 
-.sa-pe-money-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.sa-pe-money-box label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #888;
-  margin-bottom: 8px;
-}
-
-.sa-pe-money-box input {
-  width: 100%;
-  font-size: 1.65rem;
-  font-weight: 700;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid #3a3a3a;
-  background: #0c0c0c;
-  color: #fff;
-}
+/* Linha financeira (custo / preço / peso): .sa-pe-finance-trio em AdminUiForms.css */
 
 .sa-pe-profit-panel {
   padding: 18px 20px;

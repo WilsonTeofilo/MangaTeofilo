@@ -32,6 +32,7 @@ import { effectiveCreatorMonetizationStatus } from './utils/creatorMonetizationU
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import SeoManager from './seo/SeoManager.jsx';
+import './pages/Admin/AdminUiForms.css';
 
 const HomeAdaptive = lazy(() => import('./pages/Home/HomeAdaptive.jsx'));
 const SobreAutor = lazy(() => import('./pages/Home/SobreAutorV2.jsx'));

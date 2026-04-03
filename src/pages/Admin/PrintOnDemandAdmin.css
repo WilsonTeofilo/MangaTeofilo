@@ -137,19 +137,7 @@
 }
 
 .po-search input {
-  width: 100%;
   max-width: 420px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.25);
-  color: inherit;
-  font-size: 0.9rem;
-  font-family: inherit;
-}
-
-.po-search input::placeholder {
-  color: #71717a;
 }
 
 .po-visually-hidden {
@@ -237,13 +225,6 @@
 .po-orders__filters select,
 .po-orders__filters input[type='date'] {
   min-width: 150px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
-  color: inherit;
-  font-family: inherit;
-  font-size: 0.875rem;
 }
 
 .po-orders__table-wrap--desktop {
@@ -608,19 +589,7 @@
   margin-bottom: 12px;
 }
 
-.po-field input,
-.po-field select {
-  margin-top: 4px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.35);
-  color: inherit;
-  font-size: 0.9rem;
-  font-family: inherit;
-  text-transform: none;
-  letter-spacing: normal;
-}
+/* inputs/select em .po-field: AdminUiForms.css (body .po-orders …) */
 
 /* Toast */
 .po-toast {

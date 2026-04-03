@@ -91,9 +91,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const navItems = useMemo(
     () => [
       { label: 'Lista de Mangas', path: '/works' },
+      ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
       { label: 'Loja', path: '/loja' },
       { label: 'Lance sua linha', path: lanceSuaLinhaPath, podNav: true },
-      ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
       ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
       { label: 'Sobre nos', path: '/sobre-autor' },
     ],

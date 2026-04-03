@@ -1,33 +1,117 @@
 .admin-pedidos-hub {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Mesma largura útil que .admin-loja-pedidos — alinha abas ao conteúdo */
+.admin-pedidos-hub__nav {
+  width: min(1280px, 96%);
+  margin: 0 auto;
+  padding: 20px 0 0;
+  box-sizing: border-box;
 }
 
 .admin-pedidos-hub__tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px min(1250px, 95%) 0;
-  margin: 0 auto;
-  max-width: 1250px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 0 16px;
+  margin: 0;
 }
 
+/* Controle segmentado horizontal (uma única peça) */
 .admin-pedidos-hub__tab {
-  border: 1px solid #3a3a3a;
-  background: #161616;
-  color: #bdbdbd;
-  border-radius: 999px;
-  padding: 10px 18px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  margin: 0;
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #141414;
+  color: #b4b4b4;
+  padding: 11px 20px;
   font-size: 0.82rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
   cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    z-index 0s;
+}
+
+.admin-pedidos-hub__tab:first-of-type {
+  border-radius: 11px 0 0 11px;
+}
+
+.admin-pedidos-hub__tab:last-of-type {
+  border-radius: 0 11px 11px 0;
+}
+
+.admin-pedidos-hub__tab:not(:first-of-type) {
+  margin-left: -1px;
+}
+
+.admin-pedidos-hub__tab:hover {
+  color: #ececec;
+  background: #1a1a1a;
+  border-color: rgba(255, 255, 255, 0.18);
+  z-index: 1;
+}
+
+.admin-pedidos-hub__tab:focus {
+  outline: none;
+}
+
+.admin-pedidos-hub__tab:focus-visible {
+  outline: none;
+  border-color: rgba(234, 179, 8, 0.65);
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2);
+  z-index: 2;
 }
 
 .admin-pedidos-hub__tab.is-active {
-  border-color: rgba(255, 204, 0, 0.5);
-  background: rgba(255, 204, 0, 0.12);
+  border-color: rgba(255, 204, 0, 0.55);
+  background: rgba(255, 204, 0, 0.14);
   color: #ffe9a8;
+  z-index: 2;
+}
+
+.admin-pedidos-hub__tab.is-active:hover {
+  background: rgba(255, 204, 0, 0.18);
+  color: #fff6d6;
 }
 
 .admin-pedidos-hub__panel[hidden] {
   display: none;
+}
+
+@media (max-width: 520px) {
+  .admin-pedidos-hub__tabs {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .admin-pedidos-hub__tab,
+  .admin-pedidos-hub__tab:first-of-type,
+  .admin-pedidos-hub__tab:last-of-type {
+    flex: 1 1 calc(50% - 4px);
+    border-radius: 11px;
+    margin-left: 0;
+    text-align: center;
+    justify-content: center;
+  }
 }

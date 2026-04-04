@@ -29,21 +29,21 @@ function shortId(id) {
   return String(id || '').slice(-8).toUpperCase();
 }
 
-/** Monetização / tipo de produto no catálogo (análise). */
+/** Mangaká monetizado vs não (análise). */
 function podTipoDisplay(snap) {
   const sm = String(snap?.saleModel || '');
   const k = String(snap?.creatorProductKind || '');
-  if (sm === 'store_promo' || k === 'non_monetized_promo') return 'Não monetizado';
+  if (sm === 'store_promo' || k === 'non_monetized_promo') return 'Mangaká não monetizado';
   if (sm === 'personal' || k === 'personal_purchase') return '—';
-  if (k === 'monetized' || sm === 'platform') return 'Monetizado';
+  if (k === 'monetized' || sm === 'platform') return 'Mangaká monetizado';
   return '—';
 }
 
-/** Canal do pedido (análise operacional). */
+/** Canal: uma das três formas de pedido físico. */
 function podOrigemDisplay(snap) {
   const sm = String(snap?.saleModel || '');
-  if (sm === 'store_promo') return 'Não monetizado';
-  if (sm === 'personal') return 'Compra própria';
+  if (sm === 'store_promo') return 'Postar na loja (não monetizado)';
+  if (sm === 'personal') return 'Comprar para mim';
   if (sm === 'platform') return 'Venda pela plataforma';
   return '—';
 }
@@ -402,12 +402,12 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               </select>
             </label>
             <label>
-              Tipo (canal)
+              Canal de venda
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
                 <option value="">Todos</option>
                 <option value="platform">Venda pela plataforma</option>
-                <option value="personal">Compra própria</option>
-                <option value="store_promo">Divulgação (não monetizado)</option>
+                <option value="personal">Comprar para mim</option>
+                <option value="store_promo">Postar na loja (não monetizado)</option>
               </select>
             </label>
             <label>
@@ -436,8 +436,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <th>ID</th>
                 <th>Criador</th>
                 <th>Modelo</th>
-                <th>Monetização</th>
-                <th>Origem</th>
+                <th>Monetização (autor)</th>
+                <th>Canal do pedido</th>
                 <th>Qtd</th>
                 <th>Valor</th>
                 <th>Status</th>
@@ -515,6 +515,9 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   <span className={`po-badge po-badge--${o.status}`}>{STATUS_LABELS[o.status] || o.status}</span>
                 </div>
                 <div className="po-mobile-card__meta">
+                  {podTipoDisplay(snap)} · {podOrigemDisplay(snap)}
+                </div>
+                <div className="po-mobile-card__meta po-mobile-card__meta--second">
                   {creatorLabel} · {snap.quantity} un · {snap.amountDueBRL != null ? formatBRL(snap.amountDueBRL) : '—'}
                 </div>
                 <div className="po-mobile-card__foot">Prazo: {pm.label}</div>
@@ -563,9 +566,9 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   <dd>{creatorNames[selected.creatorUid] || selected.creatorUid}</dd>
                   <dt>UID</dt>
                   <dd className="po-table__mono">{selected.creatorUid}</dd>
-                  <dt>Monetização (tipo)</dt>
+                  <dt>Monetização do autor</dt>
                   <dd>{podTipoDisplay(selected.snapshot)}</dd>
-                  <dt>Origem (canal)</dt>
+                  <dt>Canal do pedido</dt>
                   <dd>{podOrigemDisplay(selected.snapshot)}</dd>
                   <dt>saleModel (raw)</dt>
                   <dd className="po-table__mono">{String(selected.snapshot?.saleModel || '—')}</dd>

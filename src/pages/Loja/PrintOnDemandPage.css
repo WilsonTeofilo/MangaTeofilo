@@ -74,16 +74,49 @@
   gap: 16px;
 }
 
-@media (max-width: 960px) {
+.pod-mode-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .pod-mode-grid--two {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 901px) {
+  .pod-mode-grid--three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
   .pod-mode-grid--three {
     grid-template-columns: 1fr;
   }
 }
 
-@media (min-width: 961px) {
-  .pod-mode-grid--three {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+/** Terceiro cartão: postar na loja sem monetização (mesma grade). */
+.pod-mode-card--store-promo {
+  border-color: rgba(255, 204, 0, 0.28);
+  background: rgba(255, 204, 0, 0.04);
+}
+
+.pod-mode-card--store-promo:hover:not(.pod-mode-card--blocked) {
+  border-color: rgba(255, 204, 0, 0.5);
+}
+
+.pod-mode-card__badge--secondary {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fcd34d;
+}
+
+.pod-mode-card__tap-hint {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: rgba(252, 211, 77, 0.95);
 }
 
 .pod-mode-card {
@@ -122,9 +155,7 @@
   margin-bottom: 10px;
 }
 
-.pod-mode-card:not(:first-child) .pod-mode-card__badge {
-  display: none;
-}
+/* «Comprar para mim» não usa badge; 1º e 3º cartões podem ter. */
 
 .pod-mode-card__title {
   font-size: 1.1rem;

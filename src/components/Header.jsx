@@ -93,7 +93,13 @@ export default function Header({ usuario, perfil, adminAccess }) {
       { label: 'Lista de Mangas', path: '/works' },
       ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
       { label: 'Loja', path: '/loja' },
-      { label: 'Lance sua linha', path: lanceSuaLinhaPath, podNav: true },
+      {
+        label: 'Mangá físico',
+        path: lanceSuaLinhaPath,
+        podNav: true,
+        title:
+          'Produção de mangá físico para quem publica (ou quer publicar) na plataforma. Novo por aqui? Use CREATORS no menu.',
+      },
       ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
       { label: 'Sobre nos', path: '/sobre-autor' },
     ],
@@ -575,6 +581,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
                 className="nav-link-btn"
                 onClick={() => pushRoute(item.path)}
                 aria-current={navItemIsActive(item) ? 'page' : undefined}
+                title={item.title || undefined}
               >
                 {item.label}
               </button>

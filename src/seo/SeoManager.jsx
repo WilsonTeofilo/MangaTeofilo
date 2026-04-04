@@ -92,7 +92,8 @@ function buildSeo(pathname) {
     return {
       ...defs,
       title: `Loja | ${SITE_NAME}`,
-      description: 'Produtos oficiais, pedidos e vitrine da loja MangaTeofilo.',
+      description:
+        'Produtos oficiais e vitrine MangaTeofilo. Autores: mangá físico e programa CREATORS a partir da loja.',
     };
   }
 
@@ -100,7 +101,8 @@ function buildSeo(pathname) {
     return {
       ...defs,
       title: `Produzir manga fisico | ${SITE_NAME}`,
-      description: 'Transforme sua obra em manga fisico com configuracao de formato, tiragem, preco e revisao.',
+      description:
+        'Manga fisico (tankobon e meio-tankob): venda na loja com repasse, encomenda pessoal ou vitrine sem monetizacao. Novo autor? Programa CREATORS na MangaTeofilo.',
     };
   }
 

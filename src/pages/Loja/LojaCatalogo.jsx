@@ -204,6 +204,25 @@ export default function LojaCatalogo({ user, perfil }) {
       </section>
 
       <div className="loja-container loja-store__content" id="loja-explorar">
+        <section className="loja-author-strip" aria-label="Mangá físico e programa de autores">
+          <div className="loja-author-strip__text">
+            <span className="loja-author-strip__eyebrow">Autores</span>
+            <p className="loja-author-strip__p">
+              Leve sua obra para o papel: <strong>tankōbon</strong> ou <strong>meio-tankō</strong> com produção pela
+              MangaTeofilo — venda na loja com repasse, encomende para você ou, como criador sem monetização, peça vaga na
+              vitrine (preço fixo e metas).
+            </p>
+          </div>
+          <div className="loja-author-strip__actions">
+            <Link className="loja-author-strip__cta" to="/print-on-demand">
+              Ver mangá físico
+            </Link>
+            <Link className="loja-author-strip__cta loja-author-strip__cta--ghost" to="/creators">
+              Quero ser autor
+            </Link>
+          </div>
+        </section>
+
         <nav className="loja-cat-tabs loja-cat-tabs--store" aria-label="Categorias">
           {CATEGORY_TABS.map((t) => (
             <button

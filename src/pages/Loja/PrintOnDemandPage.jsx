@@ -56,7 +56,7 @@ function formatLabel(id) {
 
 function saleModelLabel(m) {
   if (m === SALE_MODEL.PLATFORM) return 'Venda pela plataforma';
-  if (m === SALE_MODEL.STORE_PROMO) return 'Divulgação (sem lucro)';
+  if (m === SALE_MODEL.STORE_PROMO) return 'Postar na loja (sem monetização)';
   return 'Comprar para mim';
 }
 
@@ -159,6 +159,28 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   const pendingNavRef = useRef(null);
   const [linkedWorkId, setLinkedWorkId] = useState('');
   const [followerCount, setFollowerCount] = useState(0);
+  /** Catálogo local: o App só envia obras quando detecta mangaká; aqui garantimos dados para o select. */
+  const [rtObras, setRtObras] = useState(null);
+  const [rtCaps, setRtCaps] = useState(null);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setRtObras(null);
+      setRtCaps(null);
+      return undefined;
+    }
+    const oRef = dbRef(db, 'obras');
+    const cRef = dbRef(db, 'capitulos');
+    const uo = onValue(oRef, (snap) => setRtObras(snap.exists() ? snap.val() : {}));
+    const uc = onValue(cRef, (snap) => setRtCaps(snap.exists() ? snap.val() : {}));
+    return () => {
+      uo();
+      uc();
+    };
+  }, [user?.uid]);
+
+  const effectiveObras = obrasVal != null ? obrasVal : rtObras;
+  const effectiveCaps = capsVal != null ? capsVal : rtCaps;
 
   const isMangakaUser = useMemo(
     () =>
@@ -176,49 +198,53 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   );
   const platformSaleBlocked =
     isMangakaUser && (perfil == null || !creatorMonetizationActive);
-  const storePromoModeAvailable = platformSaleBlocked;
 
   const flowSteps = useMemo(() => {
     if (saleModel === SALE_MODEL.STORE_PROMO) {
-      return [{ id: 'obra', label: 'Obra' }, ...STEPS];
+      return [{ id: 'obra', label: 'Obra na loja' }, ...STEPS];
     }
     return STEPS;
   }, [saleModel]);
 
   const myWorks = useMemo(() => {
-    if (!user?.uid || !obrasVal || typeof obrasVal !== 'object') return [];
+    if (!user?.uid || !effectiveObras || typeof effectiveObras !== 'object') return [];
     const uid = user.uid;
-    return Object.entries(obrasVal)
+    return Object.entries(effectiveObras)
       .map(([id, row]) => ({ id, ...(row && typeof row === 'object' ? row : {}) }))
       .filter((w) => String(w.creatorId || '').trim() === uid)
       .sort((a, b) =>
-        String(a.title || a.nome || a.name || '').localeCompare(
-          String(b.title || b.nome || b.name || ''),
+        String(a.title || a.titulo || a.nome || a.name || '').localeCompare(
+          String(b.title || b.titulo || b.nome || b.name || ''),
           'pt'
         )
       );
-  }, [obrasVal, user?.uid]);
+  }, [effectiveObras, user?.uid]);
+
+  /** Mostra o 3º cartão para mangaká ou quem já tem obra com creatorId = uid (fallback se role atrasar). */
+  const showStorePromoCard = Boolean(user?.uid) && (isMangakaUser || myWorks.length > 0);
+  /** Fluxo divulgação só sem monetização ativa (espelha o backend). */
+  const canUseStorePromo = showStorePromoCard && !creatorMonetizationActive;
 
   const selectedObraRow = useMemo(() => {
-    if (!linkedWorkId || !obrasVal || typeof obrasVal !== 'object') return null;
-    const row = obrasVal[linkedWorkId];
+    if (!linkedWorkId || !effectiveObras || typeof effectiveObras !== 'object') return null;
+    const row = effectiveObras[linkedWorkId];
     if (!row || typeof row !== 'object') return null;
     return row;
-  }, [linkedWorkId, obrasVal]);
+  }, [linkedWorkId, effectiveObras]);
 
   const storePromoMetrics = useMemo(
     () =>
       computeStorePromoEligibilityClient({
         obra: selectedObraRow,
         workId: linkedWorkId,
-        capsVal,
+        capsVal: effectiveCaps,
         followersCount: followerCount,
       }),
-    [selectedObraRow, linkedWorkId, capsVal, followerCount]
+    [selectedObraRow, linkedWorkId, effectiveCaps, followerCount]
   );
 
   useEffect(() => {
-    if (!user?.uid || !isMangakaUser) {
+    if (!user?.uid || !showStorePromoCard) {
       setFollowerCount(0);
       return undefined;
     }
@@ -227,7 +253,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
       setFollowerCount(snap.exists() ? Number(snap.val() || 0) : 0);
     });
     return () => unsub();
-  }, [user?.uid, isMangakaUser]);
+  }, [user?.uid, showStorePromoCard]);
 
   useEffect(() => {
     if (saleModel !== SALE_MODEL.STORE_PROMO) {
@@ -319,7 +345,11 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   const obraDisplayName = useMemo(() => {
     if (!selectedObraRow) return '';
     return String(
-      selectedObraRow.title || selectedObraRow.nome || selectedObraRow.name || 'Obra'
+      selectedObraRow.title ||
+        selectedObraRow.titulo ||
+        selectedObraRow.nome ||
+        selectedObraRow.name ||
+        'Obra'
     ).trim();
   }, [selectedObraRow]);
 
@@ -508,7 +538,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
     if (!validateBeforeSubmit()) return;
     const ok = window.confirm(
       saleModel === SALE_MODEL.STORE_PROMO
-        ? 'Enviar solicitação de publicação em modo divulgação? Depois do pagamento, o admin analisa o material antes do produto entrar na loja. Você não recebe repasse sobre vendas deste item.'
+        ? 'Enviar pedido para postar na loja sem monetização? Você não recebe lucro nas vendas. Depois do pagamento, o admin analisa antes do produto entrar na vitrine.'
         : 'Confirmar pedido de produção? Em seguida você verá o resumo e poderá seguir para o pagamento quando o checkout estiver disponível.'
     );
     if (!ok) return;
@@ -528,7 +558,19 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
       setModal('monetization');
       return;
     }
-    if (m === SALE_MODEL.STORE_PROMO && !storePromoModeAvailable) return;
+    if (m === SALE_MODEL.STORE_PROMO) {
+      if (!canUseStorePromo) {
+        if (creatorMonetizationActive) {
+          showToast(
+            'Com monetização ativa, use «Venda pela plataforma» para repasse. «Postar na loja (sem monetização)» é só para quem ainda não monetiza.'
+          );
+        }
+        return;
+      }
+      setSaleModel(m);
+      window.setTimeout(() => scrollToStep('obra'), 80);
+      return;
+    }
     setSaleModel(m);
   };
 
@@ -594,20 +636,20 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         <title>Produzir mangá físico | MangaTeofilo</title>
         <meta
           name="description"
-          content="Configure tankōbon ou meio-tankō físico: venda na loja ou encomende para você, com preço e lucro claros."
+          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda na loja, encomenda pessoal ou vitrine sem monetização. Novo? Programa CREATORS para publicar e monetizar."
         />
         <meta property="og:type" content="website" />
         <meta property="og:title" content="Produzir mangá físico | MangaTeofilo" />
         <meta
           property="og:description"
-          content="Configure tankōbon ou meio-tankō físico: venda na loja ou encomende para você, com preço e lucro claros."
+          content="Tankōbon e meio-tankō físico: venda na loja, encomenda ou vitrine sem monetização. Publique com o programa CREATORS."
         />
         <meta property="og:url" content={canonicalUrl} />
         <meta property="og:image" content="https://mangateofilo.com/assets/fotos/shito.jpg" />
         <meta name="twitter:title" content="Produzir mangá físico | MangaTeofilo" />
         <meta
           name="twitter:description"
-          content="Configure tankōbon ou meio-tankō físico: venda na loja ou encomende para você, com preço e lucro claros."
+          content="Tankōbon e meio-tankō físico: venda na loja, encomenda ou vitrine sem monetização. Publique com o programa CREATORS."
         />
         <meta name="twitter:image" content="https://mangateofilo.com/assets/fotos/shito.jpg" />
         <link rel="canonical" href={canonicalUrl} />
@@ -645,10 +687,10 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               <p className="pod-modal__hint">
                 Enquanto isso, você pode usar <strong>Comprar para mim</strong> e receber o lote no seu endereço.
               </p>
-              {storePromoModeAvailable ? (
+              {canUseStorePromo ? (
                 <p className="pod-modal__hint">
-                  Se quiser aparecer na vitrine sem repasse, use também <strong>Divulgação na loja</strong> (preço fixo,
-                  sujeito a requisitos de engajamento).
+                  Quer só divulgar sem repasse? Use o terceiro cartão <strong>Postar na loja (sem monetização)</strong> ao
+                  lado (preço fixo, metas de engajamento).
                 </p>
               ) : null}
             </div>
@@ -676,7 +718,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
             </h2>
             <div className="pod-modal__body">
               <p>
-                Seu pedido em modo <strong>divulgação</strong> foi criado (
+                Seu pedido <strong>postar na loja (sem monetização)</strong> foi criado (
                 <strong>#{successOrderId.slice(-8).toUpperCase()}</strong>). Você <strong>não recebe lucro</strong> com as
                 vendas deste produto na loja.
               </p>
@@ -756,12 +798,31 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           <header className="pod-hero">
             <h1 className="pod-hero__title">Lance sua linha conosco</h1>
             <p className="pod-hero__sub">
-              Escolha o formato, veja quanto custa produzir e decida se quer vender na MangaTeofilo, divulgar sem repasse
-              (se disponível) ou pedir seu lote para casa.
+              {showStorePromoCard ? (
+                <>
+                  Escolha uma das opções abaixo. A terceira — <strong>postar sem monetização</strong> — é só para quem não
+                  tem repasse na plataforma: <strong>sem lucro</strong> para você, preço fixo na loja, metas de engajamento e
+                  aprovação do admin. <strong>Clique nela</strong> para ver obra + barras do que falta (mesmo bloqueado).
+                </>
+              ) : (
+                <>
+                  Abaixo: <strong>venda na loja com lucro</strong> (precisa de monetização ativa) ou{' '}
+                  <strong>encomendar o lote para você</strong>. A terceira via — vitrine a <strong>preço fixo</strong> sem
+                  repasse, com metas de seguidores/views/likes — aparece quando você é{' '}
+                  <strong>criador com obra cadastrada</strong> aqui. Ainda não publica?{' '}
+                  <Link to="/creators">Conheça o programa CREATORS</Link>
+                  {!user ? (
+                    <>
+                      {' '}
+                      ou <Link to={buildLoginUrlWithRedirect(loginContinueUrl)}>entre</Link> para simular com sua conta.
+                    </>
+                  ) : null}
+                </>
+              )}
             </p>
 
             <div
-              className={`pod-mode-grid${storePromoModeAvailable ? ' pod-mode-grid--three' : ''}`}
+              className={`pod-mode-grid ${showStorePromoCard ? 'pod-mode-grid--three' : 'pod-mode-grid--two'}`}
               role="group"
               aria-label="Modo de pedido"
             >
@@ -789,17 +850,30 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   Você encomenda direto com a gente para receber em um único endereço e vender por conta própria.
                 </p>
               </button>
-              {storePromoModeAvailable ? (
+              {showStorePromoCard ? (
                 <button
                   type="button"
-                  className={`pod-mode-card ${saleModel === SALE_MODEL.STORE_PROMO ? 'is-selected' : ''}`}
+                  id="pod-opcao-postar-sem-monetizacao"
+                  className={`pod-mode-card pod-mode-card--store-promo ${saleModel === SALE_MODEL.STORE_PROMO ? 'is-selected' : ''} ${creatorMonetizationActive ? 'pod-mode-card--blocked' : ''}`}
                   onClick={() => selectSaleModel(SALE_MODEL.STORE_PROMO)}
                 >
-                  <h2 className="pod-mode-card__title">Divulgação na loja</h2>
+                  <span className="pod-mode-card__badge pod-mode-card__badge--secondary">Sem lucro · preço fixo</span>
+                  <h2 className="pod-mode-card__title">Postar na loja (sem monetização)</h2>
                   <p className="pod-mode-card__desc">
-                    Preço fixo na vitrine para divulgar sua obra. Você não recebe repasse sobre as vendas deste produto —
-                    serve apenas para exposição do trabalho.
+                    Você <strong>não recebe repasse</strong>. Vitrine fixa: Tankōbon R$ 43 ou Meio-Tankō R$ 26,50. Lotes{' '}
+                    <strong>10, 20 ou 30</strong>. Precisa de <strong>100</strong> seguidores, <strong>30 mil</strong> views
+                    (obra + capítulos) e <strong>200</strong> likes. Admin aprova antes de publicar.
                   </p>
+                  {creatorMonetizationActive ? (
+                    <p className="pod-mode-card__lock">Bloqueado: com monetização ativa use «Venda pela plataforma».</p>
+                  ) : (
+                    <p className="pod-mode-card__tap-hint">
+                      Toque aqui — escolha a obra e acompanhe o quanto falta para desbloquear o envio.
+                    </p>
+                  )}
+                  {saleModel === SALE_MODEL.STORE_PROMO && linkedWorkId && !storePromoMetrics.ok ? (
+                    <p className="pod-mode-card__lock">Meta ainda não batida — veja as barras na etapa «Obra na loja».</p>
+                  ) : null}
                 </button>
               ) : null}
             </div>
@@ -817,11 +891,14 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           {saleModel === SALE_MODEL.STORE_PROMO ? (
             <section ref={obraRef} id="pod-step-obra" className="pod-panel pod-panel--obra">
               <h2 className="pod-panel__title">
-                {stepIndex('obra')} · Obra vinculada
+                {stepIndex('obra')} · Qual obra vai para a vitrine?
               </h2>
-              <p className="pod-panel__hint">O produto físico precisa estar ligado a uma obra sua para métricas e análise.</p>
+              <p className="pod-panel__hint">
+                O pedido de mangá físico precisa estar associado a <strong>uma obra sua</strong>. As métricas de desbloqueio
+                (seguidores, views, likes) usam essa obra e os capítulos ligados a ela.
+              </p>
               <label className="pod-field pod-field--select">
-                <span className="pod-field__label">Obra vinculada</span>
+                <span className="pod-field__label">Selecione a obra</span>
                 <select
                   className="pod-select"
                   value={linkedWorkId}
@@ -831,7 +908,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   <option value="">Selecione…</option>
                   {myWorks.map((w) => (
                     <option key={w.id} value={w.id}>
-                      {String(w.title || w.nome || w.name || w.id).trim()}
+                      {String(w.title || w.titulo || w.nome || w.name || w.id).trim()}
                     </option>
                   ))}
                 </select>

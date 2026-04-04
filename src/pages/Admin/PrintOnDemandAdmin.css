@@ -386,6 +386,13 @@
   margin-bottom: 6px;
 }
 
+.po-mobile-card__meta--second {
+  margin-top: -2px;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  color: #d4d4d8;
+}
+
 .po-mobile-card__foot {
   font-size: 0.8rem;
   color: #71717a;

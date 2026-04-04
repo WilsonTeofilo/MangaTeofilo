@@ -136,3 +136,23 @@ export function assembleCreatorRecordForRtdb({
     },
   };
 }
+
+/**
+ * Unifica status de monetização para listagens/admin quando campos divergem
+ * (ex.: `creatorProfile` atualizado e raiz atrasada, ou `creator.monetization` com approved/enabled).
+ */
+export function resolveCreatorMonetizationStatusFromDb(row) {
+  if (!row || typeof row !== 'object') return '';
+  const top = String(row.creatorMonetizationStatus || '').trim().toLowerCase();
+  const prof = String(row.creatorProfile?.monetizationStatus || '').trim().toLowerCase();
+  const mon = row.creator?.monetization;
+  const nestedActive =
+    mon && typeof mon === 'object' && mon.enabled === true && mon.approved === true;
+  if (nestedActive) return 'active';
+  const pool = [top, prof].filter(Boolean);
+  if (pool.includes('active')) return 'active';
+  if (pool.includes('blocked_underage')) return 'blocked_underage';
+  if (pool.includes('disabled')) return 'disabled';
+  if (pool.includes('pending_review')) return 'pending_review';
+  return top || prof || '';
+}

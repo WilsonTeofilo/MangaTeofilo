@@ -2,6 +2,13 @@
  * Print-on-demand (manga fisico) - regras de preco e prazo.
  */
 
+import { VITRINE_PROMO_THRESHOLDS } from './creatorProgression.js';
+import {
+  computeFixedZoneShippingParts,
+  FREE_SHIPPING_MAX_SHIPPING_BRL,
+  FREE_SHIPPING_MIN_SUBTOTAL_BRL,
+} from './fixedZoneShipping.js';
+
 export const SALE_MODEL = {
   PLATFORM: 'platform',
   PERSONAL: 'personal',
@@ -27,11 +34,8 @@ export const STORE_PROMO_FIXED_RETAIL_UNIT_BRL = {
   [BOOK_FORMAT.MEIO_TANKO]: 26.5,
 };
 
-export const STORE_PROMO_THRESHOLDS = {
-  followers: 100,
-  views: 30000,
-  likes: 200,
-};
+/** Mesmas metas do Nível 1 (em ascensão) — ver `creatorProgression.js`. */
+export const STORE_PROMO_THRESHOLDS = VITRINE_PROMO_THRESHOLDS;
 
 export const PLATFORM_RETAIL_UNIT_BRL = {
   [BOOK_FORMAT.TANKOBON]: { baseCost: 37.2, defaultPrice: 56, min: 46, max: 70 },
@@ -59,7 +63,11 @@ export const PRODUCTION_TIME_RULES = {
 };
 
 export const PLATFORM_APPROVAL_SLA_DAYS = 2;
+/** Margem pós-produção + trânsito (dias úteis) — mantém intervalo alinhado ao motor `getProductionDaysRange`. */
 export const PERSONAL_DELIVERY_BUFFER_DAYS = 12;
+
+/** Pedidos confirmados até esta hora (Brasil) entram na fila no mesmo dia útil; depois, no próximo. */
+export const POD_PRODUCTION_ORDER_CUTOFF_HOUR_BR = 14;
 
 export const POD_ORDER_STATUS = {
   PENDING_PAYMENT: 'pending_payment',
@@ -168,6 +176,7 @@ export function computePersonalOrder(format, quantity) {
   const goodsTotal = Math.round(row.unitCost * qty * 100) / 100;
   const platformProfitIncludedTotal = Math.round(row.platformProfitIncluded * qty * 100) / 100;
   const freeShipping = qty >= Number(row.freeShippingAt || 999);
+  const wUnit = format === BOOK_FORMAT.MEIO_TANKO ? 160 : 300;
   return {
     unitCostBRL: row.unitCost,
     creatorUnitPriceBRL: row.unitCost,
@@ -177,9 +186,56 @@ export function computePersonalOrder(format, quantity) {
     freeShipping,
     freeShippingAt: row.freeShippingAt,
     creatorProductKind: 'personal_purchase',
+    weightGramsPerUnit: wUnit,
+    weightGramsTotal: Math.round(wUnit * qty),
     shippingNote: freeShipping
       ? `Frete gratis a partir de ${row.freeShippingAt} unidades. O prazo abaixo ja considera producao + entrega.`
       : `Frete a parte: abaixo de ${row.freeShippingAt} unidades o frete e cobrado separadamente.`,
+  };
+}
+
+export { FREE_SHIPPING_MIN_SUBTOTAL_BRL, FREE_SHIPPING_MAX_SHIPPING_BRL };
+
+/** Subtotal mínimo para a regra de frete grátis condicional (espelho do backend). */
+export const PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL = FREE_SHIPPING_MIN_SUBTOTAL_BRL;
+
+/** Frete modo pessoal: tabela por UF + extras (espelho do backend). */
+export function quotePersonalDeliveryShippingBRL(uf, quantity, goodsSubtotal) {
+  return computeFixedZoneShippingParts({
+    state: uf,
+    quantity,
+    cartTotal: goodsSubtotal,
+  }).priceBrl;
+}
+
+/**
+ * Preview do total no checkout (modo pessoal) — o valor final é o do servidor.
+ * @param {string} format
+ * @param {number} quantity
+ * @param {string} [uf]
+ */
+export function computePersonalOrderTotalWithShipping(format, quantity, uf) {
+  const calc = computePersonalOrder(format, quantity);
+  if (!calc) return null;
+  if (calc.freeShipping) {
+    return { ...calc, shippingBRL: 0, amountDueBRL: calc.goodsTotalBRL, freeShippingBySubtotal: false };
+  }
+  const goods = Number(calc.goodsTotalBRL || 0);
+  const u = String(uf || '').trim().toUpperCase();
+  if (!u || u.length !== 2) {
+    return { ...calc, shippingBRL: null, amountDueBRL: goods, freeShippingBySubtotal: false };
+  }
+  const parts = computeFixedZoneShippingParts({
+    state: u,
+    quantity,
+    cartTotal: goods,
+  });
+  const sh = parts.priceBrl;
+  return {
+    ...calc,
+    shippingBRL: sh,
+    amountDueBRL: Math.round((goods + sh) * 100) / 100,
+    freeShippingBySubtotal: parts.freeApplied,
   };
 }
 

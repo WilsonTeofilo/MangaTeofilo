@@ -405,6 +405,80 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
+.financeiro-integridade-form {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.financeiro-integridade-note {
+  font-size: 0.8rem;
+  color: #c8c8c8;
+  border-left: 3px solid rgba(255, 200, 120, 0.45);
+  padding-left: 10px;
+}
+
+.financeiro-integridade-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(10, 10, 10, 0.65);
+}
+
+.financeiro-integridade-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.financeiro-integridade-table th,
+.financeiro-integridade-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+.financeiro-integridade-table th {
+  color: #b8b8b8;
+  font-weight: 600;
+}
+
+.financeiro-integridade-table td {
+  color: #e4e4e4;
+}
+
+.financeiro-integridade-row--warn {
+  background: rgba(255, 120, 80, 0.12);
+}
+
+.financeiro-integridade-repair-title {
+  margin: 28px 0 8px;
+  font-size: 1rem;
+  color: #e8e8e8;
+}
+
+.financeiro-integridade-json {
+  margin-top: 10px;
+  padding: 12px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #c8e8c8;
+}
+
+.financeiro-integridade-check {
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+.financeiro-integridade-warnings li {
+  color: #ffcc9a;
+}
+
 .financeiro-resultados,
 .financeiro-historico {
   margin-top: 14px;

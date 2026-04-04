@@ -7,4 +7,5 @@ Disallow: /login
 Disallow: /biblioteca
 Disallow: /loja/carrinho
 Disallow: /loja/pedidos
+Disallow: /pedidos
 Sitemap: https://mangateofilo.com/sitemap.xml

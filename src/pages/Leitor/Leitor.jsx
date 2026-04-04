@@ -8,6 +8,7 @@ import { db, functions } from '../../services/firebase';
 import { AVATAR_FALLBACK } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { applyChapterCommentDelta, applyChapterLikeDelta, applyChapterReadDelta } from '../../utils/discoveryStats';
+import { getLastRead, recordReadingProgress } from '../../utils/readingProgressLocal';
 import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
 import {
   OBRA_PADRAO_ID,
@@ -20,13 +21,45 @@ import {
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { toRecordList } from '../../utils/firebaseRecordList';
 import LoadingScreen from '../../components/LoadingScreen';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
-import ChapterShareBar from '../../components/ChapterShareBar.jsx';
+import ChapterShareBar, { ogImageMimeHint } from '../../components/ChapterShareBar.jsx';
 import './Leitor.css';
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 const upsertNotificationSubscription = httpsCallable(functions, 'upsertNotificationSubscription');
+
+function commentSortTs(c) {
+  if (typeof c.data === 'number' && Number.isFinite(c.data)) return c.data;
+  return 0;
+}
+
+function buildCommentThreads(flat, filtro) {
+  const map = new Map(flat.map((c) => [c.id, { ...c, replies: [] }]));
+  const roots = [];
+  for (const c of flat) {
+    const node = map.get(c.id);
+    const pid = c.parentId ? String(c.parentId).trim() : '';
+    if (pid && map.has(pid)) {
+      map.get(pid).replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  const sortRoots = (a, b) =>
+    filtro === 'relevantes'
+      ? (b.likes || 0) - (a.likes || 0)
+      : commentSortTs(b) - commentSortTs(a);
+  const sortReplies = (a, b) => commentSortTs(a) - commentSortTs(b);
+  roots.sort(sortRoots);
+  const walk = (n) => {
+    n.replies.sort(sortReplies);
+    n.replies.forEach(walk);
+  };
+  roots.forEach(walk);
+  return roots;
+}
 
 /** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
 const isContaPremium = (perfilPublico) => {
@@ -55,8 +88,12 @@ export default function Leitor({ user, perfil }) {
     () => Number(localStorage.getItem('zoom')) || 100
   );
   const [paginaAtual, setPaginaAtual]     = useState(0);
+  const [verticalFocusIndex, setVerticalFocusIndex] = useState(0);
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [modalLoginComentario, setModalLoginComentario] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [replyEnviando, setReplyEnviando] = useState(false);
   const [creatorUidApoio, setCreatorUidApoio] = useState(null);
   const [creatorSupportEnabled, setCreatorSupportEnabled] = useState(false);
   const [isSubscribedCurrentWork, setIsSubscribedCurrentWork] = useState(false);
@@ -64,6 +101,7 @@ export default function Leitor({ user, perfil }) {
   const [chapterBrowserPushModalOpen, setChapterBrowserPushModalOpen] = useState(false);
   const [chapterBrowserPushPermission, setChapterBrowserPushPermission] = useState('default');
   const [obraMetaLeitor, setObraMetaLeitor] = useState(null);
+  const [capsObra, setCapsObra] = useState([]);
 
   const touchStartX          = useRef(0);
   const touchEndX            = useRef(0);
@@ -165,20 +203,34 @@ export default function Leitor({ user, perfil }) {
 
   useEffect(() => {
     jaContouVisualizacao.current = false;
+    setVerticalFocusIndex(0);
   }, [id]);
 
   const chapterSeo = useMemo(() => {
     if (!capitulo || !id) return null;
     const SITE = 'MangaTeofilo';
     const SITE_W = 'https://mangateofilo.com';
+    const absShareUrl = (u) => {
+      const s = String(u || '').trim();
+      if (!s) return `${SITE_W}/assets/fotos/shito.jpg`;
+      if (/^https?:\/\//i.test(s)) return s;
+      return `${SITE_W}${s.startsWith('/') ? '' : '/'}${s}`;
+    };
     const obraNome = String(capitulo.obraTitulo || capitulo.obraName || '').trim() || 'Mangá autoral';
     const num = Number(capitulo.numero || 0);
     const capTitulo =
       String(capitulo.titulo || '').trim() || (num ? `Capítulo ${num}` : 'Capítulo');
     const numLabel = num > 0 ? String(num) : '?';
     const canonical = `${SITE_W}/ler/${encodeURIComponent(id)}`;
-    const title = `Ler ${obraNome} — Cap. ${numLabel}: ${capTitulo} | ${SITE}`;
-    const description = `Leia online ${capTitulo} (${obraNome}) — mangá em português, ler mangá grátis. ${SITE}.`;
+    const title = `${obraNome} · Cap. ${numLabel}: ${capTitulo} | ${SITE}`;
+    const description = `Leia ${capTitulo} de ${obraNome} — mangá em português no ${SITE}. Toque para abrir o leitor.`;
+    const coverRaw =
+      String(capitulo.capaUrl || '').trim() ||
+      (Array.isArray(capitulo.paginas) && capitulo.paginas.length
+        ? String(capitulo.paginas[0] || '').trim()
+        : '');
+    const shareImage = absShareUrl(coverRaw);
+    const imageAlt = `${obraNome} — ${capTitulo}`;
     const workId = obterObraIdCapitulo(capitulo);
     const meta =
       obraMetaLeitor && normalizarObraId(obraMetaLeitor.id) === normalizarObraId(workId)
@@ -206,6 +258,8 @@ export default function Leitor({ user, perfil }) {
       title,
       description,
       canonical,
+      shareImage,
+      imageAlt,
       jsonLd,
       obraNome,
       capTitulo,
@@ -220,6 +274,39 @@ export default function Leitor({ user, perfil }) {
       ? { ...capitulo, creatorId: creatorUidApoio }
       : capitulo;
   }, [capitulo, creatorUidApoio]);
+
+  const workIdSibling = useMemo(() => (capitulo ? obterObraIdCapitulo(capitulo) : null), [capitulo]);
+
+  useEffect(() => {
+    if (!workIdSibling) {
+      setCapsObra([]);
+      return () => {};
+    }
+    const unsub = onValue(ref(db, 'capitulos'), (snap) => {
+      const list = snap.exists() ? toRecordList(snap.val()) : [];
+      const mine = list
+        .filter((c) => obterObraIdCapitulo(c) === workIdSibling)
+        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0));
+      setCapsObra(mine);
+    });
+    return () => unsub();
+  }, [workIdSibling]);
+
+  const proximoCapituloId = useMemo(() => {
+    if (!capitulo || !id || !capsObra.length) return null;
+    const curNum = Number(capitulo.numero || 0);
+    const fallbackCreator = creatorUidApoio || String(capitulo.creatorId || '').trim();
+    const opts = { creatorIdFallback: fallbackCreator };
+    const baseCap = { ...(capituloParaAcesso || capitulo), id };
+    if (!capituloLiberadoParaUsuario(baseCap, user, perfil, opts)) return null;
+    for (const c of capsObra) {
+      if (Number(c.numero || 0) <= curNum) continue;
+      const enriched = c?.creatorId ? c : { ...c, creatorId: fallbackCreator };
+      const capCheck = { ...enriched, id: c.id };
+      if (capituloLiberadoParaUsuario(capCheck, user, perfil, opts)) return c.id;
+    }
+    return null;
+  }, [capitulo, id, capsObra, user, perfil, capituloParaAcesso, creatorUidApoio]);
 
   useEffect(() => {
     const fromUrl = parseAttributionFromSearch(searchParams);
@@ -308,6 +395,96 @@ export default function Leitor({ user, perfil }) {
     };
   }, [id, escutarPerfil]);
 
+  // Restaura página salva (só quando o capítulo assenta — evita reset a cada tick do RTDB).
+  useEffect(() => {
+    if (!capitulo || !id || carregando) return;
+    const last = getLastRead();
+    if (!last || last.chapterId !== id) return;
+    const max = Math.max(0, (capitulo.paginas?.length || 1) - 1);
+    const target = Math.min(Math.max(0, last.page - 1), max);
+    setPaginaAtual(target);
+  }, [id, carregando, capitulo?.paginas?.length]);
+
+  useEffect(() => {
+    if (modoLeitura !== 'vertical' || carregando || !capitulo?.paginas?.length) return undefined;
+    let cancelled = false;
+    let obs = null;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const root = document.querySelector('.paginas-lista');
+      if (!root) return;
+      const imgs = root.querySelectorAll('img');
+      if (!imgs.length) return;
+      const ratios = new Map();
+      obs = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((en) => {
+            const idx = [...imgs].indexOf(en.target);
+            if (idx < 0) return;
+            ratios.set(idx, en.intersectionRatio);
+          });
+          let best = 0;
+          let bestR = 0;
+          ratios.forEach((r, i) => {
+            if (r > bestR) {
+              bestR = r;
+              best = i;
+            }
+          });
+          if (bestR > 0.12) setVerticalFocusIndex(best);
+        },
+        { root: null, rootMargin: '-18% 0px -28% 0px', threshold: [0, 0.12, 0.25, 0.45, 0.65] }
+      );
+      imgs.forEach((img) => obs.observe(img));
+    }, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      if (obs) obs.disconnect();
+    };
+  }, [modoLeitura, carregando, capitulo?.paginas?.length, id]);
+
+  useEffect(() => {
+    if (!capitulo || !id || carregando) return;
+    const cap = { ...(capituloParaAcesso || capitulo), id };
+    if (
+      !capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: creatorUidApoio || '' })
+    ) {
+      return;
+    }
+    const workId = obterObraIdCapitulo(capitulo);
+    const page =
+      modoLeitura === 'horizontal' ? paginaAtual + 1 : Math.min(verticalFocusIndex + 1, capitulo.paginas?.length || 1);
+    const obraTitulo = String(obraMetaLeitor?.titulo || capitulo.obraTitulo || capitulo.obraName || '').trim();
+    const chapterTitle =
+      String(capitulo.titulo || '').trim() || `Capítulo ${capitulo.numero != null ? capitulo.numero : ''}`;
+    const capaUrl = String(capitulo.capaUrl || '').trim();
+    const timer = window.setTimeout(() => {
+      recordReadingProgress({
+        workId,
+        chapterId: id,
+        chapterNumber: Number(capitulo.numero) || 0,
+        page,
+        obraTitulo,
+        chapterTitle,
+        capaUrl,
+      });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [
+    id,
+    capitulo,
+    carregando,
+    paginaAtual,
+    modoLeitura,
+    verticalFocusIndex,
+    user,
+    perfil,
+    capituloParaAcesso,
+    creatorUidApoio,
+    obraMetaLeitor,
+  ]);
+
   useEffect(() => {
     if (!capitulo || !id) return;
     const cap = { ...(capituloParaAcesso || capitulo), id };
@@ -347,18 +524,27 @@ export default function Leitor({ user, perfil }) {
   const sincronizarPerfilPublico = async (usuario) => {
     if (!usuario) return;
     try {
-      const tipoSnap = await get(ref(db, `usuarios/${usuario.uid}/accountType`));
-      const tipoRaw = tipoSnap.exists() ? String(tipoSnap.val() ?? 'comum').toLowerCase() : 'comum';
+      const privSnap = await get(ref(db, `usuarios/${usuario.uid}`));
+      const row = privSnap.exists() ? privSnap.val() || {} : {};
+      const avatarPersistido = String(row.userAvatar || '').trim();
+      const tipoRaw = String(row.accountType ?? 'comum').toLowerCase();
       const accountTypePub = ['comum', 'membro', 'premium', 'admin'].includes(tipoRaw)
         ? tipoRaw
         : 'comum';
-      await update(ref(db, `usuarios_publicos/${usuario.uid}`), {
-        uid:         usuario.uid,
-        userName:    usuario.displayName || 'Guerreiro',
-        userAvatar:  usuario.photoURL    || AVATAR_FALLBACK,
+      const userAvatar =
+        avatarPersistido ||
+        String(usuario.photoURL || '').trim() ||
+        AVATAR_FALLBACK;
+      const handlePub = String(row.userHandle || '').trim().toLowerCase();
+      const pubPatch = {
+        uid: usuario.uid,
+        userName: String(row.userName || usuario.displayName || 'Guerreiro').trim() || 'Guerreiro',
+        userAvatar,
         accountType: accountTypePub,
-        updatedAt:   Date.now(),
-      });
+        updatedAt: Date.now(),
+      };
+      if (handlePub) pubPatch.userHandle = handlePub;
+      await update(ref(db, `usuarios_publicos/${usuario.uid}`), pubPatch);
     } catch (err) {
       console.warn('Aviso: não foi possível sincronizar perfil público.', err.message);
     }
@@ -465,14 +651,56 @@ export default function Leitor({ user, perfil }) {
     // Like de comentário fica só no nó do comentário; não altera likes da obra/capítulo.
   };
 
-  const comentariosOrdenados = useMemo(
-    () => [...listaComentarios].sort((a, b) =>
-      filtro === 'relevantes'
-        ? (b.likes || 0) - (a.likes || 0)
-        : (b.data || 0) - (a.data || 0)
-    ),
+  const comentariosEmThreads = useMemo(
+    () => buildCommentThreads(listaComentarios, filtro),
     [listaComentarios, filtro]
   );
+
+  const handleEnviarResposta = async (parentId) => {
+    if (!user) {
+      navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
+      return;
+    }
+    const texto = replyDraft.trim();
+    if (!texto || replyEnviando || !parentId) return;
+    setReplyEnviando(true);
+    try {
+      await sincronizarPerfilPublico(user);
+      await set(push(ref(db, `capitulos/${id}/comentarios`)), {
+        texto,
+        userId: user.uid,
+        data: serverTimestamp(),
+        likes: 0,
+        parentId,
+      });
+      setReplyDraft('');
+      setReplyingTo(null);
+      await applyChapterCommentDelta(db, {
+        chapterId: id,
+        workId: obterObraIdCapitulo(capitulo),
+        creatorId: creatorUidApoio || obraCreatorId({ creatorId: capitulo?.creatorId || '' }),
+        amount: 1,
+      });
+      const authorUid = String(capitulo?.creatorId || creatorUidApoio || '').trim();
+      if (authorUid && user.uid === authorUid) {
+        try {
+          const cycleSnap = await get(ref(db, `usuarios/${user.uid}/engagementCycle`));
+          if (cycleSnap.exists()) {
+            await runTransaction(ref(db, `usuarios/${user.uid}/engagementCycle/repliesInCycle`), (cur) => {
+              const n = Number(cur);
+              return (Number.isFinite(n) ? n : 0) + 1;
+            });
+          }
+        } catch (_) {
+          /* ciclo opcional */
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao responder comentário:', err);
+    } finally {
+      setReplyEnviando(false);
+    }
+  };
 
   const apoieComCriadorPath = useMemo(
     () => apoiePathParaCriador(creatorUidApoio || ''),
@@ -597,9 +825,21 @@ export default function Leitor({ user, perfil }) {
           <Helmet prioritizeSeoTags>
             <title>{chapterSeo.title}</title>
             <meta name="description" content={chapterSeo.description} />
+            <meta property="og:type" content="article" />
             <meta property="og:title" content={chapterSeo.title} />
             <meta property="og:description" content={chapterSeo.description} />
             <meta property="og:url" content={chapterSeo.canonical} />
+            <meta property="og:image" content={chapterSeo.shareImage} />
+            {/^https:\/\//i.test(chapterSeo.shareImage) ? (
+              <meta property="og:image:secure_url" content={chapterSeo.shareImage} />
+            ) : null}
+            <meta property="og:image:type" content={ogImageMimeHint(chapterSeo.shareImage)} />
+            <meta property="og:image:alt" content={chapterSeo.imageAlt} />
+            <meta name="twitter:card" content="summary_large_image" />
+            <meta name="twitter:title" content={chapterSeo.title} />
+            <meta name="twitter:description" content={chapterSeo.description} />
+            <meta name="twitter:image" content={chapterSeo.shareImage} />
+            <meta name="twitter:image:alt" content={chapterSeo.imageAlt} />
             <link rel="canonical" href={chapterSeo.canonical} />
             <meta name="robots" content="noindex,follow" />
           </Helmet>
@@ -641,6 +881,113 @@ export default function Leitor({ user, perfil }) {
     );
   }
 
+  const renderCommentBranch = (c, depth) => {
+    const perfilPublico = perfisUsuarios[c.userId];
+    const displayName = perfilPublico?.userName || 'Usuário';
+    const handle = String(perfilPublico?.userHandle || '').trim().toLowerCase();
+    const isLiked = c.usuariosQueCurtiram?.[user?.uid];
+    const isPremium = isContaPremium(perfilPublico);
+    const maxDepth = 8;
+
+    return (
+      <div
+        key={c.id}
+        className={`comentario comentario--thread${depth > 0 ? ' comentario--resposta' : ''}`}
+      >
+        <div className="comentario-linha">
+          <img
+            src={perfilPublico?.userAvatar || AVATAR_FALLBACK}
+            alt={displayName ? `Avatar de ${displayName}` : 'Avatar do comentarista'}
+            className="avatar-comentario"
+            onError={(e) => {
+              e.target.src = AVATAR_FALLBACK;
+            }}
+          />
+          <div className="comentario-corpo">
+            <div className="comentario-header">
+              <strong className="comentario-autor">{displayName}</strong>
+              {handle ? (
+                <Link className="comentario-user-link" to={`/@${handle}`}>
+                  @{handle}
+                </Link>
+              ) : null}
+              {isPremium ? <span className="premium-crown" title="Membro premium">👑</span> : null}
+            </div>
+            <p className="comentario-texto">{c.texto}</p>
+            <div className="comentario-acoes">
+              <button
+                type="button"
+                className={`btn-like ${isLiked ? 'liked' : ''}`}
+                onClick={() => handleLike(c.id)}
+                title={user ? (isLiked ? 'Remover curtida' : 'Curtir') : 'Faça login para curtir'}
+              >
+                {isLiked ? '❤️' : '🤍'} {c.likes || 0}
+              </button>
+              {user ? (
+                <button
+                  type="button"
+                  className="btn-comentario-responder"
+                  onClick={() => {
+                    setReplyingTo((prev) => {
+                      if (prev?.id === c.id) {
+                        setReplyDraft('');
+                        return null;
+                      }
+                      setReplyDraft('');
+                      return { id: c.id, label: displayName };
+                    });
+                  }}
+                >
+                  {replyingTo?.id === c.id ? 'Fechar' : 'Responder'}
+                </button>
+              ) : null}
+            </div>
+            {replyingTo?.id === c.id ? (
+              <div className="comentario-resposta-form">
+                <p className="comentario-resposta-para">
+                  Respondendo a <strong>{replyingTo.label}</strong>
+                </p>
+                <textarea
+                  value={replyDraft}
+                  onChange={(e) => setReplyDraft(e.target.value)}
+                  placeholder="Escreva sua resposta..."
+                  maxLength={500}
+                  rows={3}
+                  disabled={replyEnviando}
+                />
+                <div className="comentario-resposta-btns">
+                  <button
+                    type="button"
+                    className="comentario-resposta-cancela"
+                    onClick={() => {
+                      setReplyingTo(null);
+                      setReplyDraft('');
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="comentario-resposta-envia"
+                    disabled={!replyDraft.trim() || replyEnviando}
+                    onClick={() => handleEnviarResposta(c.id)}
+                  >
+                    {replyEnviando ? 'Enviando...' : 'Publicar resposta'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        {c.replies?.length > 0 && depth < maxDepth ? (
+          <div className="comentario-filhos">
+            {c.replies.map((ch) => renderCommentBranch(ch, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className="leitor-container">
       <BrowserPushPreferenceModal
@@ -658,8 +1005,17 @@ export default function Leitor({ user, perfil }) {
           <meta property="og:title" content={chapterSeo.title} />
           <meta property="og:description" content={chapterSeo.description} />
           <meta property="og:url" content={chapterSeo.canonical} />
+          <meta property="og:image" content={chapterSeo.shareImage} />
+          {/^https:\/\//i.test(chapterSeo.shareImage) ? (
+            <meta property="og:image:secure_url" content={chapterSeo.shareImage} />
+          ) : null}
+          <meta property="og:image:type" content={ogImageMimeHint(chapterSeo.shareImage)} />
+          <meta property="og:image:alt" content={chapterSeo.imageAlt} />
+          <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:title" content={chapterSeo.title} />
           <meta name="twitter:description" content={chapterSeo.description} />
+          <meta name="twitter:image" content={chapterSeo.shareImage} />
+          <meta name="twitter:image:alt" content={chapterSeo.imageAlt} />
           <link rel="canonical" href={chapterSeo.canonical} />
           <script type="application/ld+json">{JSON.stringify(chapterSeo.jsonLd)}</script>
         </Helmet>
@@ -752,6 +1108,11 @@ export default function Leitor({ user, perfil }) {
             Ficha da obra
           </Link>
         ) : null}
+        {proximoCapituloId ? (
+          <button type="button" className="leitor-footer-next" onClick={() => navigate(`/ler/${proximoCapituloId}`)}>
+            Próximo capítulo →
+          </button>
+        ) : null}
         {creatorSupportEnabled ? (
           <button type="button" className="leitor-footer-apoie" onClick={irParaApoioDoCriador}>
             Apoiar criador
@@ -805,9 +1166,18 @@ export default function Leitor({ user, perfil }) {
 
         <form onSubmit={handleEnviarComentario} className="form-comentario">
           {user && (
-            <img src={user.photoURL || AVATAR_FALLBACK} alt="Seu avatar"
+            <img
+              src={
+                String(perfil?.userAvatar || '').trim() ||
+                String(perfil?.creatorProfile?.avatarUrl || '').trim() ||
+                String(user.photoURL || '').trim() ||
+                AVATAR_FALLBACK
+              }
+              alt="Seu avatar"
               className="avatar-comentario"
-              onError={(e) => { e.target.src = AVATAR_FALLBACK; }} />
+              decoding="async"
+              onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
+            />
           )}
           <div
             className={`input-comentario-wrapper${!user ? ' input-comentario-wrapper--convite' : ''}`}
@@ -833,45 +1203,11 @@ export default function Leitor({ user, perfil }) {
         </form>
 
         <div className="lista-comentarios">
-          {comentariosOrdenados.length === 0 && (
+          {listaComentarios.length === 0 && (
             <p className="sem-comentarios">Seja o primeiro a comentar! 👇</p>
           )}
 
-          {comentariosOrdenados.map((c) => {
-            const perfilPublico = perfisUsuarios[c.userId];
-            const isLiked   = c.usuariosQueCurtiram?.[user?.uid];
-            const isPremium = isContaPremium(perfilPublico);
-
-            return (
-              <div key={c.id} className="comentario">
-                {/* Avatar visível para TODOS */}
-                <img
-                  src={perfilPublico?.userAvatar || AVATAR_FALLBACK}
-                  alt={perfilPublico?.userName ? `Avatar de ${perfilPublico.userName}` : 'Avatar do comentarista'}
-                  className="avatar-comentario"
-                  onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
-                />
-                <div className="comentario-corpo">
-                  <div className="comentario-header">
-                    <strong className="comentario-autor">
-                      {perfilPublico?.userName || 'Carregando...'}
-                    </strong>
-                    {isPremium && <span className="badge-premium" title="Membro premium">👑</span>}
-                  </div>
-                  <p className="comentario-texto">{c.texto}</p>
-                  {/* Like disponível para qualquer usuário logado */}
-                  <button
-                    type="button"
-                    className={`btn-like ${isLiked ? 'liked' : ''}`}
-                    onClick={() => handleLike(c.id)}
-                    title={user ? (isLiked ? 'Remover curtida' : 'Curtir') : 'Faça login para curtir'}
-                  >
-                    {isLiked ? '❤️' : '🤍'} {c.likes || 0}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {comentariosEmThreads.map((c) => renderCommentBranch(c, 0))}
         </div>
       </section>
 

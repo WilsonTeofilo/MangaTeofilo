@@ -18,6 +18,10 @@
     ],
     "rewrites": [
       {
+        "source": "/ler/**",
+        "function": "chapterReaderShell"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

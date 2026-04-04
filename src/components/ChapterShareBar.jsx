@@ -6,25 +6,25 @@ function buildShareText(title, url) {
   return t ? `${t} — ${url}` : url;
 }
 
+/** @param {string} imageUrl */
+function ogImageMimeHint(imageUrl) {
+  const u = String(imageUrl || '').split('?')[0].toLowerCase();
+  if (u.endsWith('.png')) return 'image/png';
+  if (u.endsWith('.webp')) return 'image/webp';
+  if (u.endsWith('.gif')) return 'image/gif';
+  return 'image/jpeg';
+}
+
 export default function ChapterShareBar({ shareUrl, chapterTitle }) {
-  const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState(null);
   const url = String(shareUrl || (typeof window !== 'undefined' ? window.location.href : '')).trim();
   const text = buildShareText(chapterTitle, url);
 
-  const openShare = useCallback(
-    (href) => {
-      if (!href) return;
-      window.open(href, '_blank', 'noopener,noreferrer');
-    },
-    []
-  );
-
-  const copyLink = useCallback(async () => {
-    if (!url) return;
+  const copyLinkToClipboard = useCallback(async () => {
+    if (!url) return false;
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2200);
+      return true;
     } catch {
       try {
         const ta = document.createElement('textarea');
@@ -36,13 +36,54 @@ export default function ChapterShareBar({ shareUrl, chapterTitle }) {
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 2200);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }, [url]);
+
+  const showFeedback = useCallback((kind) => {
+    setFeedback(kind);
+    window.setTimeout(() => setFeedback(null), kind === 'instagram' ? 4500 : 2200);
+  }, []);
+
+  const copyLink = useCallback(async () => {
+    const ok = await copyLinkToClipboard();
+    if (ok) showFeedback('copy');
+  }, [copyLinkToClipboard, showFeedback]);
+
+  const openShare = useCallback((href) => {
+    if (!href) return;
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }, []);
+
+  /**
+   * Instagram não expõe URL de “compartilhar com texto” na web como WhatsApp.
+   * Copiamos o link e abrimos instagram.com (PC) ou tentamos o app + site (mobile).
+   */
+  const shareInstagram = useCallback(async () => {
+    await copyLinkToClipboard();
+    showFeedback('instagram');
+
+    const instaWeb = 'https://www.instagram.com/';
+    window.open(instaWeb, '_blank', 'noopener,noreferrer');
+
+    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    if (mobile) {
+      try {
+        const a = document.createElement('a');
+        a.href = 'instagram://app';
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       } catch {
         /* ignore */
       }
     }
-  }, [url]);
+  }, [copyLinkToClipboard, showFeedback]);
 
   if (!url) return null;
 
@@ -95,28 +136,39 @@ export default function ChapterShareBar({ shareUrl, chapterTitle }) {
         </button>
         <button
           type="button"
-          className="chapter-share-bar__btn chapter-share-bar__btn--insta"
-          onClick={copyLink}
-          aria-label="Copiar link para colar no Instagram ou outros apps"
-          title="Copiar link (Instagram e outros)"
+          className={`chapter-share-bar__btn chapter-share-bar__btn--insta${feedback === 'instagram' ? ' is-copied' : ''}`}
+          onClick={() => void shareInstagram()}
+          aria-label="Copiar link e abrir o Instagram"
+          title="Instagram — copia o link e abre o site ou o app"
         >
           <i className="fa-brands fa-instagram" aria-hidden="true" />
         </button>
         <button
           type="button"
-          className={`chapter-share-bar__btn chapter-share-bar__btn--copy${copied ? ' is-copied' : ''}`}
-          onClick={copyLink}
+          className={`chapter-share-bar__btn chapter-share-bar__btn--copy${feedback === 'copy' ? ' is-copied' : ''}`}
+          onClick={() => void copyLink()}
           aria-label="Copiar link do capítulo"
           title="Copiar link"
         >
-          {copied ? <i className="fa-solid fa-check" aria-hidden="true" /> : <i className="fa-solid fa-link" aria-hidden="true" />}
+          {feedback === 'copy' ? (
+            <i className="fa-solid fa-check" aria-hidden="true" />
+          ) : (
+            <i className="fa-solid fa-link" aria-hidden="true" />
+          )}
         </button>
       </div>
-      {copied ? (
+      {feedback === 'copy' ? (
         <p className="chapter-share-bar__copied" role="status">
           Link copiado
+        </p>
+      ) : null}
+      {feedback === 'instagram' ? (
+        <p className="chapter-share-bar__copied chapter-share-bar__copied--insta" role="status">
+          Link copiado. Abrimos o Instagram no navegador — no celular, o app pode abrir também; se não abrir, cole o link num story ou post.
         </p>
       ) : null}
     </section>
   );
 }
+
+export { ogImageMimeHint };

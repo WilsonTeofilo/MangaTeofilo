@@ -1,7 +1,42 @@
 /**
  * Campos de permissao alinhados a `functions/adminRbac.js` (normalizePermissionsForRegistry).
  * A UI de equipe agrupa apenas permissoes operacionais de staff.
+ *
+ * Rotas admin (`src/App.jsx`): ao criar `/admin/...` nova, estender `canAccessAdminPath` abaixo
+ * e manter esta lista como índice (grep no repositório por cada prefixo).
  */
+export const ADMIN_ROUTE_PREFIXES = [
+  '/admin/capitulos',
+  '/admin/manga',
+  '/admin/obras',
+  '/admin/avatares',
+  '/admin/dashboard',
+  '/admin/financeiro',
+  '/admin/store/settings',
+  '/admin/products',
+  '/admin/loja',
+  '/admin/pedidos',
+  '/admin/producao-fisica',
+  '/admin/orders',
+  '/admin/sessoes',
+  '/admin/equipe',
+  '/admin/criadores',
+];
+
+/** Atalhos creator espelhados em `App.jsx` — dependem de `canAccessCreatorPath`. */
+export const CREATOR_ROUTE_PREFIXES = [
+  '/creator/dashboard',
+  '/creator/perfil',
+  '/creator/audience',
+  '/creator/obras',
+  '/creator/capitulos',
+  '/creator/editor',
+  '/creator/promocoes',
+  '/creator/loja',
+  '/creator/print',
+  '/print-on-demand',
+];
+
 export const STAFF_PERMISSION_FIELDS = [
   { field: 'canAccessCapitulos', label: 'Capitulos', category: 'Conteudo' },
   { field: 'canAccessObras', label: 'Obras', category: 'Conteudo' },
@@ -122,7 +157,7 @@ export function canAccessCreatorPath(pathname, access) {
   if (pathname.startsWith('/creator/editor')) {
     return canAccessAdminPath('/admin/manga', access) || canAccessAdminPath('/admin/capitulos', access);
   }
-if (pathname.startsWith('/creator/promocoes')) {
+  if (pathname.startsWith('/creator/promocoes')) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/financeiro', access);
   }

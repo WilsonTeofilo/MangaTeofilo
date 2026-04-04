@@ -22,7 +22,7 @@ export default function LojaProductsListAdmin({ user, adminAccess, workspace = '
   const creatorUid = String(user?.uid || '').trim();
   const isMangaka = Boolean(adminAccess?.isMangaka && creatorUid);
   const isCreatorWorkspace = workspace === 'creator';
-  const ordersPath = isCreatorWorkspace ? '/creator/loja' : '/admin/pedidos';
+  const ordersPath = isCreatorWorkspace ? '/pedidos?tab=loja' : '/admin/pedidos';
   const productsBase = isCreatorWorkspace ? '/creator/loja/produtos' : '/admin/products';
   const settingsPath = '/admin/store/settings';
 

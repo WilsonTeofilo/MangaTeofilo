@@ -1,4 +1,5 @@
 import { obterObraIdCapitulo } from '../config/obras';
+import { creatorDiscoveryLevelBoost } from './creatorProgression';
 import { resolvePublicCreatorName } from './publicCreatorName';
 import { resolveEffectiveWorkCreatorId } from './workCreatorResolution';
 
@@ -58,6 +59,56 @@ function chapterViewsCount(cap) {
   return numeric(cap?.viewsCount) || numeric(cap?.visualizacoes);
 }
 
+const MIN_VIEWS_FOR_QUALITY = 50;
+
+/** Decaimento temporal: conteúdo mais antigo perde força no feed. */
+function feedTimeDecay(lastUpdateTs, nowTs) {
+  const ageH = Math.max(0, (nowTs - Number(lastUpdateTs || 0)) / 3600000);
+  return 1 / (1 + ageH / 24);
+}
+
+/** likes/views com piso de views — evita rankear forte ruído / spam. */
+function engagementQualityMul(likes, views) {
+  const v = Math.max(0, views);
+  const l = Math.max(0, likes);
+  if (v < MIN_VIEWS_FOR_QUALITY) return 1;
+  const r = l / v;
+  if (r > 0.08) return 1.2;
+  if (r > 0.05) return 1.1;
+  return 0.85;
+}
+
+function activeEngagementBoostMul(profile, nowTs) {
+  const until = Number(profile?.engagementBoostUntil);
+  const m = Number(profile?.engagementBoostMul);
+  if (!Number.isFinite(until) || until <= nowTs) return 1;
+  if (!Number.isFinite(m) || m < 1) return 1;
+  return Math.min(3, m);
+}
+
+/** Badge leve no ranking; selo (tier alto) um pouco mais forte. */
+function badgeRankingMul(tier) {
+  const t = Number(tier) || 0;
+  if (t >= 3) return 1.1;
+  if (t >= 1) return 1.05;
+  return 1;
+}
+
+function weeklyActivityMul(lastUpdateTs, nowTs) {
+  const ageMs = Math.max(0, nowTs - Number(lastUpdateTs || 0));
+  return ageMs <= 7 * 24 * 3600000 ? 1.1 : 0.9;
+}
+
+function organicWorkBase({ likes, views, comments, followers, chaptersCount }) {
+  return (
+    views * 1 +
+    likes * 3 +
+    comments * 5 +
+    Math.min(followers, 2000) * 0.5 +
+    chaptersCount * 2
+  );
+}
+
 function recentBoost(timestamp) {
   const ageMs = Math.max(0, Date.now() - Number(timestamp || 0));
   const days = ageMs / (1000 * 60 * 60 * 24);
@@ -68,26 +119,52 @@ function recentBoost(timestamp) {
   return 0;
 }
 
-function computeWorkScore({ likes, views, comments, followers, chaptersCount, lastUpdateTs }) {
-  return (
-    likes * 14 +
-    views * 0.18 +
-    comments * 18 +
-    followers * 5 +
-    chaptersCount * 4 +
-    recentBoost(lastUpdateTs)
-  );
+function computeWorkScore({
+  likes,
+  views,
+  comments,
+  followers,
+  chaptersCount,
+  lastUpdateTs,
+  creatorProfile,
+  nowTs,
+}) {
+  const base = organicWorkBase({ likes, views, comments, followers, chaptersCount }) + recentBoost(lastUpdateTs) * 0.35;
+  const decay = feedTimeDecay(lastUpdateTs, nowTs);
+  const quality = engagementQualityMul(likes, views);
+  const boost = activeEngagementBoostMul(creatorProfile, nowTs);
+  const badge = badgeRankingMul(creatorProfile?.engagementBadgeTier);
+  const consistency = weeklyActivityMul(lastUpdateTs, nowTs);
+  const raw = base * decay * quality * boost * badge * consistency;
+  return Math.max(0, raw);
 }
 
-function computeCreatorScore({ followers, likes, views, comments, worksCount, recentWorks }) {
-  return (
-    followers * 22 +
-    likes * 10 +
-    views * 0.12 +
-    comments * 16 +
-    worksCount * 18 +
-    recentWorks * 25
-  );
+/**
+ * Só para "Obras em alta": ordem que bate com o que o leitor vê (views/likes/comentários).
+ * O score geral (`discoveryScore`) ainda usa recência forte para outras listas; aqui recência
+ * só desempata para não esmagar obras com mais tráfego real.
+ */
+function trendingEngagementScore({ views, likes, comments, followers }) {
+  return views + likes * 2 + comments * 3 + followers * 1;
+}
+
+function computeCreatorScore({ followers, likes, views, comments, worksCount, recentWorks, profile, nowTs }) {
+  const progression = creatorDiscoveryLevelBoost({ followers, views, likes });
+  const base =
+    progression +
+    organicWorkBase({
+      likes,
+      views,
+      comments,
+      followers,
+      chaptersCount: worksCount,
+    }) +
+    worksCount * 10 +
+    recentWorks * 22;
+  const boost = activeEngagementBoostMul(profile, nowTs);
+  const badge = badgeRankingMul(profile?.engagementBadgeTier);
+  const consistency = recentWorks >= 1 ? 1.1 : 0.95;
+  return Math.max(0, base * boost * badge * consistency);
 }
 
 export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap = {} }) {
@@ -142,6 +219,7 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
     const comments = Math.max(chapterComments, rawWorkComments);
     const lastUpdateTs = ultimoCap?._ts || numeric(obra?.updatedAt);
     const chaptersCount = caps.length;
+    const creatorProfile = creatorsMap?.[creatorId];
     return {
       ...obra,
       obraId,
@@ -163,6 +241,8 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
         followers: workFollowers,
         chaptersCount,
         lastUpdateTs,
+        creatorProfile,
+        nowTs,
       }),
     };
   });
@@ -210,6 +290,8 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
           comments,
           worksCount: creatorWorks.length,
           recentWorks,
+          profile,
+          nowTs,
         }),
       };
     })
@@ -228,12 +310,24 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
     creators,
     updates: capitulosPublicos.slice(0, 16),
     trendingWorks: [...works]
-      .sort((a, b) => (
-        b.discoveryScore - a.discoveryScore ||
-        b.followersCount - a.followersCount ||
-        b.totalLikes - a.totalLikes ||
-        b.lastUpdateTs - a.lastUpdateTs
-      ))
+      .sort((a, b) => {
+        const ta = trendingEngagementScore({
+          views: a.totalViews,
+          likes: a.totalLikes,
+          comments: a.totalComments,
+          followers: a.followersCount,
+        });
+        const tb = trendingEngagementScore({
+          views: b.totalViews,
+          likes: b.totalLikes,
+          comments: b.totalComments,
+          followers: b.followersCount,
+        });
+        if (tb !== ta) return tb - ta;
+        if (b.totalViews !== a.totalViews) return b.totalViews - a.totalViews;
+        if (b.totalLikes !== a.totalLikes) return b.totalLikes - a.totalLikes;
+        return b.lastUpdateTs - a.lastUpdateTs;
+      })
       .slice(0, 12),
     popularCreators: [...creators]
       .sort((a, b) => (

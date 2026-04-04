@@ -18,6 +18,9 @@ const CREATOR_REVENUE_SPLITS = {
   premium_refund_adjustment: { creatorPct: 0.15, platformPct: 0.85 },
   apoio_refund_adjustment: { creatorPct: 0.8, platformPct: 0.2 },
   creator_membership_refund_adjustment: { creatorPct: 0.8, platformPct: 0.2 },
+  /** Repasse de pedido da loja física: valor já é o líquido do criador no item. */
+  loja: { creatorPct: 1, platformPct: 0 },
+  loja_refund_adjustment: { creatorPct: 1, platformPct: 0 },
 };
 
 function sanitizeKeyPart(raw, max = 80) {
@@ -69,12 +72,17 @@ export function resolveCreatorRevenueSplit(type, grossAmount) {
   const gross = round2(Math.abs(Number(grossAmount || 0)));
   const rule = CREATOR_REVENUE_SPLITS[String(type || '').trim().toLowerCase()] || null;
   if (!gross || !rule) {
+    if (gross && !rule) {
+      logger.warn('resolveCreatorRevenueSplit: tipo desconhecido — 100% plataforma (seguro)', {
+        type: String(type || ''),
+      });
+    }
     return {
       grossAmount: gross,
-      creatorNetAmount: gross,
-      platformFeeAmount: 0,
-      creatorPct: gross ? 1 : 0,
-      platformPct: 0,
+      creatorNetAmount: 0,
+      platformFeeAmount: gross,
+      creatorPct: 0,
+      platformPct: gross ? 1 : 0,
     };
   }
   const creatorNetAmount = round2(gross * Number(rule.creatorPct || 0));
@@ -158,28 +166,31 @@ async function recordCreatorRevenuePlatformEvent(
   { creatorNetSigned = 0, grossSigned = 0, platformSigned = 0, timestamp = Date.now() }
 ) {
   const cid = sanitizeCreatorId(creatorId);
-  if (!cid) return;
   const key = buildCreatorLedgerEntryKey(rec, 'creator_revenue');
-  await Promise.all([
-    db.ref(`financas/creatorRevenueEvents/${key}`).set({
-      creatorId: cid,
-      paymentId: String(rec?.paymentId || ''),
-      orderId: rec?.orderId ? String(rec.orderId) : null,
-      buyerUid: rec?.buyerUid ? String(rec.buyerUid) : null,
-      type: String(rec?.type || 'other'),
-      status: String(rec?.status || 'approved'),
-      currency: String(rec?.currency || 'BRL'),
-      grossAmount: round2(Math.abs(grossSigned)),
-      grossSigned: round2(grossSigned),
-      creatorNetAmount: round2(Math.abs(creatorNetSigned)),
-      creatorNetSigned: round2(creatorNetSigned),
-      platformFeeAmount: round2(Math.abs(platformSigned)),
-      platformFeeSigned: round2(platformSigned),
-      creatorPct: Number(split?.creatorPct || 0),
-      platformPct: Number(split?.platformPct || 0),
-      createdAt: timestamp,
-      ...(rec?.extra && typeof rec.extra === 'object' ? { extra: rec.extra } : {}),
-    }),
+  const eventPayload = {
+    creatorId: cid,
+    paymentId: String(rec?.paymentId || ''),
+    orderId: rec?.orderId ? String(rec.orderId) : null,
+    buyerUid: rec?.buyerUid ? String(rec.buyerUid) : null,
+    type: String(rec?.type || 'other'),
+    status: String(rec?.status || 'approved'),
+    currency: String(rec?.currency || 'BRL'),
+    grossAmount: round2(Math.abs(grossSigned)),
+    grossSigned: round2(grossSigned),
+    creatorNetAmount: round2(Math.abs(creatorNetSigned)),
+    creatorNetSigned: round2(creatorNetSigned),
+    platformFeeAmount: round2(Math.abs(platformSigned)),
+    platformFeeSigned: round2(platformSigned),
+    creatorPct: Number(split?.creatorPct || 0),
+    platformPct: Number(split?.platformPct || 0),
+    createdAt: timestamp,
+    ...(rec?.extra && typeof rec.extra === 'object' ? { extra: rec.extra } : {}),
+  };
+  const tasks = [];
+  if (cid) {
+    tasks.push(db.ref(`financas/creatorRevenueEvents/${key}`).set(eventPayload));
+  }
+  tasks.push(
     db.ref('financas/creatorRevenueSummary').transaction((current) => {
       const row = current && typeof current === 'object' ? current : {};
       return {
@@ -201,8 +212,121 @@ async function recordCreatorRevenuePlatformEvent(
         ),
         updatedAt: timestamp,
       };
-    }),
-  ]);
+    })
+  );
+  await Promise.all(tasks);
+}
+
+/**
+ * Repasse explícito (valores já calculados no backend) após pagamento aprovado.
+ * Atualiza creatorData, saldo do criador e agregados da plataforma sem recalcular % no split legado.
+ * @param {import('firebase-admin/database').Database} db
+ */
+const APPLY_LOCK_STALE_MS = 10 * 60 * 1000;
+
+export async function applyExplicitApprovedFinancialSettlement(db, rec) {
+  const gross = round2(rec.grossBRL);
+  const cNet = round2(rec.creatorNetBRL);
+  const pFee = round2(rec.platformFeeBRL);
+  const cid = sanitizeCreatorId(rec.creatorId);
+  const pid = String(rec.paymentId || '').trim();
+  if (!Number.isFinite(gross) || gross <= 0) return;
+  if (!pid) {
+    logger.warn('applyExplicitApprovedFinancialSettlement: paymentId ausente');
+    return;
+  }
+
+  const lockRef = db.ref(`financas/unifiedPaymentApply/${pid}`);
+  const lockTx = await lockRef.transaction((cur) => {
+    if (cur && typeof cur === 'object' && cur.s === 'done') return undefined;
+    if (cur === 'done') return undefined;
+    if (cur && typeof cur === 'object' && cur.s === 'wip') {
+      if (Date.now() - Number(cur.at || 0) < APPLY_LOCK_STALE_MS) return undefined;
+    }
+    return { s: 'wip', at: Date.now() };
+  });
+  if (!lockTx.committed) {
+    const lv = lockTx.snapshot?.val();
+    if (lv && typeof lv === 'object' && lv.s === 'done') return;
+    if (lv === 'done') return;
+    throw new Error('apply_explicit_lock_contention');
+  }
+
+  const creatorNetSigned = cNet;
+  const platformSigned = pFee;
+  const grossSigned = gross;
+  const split = {
+    grossAmount: gross,
+    creatorNetAmount: cNet,
+    platformFeeAmount: pFee,
+    creatorPct: gross ? cNet / gross : 0,
+    platformPct: gross ? pFee / gross : 0,
+  };
+  const payRec = {
+    creatorId: cid,
+    buyerUid: rec.buyerUid,
+    paymentId: rec.paymentId,
+    currency: rec.currency || 'BRL',
+    amount: gross,
+    type: String(rec.creatorDataPaymentType || rec.type || 'other'),
+    status: rec.status ? String(rec.status) : 'approved',
+    extra: rec.extra,
+    entryKey: rec.entryKey,
+    orderId: rec.orderId,
+  };
+  try {
+    if (cid && creatorNetSigned !== 0) {
+      const id = buildCreatorLedgerEntryKey(payRec, 'payment');
+      await db.ref(`creatorData/${cid}/payments/${id}`).set({
+        creatorId: cid,
+        amount: creatorNetSigned,
+        grossAmount: split.grossAmount,
+        creatorNetAmount: split.creatorNetAmount,
+        platformFeeAmount: split.platformFeeAmount,
+        creatorPct: Number(split.creatorPct || 0),
+        platformPct: Number(split.platformPct || 0),
+        currency: String(payRec.currency || 'BRL'),
+        type: String(payRec.type || 'other'),
+        buyerUid: payRec.buyerUid ? String(payRec.buyerUid) : null,
+        paymentId: String(payRec.paymentId || ''),
+        orderId: payRec.orderId ? String(payRec.orderId) : null,
+        createdAt: Date.now(),
+        status: payRec.status,
+        ...(payRec.extra && typeof payRec.extra === 'object' ? payRec.extra : {}),
+      });
+      await Promise.all([
+        registerCreatorRevenue(db, cid, creatorNetSigned, Date.now()),
+        adjustCreatorBalanceSummary(db, cid, {
+          creatorNetDelta: creatorNetSigned,
+          grossDelta: grossSigned,
+          platformFeeDelta: platformSigned,
+        }),
+        recordCreatorRevenuePlatformEvent(db, cid, payRec, split, {
+          creatorNetSigned,
+          grossSigned,
+          platformSigned,
+        }),
+      ]);
+    } else {
+      await recordCreatorRevenuePlatformEvent(db, null, payRec, split, {
+        creatorNetSigned: 0,
+        grossSigned,
+        platformSigned,
+      });
+    }
+    await lockRef.set({ s: 'done', at: Date.now() });
+  } catch (e) {
+    logger.error('creatorDataLedger applyExplicitApprovedFinancialSettlement', {
+      cid,
+      error: e?.message,
+    });
+    try {
+      await lockRef.remove();
+    } catch (remErr) {
+      logger.warn('applyExplicit: falha ao remover lock', { pid, error: remErr?.message });
+    }
+    throw e;
+  }
 }
 
 async function registerCreatorMembershipIndex(db, creatorId, subscriberUid, memberUntil, amount, timestamp = Date.now()) {

@@ -8,10 +8,12 @@ import {
   OBRA_PADRAO_ID,
   OBRA_SHITO_DEFAULT,
   ensureLegacyShitoObra,
+  normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
   obraSegmentoUrlPublica,
 } from '../../config/obras';
+import { getLastRead, getReadHistory, subscribeReadingProgress } from '../../utils/readingProgressLocal';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { toRecordList } from '../../utils/firebaseRecordList';
@@ -26,6 +28,21 @@ function pathObraPublica(obra) {
 
 function pathCriadorPublico(obra) {
   return `/criador/${encodeURIComponent(obraCreatorId(obra))}`;
+}
+
+/** Histórico local: uma entrada por obra (a mais recente). */
+function dedupeHistoryByWork(entries) {
+  const seen = new Set();
+  const out = [];
+  for (const e of entries) {
+    if (!e?.workId || !e?.chapterId) continue;
+    const w = normalizarObraId(e.workId);
+    if (seen.has(w)) continue;
+    seen.add(w);
+    out.push(e);
+    if (out.length >= 10) break;
+  }
+  return out;
 }
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
@@ -43,7 +60,10 @@ export default function HomeAdaptive({ user }) {
   const [creatorsMap, setCreatorsMap] = useState({});
   const [heroIndex, setHeroIndex] = useState(0);
   const [categoriaAtiva, setCategoriaAtiva] = useState('all');
+  const [readingTick, setReadingTick] = useState(0);
   const blocoImpressionRef = useRef(new Set());
+
+  useEffect(() => subscribeReadingProgress(() => setReadingTick((n) => n + 1)), []);
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
@@ -110,6 +130,21 @@ export default function HomeAdaptive({ user }) {
       obra.genres.some((g) => g.toLowerCase() === categoriaAtiva)
     );
   }, [categoriaAtiva, dadosMulti.obrasComStats]);
+
+  const continueReading = useMemo(() => {
+    const lr = getLastRead();
+    if (!lr) return null;
+    const obra = obrasPublicadas.find((o) => normalizarObraId(o.id) === normalizarObraId(lr.workId));
+    return { lr, obra: obra || null };
+  }, [obrasPublicadas, readingTick]);
+
+  const recentReads = useMemo(() => {
+    const raw = dedupeHistoryByWork(getReadHistory());
+    return raw.map((e) => ({
+      entry: e,
+      obra: obrasPublicadas.find((o) => normalizarObraId(o.id) === normalizarObraId(e.workId)) || null,
+    }));
+  }, [obrasPublicadas, readingTick]);
 
   const nomeCriador = (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos);
 
@@ -198,60 +233,9 @@ export default function HomeAdaptive({ user }) {
   return (
     <div className="home-multi">
       <section className="home-multi-top">
-        <header
-          className="home-multi-hero home-multi-hero--rotative"
-          style={{
-            backgroundImage: `linear-gradient(180deg, rgba(8, 12, 20, 0.35), rgba(8, 12, 20, 0.94)), url('${
-              dadosMulti.hero[heroIndex]?.bannerUrl ||
-              dadosMulti.hero[heroIndex]?.capaUrl ||
-              '/assets/fotos/shito.jpg'
-            }')`,
-          }}
-        >
-          <div className="home-hero-content">
-            <span className="home-hero-pill">Destaque</span>
-            <h1>{dadosMulti.hero[heroIndex]?.titulo || 'Catálogo MangaTeofilo'}</h1>
-            <p>{dadosMulti.hero[heroIndex]?.sinopse || `${obrasPublicadas.length} obras publicadas no catálogo.`}</p>
-            <div className="home-hero-actions">
-              <button
-                type="button"
-                className="btn-hero-main"
-                onClick={() => {
-                  const obraId = dadosMulti.hero[heroIndex]?.id;
-                  if (!obraId) return;
-                  registrarEventoHome('home_block_click', 'hero', String(obraId));
-                  navigate(pathObraPublica(dadosMulti.hero[heroIndex]));
-                }}
-              >
-                Ver obra
-              </button>
-              <button
-                type="button"
-                className="btn-hero-sec"
-                onClick={() => {
-                  registrarEventoHome('home_block_click', 'hero', 'lista');
-                  navigate('/works');
-                }}
-              >
-                Explorar catálogo
-              </button>
-            </div>
-          </div>
-          <div className="home-hero-dots">
-            {dadosMulti.hero.map((item, idx) => (
-              <button
-                key={item.id || idx}
-                type="button"
-                className={idx === heroIndex ? 'active' : ''}
-                onClick={() => setHeroIndex(idx)}
-                aria-label={`Ver destaque ${idx + 1}`}
-              />
-            ))}
-          </div>
-        </header>
         <aside className="home-top-ranking">
           <div className="home-top-ranking-head">
-            <h3>Obras em alta</h3>
+            <h3>🔥 Em alta agora</h3>
             <button
               type="button"
               onClick={() => {
@@ -276,7 +260,11 @@ export default function HomeAdaptive({ user }) {
                 onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
               >
                 <span className="home-rank-pos">{idx + 1}</span>
-                <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
+                <img
+                  className="home-thumb-pop"
+                  src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                  alt={obra.titulo || obra.id}
+                />
                 <div className="home-rank-item__text">
                   <strong>{obra.titulo || obra.id}</strong>
                   <span className="home-rank-item__author">por {nomeCriador(obra)}</span>
@@ -299,11 +287,156 @@ export default function HomeAdaptive({ user }) {
             ))}
           </div>
         </aside>
+        <header
+          className="home-multi-hero home-multi-hero--rotative"
+          style={{
+            backgroundImage: `linear-gradient(180deg, rgba(8, 12, 20, 0.35), rgba(8, 12, 20, 0.94)), url('${
+              dadosMulti.hero[heroIndex]?.bannerUrl ||
+              dadosMulti.hero[heroIndex]?.capaUrl ||
+              '/assets/fotos/shito.jpg'
+            }')`,
+          }}
+        >
+          <div className="home-hero-content">
+            <span className="home-hero-pill">Destaque agora</span>
+            <h1>{dadosMulti.hero[heroIndex]?.titulo || 'Catálogo MangaTeofilo'}</h1>
+            <p className="home-hero-tagline">
+              {dadosMulti.hero[heroIndex]?.sinopse
+                ? String(dadosMulti.hero[heroIndex].sinopse).slice(0, 140) +
+                  (String(dadosMulti.hero[heroIndex].sinopse).length > 140 ? '…' : '')
+                : 'Abra e leia na hora — sem enrolação.'}
+            </p>
+            <div className="home-hero-actions">
+              <button
+                type="button"
+                className="btn-hero-main"
+                onClick={() => {
+                  const obraId = dadosMulti.hero[heroIndex]?.id;
+                  if (!obraId) return;
+                  registrarEventoHome('home_block_click', 'hero', String(obraId));
+                  navigate(pathObraPublica(dadosMulti.hero[heroIndex]));
+                }}
+              >
+                Começar leitura
+              </button>
+              <button
+                type="button"
+                className="btn-hero-sec"
+                onClick={() => {
+                  registrarEventoHome('home_block_click', 'hero', 'lista');
+                  navigate('/works');
+                }}
+              >
+                Ver catálogo
+              </button>
+            </div>
+          </div>
+          <div className="home-hero-dots">
+            {dadosMulti.hero.map((item, idx) => (
+              <button
+                key={item.id || idx}
+                type="button"
+                className={idx === heroIndex ? 'active' : ''}
+                onClick={() => setHeroIndex(idx)}
+                aria-label={`Ver destaque ${idx + 1}`}
+              />
+            ))}
+          </div>
+        </header>
       </section>
+
+      {continueReading ? (
+        <section className="home-multi-section home-reading-continue" aria-label="Continuar lendo">
+          <div className="home-multi-section-head">
+            <h2>Continuar lendo</h2>
+          </div>
+          <article className="home-continue-card">
+            <img
+              className="home-continue-cover"
+              src={
+                continueReading.obra?.capaUrl ||
+                continueReading.obra?.bannerUrl ||
+                continueReading.lr.capaUrl ||
+                '/assets/fotos/shito.jpg'
+              }
+              alt=""
+            />
+            <div className="home-continue-body">
+              <strong className="home-continue-title">
+                {continueReading.obra?.titulo || continueReading.lr.obraTitulo || 'Continuar leitura'}
+              </strong>
+              <p className="home-continue-meta">
+                Capítulo {continueReading.lr.chapterNumber || '—'}
+                <span className="home-continue-sep"> · </span>
+                Você parou na página {continueReading.lr.page}
+              </p>
+              <div className="home-continue-actions">
+                <button
+                  type="button"
+                  className="home-continue-btn"
+                  onClick={() => {
+                    registrarEventoHome('home_block_click', 'continue_reading', continueReading.lr.chapterId);
+                    navigate(`/ler/${continueReading.lr.chapterId}`);
+                  }}
+                >
+                  Continuar
+                </button>
+                {continueReading.obra ? (
+                  <button
+                    type="button"
+                    className="home-continue-btn home-continue-btn--ghost"
+                    onClick={() => {
+                      registrarEventoHome('home_block_click', 'continue_reading', `work_${continueReading.obra.id}`);
+                      navigate(pathObraPublica(continueReading.obra));
+                    }}
+                  >
+                    Ficha da obra
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </article>
+        </section>
+      ) : null}
+
+      {recentReads.length > 0 ? (
+        <section className="home-multi-section home-reading-recent" aria-label="Últimos lidos">
+          <div className="home-multi-section-head home-multi-section-head--wrap">
+            <h2>Últimos lidos</h2>
+            <span className="home-reading-hint">Salvo neste aparelho — não precisa favoritar</span>
+          </div>
+          <div className="home-recent-read-grid">
+            {recentReads.map(({ entry, obra }) => (
+              <article
+                key={`${entry.workId}_${entry.chapterId}`}
+                className="home-recent-read-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  registrarEventoHome('home_block_click', 'recent_reads', entry.chapterId);
+                  navigate(`/ler/${entry.chapterId}`);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && navigate(`/ler/${entry.chapterId}`)}
+              >
+                <img
+                  src={obra?.capaUrl || obra?.bannerUrl || entry.capaUrl || '/assets/fotos/shito.jpg'}
+                  alt=""
+                />
+                <div className="home-recent-read-card__body">
+                  <strong>{obra?.titulo || entry.obraTitulo || 'Obra'}</strong>
+                  <span>
+                    Cap. {entry.chapterNumber || '?'} · pág. {entry.page}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>Updates recentes</h2>
+          <h2>🆕 Novos capítulos</h2>
           <button type="button" onClick={() => navigate('/works')}>Ver tudo</button>
         </div>
         {dadosMulti.updates.length > 0 ? (
@@ -342,7 +475,7 @@ export default function HomeAdaptive({ user }) {
 
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>Descoberta em alta</h2>
+          <h2>🔥 Em alta (descoberta)</h2>
         </div>
         <div className="home-obras-grid">
           {dadosMulti.trending.map((obra) => (
@@ -357,7 +490,11 @@ export default function HomeAdaptive({ user }) {
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
             >
-              <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
+              <img
+                className="home-thumb-pop"
+                src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                alt={obra.titulo || obra.id}
+              />
               <div className="home-obra-card-body">
                 <strong>{obra.titulo || obra.id}</strong>
                 <span>por {nomeCriador(obra)}</span>
@@ -441,7 +578,7 @@ export default function HomeAdaptive({ user }) {
 
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>Recomendados</h2>
+          <h2>🚀 Crescendo agora</h2>
         </div>
         <div className="home-obras-grid">
           {dadosMulti.recomendados.map((obra) => (
@@ -456,7 +593,11 @@ export default function HomeAdaptive({ user }) {
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
             >
-              <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
+              <img
+                className="home-thumb-pop"
+                src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                alt={obra.titulo || obra.id}
+              />
               <div className="home-obra-card-body">
                 <strong>{obra.titulo || obra.id}</strong>
                 <span>{obra.chaptersCount} capítulos · atualização recente</span>

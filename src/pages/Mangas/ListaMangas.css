@@ -59,6 +59,71 @@
   max-width: 62ch;
 }
 
+.lista-mangas-header--toolbar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: clamp(14px, 2.5vw, 22px);
+  position: relative;
+  z-index: 12;
+  overflow: visible;
+}
+
+.lista-mangas-header__intro {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.lista-mangas-header--toolbar .manga-catalog-search {
+  flex: 1 1 280px;
+  max-width: min(440px, 100%);
+}
+
+.lista-mangas-empty--search {
+  text-align: center;
+  padding: clamp(24px, 5vw, 48px) clamp(16px, 4vw, 32px);
+}
+
+.lista-mangas-empty--search h2 {
+  margin: 0 0 10px;
+  font-size: clamp(1.1rem, 3.5vw, 1.45rem);
+  color: #eee;
+}
+
+.lista-mangas-empty--search p {
+  margin: 0 auto;
+  max-width: 48ch;
+  color: #9a9a9a;
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.lista-mangas-search-reset {
+  margin-top: 18px;
+  padding: 12px 22px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 204, 0, 0.45);
+  background: rgba(255, 204, 0, 0.1);
+  color: #ffe9a6;
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.lista-mangas-search-reset:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 204, 0, 0.16);
+  border-color: rgba(255, 204, 0, 0.65);
+}
+
 .hero-banner {
   position: relative;
   width: 100%;
@@ -582,6 +647,15 @@
 }
 
 @media (max-width: 720px) {
+  .lista-mangas-header--toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lista-mangas-header--toolbar .manga-catalog-search {
+    max-width: none;
+  }
+
   .hero-banner {
     height: 200px;
   }

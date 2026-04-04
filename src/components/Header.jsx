@@ -7,8 +7,12 @@ import { auth, db, functions } from '../services/firebase';
 import { AVATAR_FALLBACK, isAdminUser } from '../constants';
 import { canAccessAdminPath, canAccessCreatorPath } from '../auth/adminPermissions';
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
-import { effectiveCreatorMonetizationStatus } from '../utils/creatorMonetizationUi';
+import {
+  effectiveCreatorMonetizationStatus,
+  resolveCreatorMonetizationStatusFromDb,
+} from '../utils/creatorMonetizationUi';
 import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../store/cartStore';
+import { getPodCartDraft, POD_CART_CHANGED_EVENT } from '../store/podCartStore';
 import './HeaderV2.css';
 
 /** Menu hambúrguer só em viewport típica de telemóvel / tablet estreito — não em PC com janela estreita até ~laptop 13". */
@@ -28,24 +32,10 @@ function writeSeenCount(storageKey, value) {
   window.localStorage.setItem(storageKey, String(Math.max(0, Number(value || 0))));
 }
 
-function getInitialWorkspace(pathname, canSeeAdmin, canSeeCreator) {
-  if (pathname.startsWith('/creator')) return 'creator';
-  if (pathname.startsWith('/admin')) return 'admin';
-  if (typeof window !== 'undefined') {
-    const saved = String(window.localStorage.getItem(WORKSPACE_STORAGE_KEY) || '').trim().toLowerCase();
-    if (saved === 'creator' && canSeeCreator) return 'creator';
-    if (saved === 'admin' && canSeeAdmin) return 'admin';
-  }
-  if (canSeeCreator && !canSeeAdmin) return 'creator';
-  if (canSeeAdmin) return 'admin';
-  return 'creator';
-}
-
 export default function Header({ usuario, perfil, adminAccess }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuAberto, setMenuAberto] = useState(false);
-  const [workspaceOpen, setWorkspaceOpen] = useState(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [headerNotifications, setHeaderNotifications] = useState([]);
@@ -53,7 +43,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const [adminCreatorQueueCount, setAdminCreatorQueueCount] = useState(0);
   const [adminSupportQueueCount, setAdminSupportQueueCount] = useState(0);
   const [storeCartItems, setStoreCartItems] = useState(() => getCartItems());
-  const workspaceCloseTimer = useRef(null);
+  const [podCartActive, setPodCartActive] = useState(() => Boolean(getPodCartDraft()));
   const notificationIdsSeenRef = useRef(new Set());
   const notificationsInitializedRef = useRef(false);
   const markUserNotificationRead = useMemo(
@@ -69,11 +59,15 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const isMangakaPanel = Boolean(adminAccess?.isMangaka);
   const canSeeAdminWorkspace = !isMangakaPanel && canAccessAdminPath('/admin', adminAccess);
   const canSeeCreatorWorkspace = canAccessCreatorPath('/creator', adminAccess);
-  const [preferredWorkspace, setPreferredWorkspace] = useState(() =>
-    getInitialWorkspace(location.pathname, canSeeAdminWorkspace, canSeeCreatorWorkspace)
-  );
 
   const storeCartCount = cartCount(storeCartItems);
+  const combinedCartCount = storeCartCount + (podCartActive ? 1 : 0);
+
+  const headerAvatarSrc =
+    String(perfil?.userAvatar || '').trim() ||
+    String(perfil?.creatorProfile?.avatarUrl || '').trim() ||
+    String(usuario?.photoURL || '').trim() ||
+    AVATAR_FALLBACK;
 
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
   const creatorMonetizationIsActive =
@@ -88,23 +82,19 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const lanceSuaLinhaPath =
     usuario && adminAccess?.isMangaka && creatorMonetizationIsActive ? '/creator/print' : '/print-on-demand';
 
-  const navItems = useMemo(
+  /** Navegação central (site leitor) — CTA «Lance sua linha» fica à parte. */
+  const primaryNavItems = useMemo(
     () => [
-      { label: 'Lista de Mangas', path: '/works' },
-      ...(usuario ? [{ label: 'Minha Biblioteca', path: '/biblioteca' }] : []),
+      { label: 'Explorar', path: '/works' },
+      ...(usuario ? [{ label: 'Biblioteca', path: '/biblioteca' }] : []),
       { label: 'Loja', path: '/loja' },
-      {
-        label: 'Mangá físico',
-        path: lanceSuaLinhaPath,
-        podNav: true,
-        title:
-          'Produção de mangá físico para quem publica (ou quer publicar) na plataforma. Novo por aqui? Use CREATORS no menu.',
-      },
-      ...(showCreatorsNav ? [{ label: 'CREATORS', path: '/creators' }] : []),
-      { label: 'Sobre nos', path: '/sobre-autor' },
+      { label: 'Sobre nós', path: '/sobre-autor' },
     ],
-    [creatorMonetizationIsActive, lanceSuaLinhaPath, showCreatorsNav, usuario]
+    [usuario]
   );
+
+  const isLanceRouteActive =
+    location.pathname.startsWith('/print-on-demand') || location.pathname.startsWith('/creator/print');
 
   const workspaceMenus = useMemo(() => {
     const menus = [];
@@ -143,7 +133,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
         label: 'CREATOR',
         subtitle: isMangakaPanel ? 'Meu conteudo' : 'Conteudo global',
         items: [
-          canAccessCreatorPath('/creator/perfil', adminAccess) ? { label: 'Perfil', path: '/creator/perfil' } : null,
+          canAccessCreatorPath('/creator/perfil', adminAccess)
+            ? { label: 'Identidade pública', path: '/creator/perfil' }
+            : null,
           canAccessCreatorPath('/creator/dashboard', adminAccess) ? { label: 'Workspace', path: '/creator/dashboard' } : null,
           canAccessCreatorPath('/creator/audience', adminAccess) ? { label: 'Analytics', path: '/creator/audience' } : null,
           canAccessCreatorPath('/creator/obras', adminAccess) ? { label: isMangakaPanel ? 'Minhas obras' : 'Obras', path: '/creator/obras' } : null,
@@ -154,6 +146,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
           canAccessCreatorPath('/creator/loja', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
             ? { label: 'Loja', path: '/creator/loja' }
             : null,
+          canAccessCreatorPath('/creator/dashboard', adminAccess)
+            ? { label: 'Meus pedidos', path: '/pedidos?tab=fisico' }
+            : null,
         ].filter(Boolean),
       });
     }
@@ -161,7 +156,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, [adminAccess, canSeeAdminWorkspace, canSeeCreatorWorkspace, creatorMonetizationIsActive, isMangakaPanel]);
 
   const persistWorkspace = (workspaceId) => {
-    setPreferredWorkspace(workspaceId);
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId);
     }
@@ -172,7 +166,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
     try {
       await signOut(auth);
       setMenuAberto(false);
-      setWorkspaceOpen(null);
       setAccountMenuOpen(false);
       setNotificationsOpen(false);
       navigate('/login');
@@ -185,38 +178,14 @@ export default function Header({ usuario, perfil, adminAccess }) {
     if (workspaceId) persistWorkspace(workspaceId);
     navigate(path);
     setMenuAberto(false);
-    setWorkspaceOpen(null);
     setAccountMenuOpen(false);
     setNotificationsOpen(false);
   };
-
-  const abrirWorkspace = (workspaceId) => {
-    if (workspaceCloseTimer.current) {
-      clearTimeout(workspaceCloseTimer.current);
-      workspaceCloseTimer.current = null;
-    }
-    setWorkspaceOpen(workspaceId);
-  };
-
-  const fecharWorkspace = () => {
-    if (workspaceCloseTimer.current) clearTimeout(workspaceCloseTimer.current);
-    workspaceCloseTimer.current = setTimeout(() => {
-      setWorkspaceOpen(null);
-      workspaceCloseTimer.current = null;
-    }, 180);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (workspaceCloseTimer.current) clearTimeout(workspaceCloseTimer.current);
-    };
-  }, []);
 
   useEffect(() => {
     // Fechamos os menus ao trocar de rota para evitar overlays presos em navegacao SPA.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMenuAberto(false);
-    setWorkspaceOpen(null);
     setNotificationsOpen(false);
     setAccountMenuOpen(false);
     setSelectedNotification(null);
@@ -234,9 +203,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
       if (window.innerWidth > MOBILE_BREAKPOINT) {
         setMenuAberto(false);
       }
-      if (window.innerWidth <= MOBILE_BREAKPOINT) {
-        setWorkspaceOpen(null);
-      }
     };
     syncMenuState();
     window.addEventListener('resize', syncMenuState);
@@ -244,18 +210,40 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, []);
 
   useEffect(() => {
-    const handlePointerDown = (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (!target.closest('.header-notification-shell')) {
+    /**
+     * Fechar dropdowns ao clicar fora. Regras:
+     * - `click` em fase de bolha (sem capture): no Firefox, capture no document quebrava
+     *   interação com botões do menu (ex.: Sair).
+     * - Não usar `mousedown`: ao arrastar a scrollbar nativa o target costuma ser html/body
+     *   e o painel fechava; `click` não dispara após arrastar só a barra.
+     * - `touchstart` removido: gerava fechamento falso e conflito com rolagem/toque no menu.
+     */
+    const hitInside = (event, className) => {
+      const t = event.target;
+      if (t instanceof Element && t.closest(`.${className}`)) return true;
+      if (typeof event.composedPath === 'function') {
+        const path = event.composedPath();
+        for (let i = 0; i < path.length; i += 1) {
+          const n = path[i];
+          if (n instanceof Element && n.classList?.contains(className)) return true;
+        }
+      }
+      return false;
+    };
+
+    const closeIfOutside = (event) => {
+      if (!hitInside(event, 'header-notification-shell')) {
         setNotificationsOpen(false);
       }
-      if (!target.closest('.header-account-shell')) {
+      if (!hitInside(event, 'header-account-shell')) {
         setAccountMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+
+    document.addEventListener('click', closeIfOutside);
+    return () => {
+      document.removeEventListener('click', closeIfOutside);
+    };
   }, []);
 
   useEffect(() => {
@@ -263,16 +251,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
     document.body.classList.toggle('mobile-menu-open', mobileOpen);
     return () => document.body.classList.remove('mobile-menu-open');
   }, [menuAberto]);
-
-  useEffect(() => {
-    const next = getInitialWorkspace(location.pathname, canSeeAdminWorkspace, canSeeCreatorWorkspace);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPreferredWorkspace((prev) => {
-      if (prev === 'admin' && !canSeeAdminWorkspace) return next;
-      if (prev === 'creator' && !canSeeCreatorWorkspace) return next;
-      return prev || next;
-    });
-  }, [location.pathname, canSeeAdminWorkspace, canSeeCreatorWorkspace]);
 
   useEffect(() => {
     const syncCart = () => setStoreCartItems(getCartItems());
@@ -294,6 +272,13 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, [usuario?.uid]);
 
   useEffect(() => {
+    const sync = () => setPodCartActive(Boolean(getPodCartDraft()));
+    sync();
+    window.addEventListener(POD_CART_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(POD_CART_CHANGED_EVENT, sync);
+  }, []);
+
+  useEffect(() => {
     if (!usuario?.uid) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setHeaderNotifications([]);
@@ -310,7 +295,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
         if (priorityDiff !== 0) return priorityDiff;
         return Number(b.createdAt || b.updatedAt || 0) - Number(a.createdAt || a.updatedAt || 0);
       });
-      setHeaderNotifications(list.slice(0, 12));
+      setHeaderNotifications(list.slice(0, 150));
     });
     return () => unsub();
   }, [usuario?.uid]);
@@ -325,7 +310,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
       const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
       const pending = rows.filter((item) => {
         const s = String(item?.creatorApplicationStatus || '').trim().toLowerCase();
-        const mon = String(item?.creatorMonetizationStatus || '').trim().toLowerCase();
+        const mon =
+          resolveCreatorMonetizationStatusFromDb(item) ||
+          String(item?.creatorMonetizationStatus || '').trim().toLowerCase();
         const role = String(item?.role || '').trim().toLowerCase();
         if (s === 'requested') return true;
         if (s === 'approved' && mon === 'pending_review' && role === 'mangaka') return true;
@@ -534,14 +521,43 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const isActivePath = (path) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
-  const navItemIsActive = (item) => {
-    if (item.podNav) {
+  const primaryNavIsActive = (item) => isActivePath(item.path);
+
+  const renderWorkspaceAccountSections = () =>
+    workspaceMenus.map((workspace) => {
+      const dashPath = workspace.id === 'admin' ? '/admin/dashboard' : '/creator/dashboard';
+      const canDash =
+        workspace.id === 'admin'
+          ? canAccessAdminPath(dashPath, adminAccess)
+          : canAccessCreatorPath(dashPath, adminAccess);
       return (
-        location.pathname.startsWith('/print-on-demand') || location.pathname.startsWith('/creator/print')
+        <div key={workspace.id} className="header-account-menu__cluster">
+          <div className="header-account-menu__heading">
+            {workspace.id === 'admin' ? 'Administração' : 'Criador'}
+          </div>
+          {canDash ? (
+            <button
+              type="button"
+              className="header-account-menu__dash"
+              onClick={() => pushRoute(dashPath, workspace.id)}
+            >
+              {workspace.id === 'admin' ? 'Painel admin' : 'Painel do criador'}
+            </button>
+          ) : null}
+          {workspace.items.map((item, idx) =>
+            item.type === 'heading' ? (
+              <div key={`${item.label}-${idx}`} className="header-account-menu__subhead">
+                {item.label}
+              </div>
+            ) : item.path === dashPath && canDash ? null : (
+              <button key={item.path} type="button" onClick={() => pushRoute(item.path, workspace.id)}>
+                {item.label}
+              </button>
+            )
+          )}
+        </div>
       );
-    }
-    return isActivePath(item.path);
-  };
+    });
 
   return (
     <nav
@@ -552,101 +568,47 @@ export default function Header({ usuario, perfil, adminAccess }) {
           MangaTeofilo
         </button>
 
-        <button
-          type="button"
-          className={`mobile-menu-icon ${menuAberto ? 'active' : ''}`}
-          onClick={() => setMenuAberto(!menuAberto)}
-          aria-label="Menu"
-          aria-expanded={menuAberto}
-        >
-          <span className="bar" />
-          <span className="bar" />
-          <span className="bar" />
-        </button>
-
-        {menuAberto && (
-          <button
-            type="button"
-            className="mobile-menu-overlay"
-            aria-label="Fechar menu"
-            onClick={() => setMenuAberto(false)}
-          />
-        )}
-
-        <ul className={`nav-menu ${menuAberto ? 'active' : ''}`}>
-          {navItems.map((item) => (
-            <li key={item.path} className={navItemIsActive(item) ? 'is-active' : ''}>
-              <button
-                type="button"
-                className="nav-link-btn"
-                onClick={() => pushRoute(item.path)}
-                aria-current={navItemIsActive(item) ? 'page' : undefined}
-                title={item.title || undefined}
-              >
-                {item.label}
-              </button>
-            </li>
-          ))}
-
-          {workspaceMenus.map((workspace) => {
-            const isWorkspaceActive =
-              preferredWorkspace === workspace.id ||
-              (workspace.id === 'admin' && location.pathname.startsWith('/admin')) ||
-              (workspace.id === 'creator' && location.pathname.startsWith('/creator'));
-            const isOpen = workspaceOpen === workspace.id;
-            return (
-              <li
-                key={workspace.id}
-                className={`workspace-menu-item ${isOpen ? 'open' : ''} ${isWorkspaceActive ? 'is-active' : ''}`}
-                onMouseEnter={() => abrirWorkspace(workspace.id)}
-                onMouseLeave={fecharWorkspace}
-              >
+        <div className="nav-center-wrap">
+          <ul className={`nav-menu nav-menu--primary ${menuAberto ? 'active' : ''}`}>
+            {primaryNavItems.map((item) => (
+              <li key={item.path} className={primaryNavIsActive(item) ? 'is-active' : ''}>
                 <button
                   type="button"
-                  className={`workspace-menu-trigger workspace-menu-trigger--${workspace.id}`}
-                  onClick={() => {
-                    persistWorkspace(workspace.id);
-                    setWorkspaceOpen((prev) => (prev === workspace.id ? null : workspace.id));
-                  }}
-                  onFocus={() => abrirWorkspace(workspace.id)}
-                  aria-expanded={isOpen}
+                  className="nav-link-btn"
+                  onClick={() => pushRoute(item.path)}
+                  aria-current={primaryNavIsActive(item) ? 'page' : undefined}
                 >
-                  <span className="workspace-menu-label">{workspace.label}</span>
-                  {workspace.subtitle ? <span className="workspace-menu-subtitle">{workspace.subtitle}</span> : null}
+                  {item.label}
                 </button>
-                <div className="workspace-dropdown">
-                  {workspace.items.map((item, idx) =>
-                    item.type === 'heading' ? (
-                      <div
-                        key={`${item.label}-${idx}`}
-                        className="workspace-dropdown-heading"
-                        role="presentation"
-                      >
-                        {item.label}
-                      </div>
-                    ) : (
-                      <button
-                        key={item.path}
-                        type="button"
-                        onClick={() => pushRoute(item.path, workspace.id)}
-                      >
-                        {item.label}
-                      </button>
-                    )
-                  )}
-                </div>
               </li>
-            );
-          })}
-
-          {usuario && menuAberto && (
-            <li className="mobile-only-logout">
-              <button type="button" className="nav-link-btn" onClick={handleLogout}>
-                Sair da Conta
+            ))}
+            <li className="nav-menu__cta-mobile">
+              <button
+                type="button"
+                className={`header-cta-lance header-cta-lance--block ${isLanceRouteActive ? 'is-active' : ''}`}
+                onClick={() => pushRoute(lanceSuaLinhaPath)}
+              >
+                Lance sua linha
               </button>
             </li>
-          )}
-        </ul>
+            {showCreatorsNav ? (
+              <li className="nav-menu__extra">
+                <button type="button" className="nav-link-btn" onClick={() => pushRoute('/creators')}>
+                  CREATORS
+                </button>
+              </li>
+            ) : null}
+          </ul>
+
+          <button
+            type="button"
+            className={`header-cta-lance header-cta-lance--desktop ${isLanceRouteActive ? 'is-active' : ''}`}
+            onClick={() => pushRoute(lanceSuaLinhaPath)}
+            title="Produção de mangá físico e venda na loja"
+          >
+            Lance sua linha
+          </button>
+        </div>
 
         <div className="nav-auth">
           <button
@@ -654,9 +616,11 @@ export default function Header({ usuario, perfil, adminAccess }) {
             className="header-store-cart-btn"
             onClick={() => pushRoute('/loja/carrinho')}
             aria-label={
-              storeCartCount ? `Carrinho da loja, ${storeCartCount} itens` : 'Carrinho da loja'
+              combinedCartCount
+                ? `Carrinho: ${combinedCartCount} itens (loja + lote físico se houver)`
+                : 'Carrinho'
             }
-            title="Carrinho da loja (disponível sem login; finalize após entrar)"
+            title="Carrinho — loja e mangá físico no mesmo lugar; cada tipo tem seu checkout"
           >
             <svg
               className="header-store-cart-icon"
@@ -674,25 +638,36 @@ export default function Header({ usuario, perfil, adminAccess }) {
                 strokeLinejoin="round"
               />
             </svg>
-            {storeCartCount > 0 ? (
+            {combinedCartCount > 0 ? (
               <span className="header-store-cart-badge">
-                {storeCartCount > 99 ? '99+' : storeCartCount}
+                {combinedCartCount > 99 ? '99+' : combinedCartCount}
               </span>
             ) : null}
           </button>
           {!usuario ? (
-            <button
-              className="btn-login-header"
-              onClick={() => pushRoute('/login')}
-              aria-label="Entrar ou cadastrar"
-              title="Entrar ou cadastrar"
-            >
-              <span className="btn-login-long">ENTRAR / CADASTRAR</span>
-              <span className="btn-login-short">ENTRAR</span>
-              <span className="btn-login-icon" aria-hidden="true">&#10230;</span>
-            </button>
+            <>
+              {showCreatorsNav ? (
+                <button
+                  type="button"
+                  className="header-guest-creators"
+                  onClick={() => pushRoute('/creators')}
+                >
+                  CREATORS
+                </button>
+              ) : null}
+              <button
+                className="btn-login-header"
+                onClick={() => pushRoute('/login')}
+                aria-label="Entrar ou cadastrar"
+                title="Entrar ou cadastrar"
+              >
+                <span className="btn-login-long">ENTRAR / CADASTRAR</span>
+                <span className="btn-login-short">ENTRAR</span>
+                <span className="btn-login-icon" aria-hidden="true">&#10230;</span>
+              </button>
+            </>
           ) : (
-            <div className="user-info-header" title="Acessar Perfil">
+            <div className="user-info-header" title="Notificações e menu da conta">
               <div className={`header-notification-shell ${notificationsOpen ? 'is-open' : ''}`}>
                 <button
                   type="button"
@@ -768,28 +743,42 @@ export default function Header({ usuario, perfil, adminAccess }) {
                   type="button"
                   className="header-avatar-wrapper"
                   onClick={handleToggleAccountMenu}
-                  aria-label="Abrir menu da conta"
+                  aria-label={`Menu da conta${isPremium ? ' — Premium' : ''}`}
                   aria-expanded={accountMenuOpen}
+                  title={usuario.displayName || 'Conta'}
                 >
                   <img
-                    src={usuario.photoURL || AVATAR_FALLBACK}
-                    alt="Avatar"
+                    src={headerAvatarSrc}
+                    alt=""
                     className="header-avatar-img"
+                    decoding="async"
                     onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
                   />
                 </button>
-                <div className="user-text-group">
-                  <button type="button" className="welcome-text" onClick={handleToggleAccountMenu}>
-                    Ola, {usuario.displayName?.split(' ')[0] || 'Guerreiro'}
-                    {isPremium ? ' Premium' : ''}
-                  </button>
-                </div>
                 {accountMenuOpen ? (
                   <div className="header-account-menu">
                     <button type="button" onClick={() => pushRoute('/perfil')}>
-                      Meu perfil
+                      Minha conta
                     </button>
-                    <button type="button" onClick={handleLogout}>
+                    <button type="button" onClick={() => pushRoute('/pedidos')}>
+                      Meus pedidos
+                    </button>
+                    {workspaceMenus.length ? (
+                      <>
+                        {renderWorkspaceAccountSections()}
+                        <div className="header-account-menu__divider" role="presentation" />
+                      </>
+                    ) : null}
+                    <button type="button" onClick={() => pushRoute('/sobre-autor')}>
+                      Sobre nós
+                    </button>
+                    {showCreatorsNav ? (
+                      <button type="button" onClick={() => pushRoute('/creators')}>
+                        Programa CREATORS
+                      </button>
+                    ) : null}
+                    <div className="header-account-menu__divider" role="presentation" />
+                    <button type="button" className="header-account-menu__logout" onClick={handleLogout}>
                       Sair
                     </button>
                   </div>
@@ -798,6 +787,27 @@ export default function Header({ usuario, perfil, adminAccess }) {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          className={`mobile-menu-icon ${menuAberto ? 'active' : ''}`}
+          onClick={() => setMenuAberto(!menuAberto)}
+          aria-label="Menu"
+          aria-expanded={menuAberto}
+        >
+          <span className="bar" />
+          <span className="bar" />
+          <span className="bar" />
+        </button>
+
+        {menuAberto && (
+          <button
+            type="button"
+            className="mobile-menu-overlay"
+            aria-label="Fechar menu"
+            onClick={() => setMenuAberto(false)}
+          />
+        )}
       </div>
       {selectedNotification ? (
         <div

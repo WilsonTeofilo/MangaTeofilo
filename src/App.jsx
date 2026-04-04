@@ -44,8 +44,11 @@ const BibliotecaFavoritos = lazy(() => import('./pages/Mangas/BibliotecaFavorito
 const LojaCatalogo = lazy(() => import('./pages/Loja/LojaCatalogo.jsx'));
 const LojaProduto = lazy(() => import('./pages/Loja/LojaProduto.jsx'));
 const LojaCarrinho = lazy(() => import('./pages/Loja/LojaCarrinho.jsx'));
-const LojaPedidos = lazy(() => import('./pages/Loja/LojaPedidos.jsx'));
+const MeusPedidosHub = lazy(() => import('./pages/Loja/MeusPedidosHub.jsx'));
+const StoreOrderDetailPage = lazy(() => import('./pages/Loja/StoreOrderDetailPage.jsx'));
+const PodOrderDetailPage = lazy(() => import('./pages/Loja/PodOrderDetailPage.jsx'));
 const PrintOnDemandPage = lazy(() => import('./pages/Loja/PrintOnDemandPage.jsx'));
+const PrintOnDemandCheckoutPage = lazy(() => import('./pages/Loja/PrintOnDemandCheckoutPage.jsx'));
 const Login = lazy(() => import('./pages/Auth/Login.jsx'));
 const Perfil = lazy(() => import('./pages/Perfil/Perfil.jsx'));
 const Leitor = lazy(() => import('./pages/Leitor/Leitor.jsx'));
@@ -73,6 +76,7 @@ const SessoesAdmin = lazy(() => import('./pages/Admin/SessoesAdmin.jsx'));
 const MangakaFinanceiroAdmin = lazy(() => import('./pages/Admin/MangakaFinanceiroAdmin.jsx'));
 const CriadoresAdmin = lazy(() => import('./pages/Admin/CriadoresAdmin.jsx'));
 const CreatorsApplyPage = lazy(() => import('./pages/Creators/CreatorsApplyPage.jsx'));
+const UsernamePublicRoute = lazy(() => import('./pages/Public/UsernamePublicRoute.jsx'));
 
 function RedirectToLogin() {
   const loc = useLocation();
@@ -86,7 +90,7 @@ function LoginRoute({ podeAcessarApp }) {
     const target =
       raw != null && String(raw).trim() !== ''
         ? resolveSafeInternalRedirect(raw)
-        : '/perfil';
+        : '/';
     return <Navigate to={target} replace />;
   }
   return <Login />;
@@ -339,12 +343,38 @@ function AppRoutes() {
             }
           />
           <Route
-            path="/loja/pedidos"
+            path="/pedidos"
             element={
-              <LojaPedidos
+              <MeusPedidosHub
                 user={podeAcessarApp ? usuario : null}
+                showCreatorSalesTab={
+                  podeAcessarApp &&
+                  (adminAccess.isMangaka || String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka')
+                }
               />
             }
+          />
+          <Route
+            path="/loja/pedidos"
+            element={
+              <MeusPedidosHub
+                user={podeAcessarApp ? usuario : null}
+                showCreatorSalesTab={
+                  podeAcessarApp &&
+                  (adminAccess.isMangaka || String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka')
+                }
+              />
+            }
+          />
+          <Route
+            path="/pedidos/loja/:orderId"
+            element={
+              podeAcessarApp ? <StoreOrderDetailPage user={usuario} /> : <RedirectToLogin />
+            }
+          />
+          <Route
+            path="/pedidos/fisico/:orderId"
+            element={podeAcessarApp ? <PodOrderDetailPage user={usuario} /> : <RedirectToLogin />}
           />
           <Route path="/store/print-on-demand" element={<LegacyPrintOnDemandRedirect />} />
           <Route
@@ -358,6 +388,11 @@ function AppRoutes() {
                 capsVal={creatorCapsVal}
               />
             }
+          />
+          <Route path="/print-on-demand/carrinho" element={<Navigate to="/loja/carrinho" replace />} />
+          <Route
+            path="/print-on-demand/checkout"
+            element={<PrintOnDemandCheckoutPage user={podeAcessarApp ? usuario : null} />}
           />
           <Route path="/creator/print" element={<Navigate to="/print-on-demand?ctx=creator" replace />} />
           <Route
@@ -423,6 +458,7 @@ function AppRoutes() {
             path="/criador/:creatorId"
             element={<CreatorPublicProfilePage user={podeAcessarApp ? usuario : null} />}
           />
+          <Route path="/@:userHandle" element={<UsernamePublicRoute />} />
 
           <Route
             path="/admin"

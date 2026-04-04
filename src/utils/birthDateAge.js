@@ -51,6 +51,19 @@ export function parseBirthDateBr(display) {
   return parseBirthDateLocal(iso) ? iso : '';
 }
 
+/**
+ * Ordem: DD/MM/AAAA (ou 8 dígitos), ISO AAAA-MM-DD no texto, depois fallback em estado (já ISO).
+ */
+export function parseBirthDateFlexible(display, isoFallback = '') {
+  const fromBr = parseBirthDateBr(display);
+  if (fromBr) return fromBr;
+  const t = String(display || '').trim();
+  if (parseBirthDateLocal(t)) return t;
+  const fb = String(isoFallback || '').trim();
+  if (parseBirthDateLocal(fb)) return fb;
+  return '';
+}
+
 export function parseBirthDateLocal(iso) {
   const m = String(iso || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;

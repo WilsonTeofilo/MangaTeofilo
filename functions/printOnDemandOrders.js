@@ -1,4 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { logger } from 'firebase-functions/v2';
 import { getDatabase } from 'firebase-admin/database';
 import { getAdminAuthContext, requireSuperAdmin } from './adminRbac.js';
 import {
@@ -10,9 +12,29 @@ import {
   computePlatformOrder,
   computeStorePromoOrder,
   productionDays,
+  POD_PENDING_PAYMENT_TTL_MS,
+  computeFixedZoneShippingParts,
+  PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL,
+  FREE_SHIPPING_MAX_SHIPPING_BRL,
 } from './printOnDemandPricing.js';
 
-const STORE_PROMO_THRESHOLDS = { followers: 100, views: 30000, likes: 200 };
+/** Alinhado a `src/utils/creatorProgression.js` (Nível 1 / vitrine POD). */
+const STORE_PROMO_THRESHOLDS = { followers: 300, views: 5000, likes: 100 };
+
+/** Nível 2 — venda POD com repasse (espelho do cliente). */
+const CREATOR_LEVEL_2_THRESHOLDS = { followers: 1000, views: 20000, likes: 500 };
+
+function creatorMeetsPlatformSaleLevel(userRow) {
+  const row = userRow && typeof userRow === 'object' ? userRow : {};
+  const followers = Number(row?.creatorProfile?.stats?.followersCount ?? row?.stats?.followersCount ?? 0);
+  const views = Number(row?.creatorProfile?.stats?.totalViews ?? row?.stats?.totalViews ?? 0);
+  const likes = Number(row?.creatorProfile?.stats?.totalLikes ?? row?.stats?.totalLikes ?? 0);
+  return (
+    followers >= CREATOR_LEVEL_2_THRESHOLDS.followers &&
+    views >= CREATOR_LEVEL_2_THRESHOLDS.views &&
+    likes >= CREATOR_LEVEL_2_THRESHOLDS.likes
+  );
+}
 /** Alinhado a database.rules.json em obras/$obraId */
 const OBRA_ID_RE = /^[a-z0-9_-]{2,40}$/;
 
@@ -171,13 +193,51 @@ const STATUS_FLOW = new Set([
   'ready_to_ship',
   'shipped',
   'delivered',
+  'cancelled',
 ]);
+
+/** Transições manuais (admin). «paid» só entra via webhook do Mercado Pago. */
+const ADMIN_NON_CANCEL_NEXT = {
+  pending_payment: new Set(['pending_payment']),
+  paid: new Set(['paid', 'in_production']),
+  in_production: new Set(['in_production', 'ready_to_ship', 'shipped']),
+  ready_to_ship: new Set(['ready_to_ship', 'shipped']),
+  shipped: new Set(['shipped', 'delivered']),
+  delivered: new Set(['delivered']),
+  cancelled: new Set(['cancelled']),
+};
+
+async function pushPodOrderEvent(db, orderId, evt) {
+  const oid = String(orderId || '').trim();
+  if (!oid || !evt || typeof evt !== 'object') return;
+  await db.ref(`loja/printOnDemandOrders/${oid}/orderEvents`).push({
+    at: Date.now(),
+    ...evt,
+  });
+}
+
+export async function notifyPrintOnDemandPaid(db, creatorUid, orderId) {
+  const oid = String(orderId || '').trim();
+  if (!oid || !creatorUid) return;
+  await pushUserNotification(db, creatorUid, {
+    type: 'print_on_demand',
+    title: 'Pagamento confirmado',
+    message: `Pedido #${oid.slice(-8).toUpperCase()} pago. Acompanhe a produção do seu lote.`,
+    orderId: oid,
+    dedupeKey: `pod:paid:${oid}`,
+    data: { orderId: oid, status: 'paid' },
+  });
+}
 
 async function pushUserNotification(db, uid, payload) {
   if (!uid || !payload) return;
   const now = Date.now();
   const notificationsRef = db.ref(`usuarios/${uid}/notifications`);
   const dedupeKey = String(payload.dedupeKey || '').trim() || `pod:${payload.orderId || 'na'}:${now}`;
+  const orderId = String(payload.orderId || payload.data?.orderId || '').trim();
+  const readPath =
+    String(payload.readPath || '').trim() ||
+    (orderId ? `/pedidos/fisico/${orderId}` : '/loja/pedidos');
   const row = {
     type: String(payload.type || 'print_on_demand'),
     title: String(payload.title || 'Producao fisica'),
@@ -186,18 +246,16 @@ async function pushUserNotification(db, uid, payload) {
     createdAt: now,
     updatedAt: now,
     dedupeKey,
-    data: { ...(payload.data || {}), readPath: '/creator/print' },
+    data: { ...(payload.data || {}), readPath },
   };
   await notificationsRef.push(row);
 }
 
-export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Faca login para enviar o pedido.');
-  }
-  const uid = request.auth.uid;
-  const body = request.data && typeof request.data === 'object' ? request.data : {};
-
+/**
+ * Cria pedido POD (pending_payment). Sem notificação — o cliente deve redirecionar ao MP.
+ * @returns {{ orderId: string, order: object }}
+ */
+export async function persistPrintOnDemandOrder(db, uid, body) {
   const saleModel = String(body.saleModel || '').trim().toLowerCase();
   const format = String(body.format || '').trim().toLowerCase();
   const quantity = Number(body.quantity);
@@ -239,20 +297,40 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
 
   const addr = body.shippingAddress && typeof body.shippingAddress === 'object' ? body.shippingAddress : {};
   const needAddress = saleModel === SALE_MODEL.PERSONAL;
-  const zip = String(addr.zip || addr.cep || '').trim();
-  const street = String(addr.street || addr.logradouro || '').trim();
+  const zipRaw = String(addr.zip || addr.cep || '').trim();
+  const zipDigits = zipRaw.replace(/\D/g, '');
+  const streetBase = String(addr.street || addr.logradouro || addr.streetBase || '').trim();
+  const streetNumber = String(addr.streetNumber || addr.numero || addr.number || '').trim();
+  const neighborhood = String(addr.neighborhood || addr.bairro || '').trim();
   const city = String(addr.city || addr.cidade || '').trim();
-  const state = String(addr.state || addr.uf || '').trim();
+  const state = String(addr.state || addr.uf || '').trim().toUpperCase().slice(0, 2);
   const name = String(addr.name || addr.nome || '').trim();
+  let street = String(addr.street || addr.logradouro || '').trim();
   if (needAddress) {
-    if (street.length < 4 || city.length < 2 || state.length < 2 || zip.length < 5 || name.length < 3) {
-      throw new HttpsError('invalid-argument', 'Preencha endereco completo para entrega (compra para si).');
+    if (zipDigits.length !== 8) {
+      throw new HttpsError('invalid-argument', 'CEP invalido: use 8 digitos (ex.: 01310100).');
     }
+    if (name.length < 3 || city.length < 2 || state.length !== 2) {
+      throw new HttpsError('invalid-argument', 'Preencha nome completo, cidade e UF validos.');
+    }
+    if (streetBase.length < 3) {
+      throw new HttpsError('invalid-argument', 'Informe o logradouro (rua/avenida) com pelo menos 3 caracteres.');
+    }
+    if (neighborhood.length < 2) {
+      throw new HttpsError('invalid-argument', 'Informe o bairro.');
+    }
+    if (streetNumber.length < 1 || !/\d/.test(streetNumber)) {
+      throw new HttpsError('invalid-argument', 'Informe o numero do endereco (ex.: 123 ou s/n 45).');
+    }
+    street = `${streetBase}, ${streetNumber}`.trim();
   }
+  if (needAddress && street.length < 6) {
+    throw new HttpsError('invalid-argument', 'Endereco de entrega incompleto.');
+  }
+  const zip = needAddress ? zipDigits : zipRaw;
 
   const pr = productionDays(saleModel, format, quantity);
   const now = Date.now();
-  const db = getDatabase();
   const userSnap = await db.ref(`usuarios/${uid}`).get();
   const userRow = userSnap.exists() ? userSnap.val() || {} : {};
   let storePromoElig = null;
@@ -271,7 +349,7 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
     if (!storePromoElig.ok) {
       throw new HttpsError(
         'failed-precondition',
-        'Requisitos de divulgacao nao atingidos: e preciso 100 seguidores, 30 mil views na obra e 200 likes somando capitulos.'
+        'Requisitos de divulgacao nao atingidos: 300 seguidores, 5 mil views na obra e 100 likes (obra + capitulos).'
       );
     }
   }
@@ -287,6 +365,12 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
       throw new HttpsError(
         'failed-precondition',
         'Venda na loja exige monetizacao ativa e dados para repasse. Use Comprar para mim ou ative a monetizacao no perfil e aguarde aprovacao do admin.'
+      );
+    }
+    if (!creatorMeetsPlatformSaleLevel(userRow)) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Venda com repasse exige Nivel 2 nas metricas da plataforma: 1000 seguidores, 20 mil views totais e 500 likes totais.'
       );
     }
   }
@@ -337,14 +421,28 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
   } else {
     const calc = computePersonalOrder(format, quantity);
     if (!calc) throw new HttpsError('invalid-argument', 'Nao foi possivel calcular o pedido (pessoal).');
+    let shippingBRL = 0;
+    let shippingExtra = '';
+    if (!calc.freeShipping) {
+      const goods = Number(calc.goodsTotalBRL || 0);
+      const parts = computeFixedZoneShippingParts({ state, quantity, cartTotal: goods });
+      shippingBRL = parts.priceBrl;
+      shippingExtra = parts.freeApplied
+        ? ` Frete grátis: subtotal a partir de R$ ${PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL} e frete calculado até R$ ${FREE_SHIPPING_MAX_SHIPPING_BRL}.`
+        : ` Frete (${state}) via Correios: R$ ${shippingBRL.toFixed(2)}.`;
+    }
+    const amountDue = Math.round((Number(calc.goodsTotalBRL || 0) + shippingBRL) * 100) / 100;
     snapshot = {
       saleModel,
       format,
       quantity,
       ...calc,
-      shippingNote: calc.freeShipping
-        ? `Frete gratis a partir de ${calc.freeShippingAt} unidades. O prazo abaixo considera producao + entrega.`
-        : `Frete a parte para quantidades abaixo de ${calc.freeShippingAt} unidades.`,
+      shippingBRL,
+      shippingCarrierDefault: 'Correios',
+      personalSubtotalMinFreeShippingBRL: PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL,
+      personalMaxFreteForFreeRuleBRL: FREE_SHIPPING_MAX_SHIPPING_BRL,
+      amountDueBRL: amountDue,
+      shippingNote: `${calc.freeShipping ? calc.shippingNote : calc.shippingNote}${shippingExtra} Peso estimado do lote: ~${calc.weightGramsTotal || 0} g.`,
       estimatedProductionDaysLow: pr.low,
       estimatedProductionDaysHigh: pr.high,
       estimatedProductionHours: pr.totalHours,
@@ -355,6 +453,7 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
 
   const orderRef = db.ref('loja/printOnDemandOrders').push();
   const orderId = orderRef.key;
+  const expiresAt = now + POD_PENDING_PAYMENT_TTL_MS;
   const order = {
     id: orderId,
     creatorUid: uid,
@@ -366,6 +465,9 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
       ? {
           name,
           street,
+          streetBase,
+          streetNumber,
+          neighborhood,
           city,
           state,
           zip,
@@ -375,21 +477,35 @@ export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async 
     snapshot,
     productionChecklist: emptyChecklist(),
     trackingCode: '',
+    shippingCarrier: 'Correios',
     createdAt: now,
     updatedAt: now,
+    expiresAt,
     paidAt: null,
+    productionStartedAt: null,
+    readyToShipAt: null,
+    shippedAt: null,
+    deliveredAt: null,
   };
 
   await orderRef.set(order);
-  await pushUserNotification(db, uid, {
-    type: 'print_on_demand',
-    title: 'Pedido de mangá físico registrado',
-    message: `Pedido #${orderId.slice(-8).toUpperCase()} criado. Aguardando pagamento.`,
-    orderId,
-    dedupeKey: `pod:created:${orderId}`,
-    data: { orderId, status: 'pending_payment' },
+  await pushPodOrderEvent(db, orderId, {
+    type: 'order_created',
+    message: 'Pedido criado — aguardando pagamento (reserva de 3 horas).',
+    actor: 'system',
   });
+  return { orderId, order };
+}
 
+/** @deprecated Prefira createPrintOnDemandCheckout no cliente (pagamento antes da confirmação percebida). */
+export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login para enviar o pedido.');
+  }
+  const uid = request.auth.uid;
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const db = getDatabase();
+  const { orderId } = await persistPrintOnDemandOrder(db, uid, body);
   return { ok: true, orderId };
 });
 
@@ -405,6 +521,25 @@ export const listMyPrintOnDemandOrders = onCall({ region: 'us-central1' }, async
     .filter((o) => String(o.creatorUid || '') === uid)
     .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
   return { ok: true, orders: list };
+});
+
+export const getMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const orderId = String(request.data?.orderId || '').trim();
+  if (!orderId) {
+    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+  }
+  const snap = await getDatabase().ref(`loja/printOnDemandOrders/${orderId}`).get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Pedido nao encontrado.');
+  }
+  const row = snap.val() || {};
+  if (String(row.creatorUid || '') !== request.auth.uid) {
+    throw new HttpsError('permission-denied', 'Sem permissao.');
+  }
+  return { ok: true, order: { id: orderId, ...row } };
 });
 
 export const adminListPrintOnDemandOrders = onCall({ region: 'us-central1' }, async (request) => {
@@ -448,6 +583,13 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
     throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
   }
 
+  if (body.shippingAddress != null) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Alteracao de endereco pelo painel nao suportada aqui. Apos pagamento o endereco fica travado; antes do pagamento o cliente refaz o pedido.'
+    );
+  }
+
   const ref = getDatabase().ref(`loja/printOnDemandOrders/${orderId}`);
   const snap = await ref.get();
   if (!snap.exists()) {
@@ -455,17 +597,65 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
   }
   const prev = snap.val() || {};
   const patch = { updatedAt: Date.now() };
+  const prevStatus = String(prev.status || '').trim().toLowerCase();
 
-  const statusRaw = body.status != null ? String(body.status).trim().toLowerCase() : '';
+  let statusRaw = body.status != null ? String(body.status).trim().toLowerCase().replace(/\s+/g, '_') : '';
+  if (statusRaw === 'canceled') statusRaw = 'cancelled';
   if (statusRaw) {
     if (!STATUS_FLOW.has(statusRaw)) {
-      throw new HttpsError('invalid-argument', 'Status invalido.');
+      throw new HttpsError(
+        'invalid-argument',
+        `Status invalido (${statusRaw || 'vazio'}). Confira o deploy das Cloud Functions ou o valor enviado.`
+      );
     }
-    patch.status = statusRaw;
+    if (statusRaw === 'paid') {
+      throw new HttpsError(
+        'permission-denied',
+        'O status «pago» so pode ser definido pelo webhook do Mercado Pago apos confirmacao do pagamento.'
+      );
+    }
+    if (statusRaw === 'cancelled') {
+      if (prevStatus !== 'cancelled') {
+        if (prevStatus === 'delivered') {
+          throw new HttpsError('failed-precondition', 'Pedido entregue: nao pode cancelar.');
+        }
+        const reason = String(body.cancellationReason || body.adminCancellationReason || '').trim();
+        if (reason.length < 3) {
+          throw new HttpsError(
+            'invalid-argument',
+            'Informe o motivo do cancelamento (minimo 3 caracteres).'
+          );
+        }
+        if (reason.length > 2000) {
+          throw new HttpsError('invalid-argument', 'Motivo muito longo (maximo 2000 caracteres).');
+        }
+        patch.status = 'cancelled';
+        patch.adminCancellationReason = reason;
+        patch.cancelledAt = Date.now();
+        patch.cancelledByAdminUid = String(request.auth?.uid || '').trim() || null;
+      }
+    } else {
+      if (prevStatus === 'cancelled') {
+        throw new HttpsError('failed-precondition', 'Pedido cancelado: nao e possivel alterar o status.');
+      }
+      if (statusRaw !== prevStatus) {
+        const allowed = ADMIN_NON_CANCEL_NEXT[prevStatus];
+        if (!allowed || !allowed.has(statusRaw)) {
+          throw new HttpsError(
+            'failed-precondition',
+            `Transicao de status nao permitida: «${prevStatus}» -> «${statusRaw}».`
+          );
+        }
+      }
+      patch.status = statusRaw;
+    }
   }
 
   const trackingCode = body.trackingCode != null ? String(body.trackingCode || '').trim() : null;
   if (trackingCode != null) {
+    if (prevStatus === 'cancelled' && trackingCode !== String(prev.trackingCode || '').trim()) {
+      throw new HttpsError('failed-precondition', 'Pedido cancelado: rastreio nao pode ser alterado.');
+    }
     if (trackingCode.length > 120) {
       throw new HttpsError('invalid-argument', 'Codigo de rastreio muito longo.');
     }
@@ -473,6 +663,9 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
   }
 
   if (body.productionChecklist && typeof body.productionChecklist === 'object') {
+    if (prevStatus === 'cancelled' || patch.status === 'cancelled') {
+      throw new HttpsError('failed-precondition', 'Pedido cancelado: checklist nao pode ser alterado.');
+    }
     const cur = { ...(prev.productionChecklist || {}), ...emptyChecklist() };
     for (const k of Object.keys(emptyChecklist())) {
       if (body.productionChecklist[k] != null) {
@@ -482,11 +675,45 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
     patch.productionChecklist = cur;
   }
 
+  const ts = Date.now();
+  if (patch.status && patch.status !== prevStatus) {
+    if (patch.status === 'in_production' && !prev.productionStartedAt) {
+      patch.productionStartedAt = ts;
+    }
+    if (patch.status === 'ready_to_ship') {
+      patch.readyToShipAt = prev.readyToShipAt || ts;
+    }
+    if (patch.status === 'shipped') {
+      patch.shippedAt = prev.shippedAt || ts;
+      if (!patch.shippingCarrier && !prev.shippingCarrier) {
+        patch.shippingCarrier = 'Correios';
+      }
+    }
+    if (patch.status === 'delivered') {
+      patch.deliveredAt = prev.deliveredAt || ts;
+    }
+  }
+
   await ref.update(patch);
   const creatorUid = String(prev.creatorUid || '');
-  const nextStatus = patch.status || prev.status;
+  const nextStatus = patch.status || prevStatus;
 
-  if (creatorUid && patch.status && patch.status !== prev.status) {
+  if (patch.status && patch.status !== prevStatus) {
+    let evMsg = `Status: ${prevStatus} -> ${nextStatus}.`;
+    if (nextStatus === 'cancelled') {
+      evMsg = `Cancelado pela equipe: ${String(patch.adminCancellationReason || '').slice(0, 200)}`;
+    }
+    await pushPodOrderEvent(getDatabase(), orderId, {
+      type: 'status_change',
+      message: evMsg,
+      actor: 'admin',
+      adminUid: String(request.auth?.uid || '').trim() || null,
+      from: prevStatus,
+      to: nextStatus,
+    });
+  }
+
+  if (creatorUid && patch.status && patch.status !== prevStatus) {
     const titles = {
       paid: 'Pagamento confirmado',
       in_production: 'Pedido em producao',
@@ -494,16 +721,94 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
       shipped: 'Pedido enviado',
       delivered: 'Pedido entregue',
       pending_payment: 'Aguardando pagamento',
+      cancelled: 'Pedido cancelado',
     };
+    const shortId = orderId.slice(-8).toUpperCase();
+    let message = `Seu pedido de mangá físico #${shortId} mudou para: ${nextStatus}.`;
+    if (nextStatus === 'cancelled') {
+      const r = String(patch.adminCancellationReason || '').trim();
+      const excerpt = r.length > 280 ? `${r.slice(0, 277)}...` : r;
+      message = `Seu pedido #${shortId} foi cancelado. Motivo: ${excerpt}`;
+    }
     await pushUserNotification(getDatabase(), creatorUid, {
       type: 'print_on_demand',
       title: titles[nextStatus] || 'Atualizacao do pedido',
-      message: `Seu pedido de mangá físico #${orderId.slice(-8).toUpperCase()} mudou para: ${nextStatus}.`,
+      message,
       orderId,
       dedupeKey: `pod:status:${orderId}:${nextStatus}`,
       data: { orderId, status: nextStatus },
     });
   }
+
+  return { ok: true };
+});
+
+/**
+ * Comprador (creatorUid do pedido) cancela antes do pagamento — sem estorno MP aqui.
+ */
+export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const uid = request.auth.uid;
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const orderId = String(body.orderId || '').trim();
+  if (!orderId) {
+    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+  }
+  const reason = String(body.cancellationReason || '').trim();
+  if (reason.length < 3) {
+    throw new HttpsError('invalid-argument', 'Informe o motivo do cancelamento (minimo 3 caracteres).');
+  }
+  if (reason.length > 2000) {
+    throw new HttpsError('invalid-argument', 'Motivo muito longo (maximo 2000 caracteres).');
+  }
+
+  const db = getDatabase();
+  const r = db.ref(`loja/printOnDemandOrders/${orderId}`);
+  const snap = await r.get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Pedido nao encontrado.');
+  }
+  const row = snap.val() || {};
+  if (String(row.creatorUid || '') !== uid) {
+    throw new HttpsError('permission-denied', 'Este pedido nao esta na sua conta.');
+  }
+  const st = String(row.status || '').trim().toLowerCase();
+  if (st === 'cancelled') {
+    return { ok: true, alreadyCancelled: true };
+  }
+  if (st !== 'pending_payment') {
+    throw new HttpsError(
+      'failed-precondition',
+      'So e possivel cancelar pelo site enquanto o pagamento estiver pendente. Se ja pagou ou a producao comecou, fale com o suporte.'
+    );
+  }
+
+  const now = Date.now();
+  await r.update({
+    status: 'cancelled',
+    buyerCancellationReason: reason,
+    cancelledAt: now,
+    cancelledByBuyerUid: uid,
+    updatedAt: now,
+  });
+
+  await pushPodOrderEvent(db, orderId, {
+    type: 'buyer_cancel',
+    message: `Cancelado pelo comprador: ${reason.slice(0, 200)}`,
+    actor: 'buyer',
+    buyerUid: uid,
+  });
+
+  await pushUserNotification(db, uid, {
+    type: 'print_on_demand',
+    title: 'Pedido cancelado',
+    message: `Voce cancelou o pedido de mangá fisico #${orderId.slice(-8).toUpperCase()}.`,
+    orderId,
+    dedupeKey: `pod:buyer_cancel:${orderId}`,
+    data: { orderId, status: 'cancelled' },
+  });
 
   return { ok: true };
 });
@@ -538,3 +843,59 @@ export const adminPatchPrintOnDemandOrderSuper = onCall({ region: 'us-central1' 
   await ref.update(patch);
   return { ok: true };
 });
+
+/** Cancela reservas pending_payment após 3h sem pagamento (alinhado a `POD_PENDING_PAYMENT_TTL_MS`). */
+export const expirePrintOnDemandPendingPayments = onSchedule(
+  {
+    schedule: 'every 5 minutes',
+    timeZone: 'America/Sao_Paulo',
+    memory: '256MiB',
+    timeoutSeconds: 120,
+  },
+  async () => {
+    const db = getDatabase();
+    const now = Date.now();
+    const snap = await db.ref('loja/printOnDemandOrders').get();
+    if (!snap.exists()) return;
+    const all = snap.val() || {};
+    let cancelled = 0;
+    for (const [id, row] of Object.entries(all)) {
+      const r = row && typeof row === 'object' ? row : {};
+      if (String(r.status || '').toLowerCase() !== 'pending_payment') continue;
+      const exp = Number(r.expiresAt || 0);
+      if (!exp || now < exp) continue;
+      const oref = db.ref(`loja/printOnDemandOrders/${id}`);
+      await oref.update({
+        status: 'cancelled',
+        cancelledAt: now,
+        autoCancelled: true,
+        cancelReasonCode: 'payment_timeout_3h',
+        adminCancellationReason:
+          'Pedido cancelado automaticamente: prazo de 3 horas para pagamento sem confirmacao.',
+        updatedAt: now,
+      });
+      await pushPodOrderEvent(db, id, {
+        type: 'auto_expired',
+        message: 'Reserva expirada (3h sem pagamento).',
+        actor: 'system',
+      });
+      const uid = String(r.creatorUid || '');
+      if (uid) {
+        try {
+          await pushUserNotification(db, uid, {
+            type: 'print_on_demand',
+            title: 'Pedido expirado',
+            message: `Seu pedido de mangá fisico #${id.slice(-8).toUpperCase()} foi cancelado por falta de pagamento no prazo.`,
+            orderId: id,
+            dedupeKey: `pod:expired:${id}`,
+            data: { orderId: id, status: 'cancelled' },
+          });
+        } catch (e) {
+          logger.warn('POD expire notify fail', { id, error: e?.message });
+        }
+      }
+      cancelled += 1;
+    }
+    if (cancelled) logger.info('expirePrintOnDemandPendingPayments', { cancelled });
+  }
+);

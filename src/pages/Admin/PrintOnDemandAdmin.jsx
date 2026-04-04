@@ -4,10 +4,12 @@ import { get, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 
 import { db, functions } from '../../services/firebase';
+import { addBusinessDaysLocal } from '../../utils/businessDays';
 import { PRODUCTION_CHECKLIST_KEYS, formatBRL } from '../../utils/printOnDemandPricingV2';
 import './PrintOnDemandAdmin.css';
 
-const STATUS_OPTIONS = [
+/** Transições normais (cancelamento é fluxo separado com motivo obrigatório). */
+const STATUS_TRANSITION_OPTIONS = [
   'pending_payment',
   'paid',
   'in_production',
@@ -16,6 +18,8 @@ const STATUS_OPTIONS = [
   'delivered',
 ];
 
+const STATUS_FILTER_OPTIONS = [...STATUS_TRANSITION_OPTIONS, 'cancelled'];
+
 const STATUS_LABELS = {
   pending_payment: 'Pagamento pendente',
   paid: 'Pago',
@@ -23,10 +27,26 @@ const STATUS_LABELS = {
   ready_to_ship: 'Pronto p/ envio',
   shipped: 'Enviado',
   delivered: 'Entregue',
+  cancelled: 'Cancelado',
 };
 
 function shortId(id) {
   return String(id || '').slice(-8).toUpperCase();
+}
+
+/** Opções do select alinhadas às transições permitidas no backend (sem «pago» manual). */
+function podAdminSelectableStatuses(current) {
+  const c = String(current || '').trim().toLowerCase();
+  const m = {
+    pending_payment: ['pending_payment'],
+    paid: ['paid', 'in_production'],
+    in_production: ['in_production', 'ready_to_ship', 'shipped'],
+    ready_to_ship: ['ready_to_ship', 'shipped'],
+    shipped: ['shipped', 'delivered'],
+    delivered: ['delivered'],
+    cancelled: ['cancelled'],
+  };
+  return m[c] || STATUS_TRANSITION_OPTIONS;
 }
 
 /** Mangaká monetizado vs não (análise). */
@@ -42,8 +62,8 @@ function podTipoDisplay(snap) {
 /** Canal: uma das três formas de pedido físico. */
 function podOrigemDisplay(snap) {
   const sm = String(snap?.saleModel || '');
-  if (sm === 'store_promo') return 'Postar na loja (não monetizado)';
-  if (sm === 'personal') return 'Comprar para mim';
+  if (sm === 'store_promo') return 'Modo vitrine (divulgação)';
+  if (sm === 'personal') return 'Produzir para mim';
   if (sm === 'platform') return 'Venda pela plataforma';
   return '—';
 }
@@ -68,13 +88,16 @@ function endOfDayMs(isoDate) {
 }
 
 function productionMeta(o) {
+  if (o.status === 'cancelled') {
+    return { label: '—', late: false, daysLeft: null, due: null, kind: '' };
+  }
   const snap = o.snapshot || {};
   const kind = String(snap.estimateKind || '').trim().toLowerCase();
   const high = Number(snap.estimatedProductionDaysHigh || 0);
   const low = Number(snap.estimatedProductionDaysLow || 0);
   const created = Number(o.createdAt || 0);
   if (!high || !created) return { label: '—', late: false, daysLeft: null, due: null, kind };
-  const due = created + high * 86400000;
+  const due = addBusinessDaysLocal(created, high);
   const msLeft = due - Date.now();
   const days = Math.ceil(msLeft / 86400000);
   const late =
@@ -84,8 +107,8 @@ function productionMeta(o) {
       : o.status === 'in_production');
   const label =
     kind === 'approval'
-      ? `aprovação ${low && high ? `${low}–${high} d` : `${high} d`}`
-      : low && high ? `${low}–${high} d` : `${high} d`;
+      ? `aprovação ${low && high ? `${low}–${high} d úteis` : `${high} d úteis`}`
+      : low && high ? `${low}–${high} d úteis` : `${high} d úteis`;
   return { label, late, daysLeft: Math.max(0, days), due, msLeft, kind };
 }
 
@@ -105,11 +128,13 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
   const [selectedId, setSelectedId] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [trackingDraft, setTrackingDraft] = useState('');
+  const [cancelReasonDraft, setCancelReasonDraft] = useState('');
   const [localChecklist, setLocalChecklist] = useState(null);
   const checklistTimer = useRef(null);
   const [saving, setSaving] = useState(false);
 
   const [toast, setToast] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const listFn = useMemo(() => httpsCallable(functions, 'adminListPrintOnDemandOrders'), []);
   const updateFn = useMemo(() => httpsCallable(functions, 'adminUpdatePrintOnDemandOrder'), []);
@@ -174,8 +199,10 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
   useEffect(() => {
     if (selected) {
       setTrackingDraft(String(selected.trackingCode || ''));
+      setCancelReasonDraft('');
       setLocalChecklist({ ...(selected.productionChecklist || {}) });
     } else {
+      setCancelReasonDraft('');
       setLocalChecklist(null);
     }
   }, [selected?.id, selected]);
@@ -192,6 +219,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
     let atrasados = 0;
     let receita = 0;
     for (const o of orders) {
+      if (o.status === 'cancelled') continue;
       const { late } = productionMeta(o);
       if (late) atrasados += 1;
       const snap = o.snapshot || {};
@@ -250,6 +278,15 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [drawerOpen]);
 
+  useEffect(() => {
+    if (!confirmModal) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !saving) setConfirmModal(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmModal, saving]);
+
   const persistChecklist = useCallback(
     async (orderId, checklistObj) => {
       setSaving(true);
@@ -267,7 +304,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
   );
 
   const onChecklistChange = (key, checked) => {
-    if (!selected) return;
+    if (!selected || selected.status === 'cancelled') return;
     const base = { ...localChecklist };
     PRODUCTION_CHECKLIST_KEYS.forEach(({ key: k }) => {
       if (base[k] == null) base[k] = false;
@@ -280,20 +317,54 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
     }, 550);
   };
 
-  const changeStatus = async (orderId, nextStatus) => {
+  const requestStatusChange = (orderId, nextStatus) => {
     const row = orders.find((o) => o.id === orderId);
     if (!row || row.status === nextStatus) return;
-    const ok = window.confirm(
-      `Alterar status de «${STATUS_LABELS[row.status] || row.status}» para «${STATUS_LABELS[nextStatus] || nextStatus}»?`
-    );
-    if (!ok) return;
+    if (row.status === 'cancelled') {
+      showToast('error', 'Pedido cancelado: use apenas a visualização deste painel.');
+      return;
+    }
+    setConfirmModal({ type: 'status', orderId, from: row.status, to: nextStatus });
+  };
+
+  const executeStatusChange = async () => {
+    if (!confirmModal || confirmModal.type !== 'status') return;
     setSaving(true);
     try {
-      await updateFn({ orderId, status: nextStatus });
+      await updateFn({ orderId: confirmModal.orderId, status: confirmModal.to });
       showToast('success', 'Status atualizado com sucesso.');
+      setConfirmModal(null);
       await load();
     } catch (e) {
       showToast('error', e?.message || 'Erro ao atualizar pedido.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openCancelConfirmModal = () => {
+    if (!selected || selected.status === 'cancelled') return;
+    const reason = cancelReasonDraft.trim();
+    if (reason.length < 3) {
+      showToast('error', 'Informe o motivo do cancelamento (mínimo 3 caracteres).');
+      return;
+    }
+    setConfirmModal({ type: 'cancel' });
+  };
+
+  const executeCancelOrder = async () => {
+    if (!selected || selected.status === 'cancelled' || confirmModal?.type !== 'cancel') return;
+    const reason = cancelReasonDraft.trim();
+    if (reason.length < 3) return;
+    setSaving(true);
+    try {
+      await updateFn({ orderId: selected.id, status: 'cancelled', cancellationReason: reason });
+      showToast('success', 'Pedido cancelado.');
+      setCancelReasonDraft('');
+      setConfirmModal(null);
+      await load();
+    } catch (e) {
+      showToast('error', e?.message || 'Erro ao cancelar pedido.');
     } finally {
       setSaving(false);
     }
@@ -394,7 +465,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               Status
               <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                 <option value="">Todos</option>
-                {STATUS_OPTIONS.map((s) => (
+                {STATUS_FILTER_OPTIONS.map((s) => (
                   <option key={s} value={s}>
                     {STATUS_LABELS[s] || s}
                   </option>
@@ -406,8 +477,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
                 <option value="">Todos</option>
                 <option value="platform">Venda pela plataforma</option>
-                <option value="personal">Comprar para mim</option>
-                <option value="store_promo">Postar na loja (não monetizado)</option>
+                <option value="personal">Produzir para mim</option>
+                <option value="store_promo">Modo vitrine (divulgação)</option>
               </select>
             </label>
             <label>
@@ -651,7 +722,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                           type="checkbox"
                           checked={Boolean(localChecklist?.[key])}
                           onChange={(e) => onChecklistChange(key, e.target.checked)}
-                          disabled={saving}
+                          disabled={saving || selected.status === 'cancelled'}
                         />
                         {label}
                       </label>
@@ -665,7 +736,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <p>
                   Prazo estimado:{' '}
                   <strong>
-                    {selected.snapshot?.estimatedProductionDaysLow}–{selected.snapshot?.estimatedProductionDaysHigh} dias
+                    {selected.snapshot?.estimatedProductionDaysLow}–{selected.snapshot?.estimatedProductionDaysHigh} dias úteis
                   </strong>
                 </p>
                 {selected.snapshot?.estimatedProductionHours ? (
@@ -677,8 +748,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   return (
                     <p className={pm.late ? 'po-prazo po-prazo--late' : ''}>
                       {pm.late
-                        ? `Atrasado: teto era ${new Date(pm.due).toLocaleDateString('pt-BR')}.`
-                        : `Tempo restante (até o teto): ~${pm.daysLeft} dia(s).`}
+                        ? `Atrasado: teto (dias úteis) era ${new Date(pm.due).toLocaleDateString('pt-BR')}.`
+                        : `Tempo restante até o teto (~dias corridos): ~${pm.daysLeft} dia(s).`}
                     </p>
                   );
                 })()}
@@ -709,35 +780,147 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     value={trackingDraft}
                     onChange={(e) => setTrackingDraft(e.target.value)}
                     placeholder="BR123456789BR"
+                    disabled={selected.status === 'cancelled'}
                   />
                 </label>
-                <button type="button" className="po-btn po-btn--primary po-btn--sm" onClick={saveTracking} disabled={saving}>
+                <button
+                  type="button"
+                  className="po-btn po-btn--primary po-btn--sm"
+                  onClick={saveTracking}
+                  disabled={saving || selected.status === 'cancelled'}
+                >
                   Salvar rastreio
                 </button>
               </section>
 
               <section className="po-drawer__section">
                 <h3>Status do pedido</h3>
-                <label className="po-field">
-                  Alterar para
-                  <select
-                    value={selected.status}
-                    onChange={(e) => changeStatus(selected.id, e.target.value)}
-                    disabled={saving}
-                  >
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {STATUS_LABELS[s] || s}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <p className="po-drawer__hint">Cada mudança pede confirmação antes de gravar.</p>
+                {selected.status === 'cancelled' ? (
+                  <>
+                    <p className="po-drawer__hint">
+                      Status: <strong>{STATUS_LABELS.cancelled}</strong>
+                    </p>
+                    {selected.adminCancellationReason ? (
+                      <div className="po-drawer__cancel-note">
+                        <strong>Motivo registrado</strong>
+                        <p>{String(selected.adminCancellationReason)}</p>
+                        {selected.cancelledAt ? (
+                          <p className="po-drawer__hint">Em {formatTs(selected.cancelledAt)}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <label className="po-field">
+                      Alterar para
+                      <select
+                        value={selected.status}
+                        onChange={(e) => requestStatusChange(selected.id, e.target.value)}
+                        disabled={saving}
+                      >
+                        {podAdminSelectableStatuses(selected.status).map((s) => (
+                          <option key={s} value={s}>
+                            {STATUS_LABELS[s] || s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="po-drawer__hint">Cada mudança pede confirmação antes de gravar.</p>
+                  </>
+                )}
               </section>
+
+              {selected.status !== 'cancelled' ? (
+                <section className="po-drawer__section po-drawer__section--danger">
+                  <h3>Cancelar pedido</h3>
+                  <p className="po-drawer__hint">
+                    Use para pedidos antigos sem pagamento ou quando não houver como concluir a produção. O motivo é
+                    enviado ao criador na notificação.
+                  </p>
+                  <label className="po-field">
+                    Motivo (obrigatório)
+                    <textarea
+                      className="po-drawer__textarea"
+                      rows={4}
+                      value={cancelReasonDraft}
+                      onChange={(e) => setCancelReasonDraft(e.target.value)}
+                      placeholder="Ex.: Pedido criado antes do checkout; sem pagamento registrado — encerrado administrativamente."
+                      disabled={saving}
+                      maxLength={2000}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="po-btn po-btn--danger po-btn--sm"
+                    onClick={openCancelConfirmModal}
+                    disabled={saving || cancelReasonDraft.trim().length < 3}
+                  >
+                    Cancelar pedido e notificar criador
+                  </button>
+                </section>
+              ) : null}
             </div>
           </div>
         )}
       </aside>
+
+      {confirmModal ? (
+        <div
+          className="po-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!saving) setConfirmModal(null);
+          }}
+        >
+          <div
+            className="po-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="po-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {confirmModal.type === 'status' ? (
+              <>
+                <h2 id="po-modal-title" className="po-modal__title">
+                  Confirmar mudança de status
+                </h2>
+                <p className="po-modal__body">
+                  Alterar de <strong>{STATUS_LABELS[confirmModal.from] || confirmModal.from}</strong> para{' '}
+                  <strong>{STATUS_LABELS[confirmModal.to] || confirmModal.to}</strong>?
+                </p>
+                <div className="po-modal__actions">
+                  <button type="button" className="po-btn po-btn--ghost" onClick={() => setConfirmModal(null)} disabled={saving}>
+                    Voltar
+                  </button>
+                  <button type="button" className="po-btn po-btn--primary" onClick={executeStatusChange} disabled={saving}>
+                    {saving ? 'Salvando…' : 'Confirmar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="po-modal-title" className="po-modal__title">
+                  Cancelar pedido físico
+                </h2>
+                <p className="po-modal__body">
+                  O criador recebe uma notificação com o motivo que você informou abaixo. Esta ação não desfaz pagamentos
+                  no Mercado Pago automaticamente.
+                </p>
+                <p className="po-modal__preview">{cancelReasonDraft.trim()}</p>
+                <div className="po-modal__actions">
+                  <button type="button" className="po-btn po-btn--ghost" onClick={() => setConfirmModal(null)} disabled={saving}>
+                    Voltar
+                  </button>
+                  <button type="button" className="po-btn po-btn--danger" onClick={executeCancelOrder} disabled={saving}>
+                    {saving ? 'Cancelando…' : 'Sim, cancelar pedido'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

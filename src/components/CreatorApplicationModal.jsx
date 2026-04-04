@@ -5,6 +5,7 @@ import {
   formatBirthDateIsoToBr,
   normalizeBirthDateBrTyping,
   parseBirthDateBr,
+  parseBirthDateFlexible,
   parseBirthDateLocal,
 } from '../utils/birthDateAge';
 import {
@@ -16,6 +17,7 @@ import { isValidBrazilianCpfDigits } from '../utils/cpfValidate';
 import {
   applyPixDraftChange,
   coercePayoutPixType,
+  formatPixCpfDraft,
   normalizePixKeyForStorage,
   PAYOUT_PIX_TYPE_OPTIONS,
   pixKeyPlaceholder,
@@ -45,6 +47,40 @@ import {
 } from '../utils/creatorProfileImage';
 import './CreatorApplicationModal.css';
 
+const PUBLIC_SITE_ORIGIN = 'https://mangateofilo.com';
+
+function absolutizePublicProfileImageUrl(raw) {
+  const u = String(raw || '').trim();
+  if (!u) return '';
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith('/') && !u.startsWith('//')) return `${PUBLIC_SITE_ORIGIN}${u}`;
+  return '';
+}
+
+function isLikelyExistingProfilePhotoUrl(raw) {
+  const u = String(raw || '').trim();
+  if (!u || u.length < 2 || u.length > 2048) return false;
+  if (/^https:\/\//i.test(u)) return true;
+  if (u.startsWith('/') && !u.startsWith('//')) return true;
+  return false;
+}
+
+/**
+ * @callback CreatorApplicationSubmit
+ * @param {object} payload
+ * @returns {Promise<void | { successTitle?: string, successBody?: string, afterDismiss?: () => void }>}
+ */
+
+/**
+ * @param {object} props
+ * @param {boolean} [props.open]
+ * @param {() => void} props.onClose
+ * @param {boolean} [props.loading]
+ * @param {object} [props.initial]
+ * @param {CreatorApplicationSubmit} props.onSubmit
+ * @param {'modal'|'page'} [props.variant]
+ * @param {'signup'|'mangaka_monetize'} [props.intent]
+ */
 export default function CreatorApplicationModal({
   open,
   onClose,
@@ -62,12 +98,19 @@ export default function CreatorApplicationModal({
   const [birthDate, setBirthDate] = useState('');
   const [birthDateDraft, setBirthDateDraft] = useState('');
   const [legalFullName, setLegalFullName] = useState('');
-  const [taxId, setTaxId] = useState('');
+  /** CPF do documento (máscara igual ao campo PIX) — omitido quando chave PIX já é CPF. */
+  const [documentCpfDraft, setDocumentCpfDraft] = useState('');
   const [payoutPixType, setPayoutPixType] = useState('cpf');
   const [pixKeyDraft, setPixKeyDraft] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [acceptFinancialTerms, setAcceptFinancialTerms] = useState(false);
-  const [localError, setLocalError] = useState('');
+  const [underageMonetizationModalOpen, setUnderageMonetizationModalOpen] = useState(false);
+  /** @type {React.MutableRefObject<(() => void) | null>} */
+  const successAfterDismissRef = useRef(null);
+  const [feedbackDialog, setFeedbackDialog] = useState(
+    /** @type {null | { kind: 'error'; message: string } | { kind: 'success'; title: string; body: string }} */
+    (null)
+  );
   const [creatorProfileImageFile, setCreatorProfileImageFile] = useState(null);
   const [creatorProfileImageUrl, setCreatorProfileImageUrl] = useState('');
   const [creatorProfileImageDims, setCreatorProfileImageDims] = useState(null);
@@ -79,10 +122,47 @@ export default function CreatorApplicationModal({
   const editorRef = useRef(null);
   const dragRef = useRef(null);
   const remoteProfileImageElRef = useRef(null);
+  const mangakaUnderageAutoRef = useRef(false);
+  const pageMonetizeMinorAutoRef = useRef(false);
+
+  const showFormError = useCallback((message) => {
+    setFeedbackDialog({
+      kind: 'error',
+      message: String(message || '').trim() || 'Não foi possível continuar.',
+    });
+  }, []);
+
+  const handleFeedbackErrorOk = useCallback(() => {
+    setFeedbackDialog(null);
+  }, []);
+
+  const handleFeedbackSuccessOk = useCallback(() => {
+    setFeedbackDialog(null);
+    const fn = successAfterDismissRef.current;
+    successAfterDismissRef.current = null;
+    if (typeof fn === 'function') {
+      queueMicrotask(() => {
+        try {
+          fn();
+        } catch (e) {
+          console.warn('[CreatorApplicationModal] afterDismiss:', e);
+        }
+      });
+    }
+    if (variant === 'modal') {
+      onClose();
+    }
+  }, [variant, onClose]);
+
+  const initialWantsMonetize = useMemo(
+    () => String(initial.monetizationPreference || 'publish_only').trim().toLowerCase() === 'monetize',
+    [initial.monetizationPreference]
+  );
 
   useEffect(() => {
     if (variant === 'modal' && !open) return;
-    setLocalError('');
+    setFeedbackDialog(null);
+    successAfterDismissRef.current = null;
     setDisplayName(String(initial.displayName || '').trim().slice(0, 60));
     setBio(String(initial.bio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH));
     setInstagramUrl(String(initial.instagramUrl || '').trim());
@@ -97,7 +177,7 @@ export default function CreatorApplicationModal({
     setBirthDate(isoOk);
     setBirthDateDraft(isoOk ? formatBirthDateIsoToBr(isoOk) : '');
     setLegalFullName(sanitizeLegalFullNameInput(String(initial.legalFullName || '').trim()));
-    setTaxId(sanitizeCpfDigitsInput(initial.taxId));
+    setDocumentCpfDraft(storedPixKeyToDraft('cpf', sanitizeCpfDigitsInput(initial.taxId)));
     const storedKey = String(initial.payoutInstructions || '').trim();
     const declared = String(initial.payoutPixType || '').trim().toLowerCase();
     let t = coercePayoutPixType(declared, storedKey);
@@ -140,8 +220,16 @@ export default function CreatorApplicationModal({
     [payoutPixType, pixKeyNormalized]
   );
 
-  const birthIsoEffective =
-    parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+  const documentCpfNormalized = useMemo(
+    () => normalizePixKeyForStorage('cpf', documentCpfDraft),
+    [documentCpfDraft]
+  );
+  const documentCpfFeedback = useMemo(
+    () => validateNormalizedPixKey('cpf', documentCpfNormalized),
+    [documentCpfNormalized]
+  );
+
+  const birthIsoEffective = parseBirthDateFlexible(birthDateDraft, birthDate);
   const ageInForm = birthIsoEffective ? ageFromBirthDateLocal(birthIsoEffective) : null;
   const minorInForm = ageInForm != null && ageInForm < 18;
   const creatorImageZoomBounds = useMemo(
@@ -164,17 +252,53 @@ export default function CreatorApplicationModal({
     }
   }, [open, variant, intent, minorInForm, monetizationPreference]);
 
+  useEffect(() => {
+    if (variant === 'modal' && !open) {
+      setUnderageMonetizationModalOpen(false);
+      mangakaUnderageAutoRef.current = false;
+      pageMonetizeMinorAutoRef.current = false;
+    }
+  }, [open, variant]);
+
+  /** Fluxo mangaká: abriu pedido de monetização mas já é menor pela data — explica na hora. */
+  useEffect(() => {
+    if (variant === 'modal' && !open) return;
+    if (intent !== 'mangaka_monetize' || !minorInForm) {
+      if (!minorInForm) mangakaUnderageAutoRef.current = false;
+      return;
+    }
+    if (mangakaUnderageAutoRef.current) return;
+    mangakaUnderageAutoRef.current = true;
+    setUnderageMonetizationModalOpen(true);
+  }, [open, variant, intent, minorInForm]);
+
+  /** /creators com perfil já em «monetizar» e menor — aviso ao entrar. */
+  useEffect(() => {
+    if (variant !== 'page') {
+      pageMonetizeMinorAutoRef.current = false;
+      return;
+    }
+    if (!minorInForm || !initialWantsMonetize) {
+      if (!minorInForm) pageMonetizeMinorAutoRef.current = false;
+      return;
+    }
+    if (pageMonetizeMinorAutoRef.current) return;
+    pageMonetizeMinorAutoRef.current = true;
+    setUnderageMonetizationModalOpen(true);
+  }, [variant, minorInForm, initialWantsMonetize]);
+
   const handleSelectCreatorPhoto = useCallback((file) => {
     if (!file) return;
     const fileError = validateCreatorProfileImageFile(file);
     if (fileError) {
-      setLocalError(fileError);
+      showFormError(fileError);
       return;
     }
-    setLocalError('');
+    setFeedbackDialog(null);
+    successAfterDismissRef.current = null;
     setCreatorProfileImageAdjustment(normalizeCreatorProfileAdjustment());
     setCreatorProfileImageFile(file);
-  }, []);
+  }, [showFormError]);
 
   const handleStartImageDrag = useCallback((event) => {
     if (!creatorProfileImageDims || !editorRef.current || !creatorProfileImageUrl) return;
@@ -210,7 +334,14 @@ export default function CreatorApplicationModal({
       const prev = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       const onKey = (e) => {
-        if (e.key === 'Escape' && !loading) onClose();
+        if (e.key !== 'Escape' || loading) return;
+        if (feedbackDialog) {
+          e.preventDefault();
+          if (feedbackDialog.kind === 'error') handleFeedbackErrorOk();
+          else handleFeedbackSuccessOk();
+          return;
+        }
+        onClose();
       };
       window.addEventListener('keydown', onKey);
       return () => {
@@ -219,11 +350,26 @@ export default function CreatorApplicationModal({
       };
     }
     const onKey = (e) => {
-      if (e.key === 'Escape' && !loading) onClose();
+      if (e.key !== 'Escape' || loading) return;
+      if (feedbackDialog) {
+        e.preventDefault();
+        if (feedbackDialog.kind === 'error') handleFeedbackErrorOk();
+        else handleFeedbackSuccessOk();
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, variant, loading, onClose]);
+  }, [
+    open,
+    variant,
+    loading,
+    onClose,
+    feedbackDialog,
+    handleFeedbackErrorOk,
+    handleFeedbackSuccessOk,
+  ]);
 
   useEffect(() => {
     if (variant === 'modal' && !open) return undefined;
@@ -253,7 +399,7 @@ export default function CreatorApplicationModal({
         })
         .catch((err) => {
           if (!cancelled) {
-            setLocalError(err?.message || 'Nao foi possivel preparar a foto do creator.');
+            showFormError(err?.message || 'Nao foi possivel preparar a foto do creator.');
           }
         });
 
@@ -264,10 +410,10 @@ export default function CreatorApplicationModal({
       };
     }
 
-    const existing = String(initial.existingProfileImageUrl || '').trim();
-    const hasExisting =
-      /^https:\/\//i.test(existing) && existing.length >= 12 && existing.length <= 2048;
-    if (!hasExisting) {
+    const existingRaw = String(initial.existingProfileImageUrl || '').trim();
+    const hasExisting = isLikelyExistingProfilePhotoUrl(existingRaw);
+    const loadUrl = absolutizePublicProfileImageUrl(existingRaw);
+    if (!hasExisting || !loadUrl) {
       setCreatorProfileImageUrl('');
       setCreatorProfileImageDims(null);
       setCreatorProfilePreviewUrl('');
@@ -276,9 +422,9 @@ export default function CreatorApplicationModal({
     }
 
     let cancelled = false;
-    setCreatorProfileImageUrl(existing);
+    setCreatorProfileImageUrl(loadUrl);
     const cropFromInitial = initial.profileImageCrop;
-    loadCreatorProfileImageFromUrl(existing)
+    loadCreatorProfileImageFromUrl(loadUrl)
       .then((img) => {
         if (cancelled) return;
         remoteProfileImageElRef.current = img;
@@ -303,8 +449,9 @@ export default function CreatorApplicationModal({
       cancelled = true;
       remoteProfileImageElRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [creatorProfileImageFile, initial.existingProfileImageUrl, initial.profileImageCrop, open, variant]);
+    // creatorProfileImageAdjustment: só leitura inicial ao carregar arquivo; previews atualizam noutro efeito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps mínimas para não reprocessar imagem a cada zoom
+  }, [creatorProfileImageFile, initial.existingProfileImageUrl, initial.profileImageCrop, open, variant, showFormError]);
 
   useEffect(() => {
     if (creatorProfileImageFile) {
@@ -362,40 +509,38 @@ export default function CreatorApplicationModal({
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    setLocalError('');
+    setFeedbackDialog(null);
+    successAfterDismissRef.current = null;
     if (String(displayName || '').trim().length < 3) {
-      setLocalError('Informe um nome artístico com pelo menos 3 caracteres.');
+      showFormError('Informe um nome artístico com pelo menos 3 caracteres.');
       return;
     }
     const bioTrim = String(bio || '').trim();
     const bioMin =
       monetizationPreference === 'monetize' ? CREATOR_BIO_MIN_LENGTH : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
     if (bioTrim.length < bioMin) {
-      setLocalError(`Escreva uma bio com pelo menos ${bioMin} caracteres.`);
+      showFormError(`Escreva uma bio com pelo menos ${bioMin} caracteres.`);
       return;
     }
     if (bioTrim.length > CREATOR_BIO_MAX_LENGTH) {
-      setLocalError(`A bio pode ter no máximo ${CREATOR_BIO_MAX_LENGTH} caracteres.`);
+      showFormError(`A bio pode ter no máximo ${CREATOR_BIO_MAX_LENGTH} caracteres.`);
       return;
     }
-    const existingPhotoUrl = String(initial.existingProfileImageUrl || '').trim();
-    const hasExistingHttpsPhoto =
-      /^https:\/\//i.test(existingPhotoUrl) &&
-      existingPhotoUrl.length >= 12 &&
-      existingPhotoUrl.length <= 2048;
-    if (!creatorProfileImageFile && !hasExistingHttpsPhoto) {
-      setLocalError('Selecione a foto que vai virar seu perfil de creator.');
+    const existingPhotoRaw = String(initial.existingProfileImageUrl || '').trim();
+    const hasExistingProfilePhoto = isLikelyExistingProfilePhotoUrl(existingPhotoRaw);
+    const existingPhotoAbsUrl = absolutizePublicProfileImageUrl(existingPhotoRaw);
+    if (!creatorProfileImageFile && !hasExistingProfilePhoto) {
+      showFormError('Selecione a foto que vai virar seu perfil de creator.');
       return;
     }
-    const birthIsoFinal =
-      parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+    const birthIsoFinal = parseBirthDateFlexible(birthDateDraft, birthDate);
     if (!parseBirthDateLocal(birthIsoFinal)) {
-      setLocalError('Informe sua data de nascimento em dia/mês/ano (ex.: 28/12/2001).');
+      showFormError('Informe sua data de nascimento em dia/mês/ano (ex.: 28/12/2001).');
       return;
     }
     const age = ageFromBirthDateLocal(birthIsoFinal);
     if (age == null) {
-      setLocalError('Data de nascimento inválida.');
+      showFormError('Data de nascimento inválida.');
       return;
     }
     const wantsMonetize = monetizationPreference === 'monetize';
@@ -405,41 +550,57 @@ export default function CreatorApplicationModal({
       requireOne: true,
     });
     if (!socialValidation.ok) {
-      setLocalError(socialValidation.message);
+      showFormError(socialValidation.message);
       return;
     }
     let pixNorm = '';
+    let docCpfDigits = '';
     if (wantsMonetize) {
       if (age < 18) {
-        setLocalError('Menores de 18 anos não podem solicitar monetização nesta plataforma.');
+        showFormError('Menores de 18 anos não podem solicitar monetização nesta plataforma.');
         return;
       }
       if (!legalFullNameHasMinThreeWords(legalFullName)) {
-        setLocalError('Para monetizar, informe nome completo legal com pelo menos três partes (ex.: Nome Sobrenome Filho).');
+        showFormError(
+          'Para monetizar, informe nome completo legal com pelo menos três partes (ex.: Nome Sobrenome Filho).'
+        );
         return;
       }
-      const cpfDigits = sanitizeCpfDigitsInput(taxId);
-      if (!isValidBrazilianCpfDigits(cpfDigits)) {
-        setLocalError('Para monetizar, informe um CPF válido (documento).');
+      docCpfDigits =
+        payoutPixType === 'cpf'
+          ? normalizePixKeyForStorage('cpf', pixKeyDraft)
+          : documentCpfNormalized;
+      if (payoutPixType !== 'cpf') {
+        if (!documentCpfFeedback.ok) {
+          showFormError(
+            documentCpfNormalized.length === 0
+              ? 'Informe o CPF do documento (mesmo formato do PIX).'
+              : documentCpfFeedback.message || 'CPF do documento inválido.'
+          );
+          return;
+        }
+      }
+      if (!isValidBrazilianCpfDigits(docCpfDigits)) {
+        showFormError('Para monetizar, informe um CPF válido (documento).');
         return;
       }
       pixNorm = normalizePixKeyForStorage(payoutPixType, pixKeyDraft);
       const pixFb = validateNormalizedPixKey(payoutPixType, pixNorm);
       if (!pixFb.ok) {
-        setLocalError(pixFb.message || 'Chave PIX inválida.');
+        showFormError(pixFb.message || 'Chave PIX inválida.');
         return;
       }
       if (!acceptFinancialTerms) {
-        setLocalError('Aceite os termos financeiros e de repasse para solicitar monetização.');
+        showFormError('Aceite os termos financeiros e de repasse para solicitar monetização.');
         return;
       }
     }
     if (!termsAccepted) {
-      setLocalError('Aceite os termos do programa de criadores.');
+      showFormError('Aceite os termos do programa de criadores.');
       return;
     }
     try {
-      await onSubmit({
+      const submitResult = await onSubmit({
         displayName: String(displayName || '').trim(),
         bioShort: bioTrim,
         birthDate: birthIsoFinal,
@@ -448,22 +609,29 @@ export default function CreatorApplicationModal({
         monetizationPreference,
         acceptTerms: true,
         legalFullName: wantsMonetize ? String(legalFullName || '').trim() : '',
-        taxId: wantsMonetize ? sanitizeCpfDigitsInput(taxId) : '',
+        taxId: wantsMonetize ? docCpfDigits : '',
         payoutInstructions: wantsMonetize ? pixNorm : '',
         payoutPixType: wantsMonetize ? payoutPixType : '',
         acceptFinancialTerms: wantsMonetize ? acceptFinancialTerms === true : false,
         creatorProfileImageFile,
         creatorProfileImageAdjustment,
-        profileImageUrl: !creatorProfileImageFile && hasExistingHttpsPhoto ? existingPhotoUrl : undefined,
+        profileImageUrl: !creatorProfileImageFile && hasExistingProfilePhoto ? existingPhotoAbsUrl : undefined,
         profileImageCrop:
-          !creatorProfileImageFile && hasExistingHttpsPhoto
+          !creatorProfileImageFile && hasExistingProfilePhoto
             ? creatorProfileImageDims
               ? serializeCreatorProfileCrop(creatorProfileImageAdjustment, creatorProfileImageDims)
               : initial.profileImageCrop || undefined
             : undefined,
       });
+      const r = submitResult && typeof submitResult === 'object' ? submitResult : null;
+      const title = String(r?.successTitle || '').trim() || 'Concluído';
+      const body =
+        String(r?.successBody || '').trim() ||
+        'Sua solicitação foi registrada. Você pode fechar esta janela quando quiser.';
+      successAfterDismissRef.current = typeof r?.afterDismiss === 'function' ? r.afterDismiss : null;
+      setFeedbackDialog({ kind: 'success', title, body });
     } catch (err) {
-      setLocalError(err?.message || 'Não foi possível enviar agora.');
+      showFormError(err?.message || 'Não foi possível enviar agora.');
     }
   }, [
     displayName,
@@ -471,7 +639,9 @@ export default function CreatorApplicationModal({
     birthDate,
     birthDateDraft,
     legalFullName,
-    taxId,
+    documentCpfDraft,
+    documentCpfNormalized,
+    documentCpfFeedback,
     payoutPixType,
     pixKeyDraft,
     monetizationPreference,
@@ -485,14 +655,106 @@ export default function CreatorApplicationModal({
     initial.existingProfileImageUrl,
     initial.profileImageCrop,
     creatorProfileImageDims,
+    showFormError,
   ]);
 
   if (variant === 'modal' && !open) return null;
 
+  const underageMonetizationLayer =
+    underageMonetizationModalOpen &&
+    createPortal(
+      <div
+        className="creator-app-underage-overlay"
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setUnderageMonetizationModalOpen(false);
+        }}
+      >
+        <div
+          className="creator-app-underage-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="creator-app-underage-title"
+        >
+          <h2 id="creator-app-underage-title" className="creator-app-underage-dialog__title">
+            Monetização indisponível (idade)
+          </h2>
+          <div className="creator-app-underage-dialog__body">
+            <p>
+              Na MangaTeofilo, <strong>repasses financeiros</strong> (CPF, chave PIX, contrato de criador) exigem{' '}
+              <strong>maioridade — 18 anos ou mais</strong>, por lei e política da plataforma.
+            </p>
+            <p>
+              Você pode continuar <strong>publicando</strong> e montando seu perfil de criador normalmente. Quando for
+              maior de idade, volte e solicite monetização aqui ou no seu perfil.
+            </p>
+            <p className="creator-app-modal__hint">
+              Verifique se a <strong>data de nascimento</strong> do formulário está correta (formato dia/mês/ano). Dados
+              errados também impedem liberar esta etapa.
+            </p>
+          </div>
+          <div className="creator-app-underage-dialog__actions">
+            <button
+              type="button"
+              className="creator-app-modal__submit"
+              onClick={() => setUnderageMonetizationModalOpen(false)}
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+
+  const feedbackLayer =
+    feedbackDialog &&
+    createPortal(
+      <div
+        className="creator-app-feedback-overlay"
+        role="presentation"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && feedbackDialog.kind === 'error') handleFeedbackErrorOk();
+        }}
+      >
+        <div
+          className={`creator-app-feedback-dialog creator-app-feedback-dialog--${feedbackDialog.kind}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="creator-app-feedback-title"
+        >
+          <h2 id="creator-app-feedback-title" className="creator-app-feedback-dialog__title">
+            {feedbackDialog.kind === 'error' ? 'Revise o formulário' : feedbackDialog.title}
+          </h2>
+          <div className="creator-app-feedback-dialog__body">
+            <p>{feedbackDialog.kind === 'error' ? feedbackDialog.message : feedbackDialog.body}</p>
+          </div>
+          <div className="creator-app-feedback-dialog__actions">
+            <button
+              type="button"
+              className="creator-app-modal__submit"
+              onClick={feedbackDialog.kind === 'error' ? handleFeedbackErrorOk : handleFeedbackSuccessOk}
+            >
+              {feedbackDialog.kind === 'error' ? 'Entendi' : 'Continuar'}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+
   const isMangakaMonetizeIntent = intent === 'mangaka_monetize';
   const monetizationAllowed = ageInForm != null && ageInForm >= 18;
-  const showMonetizationCompliance = monetizationPreference === 'monetize' && monetizationAllowed;
-  const monetizeToggleDisabled = minorInForm;
+  /** Mostrar bloco legal sempre em «monetizar», exceto menor confirmado; submit ainda exige 18+ e data válida. */
+  const showMonetizationCompliance = monetizationPreference === 'monetize' && !minorInForm;
+
+  const handleMonetizeToggleClick = () => {
+    if (minorInForm) {
+      setUnderageMonetizationModalOpen(true);
+      return;
+    }
+    setMonetizationPreference('monetize');
+  };
 
   const modalCard = (
     <div
@@ -516,7 +778,7 @@ export default function CreatorApplicationModal({
           type="button"
           className="creator-app-modal__close"
           aria-label="Fechar"
-          disabled={loading}
+          disabled={loading || !!feedbackDialog}
           onClick={onClose}
         >
           ×
@@ -524,12 +786,6 @@ export default function CreatorApplicationModal({
       </div>
 
       <div className="creator-app-modal__body">
-        {localError ? (
-          <p className="creator-app-modal__hint" style={{ color: '#fca5a5' }}>
-            {localError}
-          </p>
-        ) : null}
-
         <section className="creator-app-photo-card" aria-label="Foto publica do creator">
           <div className="creator-app-photo-card__head">
             <div>
@@ -558,10 +814,10 @@ export default function CreatorApplicationModal({
             <span>Saida WebP comprimida (~250 a 400 KB)</span>
             <span>Vai para o ar junto com o perfil de creator aprovado</span>
           </div>
-          {String(initial.existingProfileImageUrl || '').trim() && !creatorProfileImageFile ? (
+          {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl) && !creatorProfileImageFile ? (
             <p className="creator-app-modal__hint" style={{ marginTop: 8 }}>
-              Sua foto já enviada ao perfil foi carregada abaixo. Use &quot;Escolher foto&quot; só se quiser trocar por
-              outra imagem.
+              Sua foto atual do perfil será usada neste envio. Use &quot;Escolher foto&quot; só se quiser trocar por outra
+              imagem.
             </p>
           ) : null}
 
@@ -590,8 +846,16 @@ export default function CreatorApplicationModal({
                   </>
                 ) : (
                   <div className="creator-app-photo-empty">
-                    <strong>Envie uma foto para comecar</strong>
-                    <span>Retrato 3:4 para o perfil e hero reutilizado no estilo Manga Plus Creators.</span>
+                    <strong>
+                      {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl)
+                        ? 'Carregando sua foto do perfil…'
+                        : 'Envie uma foto para comecar'}
+                    </strong>
+                    <span>
+                      {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl)
+                        ? 'Se a prévia não abrir, use «Escolher foto» — o envio ainda pode usar a URL do seu perfil.'
+                        : 'Retrato 3:4 para o perfil e hero reutilizado no estilo Manga Plus Creators.'}
+                    </span>
                   </div>
                 )}
               </div>
@@ -703,13 +967,26 @@ export default function CreatorApplicationModal({
             value={birthDateDraft}
             disabled={loading}
             onChange={(e) => {
-              const d = normalizeBirthDateBrTyping(e.target.value);
+              const raw = String(e.target.value || '');
+              const rawTrim = raw.trim();
+              if (/^\d{4}-\d{2}-\d{2}$/.test(rawTrim) && parseBirthDateLocal(rawTrim)) {
+                setBirthDate(rawTrim);
+                setBirthDateDraft(formatBirthDateIsoToBr(rawTrim));
+                return;
+              }
+              const d = normalizeBirthDateBrTyping(raw);
               setBirthDateDraft(d);
               const iso = parseBirthDateBr(d);
               if (iso) setBirthDate(iso);
               else if (!d.replace(/\D/g, '').length) setBirthDate('');
             }}
             onBlur={() => {
+              const trimmed = String(birthDateDraft || '').trim();
+              if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed) && parseBirthDateLocal(trimmed)) {
+                setBirthDate(trimmed);
+                setBirthDateDraft(formatBirthDateIsoToBr(trimmed));
+                return;
+              }
               const iso = parseBirthDateBr(birthDateDraft);
               if (iso) {
                 setBirthDate(iso);
@@ -746,8 +1023,7 @@ export default function CreatorApplicationModal({
                 <button
                   type="button"
                   className={`creator-app-modal__toggle${monetizationPreference === 'monetize' ? ' is-on' : ''}`}
-                  disabled={monetizeToggleDisabled}
-                  onClick={() => setMonetizationPreference('monetize')}
+                  onClick={handleMonetizeToggleClick}
                 >
                   Quero monetizar
                 </button>
@@ -757,7 +1033,7 @@ export default function CreatorApplicationModal({
                   ? 'Você pode publicar, mas não pode monetizar devido à idade. Conteúdo e repasse financeiro ficam separados por segurança jurídica.'
                   : monetizationPreference === 'monetize' && !monetizationAllowed
                     ? 'Preencha uma data de nascimento válida (18+) para enviar com monetização — os dados legais aparecem abaixo.'
-                    : !parseBirthDateLocal(birthDate)
+                    : !birthIsoEffective
                       ? 'Informe a data de nascimento para concluir a candidatura.'
                       : monetizationPreference === 'monetize'
                         ? 'Publicar e receber via plataforma são caminhos diferentes: com monetização, pedimos dados legais e de repasse.'
@@ -780,18 +1056,6 @@ export default function CreatorApplicationModal({
                 autoComplete="name"
               />
             </label>
-            <label className="creator-app-modal__label">
-              CPF (11 dígitos, só números)
-              <input
-                className="creator-app-modal__input"
-                value={taxId}
-                onChange={(e) => setTaxId(sanitizeCpfDigitsInput(e.target.value))}
-                placeholder="00000000000"
-                autoComplete="off"
-                inputMode="numeric"
-                maxLength={11}
-              />
-            </label>
             <div className="creator-app-modal__pix-block">
               <p className="creator-app-modal__section-title" style={{ marginBottom: 8 }}>
                 Chave PIX (repasse manual)
@@ -803,9 +1067,30 @@ export default function CreatorApplicationModal({
                   value={payoutPixType}
                   disabled={loading}
                   onChange={(e) => {
-                    setPayoutPixType(e.target.value);
-                    setPixKeyDraft('');
-                    setLocalError('');
+                    const next = e.target.value;
+                    const prev = payoutPixType;
+                    setFeedbackDialog(null);
+                    successAfterDismissRef.current = null;
+                    if (next !== prev) {
+                      if (next === 'cpf') {
+                        const docDigits = normalizePixKeyForStorage('cpf', documentCpfDraft);
+                        if (docDigits.length === 11 && isValidBrazilianCpfDigits(docDigits)) {
+                          setPixKeyDraft(formatPixCpfDraft(docDigits));
+                        } else {
+                          setPixKeyDraft('');
+                        }
+                      } else if (prev === 'cpf') {
+                        const pixDigits = normalizePixKeyForStorage('cpf', pixKeyDraft);
+                        const docDigits = normalizePixKeyForStorage('cpf', documentCpfDraft);
+                        if (pixDigits.length === 11 && docDigits.length === 0) {
+                          setDocumentCpfDraft(formatPixCpfDraft(pixDigits));
+                        }
+                        setPixKeyDraft('');
+                      } else {
+                        setPixKeyDraft('');
+                      }
+                      setPayoutPixType(next);
+                    }
                   }}
                 >
                   {PAYOUT_PIX_TYPE_OPTIONS.map((o) => (
@@ -824,15 +1109,18 @@ export default function CreatorApplicationModal({
                       ? 'Telefone (com DDD)'
                       : 'Chave aleatória (UUID)'}
                 {payoutPixType === 'random' ? (
-                  <textarea
-                    className="creator-app-modal__textarea creator-app-modal__textarea--pix-random"
+                  <input
+                    type="text"
+                    className="creator-app-modal__input creator-app-modal__input--pix-random"
                     value={pixKeyDraft}
                     disabled={loading}
-                    onChange={(e) => setPixKeyDraft(e.target.value)}
-                    placeholder={pixKeyPlaceholder('random')}
-                    rows={2}
+                    maxLength={36}
+                    inputMode="text"
+                    autoCapitalize="none"
                     spellCheck={false}
                     autoComplete="off"
+                    onChange={(e) => setPixKeyDraft(applyPixDraftChange('random', e.target.value))}
+                    placeholder={pixKeyPlaceholder('random')}
                   />
                 ) : (
                   <input
@@ -862,6 +1150,39 @@ export default function CreatorApplicationModal({
                   O valor enviado ao servidor fica normalizado (sem pontuação de CPF/telefone).
                 </p>
               )}
+              {payoutPixType === 'cpf' ? (
+                <p className="creator-app-modal__hint" style={{ marginTop: 10 }}>
+                  Este CPF é o mesmo do documento para repasse — não pedimos um segundo campo.
+                </p>
+              ) : null}
+              {payoutPixType !== 'cpf' ? (
+                <label className="creator-app-modal__label" style={{ marginTop: 14 }}>
+                  CPF (documento — mesmo formato do PIX)
+                  <input
+                    type="text"
+                    className="creator-app-modal__input"
+                    value={documentCpfDraft}
+                    disabled={loading}
+                    onChange={(e) => setDocumentCpfDraft(applyPixDraftChange('cpf', e.target.value))}
+                    placeholder={pixKeyPlaceholder('cpf')}
+                    autoComplete="off"
+                    inputMode="numeric"
+                  />
+                  {documentCpfDraft.replace(/\D/g, '').length > 0 ? (
+                    documentCpfFeedback.ok ? (
+                      <p className="creator-app-modal__pix-feedback creator-app-modal__pix-feedback--ok" role="status">
+                        CPF do documento válido.
+                      </p>
+                    ) : (
+                      <p className="creator-app-modal__pix-feedback creator-app-modal__pix-feedback--err" role="alert">
+                        {documentCpfFeedback.message}
+                      </p>
+                    )
+                  ) : (
+                    <p className="creator-app-modal__hint">Mesma máscara do CPF na chave PIX (só números).</p>
+                  )}
+                </label>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -937,7 +1258,12 @@ export default function CreatorApplicationModal({
           </label>
         ) : null}
 
-        <button type="button" className="creator-app-modal__submit" disabled={loading} onClick={handleSubmit}>
+        <button
+          type="button"
+          className="creator-app-modal__submit"
+          disabled={loading || !!feedbackDialog}
+          onClick={handleSubmit}
+        >
           {loading
             ? 'Enviando...'
             : monetizationPreference === 'monetize'
@@ -949,19 +1275,31 @@ export default function CreatorApplicationModal({
   );
 
   if (variant === 'page') {
-    return <div className="creator-app-modal-page-shell">{modalCard}</div>;
+    return (
+      <>
+        <div className="creator-app-modal-page-shell">{modalCard}</div>
+        {underageMonetizationLayer}
+        {feedbackLayer}
+      </>
+    );
   }
 
-  return createPortal(
-    <div
-      className="creator-app-modal-overlay"
-      role="presentation"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !loading) onClose();
-      }}
-    >
-      {modalCard}
-    </div>,
-    document.body
+  return (
+    <>
+      {createPortal(
+        <div
+          className="creator-app-modal-overlay"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !loading && !feedbackDialog) onClose();
+          }}
+        >
+          {modalCard}
+        </div>,
+        document.body
+      )}
+      {underageMonetizationLayer}
+      {feedbackLayer}
+    </>
   );
 }

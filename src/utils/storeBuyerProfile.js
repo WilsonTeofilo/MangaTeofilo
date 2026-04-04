@@ -35,3 +35,21 @@ export function storeBuyerProfileIsComplete(raw) {
   return getStoreBuyerProfileMissingFields(raw).length === 0;
 }
 
+/**
+ * Para gravar no RTDB: campos opcionais incompletos viram vazio (evita validação rules com CPF/CEP a meio).
+ */
+export function sanitizeBuyerProfileForSave(raw) {
+  const p = normalizeBuyerProfile(raw);
+  const cpf = p.cpf;
+  const phone = p.phone;
+  const postalCode = p.postalCode;
+  const state = p.state;
+  return {
+    ...p,
+    cpf: cpf.length === 11 ? cpf : '',
+    phone: phone.length >= 10 && phone.length <= 11 ? phone : '',
+    postalCode: postalCode.length === 8 ? postalCode : '',
+    state: state.length === 2 ? state : '',
+  };
+}
+

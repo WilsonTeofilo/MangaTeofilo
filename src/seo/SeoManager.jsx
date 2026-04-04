@@ -5,7 +5,7 @@ const SITE_NAME = 'MangaTeofilo';
 const SITE_URL = 'https://mangateofilo.com';
 const DEFAULT_IMAGE_PATH = '/assets/fotos/shito.jpg';
 const NOINDEX_ROUTE_PREFIXES = ['/admin', '/creator/'];
-const NOINDEX_EXACT_ROUTES = new Set(['/biblioteca', '/perfil', '/login', '/loja/carrinho', '/loja/pedidos']);
+const NOINDEX_EXACT_ROUTES = new Set(['/biblioteca', '/perfil', '/login', '/loja/carrinho', '/loja/pedidos', '/pedidos']);
 
 function absUrl(pathOrUrl) {
   const raw = String(pathOrUrl || DEFAULT_IMAGE_PATH).trim();
@@ -100,7 +100,7 @@ function buildSeo(pathname) {
   if (clean === '/print-on-demand') {
     return {
       ...defs,
-      title: `Produzir manga fisico | ${SITE_NAME}`,
+      title: `Lance sua linha | ${SITE_NAME}`,
       description:
         'Manga fisico (tankobon e meio-tankob): venda na loja com repasse, encomenda pessoal ou vitrine sem monetizacao. Novo autor? Programa CREATORS na MangaTeofilo.',
     };

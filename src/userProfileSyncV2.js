@@ -49,7 +49,7 @@ export async function cleanupDeprecatedUsuarioFields(uid) {
   }
 }
 
-async function sincronizarPublico(uid, userName, userAvatar, accountType, signupIntent = 'reader') {
+async function sincronizarPublico(uid, userName, userAvatar, accountType, signupIntent = 'reader', userHandle = '') {
   const publicoRef = ref(db, `usuarios_publicos/${uid}`);
   const publicoSnap = await get(publicoRef);
   const patch = buildUsuarioPublicoPatch(publicoSnap.exists() ? publicoSnap.val() || {} : {}, {
@@ -58,6 +58,7 @@ async function sincronizarPublico(uid, userName, userAvatar, accountType, signup
     userAvatar,
     accountType,
     signupIntent,
+    userHandle: String(userHandle || '').trim().toLowerCase(),
     now: Date.now(),
   });
   if (Object.keys(patch).length) {
@@ -88,7 +89,8 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
       record.userName,
       record.userAvatar,
       record.accountType,
-      record.signupIntent
+      record.signupIntent,
+      ''
     );
 
     if (status === 'ativo') {
@@ -113,18 +115,25 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   const avatarPub = patch.userAvatar || atual.userAvatar || avatar;
   const accountPub = patch.accountType || atual.accountType || 'comum';
   const signupIntentPub = patch.signupIntent || atual.signupIntent || 'reader';
-  await sincronizarPublico(usuario.uid, nomePub, avatarPub, accountPub, signupIntentPub);
+  const handlePub = String(patch.userHandle || atual.userHandle || '').trim().toLowerCase();
+  await sincronizarPublico(usuario.uid, nomePub, avatarPub, accountPub, signupIntentPub, handlePub);
 
   return { ...atual, ...patch };
 }
 
 export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) {
   if (!usuario?.uid) return null;
+  const userRef = ref(db, `usuarios/${usuario.uid}`);
+  const snapshot = await get(userRef);
+  const atual = snapshot.exists() ? snapshot.val() || {} : {};
+  const persistedAvatar = String(atual.userAvatar || '').trim();
   const fallbackAvatar = usuario.photoURL || listaAvatares[0] || AVATAR_FALLBACK;
+  /** Nunca preferir Auth sobre avatar já salvo no RTDB (ex.: preset da plataforma vs foto Google). */
+  const fotoParaRegistro = persistedAvatar || fallbackAvatar;
   const perfil = await ensureUsuarioRecord(
     usuario,
     usuario.displayName || 'Guerreiro',
-    fallbackAvatar,
+    fotoParaRegistro,
     listaAvatares.length ? listaAvatares : [fallbackAvatar],
     'ativo'
   );

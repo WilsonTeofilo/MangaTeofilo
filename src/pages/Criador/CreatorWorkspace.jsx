@@ -1,9 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 
+import CreatorDashboardPanel from '../../components/creator/CreatorDashboardPanel';
+import CreatorLevelBadgeCard from '../../components/creator/CreatorLevelBadgeCard';
+import CreatorUnlockCelebrationModal from '../../components/creator/CreatorUnlockCelebrationModal';
 import { CREATOR_BIO_MIN_LENGTH, CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY } from '../../constants';
 import { db } from '../../services/firebase';
+import { computeCreatorLevel, metricsFromUsuarioRow } from '../../utils/creatorProgression';
+import {
+  buildEngagementCycleViewModel,
+  processEngagementCycleTick,
+} from '../../utils/creatorEngagementCycle';
 import {
   buildCreatorOnboardingSteps,
   creatorOnboardingIsRequiredComplete,
@@ -24,6 +33,9 @@ export default function CreatorWorkspace({ user, perfil }) {
   const [obrasVal, setObrasVal] = useState({});
   const [capsVal, setCapsVal] = useState({});
   const [produtosVal, setProdutosVal] = useState({});
+  const [usuarioLive, setUsuarioLive] = useState(null);
+  const [celebrationOpen, setCelebrationOpen] = useState(false);
+  const prevLevelRef = useRef(null);
 
   useEffect(() => {
     if (!user?.uid) return () => {};
@@ -36,12 +48,23 @@ export default function CreatorWorkspace({ user, perfil }) {
     const unsubProdutos = onValue(ref(db, 'loja/produtos'), (snap) => {
       setProdutosVal(snap.exists() ? snap.val() : {});
     });
+    const unsubMe = onValue(ref(db, `usuarios/${user.uid}`), (snap) => {
+      setUsuarioLive(snap.exists() ? snap.val() : null);
+    });
     return () => {
       unsubObras();
       unsubCaps();
       unsubProdutos();
+      unsubMe();
     };
   }, [user?.uid]);
+
+  const dashMetrics = useMemo(() => {
+    const row = usuarioLive && typeof usuarioLive === 'object' ? usuarioLive : perfil;
+    return metricsFromUsuarioRow(row);
+  }, [usuarioLive, perfil]);
+
+  const creatorLevelDash = useMemo(() => computeCreatorLevel(dashMetrics), [dashMetrics]);
 
   const metrics = useMemo(() => {
     const uid = String(user?.uid || '').trim();
@@ -59,6 +82,49 @@ export default function CreatorWorkspace({ user, perfil }) {
       produtos,
     };
   }, [user?.uid, obrasVal, capsVal, produtosVal]);
+
+  const cycleVm = useMemo(
+    () =>
+      buildEngagementCycleViewModel(
+        usuarioLive?.engagementCycle,
+        dashMetrics,
+        metrics.caps,
+        user?.uid
+      ),
+    [usuarioLive?.engagementCycle, dashMetrics, metrics.caps, user?.uid]
+  );
+
+  useEffect(() => {
+    if (!user?.uid || !usuarioLive || typeof usuarioLive !== 'object') return undefined;
+    const tick = processEngagementCycleTick({
+      engagementCycle: usuarioLive.engagementCycle,
+      metrics: dashMetrics,
+      caps: metrics.caps,
+      uid: user.uid,
+    });
+    if (!tick.changed) return undefined;
+    const uid = user.uid;
+    commitCreatorEngagementCycleTick().catch(() => {});
+    return undefined;
+  }, [user?.uid, usuarioLive, dashMetrics, metrics.caps]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const k = `mtf_l2_celebration_done_${user.uid}`;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(k)) return;
+    const prev = prevLevelRef.current;
+    if (prev !== null && prev < 2 && creatorLevelDash >= 2) {
+      setCelebrationOpen(true);
+    }
+    prevLevelRef.current = creatorLevelDash;
+  }, [user?.uid, creatorLevelDash]);
+
+  const closeCelebration = () => {
+    setCelebrationOpen(false);
+    if (user?.uid && typeof localStorage !== 'undefined') {
+      localStorage.setItem(`mtf_l2_celebration_done_${user.uid}`, '1');
+    }
+  };
 
   const onboardingSteps = useMemo(
     () =>
@@ -102,7 +168,25 @@ export default function CreatorWorkspace({ user, perfil }) {
 
   return (
     <main className="creator-workspace-page">
-      <section className="creator-workspace-shell">
+      <CreatorUnlockCelebrationModal open={celebrationOpen} onClose={closeCelebration} />
+
+      <section className="creator-workspace-shell" id="creator-level">
+        <CreatorDashboardPanel
+          followers={dashMetrics.followers}
+          views={dashMetrics.views}
+          likes={dashMetrics.likes}
+          cycleVm={cycleVm}
+          variant="full"
+        />
+
+        <div className="creator-workspace-level-row">
+          <CreatorLevelBadgeCard
+            followers={dashMetrics.followers}
+            views={dashMetrics.views}
+            likes={dashMetrics.likes}
+          />
+        </div>
+
         <header className="creator-workspace-hero">
           <div>
             <p className="creator-workspace-eyebrow">Creator</p>
@@ -288,11 +372,16 @@ export default function CreatorWorkspace({ user, perfil }) {
             <ul className="creator-pillar-list">
               <li>{metrics.produtos.length} produto(s) associado(s) ao criador</li>
               <li>{perfil?.creatorOnboardingStoreSkipped ? 'Loja marcada como opcional por enquanto' : 'Loja disponivel para expandir sua operacao'}</li>
-              <li>As acoes continuam filtradas pelo seu creatorId</li>
+              <li>Acompanhe compras na vitrine e lotes de mangá físico em Meus pedidos</li>
             </ul>
-            <button type="button" className="creator-workspace-btn" onClick={() => navigate('/creator/loja')}>
-              Abrir operacao
-            </button>
+            <div className="creator-pillar-actions">
+              <button type="button" className="creator-workspace-btn" onClick={() => navigate('/creator/loja')}>
+                Abrir operacao
+              </button>
+              <button type="button" className="creator-workspace-btn" onClick={() => navigate('/pedidos?tab=fisico')}>
+                Status de pedidos
+              </button>
+            </div>
           </article>
           ) : null}
         </section>

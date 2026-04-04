@@ -9,6 +9,7 @@
   },
   "scripts": {
     "lint": "echo \"No lint configured for functions\"",
+    "test": "node --test",
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {

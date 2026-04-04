@@ -1,13 +1,14 @@
 // src/pages/Perfil/Perfil.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { updateProfile } from 'firebase/auth';
-import { ref, update, get, onValue } from 'firebase/database';
+import { ref, update, get, onValue, set, remove } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db, functions, storage } from '../../services/firebase';
 import CreatorApplicationModal from '../../components/CreatorApplicationModal';
+import CreatorDashboardPanel from '../../components/creator/CreatorDashboardPanel';
 import { submitCreatorApplicationPayload } from '../../utils/creatorApplicationClient';
 import { processCreatorProfileImageToWebp } from '../../utils/creatorProfileImage';
 import {
@@ -18,6 +19,8 @@ import {
   CREATOR_BIO_MAX_LENGTH,
   CREATOR_BIO_MIN_LENGTH,
   CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY,
+  CREATOR_MEMBERSHIP_PRICE_MAX_BRL,
+  CREATOR_MEMBERSHIP_PRICE_MIN_BRL,
 } from '../../constants'; // centralizado
 import {
   podeUsarAvataresPremiumDaLoja,
@@ -31,6 +34,7 @@ import {
   formatBirthDateIsoToBr,
   normalizeBirthDateBrTyping,
   parseBirthDateBr,
+  parseBirthDateFlexible,
   parseBirthDateLocal,
 } from '../../utils/birthDateAge';
 import { buildCreatorRecordForProfileSave } from '../../utils/creatorRecord';
@@ -38,11 +42,17 @@ import {
   creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
   normalizeCreatorMonetizationPreference,
+  resolveCreatorMonetizationStatusFromDb,
 } from '../../utils/creatorMonetizationUi';
 import { BRAZILIAN_STATES, PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
-import { normalizeBuyerProfile } from '../../utils/storeBuyerProfile';
+import { normalizeBuyerProfile, sanitizeBuyerProfileForSave } from '../../utils/storeBuyerProfile';
 import { refreshAuthUser } from '../../userProfileSyncV2';
 import { validateCreatorSocialLinks } from '../../utils/creatorSocialLinks';
+import {
+  normalizeUsernameInput,
+  validateUsernameHandle,
+  suggestUsernameFromDisplayName,
+} from '../../utils/usernameValidation';
 import './Perfil.css';
 
 const creatorSubmitApplication = httpsCallable(functions, 'creatorSubmitApplication');
@@ -93,23 +103,36 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const [buyerAddressLine2, setBuyerAddressLine2] = useState('');
   const [creatorApplicationLoading, setCreatorApplicationLoading] = useState(false);
   const [creatorApplyModalOpen, setCreatorApplyModalOpen] = useState(false);
+  const [userHandleDraft, setUserHandleDraft] = useState('');
+  const [usernameCheck, setUsernameCheck] = useState({ status: 'idle', message: '' });
   const [underageMonetizeModalOpen, setUnderageMonetizeModalOpen] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
   const mangakaBirthInputRef = useRef(null);
   const mangakaAvatarPreserveRef = useRef(false);
+  const savedUserAvatarRef = useRef('');
   useEffect(() => {
     mangakaAvatarPreserveRef.current = adminAccess.isMangaka === true;
   }, [adminAccess.isMangaka]);
 
+  const [buyerProfileExpanded, setBuyerProfileExpanded] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.location.hash.replace(/^#/, '') === PERFIL_LOJA_DADOS_HASH;
+    } catch {
+      return false;
+    }
+  });
+
   useEffect(() => {
     const hash = String(location.hash || '').replace(/^#/, '');
     if (hash !== PERFIL_LOJA_DADOS_HASH) return undefined;
+    setBuyerProfileExpanded(true);
     const t = window.setTimeout(() => {
       document.getElementById(PERFIL_LOJA_DADOS_HASH)?.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
-    }, 120);
+    }, 220);
     return () => window.clearTimeout(t);
   }, [location.hash, location.pathname]);
 
@@ -136,6 +159,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       }
       setBirthDate(birthIso);
       setBirthDateDraft(birthIso ? formatBirthDateIsoToBr(birthIso) : '');
+      setNovoNome(String(perfil.userName || user.displayName || '').trim() || '');
+      setUserHandleDraft(String(perfil.userHandle || '').trim().toLowerCase());
       setCreatorDisplayName(String(perfil.creatorDisplayName || perfil.userName || user.displayName || '').trim());
       setCreatorBio(String(perfil.creatorBio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH));
       setInstagramUrl(String(perfil.instagramUrl || '').trim());
@@ -164,8 +189,11 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setBuyerAddressLine1(buyerProfile.addressLine1);
       setBuyerAddressLine2(buyerProfile.addressLine2);
       const ua = String(perfil.userAvatar || '').trim();
-      if (ua) {
-        setAvatarSelecionado(ua);
+      const authPhoto = String(user.photoURL || '').trim();
+      const resolvedAvatar = ua || authPhoto;
+      savedUserAvatarRef.current = resolvedAvatar;
+      if (resolvedAvatar) {
+        setAvatarSelecionado(resolvedAvatar);
       }
     };
 
@@ -173,8 +201,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       navigate('/login');
       return;
     }
-    setNovoNome(user.displayName || '');
-    setAvatarSelecionado(user.photoURL || LISTA_AVATARES[0] || AVATAR_FALLBACK);
     carregarPerfil().catch(() => setNotifyPromotions(false));
   }, [user, navigate]);
 
@@ -199,8 +225,11 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         setListaAvatares(data);
         const urls = data.map((item) => item.url);
         setAvatarSelecionado((prev) => {
-          if (urls.includes(prev)) return prev;
           const p = String(prev || '').trim();
+          const saved = String(savedUserAvatarRef.current || '').trim();
+          if (urls.includes(p)) return p;
+          if (!p && saved) return saved;
+          if (saved && p === saved) return p;
           if (mangakaAvatarPreserveRef.current && /^https:\/\//i.test(p) && p.length > 12) return p;
           return data[0].url;
         });
@@ -226,7 +255,10 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       : avatarSelecionado);
 
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
-  const creatorMonetizationStatus = String(perfilDb?.creatorMonetizationStatus || '').trim().toLowerCase();
+  const creatorMonetizationStatusRaw = String(perfilDb?.creatorMonetizationStatus || '').trim().toLowerCase();
+  const creatorMonetizationStatusResolved = resolveCreatorMonetizationStatusFromDb(perfilDb || {});
+  const creatorMonetizationStatus =
+    creatorMonetizationStatusResolved !== '' ? creatorMonetizationStatusResolved : creatorMonetizationStatusRaw;
   const creatorMonetizationStatusEffective = effectiveCreatorMonetizationStatus(
     creatorMonetizationPreference,
     creatorMonetizationStatus
@@ -235,8 +267,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const creatorMonetizationReviewReason = String(perfilDb?.creatorMonetizationReviewReason || '').trim();
   const creatorModerationAction = String(perfilDb?.creatorModerationAction || '').trim().toLowerCase();
   const creatorSignupIntent = String(perfilDb?.signupIntent || '').trim().toLowerCase();
-  const birthIsoEffective =
-    parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+  const birthIsoEffective = parseBirthDateFlexible(birthDateDraft, birthDate);
   const birthAge = birthIsoEffective ? ageFromBirthDateLocal(birthIsoEffective) : null;
   const isUnderageByBirthYear = birthAge != null && birthAge < 18;
   const isCreatorCandidate = creatorSignupIntent === 'creator' || creatorApplicationStatus !== '';
@@ -248,21 +279,25 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   const creatorDisplayLabel = String(creatorDisplayName || novoNome || user?.displayName || '').trim() || 'Criador';
   const creatorSupportUrl = user?.uid ? apoieUrlAbsolutaParaCriador(user.uid) : '';
   const creatorPublicPath = user?.uid ? `/criador/${encodeURIComponent(user.uid)}` : '/creator/perfil';
-  const mangakaExistingProfileImageUrl =
-    adminAccess.isMangaka && perfilDb
-      ? (() => {
-          const candidates = [
-            perfilDb?.creatorApplication?.profileImageUrl,
-            perfilDb?.userAvatar,
-            mangakaAvatarUrlDraft,
-          ];
-          for (const raw of candidates) {
-            const u = String(raw || '').trim();
-            if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
-          }
-          return '';
-        })()
-      : '';
+  const creatorApplyExistingPhotoUrl = useMemo(() => {
+    const site = 'https://mangateofilo.com';
+    const isMangaka = adminAccess.isMangaka === true;
+    const candidates = isMangaka
+      ? [
+          perfilDb?.creatorApplication?.profileImageUrl,
+          perfilDb?.userAvatar,
+          mangakaAvatarUrlDraft,
+          user?.photoURL,
+        ]
+      : [perfilDb?.creatorApplication?.profileImageUrl, perfilDb?.userAvatar, user?.photoURL];
+    for (const raw of candidates) {
+      const u = String(raw || '').trim();
+      if (!u) continue;
+      if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
+      if (u.startsWith('/') && !u.startsWith('//') && u.length >= 2 && u.length <= 2048) return `${site}${u}`;
+    }
+    return '';
+  }, [adminAccess.isMangaka, perfilDb, mangakaAvatarUrlDraft, user?.photoURL]);
   const mangakaCanOpenMonetizeRequestModal =
     adminAccess.isMangaka &&
     creatorMonetizationStatus !== 'active' &&
@@ -305,13 +340,44 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
   }, [avatarSelecionado, listaAvatares, podeUsarAvatarPremium]);
 
   useEffect(() => {
-    const iso =
-      parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+    const iso = parseBirthDateFlexible(birthDateDraft, birthDate);
     const age = iso ? ageFromBirthDateLocal(iso) : null;
     if (age != null && age < 18) {
       setCreatorMonetizationPreference('publish_only');
     }
   }, [birthDate, birthDateDraft]);
+
+  useEffect(() => {
+    if (!user?.uid) return undefined;
+    const locked = String(perfilDb?.userHandle || '').trim().toLowerCase();
+    if (locked) {
+      setUsernameCheck({ status: 'idle', message: '' });
+      return undefined;
+    }
+    const norm = normalizeUsernameInput(userHandleDraft);
+    if (!norm) {
+      setUsernameCheck({ status: 'idle', message: '' });
+      return undefined;
+    }
+    const v = validateUsernameHandle(norm);
+    if (!v.ok) {
+      setUsernameCheck({ status: 'invalid', message: v.message });
+      return undefined;
+    }
+    setUsernameCheck({ status: 'checking', message: 'Verificando…' });
+    const t = window.setTimeout(() => {
+      get(ref(db, `usernames/${norm}`))
+        .then((snap) => {
+          if (snap.exists() && snap.val() !== user.uid) {
+            setUsernameCheck({ status: 'taken', message: 'Já em uso' });
+          } else {
+            setUsernameCheck({ status: 'ok', message: 'Disponível' });
+          }
+        })
+        .catch(() => setUsernameCheck({ status: 'idle', message: '' }));
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [user?.uid, userHandleDraft, perfilDb?.userHandle]);
 
   const handleSalvar = async (e) => {
     e.preventDefault();
@@ -321,8 +387,24 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       return;
     }
 
-    const birthIsoForSave =
-      parseBirthDateBr(birthDateDraft) || (parseBirthDateLocal(birthDate) ? birthDate : '');
+    const lockedHandlePreview = String(perfilDb?.userHandle || '').trim().toLowerCase();
+    const wantHandlePreview = normalizeUsernameInput(userHandleDraft);
+    if (!lockedHandlePreview && !wantHandlePreview && !isAdminUser(user)) {
+      setMensagem({
+        texto: 'Defina um @username único (só letras minúsculas, números e _). Ele não poderá ser alterado depois.',
+        tipo: 'erro',
+      });
+      return;
+    }
+    if (!lockedHandlePreview && wantHandlePreview) {
+      const v0 = validateUsernameHandle(wantHandlePreview);
+      if (!v0.ok) {
+        setMensagem({ texto: v0.message, tipo: 'erro' });
+        return;
+      }
+    }
+
+    const birthIsoForSave = parseBirthDateFlexible(birthDateDraft, birthDate);
     const birthDraftHasDigits = birthDateDraft.replace(/\D/g, '').length > 0;
     if (birthDraftHasDigits && !parseBirthDateLocal(birthIsoForSave)) {
       setMensagem({ texto: 'Data de nascimento invalida. Use dia/mes/ano (ex.: 28/12/2001).', tipo: 'erro' });
@@ -346,12 +428,28 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       ageIfValid != null &&
       ageIfValid >= 18;
 
-    if (monetizationRequiresValues && (!Number.isFinite(membershipPrice) || membershipPrice < 1 || membershipPrice > 5000)) {
-      setMensagem({ texto: 'Defina um valor de membership entre R$ 1,00 e R$ 5.000,00.', tipo: 'erro' });
+    if (
+      monetizationRequiresValues &&
+      (!Number.isFinite(membershipPrice) ||
+        membershipPrice < CREATOR_MEMBERSHIP_PRICE_MIN_BRL ||
+        membershipPrice > CREATOR_MEMBERSHIP_PRICE_MAX_BRL)
+    ) {
+      setMensagem({
+        texto: `Defina o valor da membership entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00 (acesso antecipado às suas obras).`,
+        tipo: 'erro',
+      });
       return;
     }
-    if (monetizationRequiresValues && (!Number.isFinite(suggestedDonation) || suggestedDonation < 1 || suggestedDonation > 5000)) {
-      setMensagem({ texto: 'Defina uma doacao sugerida entre R$ 1,00 e R$ 5.000,00.', tipo: 'erro' });
+    if (
+      monetizationRequiresValues &&
+      (!Number.isFinite(suggestedDonation) ||
+        suggestedDonation < CREATOR_MEMBERSHIP_PRICE_MIN_BRL ||
+        suggestedDonation > CREATOR_MEMBERSHIP_PRICE_MAX_BRL)
+    ) {
+      setMensagem({
+        texto: `Defina a doação sugerida entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00.`,
+        tipo: 'erro',
+      });
       return;
     }
     if (monetizationRequiresValues && creatorMembershipEnabled !== true) {
@@ -374,6 +472,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
     setLoading(true);
     setMensagem({ texto: '', tipo: '' });
 
+    let claimedNewHandle = null;
     try {
       let finalAvatar = avatarSelecionado;
       if (adminAccess.isMangaka && mangakaAvatarFile) {
@@ -479,7 +578,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             now: Date.now(),
           })
         : null;
-      const buyerProfile = normalizeBuyerProfile({
+      const buyerProfile = sanitizeBuyerProfileForSave({
         fullName: buyerFullName,
         cpf: buyerCpf,
         phone: buyerPhone,
@@ -491,15 +590,57 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         addressLine2: buyerAddressLine2,
       });
 
+      const existingHandle = String(perfilDb?.userHandle || '').trim().toLowerCase();
+      const wantHandle = normalizeUsernameInput(userHandleDraft);
+
+      if (!existingHandle && !wantHandle && !isAdminUser(user)) {
+        setMensagem({
+          texto: 'Defina um @username único (só letras minúsculas, números e _). Ele não poderá ser alterado depois.',
+          tipo: 'erro',
+        });
+        setLoading(false);
+        return;
+      }
+
+      if (!existingHandle && wantHandle) {
+        const vh = validateUsernameHandle(wantHandle);
+        if (!vh.ok) {
+          setMensagem({ texto: vh.message, tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+        if (!isAdminUser(user) && usernameCheck.status === 'taken') {
+          setMensagem({ texto: 'Este @username já está em uso.', tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+        const takenSnap = await get(ref(db, `usernames/${wantHandle}`));
+        if (takenSnap.exists() && takenSnap.val() !== user.uid) {
+          setMensagem({ texto: 'Este @username já está em uso.', tipo: 'erro' });
+          setLoading(false);
+          return;
+        }
+        await set(ref(db, `usernames/${wantHandle}`), user.uid);
+        claimedNewHandle = wantHandle;
+      }
+
+      const persistedHandle = existingHandle || claimedNewHandle || '';
+
       // 1. Atualiza no Firebase Auth
       await updateProfile(user, {
         displayName: novoNome.trim(),
         photoURL: finalAvatar,
       });
+      try {
+        await refreshAuthUser(user);
+      } catch (e) {
+        console.warn('[Perfil] reload auth apos salvar:', e);
+      }
 
       // 2. Atualiza no Realtime Database (Leitor.jsx escuta daqui)
       await update(ref(db, `usuarios/${user.uid}`), {
         userName:   novoNome.trim(),
+        ...(persistedHandle ? { userHandle: persistedHandle } : {}),
         userAvatar: finalAvatar,
         uid:        user.uid,
         notifyPromotions: notifyPromotions === true,
@@ -543,7 +684,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           creatorId: user.uid,
           userId: user.uid,
           displayName: creatorPublicName,
-          username: perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
+          username: persistedHandle || perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
           bioShort: String(creatorBio || '').trim(),
           bioFull: String(creatorBio || '').trim(),
           avatarUrl: finalAvatar,
@@ -571,6 +712,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       await update(ref(db, `usuarios_publicos/${user.uid}`), {
         uid: user.uid,
         userName: novoNome.trim(),
+        ...(persistedHandle ? { userHandle: persistedHandle } : {}),
         userAvatar: finalAvatar,
         accountType,
         creatorDisplayName: creatorPublicName,
@@ -588,7 +730,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           creatorId: user.uid,
           userId: user.uid,
           displayName: creatorPublicName,
-          username: perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
+          username: persistedHandle || perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
           bioShort: String(creatorBio || '').trim(),
           bioFull: String(creatorBio || '').trim(),
           avatarUrl: finalAvatar,
@@ -620,6 +762,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
         updatedAt: Date.now(),
       });
 
+      savedUserAvatarRef.current = String(finalAvatar || '').trim();
       setAvatarSelecionado(finalAvatar);
       setMangakaAvatarFile(null);
       if (creatorMonetizationRequestNeedsModal) {
@@ -645,6 +788,13 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
 
     } catch (error) {
       console.error('Erro na forja:', error);
+      if (claimedNewHandle) {
+        try {
+          await remove(ref(db, `usernames/${claimedNewHandle}`));
+        } catch (_) {
+          /* ignore */
+        }
+      }
       setMensagem({ texto: 'Erro ao atualizar: ' + error.message, tipo: 'erro' });
     } finally {
       setLoading(false);
@@ -669,7 +819,6 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setYoutubeUrl(payload.youtubeUrl);
       setCreatorMonetizationPreference(payload.monetizationPreference);
       setCreatorTermsAccepted(payload.acceptTerms);
-      setCreatorApplyModalOpen(false);
       setPerfilDb((prev) => {
         const current = prev && typeof prev === 'object' ? prev : {};
         const nextAvatar =
@@ -704,6 +853,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       });
       if (data?.autoApproved && payload.monetizationPreference === 'publish_only' && profileImageUrl) {
         try {
+          savedUserAvatarRef.current = String(profileImageUrl || '').trim();
           setAvatarSelecionado(profileImageUrl);
           setMangakaAvatarUrlDraft(profileImageUrl);
           await updateProfile(user, { photoURL: profileImageUrl });
@@ -712,40 +862,59 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           console.warn('[Perfil] Nao foi possivel sincronizar avatar local apos candidatura:', avErr);
         }
       }
+      let successTitle = 'Concluído';
+      let successBody =
+        'Sua solicitação foi registrada. Use «Continuar» para fechar e voltar ao perfil.';
+      /** @type {(() => void) | undefined} */
+      let afterDismiss;
+
       if (data?.autoApproved) {
-        setMensagem({
-          texto: 'Acesso de criador liberado. Atualizando seu perfil para abrir o painel certo...',
-          tipo: 'sucesso',
-        });
-        if (typeof window !== 'undefined') {
-          window.setTimeout(() => {
-            window.location.assign('/perfil');
-          }, 700);
-        }
+        successTitle = 'Acesso de criador liberado';
+        successBody =
+          'Seu perfil de criador foi liberado. Ao continuar, a página será atualizada para abrir o painel correto.';
+        afterDismiss = () => {
+          if (typeof window !== 'undefined') window.location.assign('/perfil');
+        };
       } else if (data?.alreadyMangaka && data?.monetizationPendingReviewSubmitted) {
+        successTitle = 'Dados enviados';
+        successBody =
+          'Dados de monetização enviados. Você continua publicando normalmente; a equipe revisará antes de ativar repasses.';
         setMensagem({
           texto:
             'Dados de monetizacao enviados. Voce continua publicando normalmente; a equipe revisara antes de ativar repasses.',
           tipo: 'sucesso',
         });
       } else if (data?.alreadyMangaka && data?.monetizationPendingReview) {
+        successTitle = 'Em análise';
+        successBody = 'Sua monetização já está em análise pela equipe.';
         setMensagem({
           texto: 'Sua monetizacao ja esta em analise pela equipe.',
           tipo: 'sucesso',
         });
       } else if (data?.alreadyMangaka && data?.monetizationAlreadyActive) {
+        successTitle = 'Monetização ativa';
+        successBody = 'Sua monetização já está ativa nesta conta.';
         setMensagem({ texto: 'Sua monetizacao ja esta ativa.', tipo: 'sucesso' });
       } else if (data?.alreadyMangaka) {
+        successTitle = 'Conta de criador';
+        successBody = 'Sua conta já está aprovada como criador.';
         setMensagem({ texto: 'Sua conta ja esta aprovada como criador.', tipo: 'sucesso' });
       } else if (data?.alreadyPending) {
+        successTitle = 'Já enviado';
+        successBody = 'Sua solicitação de criador já está em análise.';
         setMensagem({ texto: 'Sua solicitacao de criador ja esta em analise.', tipo: 'sucesso' });
       } else {
+        successTitle = 'Solicitação recebida';
+        successBody =
+          'Solicitação enviada com monetização. A equipe vai revisar seus dados legais e repasse antes de ativar.';
         setMensagem({
           texto:
             'Solicitacao enviada com monetizacao. A equipe vai revisar seus dados legais e repasse antes de ativar.',
           tipo: 'sucesso',
         });
       }
+
+      return { successTitle, successBody, afterDismiss };
     } catch (err) {
       const msg = err?.message || 'Nao foi possivel enviar sua solicitacao agora.';
       setMensagem({ texto: msg, tipo: 'erro' });
@@ -754,6 +923,40 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setCreatorApplicationLoading(false);
     }
   };
+
+  const handleCreatorApplyModalClose = () => {
+    if (creatorApplicationLoading) return;
+    setCreatorApplyModalOpen(false);
+    if (adminAccess.isMangaka) {
+      const pref = String(perfilDb?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
+      setCreatorMonetizationPreference(pref === 'monetize' ? 'monetize' : 'publish_only');
+    }
+  };
+
+  const creatorApplyModalEl = (
+    <CreatorApplicationModal
+      open={creatorApplyModalOpen}
+      intent={adminAccess.isMangaka ? 'mangaka_monetize' : 'signup'}
+      onClose={handleCreatorApplyModalClose}
+      loading={creatorApplicationLoading}
+      initial={{
+        displayName: creatorDisplayName,
+        bio: creatorBio,
+        instagramUrl,
+        youtubeUrl,
+        monetizationPreference: adminAccess.isMangaka ? 'monetize' : creatorMonetizationPreference,
+        termsAccepted: creatorTermsAccepted,
+        birthDate: adminAccess.isMangaka ? (birthDate || perfilDb?.birthDate || '') : birthDate,
+        legalFullName: String(perfilDb?.creatorCompliance?.legalFullName || '').trim(),
+        taxId: String(perfilDb?.creatorCompliance?.taxId || '').trim(),
+        payoutInstructions: String(perfilDb?.creatorCompliance?.payoutInstructions || '').trim(),
+        payoutPixType: String(perfilDb?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
+        profileImageCrop: perfilDb?.creatorApplication?.profileImageCrop || null,
+        existingProfileImageUrl: creatorApplyExistingPhotoUrl,
+      }}
+      onSubmit={handleCreatorApplicationModalSubmit}
+    />
+  );
 
   const handleCopyCreatorSupportLink = async () => {
     if (!creatorSupportUrl) return;
@@ -764,6 +967,142 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
       setMensagem({ texto: 'Nao foi possivel copiar o link agora.', tipo: 'erro' });
     }
   };
+
+  const lojaBuyerInputs = (
+    <>
+      <div className="input-group">
+        <label>Nome completo (entrega)</label>
+        <input
+          type="text"
+          className="perfil-input"
+          value={buyerFullName}
+          onChange={(e) => setBuyerFullName(e.target.value)}
+          placeholder="Usado em pedidos da loja"
+        />
+      </div>
+      <div className="input-group">
+        <label>CPF</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          className="perfil-input"
+          value={buyerCpf}
+          onChange={(e) => setBuyerCpf(e.target.value.replace(/\D+/g, '').slice(0, 11))}
+          placeholder="Somente numeros"
+        />
+      </div>
+      <div className="input-group">
+        <label>Telefone</label>
+        <input
+          type="text"
+          inputMode="tel"
+          className="perfil-input"
+          value={buyerPhone}
+          onChange={(e) => setBuyerPhone(e.target.value.replace(/\D+/g, '').slice(0, 11))}
+          placeholder="DDD + numero"
+        />
+      </div>
+      <div className="input-group">
+        <label>CEP</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          className="perfil-input"
+          value={buyerPostalCode}
+          onChange={(e) => setBuyerPostalCode(e.target.value.replace(/\D+/g, '').slice(0, 8))}
+          placeholder="Somente numeros"
+        />
+      </div>
+      <div className="input-group">
+        <label>Estado</label>
+        <select
+          className="perfil-input"
+          value={buyerState}
+          onChange={(e) => setBuyerState(e.target.value)}
+          aria-label="Estado (UF)"
+        >
+          <option value="">Selecione o estado</option>
+          {BRAZILIAN_STATES.map(({ uf, name }) => (
+            <option key={uf} value={uf}>
+              {uf} — {name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="input-group">
+        <label>Cidade</label>
+        <input
+          type="text"
+          className="perfil-input"
+          value={buyerCity}
+          onChange={(e) => setBuyerCity(e.target.value)}
+          placeholder="Sua cidade"
+        />
+      </div>
+      <div className="input-group">
+        <label>Bairro</label>
+        <input
+          type="text"
+          className="perfil-input"
+          value={buyerNeighborhood}
+          onChange={(e) => setBuyerNeighborhood(e.target.value)}
+          placeholder="Seu bairro"
+        />
+      </div>
+      <div className="input-group">
+        <label>Endereco</label>
+        <input
+          type="text"
+          className="perfil-input"
+          value={buyerAddressLine1}
+          onChange={(e) => setBuyerAddressLine1(e.target.value)}
+          placeholder="Rua, numero e complemento principal"
+        />
+      </div>
+      <div className="input-group">
+        <label>Complemento</label>
+        <input
+          type="text"
+          className="perfil-input"
+          value={buyerAddressLine2}
+          onChange={(e) => setBuyerAddressLine2(e.target.value)}
+          placeholder="Opcional"
+        />
+      </div>
+    </>
+  );
+
+  const lojaBuyerDisclosure = (
+    <>
+      <div className="input-group perfil-creator-section-title">
+        <label>Dados para compra na loja</label>
+        <p className="perfil-loja-dados-hint">
+          <strong>Opcional</strong> — só para <strong>compras</strong> na loja (entrega física). Pode salvar o perfil com
+          tudo em branco; na hora de pagar, o checkout exige endereço e documentos válidos.
+        </p>
+      </div>
+      <button
+        type="button"
+        className="perfil-loja-dados-toggle"
+        aria-expanded={buyerProfileExpanded}
+        onClick={() => setBuyerProfileExpanded((v) => !v)}
+      >
+        {buyerProfileExpanded ? 'Ocultar dados de entrega' : 'Preencher dados de entrega (opcional)'}
+      </button>
+      {buyerProfileExpanded ? <div className="perfil-loja-dados-fields">{lojaBuyerInputs}</div> : null}
+    </>
+  );
+
+  const creatorPanelMetrics = useMemo(
+    () => ({
+      followers: Number(
+        perfilDb?.creatorProfile?.stats?.followersCount || perfilDb?.stats?.followersCount || 0
+      ),
+      views: Number(perfilDb?.creatorProfile?.stats?.totalViews || perfilDb?.stats?.totalViews || 0),
+      likes: Number(perfilDb?.creatorProfile?.stats?.totalLikes || perfilDb?.stats?.totalLikes || 0),
+    }),
+    [perfilDb]
+  );
 
   if (!user) return null; // guard enquanto o useEffect redireciona
 
@@ -808,6 +1147,15 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </div>
             </div>
           </section>
+
+          <div id="creator-level">
+            <CreatorDashboardPanel
+              followers={creatorPanelMetrics.followers}
+              views={creatorPanelMetrics.views}
+              likes={creatorPanelMetrics.likes}
+              variant="compact"
+            />
+          </div>
 
           <form onSubmit={handleSalvar} className="perfil-creator-form">
             <div ref={mangakaFormAnchorRef} className="perfil-mangaka-fields-anchor" aria-hidden="true" />
@@ -911,6 +1259,47 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                 />
               </div>
 
+              <div className="input-group" id="username-handle">
+                <label>USERNAME (@)</label>
+                <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
+                  Identificador único (como no Instagram). Não pode ser alterado depois de salvo. Link:{' '}
+                  <strong>mangateofilo.com/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
+                </p>
+                <input
+                  type="text"
+                  className="perfil-input"
+                  autoComplete="username"
+                  spellCheck={false}
+                  value={userHandleDraft}
+                  onChange={(e) => setUserHandleDraft(normalizeUsernameInput(e.target.value))}
+                  maxLength={20}
+                  disabled={Boolean(String(perfilDb?.userHandle || '').trim())}
+                  placeholder="ex: teofilo_manga"
+                />
+                {!String(perfilDb?.userHandle || '').trim() ? (
+                  <button
+                    type="button"
+                    className="perfil-mangaka-apoio-copy"
+                    style={{ marginTop: 8 }}
+                    onClick={() => {
+                      const s = suggestUsernameFromDisplayName(novoNome);
+                      if (s) setUserHandleDraft(s);
+                    }}
+                  >
+                    Sugerir a partir do nome
+                  </button>
+                ) : null}
+                {usernameCheck.status === 'ok' ? (
+                  <p className="perfil-username-status perfil-username-status--ok">{usernameCheck.message}</p>
+                ) : null}
+                {usernameCheck.status === 'taken' || usernameCheck.status === 'invalid' ? (
+                  <p className="perfil-username-status perfil-username-status--bad">{usernameCheck.message}</p>
+                ) : null}
+                {usernameCheck.status === 'checking' ? (
+                  <p className="perfil-username-status">{usernameCheck.message}</p>
+                ) : null}
+              </div>
+
               <div className="input-group">
                 <label>DATA DE NASCIMENTO</label>
                 <input
@@ -976,8 +1365,9 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               {creatorMonetizationPreference === 'monetize' ? (
                 <>
                   <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 12 }}>
-                    Valores e membership abaixo valem depois que a equipe aprovar sua monetizacao. Ate la voce publica
-                    normalmente, sem receber repasses.
+                    Membership do autor (só as suas obras, com acesso antecipado): você escolhe valores entre R${' '}
+                    {CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ {CREATOR_MEMBERSHIP_PRICE_MAX_BRL}. Isso não é o Premium da
+                    plataforma. Depois da aprovação da equipe, os valores abaixo passam a valer na sua página pública.
                   </p>
                   <div className="input-group">
                     <label className="notify-label">
@@ -997,18 +1387,18 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
                       className="perfil-input"
                       value={creatorMembershipPriceBRL}
                       onChange={(e) => setCreatorMembershipPriceBRL(e.target.value)}
-                      placeholder="12,00"
+                      placeholder={`${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 a ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00`}
                     />
                   </div>
 
                   <div className="input-group">
-                    <label>DOACAO SUGERIDA (R$)</label>
+                    <label>DOAÇÃO SUGERIDA NO APOIO (R$)</label>
                     <input
                       type="text"
                       className="perfil-input"
                       value={creatorDonationSuggestedBRL}
                       onChange={(e) => setCreatorDonationSuggestedBRL(e.target.value)}
-                      placeholder="7,00"
+                      placeholder={`${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 a ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00`}
                     />
                   </div>
                 </>
@@ -1026,60 +1416,8 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               </div>
             </section>
 
-            <section className="perfil-creator-panel" id={PERFIL_LOJA_DADOS_HASH}>
-              <div className="input-group perfil-creator-section-title">
-                <label>DADOS DE COMPRA</label>
-                <p>Esses dados so ficam obrigatorios quando voce for comprar na loja.</p>
-              </div>
-
-              <div className="input-group">
-                <label>NOME COMPLETO</label>
-                <input type="text" className="perfil-input" value={buyerFullName} onChange={(e) => setBuyerFullName(e.target.value)} placeholder="Nome para entrega" />
-              </div>
-              <div className="input-group">
-                <label>CPF</label>
-                <input type="text" inputMode="numeric" className="perfil-input" value={buyerCpf} onChange={(e) => setBuyerCpf(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="Somente numeros" />
-              </div>
-              <div className="input-group">
-                <label>TELEFONE</label>
-                <input type="text" inputMode="tel" className="perfil-input" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="DDD + numero" />
-              </div>
-              <div className="input-group">
-                <label>CEP</label>
-                <input type="text" inputMode="numeric" className="perfil-input" value={buyerPostalCode} onChange={(e) => setBuyerPostalCode(e.target.value.replace(/\D+/g, '').slice(0, 8))} placeholder="Somente numeros" />
-              </div>
-              <div className="input-group">
-                <label>ESTADO</label>
-                <select
-                  className="perfil-input"
-                  value={buyerState}
-                  onChange={(e) => setBuyerState(e.target.value)}
-                  aria-label="Estado (UF)"
-                >
-                  <option value="">Selecione o estado</option>
-                  {BRAZILIAN_STATES.map(({ uf, name }) => (
-                    <option key={uf} value={uf}>
-                      {uf} — {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="input-group">
-                <label>CIDADE</label>
-                <input type="text" className="perfil-input" value={buyerCity} onChange={(e) => setBuyerCity(e.target.value)} placeholder="Sua cidade" />
-              </div>
-              <div className="input-group">
-                <label>BAIRRO</label>
-                <input type="text" className="perfil-input" value={buyerNeighborhood} onChange={(e) => setBuyerNeighborhood(e.target.value)} placeholder="Seu bairro" />
-              </div>
-              <div className="input-group">
-                <label>ENDERECO</label>
-                <input type="text" className="perfil-input" value={buyerAddressLine1} onChange={(e) => setBuyerAddressLine1(e.target.value)} placeholder="Rua, numero e complemento principal" />
-              </div>
-              <div className="input-group">
-                <label>COMPLEMENTO</label>
-                <input type="text" className="perfil-input" value={buyerAddressLine2} onChange={(e) => setBuyerAddressLine2(e.target.value)} placeholder="Opcional" />
-              </div>
+            <section className="perfil-creator-panel perfil-section-loja-dados" id={PERFIL_LOJA_DADOS_HASH}>
+              {lojaBuyerDisclosure}
             </section>
 
             {mensagem.texto ? (
@@ -1149,34 +1487,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
             </div>
           ) : null}
 
-          <CreatorApplicationModal
-            open={creatorApplyModalOpen}
-            intent="mangaka_monetize"
-            onClose={() => {
-              if (!creatorApplicationLoading) {
-                setCreatorApplyModalOpen(false);
-                const pref = String(perfilDb?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
-                setCreatorMonetizationPreference(pref === 'monetize' ? 'monetize' : 'publish_only');
-              }
-            }}
-            loading={creatorApplicationLoading}
-            initial={{
-              displayName: creatorDisplayName,
-              bio: creatorBio,
-              instagramUrl,
-              youtubeUrl,
-              monetizationPreference: 'monetize',
-              termsAccepted: creatorTermsAccepted,
-              birthDate: birthDate || perfilDb?.birthDate || '',
-              legalFullName: String(perfilDb?.creatorCompliance?.legalFullName || '').trim(),
-              taxId: String(perfilDb?.creatorCompliance?.taxId || '').trim(),
-              payoutInstructions: String(perfilDb?.creatorCompliance?.payoutInstructions || '').trim(),
-              payoutPixType: String(perfilDb?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
-              profileImageCrop: perfilDb?.creatorApplication?.profileImageCrop || null,
-              existingProfileImageUrl: mangakaExistingProfileImageUrl,
-            }}
-            onSubmit={handleCreatorApplicationModalSubmit}
-          />
+          {creatorApplyModalEl}
         </div>
       </main>
     );
@@ -1231,36 +1542,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           </div>
         ) : null}
 
-        <CreatorApplicationModal
-          open={creatorApplyModalOpen}
-          onClose={() => {
-            if (!creatorApplicationLoading) setCreatorApplyModalOpen(false);
-          }}
-          loading={creatorApplicationLoading}
-          initial={{
-            displayName: creatorDisplayName,
-            bio: creatorBio,
-            instagramUrl,
-            youtubeUrl,
-            monetizationPreference: creatorMonetizationPreference,
-            termsAccepted: creatorTermsAccepted,
-            birthDate,
-            legalFullName: String(perfilDb?.creatorCompliance?.legalFullName || '').trim(),
-            taxId: String(perfilDb?.creatorCompliance?.taxId || '').trim(),
-            payoutInstructions: String(perfilDb?.creatorCompliance?.payoutInstructions || '').trim(),
-            payoutPixType: String(perfilDb?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
-            profileImageCrop: perfilDb?.creatorApplication?.profileImageCrop || null,
-            existingProfileImageUrl: (() => {
-              const candidates = [perfilDb?.creatorApplication?.profileImageUrl, perfilDb?.userAvatar];
-              for (const raw of candidates) {
-                const u = String(raw || '').trim();
-                if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
-              }
-              return '';
-            })(),
-          }}
-          onSubmit={handleCreatorApplicationModalSubmit}
-        />
+        {creatorApplyModalEl}
 
         <form onSubmit={handleSalvar}>
           <div className="avatar-big-preview">
@@ -1283,6 +1565,47 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
               maxLength={DISPLAY_NAME_MAX_LENGTH}
               placeholder="Ex: Guerreiro de Brajiru"
             />
+          </div>
+
+          <div className="input-group" id="username-handle-reader">
+            <label>USERNAME (@)</label>
+            <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
+              Identificador único. Não pode ser alterado depois de salvo. Link:{' '}
+              <strong>mangateofilo.com/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
+            </p>
+            <input
+              type="text"
+              className="perfil-input"
+              autoComplete="username"
+              spellCheck={false}
+              value={userHandleDraft}
+              onChange={(e) => setUserHandleDraft(normalizeUsernameInput(e.target.value))}
+              maxLength={20}
+              disabled={Boolean(String(perfilDb?.userHandle || '').trim())}
+              placeholder="ex: leitor_shonen"
+            />
+            {!String(perfilDb?.userHandle || '').trim() ? (
+              <button
+                type="button"
+                className="perfil-mangaka-apoio-copy"
+                style={{ marginTop: 8 }}
+                onClick={() => {
+                  const s = suggestUsernameFromDisplayName(novoNome);
+                  if (s) setUserHandleDraft(s);
+                }}
+              >
+                Sugerir a partir do nome
+              </button>
+            ) : null}
+            {usernameCheck.status === 'ok' ? (
+              <p className="perfil-username-status perfil-username-status--ok">{usernameCheck.message}</p>
+            ) : null}
+            {usernameCheck.status === 'taken' || usernameCheck.status === 'invalid' ? (
+              <p className="perfil-username-status perfil-username-status--bad">{usernameCheck.message}</p>
+            ) : null}
+            {usernameCheck.status === 'checking' ? (
+              <p className="perfil-username-status">{usernameCheck.message}</p>
+            ) : null}
           </div>
 
           <div className="input-group">
@@ -1348,67 +1671,7 @@ export default function Perfil({ user, adminAccess = emptyAdminAccess() }) {
           </div>
 
           <section id={PERFIL_LOJA_DADOS_HASH} className="perfil-section-loja-dados">
-            <div className="input-group perfil-creator-section-title">
-              <label>DADOS PARA COMPRA NA LOJA</label>
-              <p>Obrigatórios para finalizar pedidos físicos; você pode preencher com calma.</p>
-            </div>
-
-            <div className="input-group">
-              <label>NOME COMPLETO PARA COMPRA</label>
-              <input type="text" className="perfil-input" value={buyerFullName} onChange={(e) => setBuyerFullName(e.target.value)} placeholder="Usado em pedidos da loja" />
-            </div>
-
-            <div className="input-group">
-              <label>CPF</label>
-              <input type="text" inputMode="numeric" className="perfil-input" value={buyerCpf} onChange={(e) => setBuyerCpf(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="Somente numeros" />
-            </div>
-
-            <div className="input-group">
-              <label>TELEFONE</label>
-              <input type="text" inputMode="tel" className="perfil-input" value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value.replace(/\D+/g, '').slice(0, 11))} placeholder="DDD + numero" />
-            </div>
-
-            <div className="input-group">
-              <label>CEP</label>
-              <input type="text" inputMode="numeric" className="perfil-input" value={buyerPostalCode} onChange={(e) => setBuyerPostalCode(e.target.value.replace(/\D+/g, '').slice(0, 8))} placeholder="Somente numeros" />
-            </div>
-
-            <div className="input-group">
-              <label>ESTADO</label>
-              <select
-                className="perfil-input"
-                value={buyerState}
-                onChange={(e) => setBuyerState(e.target.value)}
-                aria-label="Estado (UF)"
-              >
-                <option value="">Selecione o estado</option>
-                {BRAZILIAN_STATES.map(({ uf, name }) => (
-                  <option key={uf} value={uf}>
-                    {uf} — {name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="input-group">
-              <label>CIDADE</label>
-              <input type="text" className="perfil-input" value={buyerCity} onChange={(e) => setBuyerCity(e.target.value)} placeholder="Sua cidade" />
-            </div>
-
-            <div className="input-group">
-              <label>BAIRRO</label>
-              <input type="text" className="perfil-input" value={buyerNeighborhood} onChange={(e) => setBuyerNeighborhood(e.target.value)} placeholder="Seu bairro" />
-            </div>
-
-            <div className="input-group">
-              <label>ENDERECO</label>
-              <input type="text" className="perfil-input" value={buyerAddressLine1} onChange={(e) => setBuyerAddressLine1(e.target.value)} placeholder="Rua, numero e complemento principal" />
-            </div>
-
-            <div className="input-group">
-              <label>COMPLEMENTO</label>
-              <input type="text" className="perfil-input" value={buyerAddressLine2} onChange={(e) => setBuyerAddressLine2(e.target.value)} placeholder="Opcional" />
-            </div>
+            {lojaBuyerDisclosure}
           </section>
 
           {premiumAtivo && typeof premiumEntitlement?.memberUntil === 'number' && (() => {

@@ -113,6 +113,11 @@ export function buildUsuarioPublicoPatch(current = {}, options = {}) {
   if (options.accountType || !asNonEmptyString(current.accountType)) patch.accountType = accountType;
   if (!asNonEmptyString(current.signupIntent)) patch.signupIntent = signupIntent;
 
+  const uhIn = options.userHandle != null ? String(options.userHandle || '').trim().toLowerCase() : null;
+  if (uhIn && uhIn !== String(current.userHandle || '').trim().toLowerCase()) {
+    patch.userHandle = uhIn;
+  }
+
   if (Object.keys(patch).length) patch.updatedAt = now;
 
   return patch;

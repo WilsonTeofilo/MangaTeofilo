@@ -58,6 +58,8 @@ export async function criarPreferenciaPremium(
     metadata: {
       uid: String(uid),
       product: 'premium_30d',
+      transactionType: 'STORE_MEMBERSHIP',
+      source: attributionMeta?.creatorId ? 'creator_link' : 'platform',
       expectedAmount: price,
       promoId: promoMeta?.promoId ? String(promoMeta.promoId) : null,
       promoName: promoMeta?.promoName ? String(promoMeta.promoName) : null,

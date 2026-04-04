@@ -1,4 +1,7 @@
 import { get, ref, runTransaction } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
+
+import { functions } from '../services/firebase';
 
 function safeNumber(value) {
   const n = Number(value);
@@ -10,21 +13,25 @@ async function incrementPath(db, path, amount) {
   await runTransaction(ref(db, path), (current) => Math.max(0, safeNumber(current) + amount));
 }
 
-function dateKeySaoPaulo(timestamp = Date.now()) {
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return fmt.format(new Date(timestamp));
+let recordDiscoveryCreatorMetricsCallable = null;
+function getRecordDiscoveryCallable() {
+  if (!recordDiscoveryCreatorMetricsCallable) {
+    recordDiscoveryCreatorMetricsCallable = httpsCallable(functions, 'recordDiscoveryCreatorMetrics');
+  }
+  return recordDiscoveryCreatorMetricsCallable;
 }
 
-async function incrementCreatorDailyMetric(db, creatorId, field, amount, timestamp = Date.now()) {
-  if (!creatorId || !field || !amount) return;
-  const dateKey = dateKeySaoPaulo(timestamp);
-  await incrementPath(db, `creatorStatsDaily/${creatorId}/${dateKey}/${field}`, amount);
-  await runTransaction(ref(db, `creatorStatsDaily/${creatorId}/${dateKey}/updatedAt`), () => Date.now());
+/**
+ * Métricas agregadas do criador (creators/*, creatorStatsDaily/*, espelhos) — só no servidor.
+ */
+async function recordCreatorMetricsServer(payload) {
+  try {
+    await getRecordDiscoveryCallable()(payload);
+  } catch (e) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[recordDiscoveryCreatorMetrics]', e?.code || e?.message || e);
+    }
+  }
 }
 
 async function markUniquePath(db, path) {
@@ -37,46 +44,6 @@ async function markUniquePath(db, path) {
   return created;
 }
 
-async function updateCreatorAggregateMetric(db, creatorId, field, amount) {
-  if (!creatorId || !field || !amount) return;
-  await incrementPath(db, `creators/${creatorId}/stats/${field}`, amount);
-}
-
-async function updateCreatorLegacyMirror(db, creatorId, field, amount) {
-  if (!creatorId || !field || !amount) return;
-  const publicField =
-    field === 'likesTotal'
-      ? 'totalLikes'
-      : field === 'commentsTotal'
-        ? 'totalComments'
-        : field === 'totalViews'
-          ? 'totalViews'
-          : field === 'followersCount'
-            ? 'followersCount'
-            : null;
-  if (!publicField) return;
-  await Promise.all([
-    incrementPath(db, `usuarios_publicos/${creatorId}/stats/${publicField}`, amount),
-    incrementPath(db, `usuarios/${creatorId}/creatorProfile/stats/${publicField}`, amount),
-  ]);
-}
-
-async function registerCreatorUniqueReader(db, { creatorId, viewerUid, timestamp = Date.now() }) {
-  if (!creatorId || !viewerUid) return { creatorUnique: false, dailyUnique: false };
-  const day = dateKeySaoPaulo(timestamp);
-  const [creatorUnique, dailyUnique] = await Promise.all([
-    markUniquePath(db, `creatorAudienceSeen/${creatorId}/allReaders/${viewerUid}`),
-    markUniquePath(db, `creatorAudienceSeen/${creatorId}/dailyReaders/${day}/${viewerUid}`),
-  ]);
-  if (creatorUnique) {
-    await updateCreatorAggregateMetric(db, creatorId, 'uniqueReaders', 1);
-  }
-  if (dailyUnique) {
-    await incrementCreatorDailyMetric(db, creatorId, 'uniqueReaders', 1, timestamp);
-  }
-  return { creatorUnique, dailyUnique };
-}
-
 async function updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, chapterTitle, viewerUid }) {
   if (!workId || !chapterId || !viewerUid) return;
   const readerPath = `workRetentionRaw/${workId}/chapterReaders/${chapterId}/${viewerUid}`;
@@ -87,7 +54,10 @@ async function updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, c
     incrementPath(db, `workRetention/${workId}/chapters/${chapterId}/readersCount`, 1),
     runTransaction(ref(db, `workRetention/${workId}/chapters/${chapterId}/chapterId`), () => chapterId),
     runTransaction(ref(db, `workRetention/${workId}/chapters/${chapterId}/chapterNumber`), () => safeNumber(chapterNumber)),
-    runTransaction(ref(db, `workRetention/${workId}/chapters/${chapterId}/chapterTitle`), () => String(chapterTitle || '').trim() || `Capitulo ${chapterNumber || ''}`.trim()),
+    runTransaction(
+      ref(db, `workRetention/${workId}/chapters/${chapterId}/chapterTitle`),
+      () => String(chapterTitle || '').trim() || `Capitulo ${chapterNumber || ''}`.trim()
+    ),
     runTransaction(ref(db, `workRetention/${workId}/updatedAt`), () => Date.now()),
   ]);
 
@@ -126,28 +96,20 @@ async function updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, c
   }));
 }
 
-export async function applyWorkFavoriteDelta(db, { workId, creatorId, amount }) {
+export async function applyWorkFavoriteDelta(db, { workId, creatorId: _creatorId, amount }) {
   const delta = Number(amount || 0);
   if (!workId || !delta) return;
-  let resolvedCreatorId = String(creatorId || '').trim();
-  if (!resolvedCreatorId) {
-    const obraSnap = await get(ref(db, `obras/${workId}`));
-    if (obraSnap.exists()) {
-      resolvedCreatorId = String(obraSnap.val()?.creatorId || '').trim();
-    }
-  }
+  const sign = delta > 0 ? 1 : -1;
   await Promise.all([
     incrementPath(db, `obras/${workId}/favoritesCount`, delta),
-    resolvedCreatorId ? updateCreatorAggregateMetric(db, resolvedCreatorId, 'followersCount', delta) : Promise.resolve(),
-    resolvedCreatorId ? updateCreatorLegacyMirror(db, resolvedCreatorId, 'followersCount', delta) : Promise.resolve(),
-    resolvedCreatorId ? incrementCreatorDailyMetric(db, resolvedCreatorId, 'followersCount', delta) : Promise.resolve(),
+    recordCreatorMetricsServer({ action: 'work_favorite', workId, delta: sign }),
   ]);
 }
 
 export async function applyChapterReadDelta(db, {
   chapterId,
   workId,
-  creatorId,
+  creatorId: _creatorId,
   amount = 1,
   viewerUid = '',
   chapterNumber = 0,
@@ -155,31 +117,31 @@ export async function applyChapterReadDelta(db, {
 }) {
   const delta = Number(amount || 0);
   if (!chapterId || !workId || !delta) return;
+  const sign = delta > 0 ? 1 : -1;
+  const vu = String(viewerUid || '').trim();
   await Promise.all([
     incrementPath(db, `capitulos/${chapterId}/viewsCount`, delta),
     incrementPath(db, `obras/${workId}/viewsCount`, delta),
     incrementPath(db, `obras/${workId}/visualizacoes`, delta),
-    creatorId ? updateCreatorAggregateMetric(db, creatorId, 'totalViews', delta) : Promise.resolve(),
-    creatorId ? updateCreatorLegacyMirror(db, creatorId, 'totalViews', delta) : Promise.resolve(),
-    creatorId ? incrementCreatorDailyMetric(db, creatorId, 'totalViews', delta) : Promise.resolve(),
-    creatorId && viewerUid
-      ? registerCreatorUniqueReader(db, { creatorId, viewerUid })
-      : Promise.resolve(),
-    viewerUid
-      ? updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, chapterTitle, viewerUid })
-      : Promise.resolve(),
+    recordCreatorMetricsServer({
+      action: 'chapter_read',
+      workId,
+      chapterId,
+      viewerUid: vu,
+      delta: sign,
+    }),
+    vu ? updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, chapterTitle, viewerUid: vu }) : Promise.resolve(),
   ]);
 }
 
-export async function applyChapterCommentDelta(db, { chapterId, workId, creatorId, amount = 1 }) {
+export async function applyChapterCommentDelta(db, { chapterId, workId, creatorId: _creatorId, amount = 1 }) {
   const delta = Number(amount || 0);
   if (!chapterId || !workId || !delta) return;
+  const sign = delta > 0 ? 1 : -1;
   await Promise.all([
     incrementPath(db, `capitulos/${chapterId}/commentsCount`, delta),
     incrementPath(db, `obras/${workId}/commentsCount`, delta),
-    creatorId ? updateCreatorAggregateMetric(db, creatorId, 'commentsTotal', delta) : Promise.resolve(),
-    creatorId ? updateCreatorLegacyMirror(db, creatorId, 'commentsTotal', delta) : Promise.resolve(),
-    creatorId ? incrementCreatorDailyMetric(db, creatorId, 'commentsTotal', delta) : Promise.resolve(),
+    recordCreatorMetricsServer({ action: 'chapter_comment', workId, chapterId, delta: sign }),
   ]);
 }
 
@@ -188,14 +150,13 @@ export async function applyChapterCommentDelta(db, { chapterId, workId, creatorI
  * O contador `capitulos/{chapterId}/likesCount` já deve ter sido ajustado
  * no mesmo fluxo (ex.: runTransaction no nó do capítulo) — não duplicar aqui.
  */
-export async function applyChapterLikeDelta(db, { chapterId, workId, creatorId, amount = 1 }) {
+export async function applyChapterLikeDelta(db, { chapterId, workId, creatorId: _creatorId, amount = 1 }) {
   const delta = Number(amount || 0);
   if (!chapterId || !workId || !delta) return;
+  const sign = delta > 0 ? 1 : -1;
   await Promise.all([
     incrementPath(db, `obras/${workId}/likesCount`, delta),
-    creatorId ? updateCreatorAggregateMetric(db, creatorId, 'likesTotal', delta) : Promise.resolve(),
-    creatorId ? updateCreatorLegacyMirror(db, creatorId, 'likesTotal', delta) : Promise.resolve(),
-    creatorId ? incrementCreatorDailyMetric(db, creatorId, 'likesTotal', delta) : Promise.resolve(),
+    recordCreatorMetricsServer({ action: 'chapter_like', workId, chapterId, delta: sign }),
   ]);
 }
 

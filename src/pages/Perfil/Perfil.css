@@ -169,6 +169,47 @@
   margin-top: 6px;
 }
 
+.perfil-loja-dados-hint strong {
+  color: #e2e8f0;
+  font-weight: 800;
+}
+
+.perfil-loja-dados-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 14px 0 18px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 204, 0, 0.38);
+  background: rgba(255, 204, 0, 0.09);
+  color: #f5e6a8;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform var(--perfil-transition),
+    border-color var(--perfil-transition),
+    background var(--perfil-transition),
+    color var(--perfil-transition);
+}
+
+.perfil-loja-dados-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 204, 0, 0.55);
+  background: rgba(255, 204, 0, 0.14);
+  color: #fff8d4;
+}
+
+.perfil-loja-dados-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
 .perfil-card--creator .perfil-actions,
 .perfil-card--creator .feedback-msg {
   grid-column: 1 / -1;
@@ -267,6 +308,10 @@
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+  object-position: center;
+  image-rendering: auto;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   background: #000;
   display: block;
 }
@@ -896,4 +941,19 @@ select.perfil-input {
   gap: 10px;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+.perfil-username-status {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(200, 200, 200, 0.95);
+}
+
+.perfil-username-status--ok {
+  color: #86efac;
+}
+
+.perfil-username-status--bad {
+  color: #fca5a5;
 }

@@ -171,7 +171,7 @@ export default function LojaCatalogo({ user, perfil }) {
         </button>
         <div className="loja-store__dock-actions">
           {user ? (
-            <button type="button" className="loja-btn-outline loja-btn-outline--sm" onClick={() => navigate('/loja/pedidos')}>
+            <button type="button" className="loja-btn-outline loja-btn-outline--sm" onClick={() => navigate('/pedidos')}>
               Pedidos
             </button>
           ) : null}

@@ -16,7 +16,22 @@ import { toRecordList } from '../../utils/firebaseRecordList';
 import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
+import {
+  filterAndRankMangaCatalogCards,
+  searchQueryIsActive,
+  suggestMangaCatalogCards,
+} from '../../utils/mangaCatalogSearch';
+import MangaCatalogSearchBar from '../../components/MangaCatalogSearchBar';
 import './ListaMangas.css';
+
+function useDebouncedValue(value, delayMs) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 function pathObraPublica(obra) {
   return `/work/${encodeURIComponent(obraSegmentoUrlPublica(obra))}`;
@@ -63,6 +78,8 @@ export default function ListaMangas({ user }) {
   const [creatorsMap, setCreatorsMap] = useState({});
   const [favoritosLegacy, setFavoritosLegacy] = useState({});
   const [favoritosCanon, setFavoritosCanon] = useState({});
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const debouncedCatalogSearch = useDebouncedValue(catalogSearch, 280);
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
@@ -171,6 +188,24 @@ export default function ListaMangas({ user }) {
     });
   }, [obras, capitulos, favoritosMap, catalogSnapshotNow]);
 
+  const gridObrasCards = useMemo(
+    () =>
+      filterAndRankMangaCatalogCards(obrasCards, debouncedCatalogSearch, (obra) =>
+        resolveCreatorNameFromObra(obra, creatorsMap, capitulos)
+      ),
+    [obrasCards, debouncedCatalogSearch, creatorsMap, capitulos]
+  );
+
+  const catalogSearchSuggestions = useMemo(() => {
+    if (!searchQueryIsActive(catalogSearch)) return [];
+    return suggestMangaCatalogCards(
+      obrasCards,
+      catalogSearch,
+      (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos),
+      10
+    );
+  }, [obrasCards, catalogSearch, creatorsMap, capitulos]);
+
   const discovery = useMemo(
     () => buildDiscoveryRanking({ obras, capitulos, creatorsMap }),
     [obras, capitulos, creatorsMap]
@@ -205,12 +240,26 @@ export default function ListaMangas({ user }) {
   return (
     <main className="lista-mangas-page">
       <div className="lista-mangas-inner">
-        <header className="lista-mangas-header">
-          <h1>Lista de mangás</h1>
-          <p>
-            Catálogo MangaTeofilo — grelha de capas responsiva (celular, tablet, TV). Toque na capa para abrir a
-            obra.
-          </p>
+        <header className="lista-mangas-header lista-mangas-header--toolbar">
+          <div className="lista-mangas-header__intro">
+            <h1>Lista de mangás</h1>
+            <p>
+               Toque na capa para abrir a obra.
+            </p>
+          </div>
+          {obrasCards.length > 0 ? (
+            <MangaCatalogSearchBar
+              value={catalogSearch}
+              onChange={setCatalogSearch}
+              suggestions={catalogSearchSuggestions}
+              onSelectWork={(obra) => {
+                navigate(pathObraPublica(obra));
+                setCatalogSearch('');
+              }}
+              resultCount={gridObrasCards.length}
+              totalCount={obrasCards.length}
+            />
+          ) : null}
         </header>
 
         {heroWork ? (
@@ -327,9 +376,20 @@ export default function ListaMangas({ user }) {
             <h2>Nenhuma obra publicada</h2>
             <p>Quando uma obra estiver com <code>isPublished=true</code>, ela aparecerá aqui.</p>
           </section>
+        ) : searchQueryIsActive(debouncedCatalogSearch) && gridObrasCards.length === 0 ? (
+          <section className="lista-mangas-empty lista-mangas-empty--search" aria-live="polite">
+            <h2>Nenhum resultado nesta busca</h2>
+            <p>
+              Tente outras palavras. A pesquisa ignora maiúsculas e acentos e procura no <strong>título</strong>,{' '}
+              <strong>autor</strong>, <strong>gêneros</strong> e sinopse.
+            </p>
+            <button type="button" className="lista-mangas-search-reset" onClick={() => setCatalogSearch('')}>
+              Limpar pesquisa
+            </button>
+          </section>
         ) : (
-          <section className="lista-mangas-grid">
-            {obrasCards.map((obra) => (
+          <section className="lista-mangas-grid" aria-label="Catálogo de obras">
+            {gridObrasCards.map((obra) => (
               <article
                 key={obra.obraId}
                 className="manga-card"

@@ -1,0 +1,201 @@
+.manga-catalog-search {
+  width: 100%;
+  max-width: min(420px, 100%);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.manga-catalog-search--combo {
+  position: relative;
+  z-index: 20;
+}
+
+.manga-catalog-search__label.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.manga-catalog-search__shell {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 215, 0, 0.42);
+  background: rgba(12, 12, 12, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.manga-catalog-search__shell:focus-within {
+  border-color: rgba(255, 215, 0, 0.72);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 0 3px rgba(255, 204, 0, 0.12);
+}
+
+.manga-catalog-search__icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  order: 3;
+  color: #e8c840;
+  opacity: 0.95;
+}
+
+.manga-catalog-search__input {
+  order: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: #f3f3f3;
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.manga-catalog-search__input::placeholder {
+  color: #7a7a7a;
+}
+
+.manga-catalog-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.manga-catalog-search__clear {
+  order: 2;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cfcfcf;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.manga-catalog-search__clear:hover {
+  background: rgba(255, 204, 0, 0.14);
+  color: #fff;
+}
+
+.manga-catalog-search__meta {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: #8b8b8b;
+  line-height: 1.35;
+}
+
+.manga-catalog-search__meta--hint {
+  color: #9a9a6a;
+}
+
+.manga-catalog-search__dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 215, 0, 0.28);
+  background: linear-gradient(180deg, #1c1c1e, #121214);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  max-height: min(52vh, 380px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.manga-catalog-search__option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.manga-catalog-search__option:hover,
+.manga-catalog-search__option.is-active {
+  background: rgba(255, 204, 0, 0.08);
+  border-color: rgba(255, 215, 0, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 215, 0, 0.2);
+}
+
+.manga-catalog-search__thumb {
+  width: 38px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: #0a0a0a;
+}
+
+.manga-catalog-search__titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.manga-catalog-search__primary {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f4f4f4;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manga-catalog-search__secondary {
+  font-size: 0.76rem;
+  color: #8a8a8a;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manga-catalog-search__type {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #b8b8b8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}

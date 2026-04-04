@@ -18,12 +18,13 @@ import {
   resolverObraIdPorSlugOuId,
   slugifyObraSlug,
 } from '../../config/obras';
+import { getLastRead, subscribeReadingProgress } from '../../utils/readingProgressLocal';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
-import { obraEstaArquivada } from '../../utils/obraCatalogo';
+import { obraEstaArquivada, obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './ObraDetalhe.css';
@@ -65,6 +66,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   const [workNotificationBusy, setWorkNotificationBusy] = useState(false);
   const [workBrowserPushModalOpen, setWorkBrowserPushModalOpen] = useState(false);
   const [workBrowserPushPermission, setWorkBrowserPushPermission] = useState('default');
+  const [lastReadLocal, setLastReadLocal] = useState(() => getLastRead());
+  const [catalogoObras, setCatalogoObras] = useState([]);
   const upsertNotificationSubscription = useMemo(
     () => httpsCallable(functions, 'upsertNotificationSubscription'),
     []
@@ -237,6 +240,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return () => unsub();
   }, [obra]);
 
+  useEffect(() => subscribeReadingProgress(() => setLastReadLocal(getLastRead())), []);
+
   const capitulosResolvidos = useMemo(() => {
     const fallbackCreatorId = obraCreatorId(obra);
     return capitulos.map((cap) => (
@@ -245,15 +250,43 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   }, [capitulos, obra]);
 
   const fallbackCriadorObra = obraCreatorId(obra);
-  const capituloCTA = useMemo(
-    () =>
-      capitulosResolvidos.find((cap) =>
-        capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCriadorObra })
-      ) ||
-      capitulosResolvidos[0] ||
-      null,
-    [capitulosResolvidos, user, perfil, fallbackCriadorObra]
+  const capitulosAsc = useMemo(
+    () => [...capitulosResolvidos].sort((a, b) => Number(a?.numero || 0) - Number(b?.numero || 0)),
+    [capitulosResolvidos]
   );
+
+  const primeiroLiberado = useMemo(
+    () =>
+      capitulosAsc.find((cap) =>
+        capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCriadorObra })
+      ) || null,
+    [capitulosAsc, user, perfil, fallbackCriadorObra]
+  );
+
+  const continuarCap = useMemo(() => {
+    if (!lastReadLocal || !obraId) return null;
+    if (normalizarObraId(lastReadLocal.workId) !== normalizarObraId(obraId)) return null;
+    const cap = capitulosResolvidos.find((c) => c.id === lastReadLocal.chapterId);
+    if (!cap) return null;
+    if (!capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCriadorObra })) return null;
+    return cap;
+  }, [lastReadLocal, obraId, capitulosResolvidos, user, perfil, fallbackCriadorObra]);
+
+  const capMaisRecente = capitulosResolvidos[0] || null;
+  const novoCapLabel = useMemo(() => {
+    if (!capMaisRecente) return null;
+    const ts =
+      Number(capMaisRecente.publicReleaseAt) > 0
+        ? Number(capMaisRecente.publicReleaseAt)
+        : Date.parse(capMaisRecente.dataUpload || '') || 0;
+    if (!Number.isFinite(ts) || ts <= 0) return null;
+    const diff = Date.now() - ts;
+    if (diff < 0) return null;
+    const h = diff / 3600000;
+    if (h < 1) return 'Capítulo novo há menos de 1h';
+    if (h < 48) return `🔥 Capítulo novo há ${Math.round(h)}h`;
+    return null;
+  }, [capMaisRecente]);
 
   const toggleFavorito = async () => {
     if (!user?.uid) {
@@ -275,9 +308,14 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     await saveWorkFavoriteBoth(db, user.uid, obraId, payload);
   };
 
-  const abrirCTA = () => {
-    if (!capituloCTA) return;
-    navigate(`/ler/${capituloCTA.id}`);
+  const abrirComecar = () => {
+    if (!primeiroLiberado) return;
+    navigate(`/ler/${primeiroLiberado.id}`);
+  };
+
+  const abrirContinuar = () => {
+    if (!continuarCap) return;
+    navigate(`/ler/${continuarCap.id}`);
   };
 
   const abrirCriador = () => {
@@ -347,6 +385,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   }
 
   const creatorUidObra = obraCreatorId(obraParaExibir);
+  const creatorHandle = String(creatorProfile?.userHandle || '').trim().toLowerCase();
+  const obraViews = Number(obraParaExibir.viewsCount || obraParaExibir.visualizacoes || 0);
+  const obraLikes = Number(obraParaExibir.likesCount || obraParaExibir.curtidas || 0);
 
   return (
     <main className="obra-page">
@@ -390,23 +431,42 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
           />
           <div className="obra-info">
             <h1>{obraParaExibir.titulo || obraId}</h1>
+            {novoCapLabel ? <p className="obra-novo-cap">{novoCapLabel}</p> : null}
             <div className="obra-meta">
               <span>Status: {obraParaExibir.status || 'ongoing'}</span>
               <span>Público: {obraParaExibir.publicoAlvo || 'Geral'}</span>
               <span>{capitulos.length} capítulos</span>
+              <span className="obra-meta-stats">
+                {obraViews > 0 ? `${obraViews.toLocaleString('pt-BR')} views` : null}
+                {obraViews > 0 && obraLikes > 0 ? ' · ' : null}
+                {obraLikes > 0 ? `${obraLikes.toLocaleString('pt-BR')} likes` : null}
+              </span>
             </div>
-            <button type="button" className="obra-creator-chip" onClick={abrirCriador}>
-              <img
-                src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
-                alt={creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}
-              />
-              <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
-            </button>
+            {creatorHandle ? (
+              <Link className="obra-creator-chip" to={`/@${creatorHandle}`}>
+                <img
+                  src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
+                  alt={creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}
+                />
+                <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
+              </Link>
+            ) : (
+              <button type="button" className="obra-creator-chip" onClick={abrirCriador}>
+                <img
+                  src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
+                  alt={creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}
+                />
+                <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
+              </button>
+            )}
             <p className="obra-sinopse-label">Sinopse</p>
             <p className="obra-sinopse">{obraParaExibir.sinopse || 'Sinopse em breve.'}</p>
-            <div className="obra-actions">
-              <button type="button" className="btn-obra-cta" onClick={abrirCTA} disabled={!capituloCTA}>
-                Ler agora
+            <div className="obra-actions obra-actions--dual">
+              <button type="button" className="btn-obra-cta btn-obra-cta--sec" onClick={abrirComecar} disabled={!primeiroLiberado}>
+                Começar
+              </button>
+              <button type="button" className="btn-obra-cta" onClick={abrirContinuar} disabled={!continuarCap}>
+                Continuar
               </button>
               <button type="button" className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`} onClick={toggleFavorito}>
                 {isFavorito ? '★ Desfavoritar' : '☆ Favoritar'}
@@ -453,7 +513,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
               return (
                 <article
                   key={cap.id}
-                  className={`obra-cap-item shito-cap-row ${liberado ? '' : 'shito-cap-row--bloqueado'}`}
+                  className={`obra-cap-item shito-cap-row ${liberado ? '' : 'shito-cap-row--bloqueado'}${
+                    continuarCap?.id === cap.id ? ' obra-cap-item--continue' : ''
+                  }`}
                   onClick={() => navigate(`/ler/${cap.id}`)}
                   role="button"
                   tabIndex={0}
@@ -489,7 +551,10 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                           )}
                         </div>
                         <div className="cap-stats-row">
-                          <span className="stat-item">👁 {Number(cap.visualizacoes || 0)}</span>
+                          <span className="stat-item">👁 {Number(cap.viewsCount || cap.visualizacoes || 0)}</span>
+                          {Number(cap.likesCount || 0) > 0 ? (
+                            <span className="stat-item">♡ {Number(cap.likesCount || 0)}</span>
+                          ) : null}
                         </div>
                       </div>
                     </div>

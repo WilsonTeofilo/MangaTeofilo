@@ -11,8 +11,35 @@ export const PAYOUT_PIX_TYPE_OPTIONS = Object.freeze([
 
 const TYPES = new Set(['cpf', 'email', 'phone', 'random']);
 
+/** Chave PIX aleatória = UUID (32 hex + 4 hífens = 36 caracteres). */
+export const MAX_RANDOM_PIX_KEY_CHARS = 36;
+
 function onlyDigits(s) {
   return String(s || '').replace(/\D/g, '');
+}
+
+function onlyHexChars(s) {
+  return String(s || '').replace(/[^0-9a-fA-F]/g, '');
+}
+
+/**
+ * Máscara UUID para chave PIX aleatória: só aceita hex; insere hífens 8-4-4-4-12.
+ * @param {string} inputValue
+ */
+export function formatPixRandomDraft(inputValue) {
+  const h = onlyHexChars(inputValue).slice(0, 32).toLowerCase();
+  if (!h) return '';
+  const a = h.slice(0, 8);
+  const b = h.slice(8, 12);
+  const c = h.slice(12, 16);
+  const d = h.slice(16, 20);
+  const e = h.slice(20, 32);
+  let out = a;
+  if (b) out += `-${b}`;
+  if (c) out += `-${c}`;
+  if (d) out += `-${d}`;
+  if (e) out += `-${e}`;
+  return out;
 }
 
 export function formatPixCpfDraft(digits) {
@@ -42,6 +69,9 @@ export function storedPixKeyToDraft(type, stored) {
   if (t === 'cpf') return formatPixCpfDraft(s);
   if (t === 'phone') return formatPixPhoneBrDraft(s);
   if (t === 'email') return s.toLowerCase();
+  if (t === 'random') {
+    return formatPixRandomDraft(s);
+  }
   return s;
 }
 
@@ -65,7 +95,7 @@ export function normalizePixKeyForStorage(type, draft) {
     return d.slice(0, 11);
   }
   if (t === 'random') {
-    return raw.trim().slice(0, 2000);
+    return formatPixRandomDraft(raw);
   }
   return raw.trim();
 }
@@ -184,6 +214,9 @@ export function applyPixDraftChange(type, inputValue) {
   }
   if (t === 'email') {
     return v.toLowerCase();
+  }
+  if (t === 'random') {
+    return formatPixRandomDraft(v);
   }
   return v;
 }

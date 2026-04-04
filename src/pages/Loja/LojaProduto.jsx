@@ -18,6 +18,7 @@ import { openStoreCheckout } from '../../utils/storeCheckout';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { getStoreBuyerProfileMissingFields } from '../../utils/storeBuyerProfile';
 import { PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
+import { formatStoreShippingEtaLabel } from '../../utils/storeShipping';
 import './Loja.css';
 
 export default function LojaProduto({ user, perfil }) {
@@ -197,7 +198,7 @@ export default function LojaProduto({ user, perfil }) {
           <h1 className="loja-product-title">{product.title}</h1>
           <p className="loja-product-desc">{product.description || 'Sem descricao'}</p>
           <ul className="loja-product-trust" aria-label="Informacoes do produto">
-            <li>Edicao artesanal ù producao limitada</li>
+            <li>Edicao artesanal ? producao limitada</li>
             <li>Envio pelos Correios apos confirmacao do pagamento</li>
             {stock > 0 && stock <= 12 ? (
               <li className="loja-product-trust--scarcity">Restam poucas unidades - {stock} em estoque</li>
@@ -216,7 +217,7 @@ export default function LojaProduto({ user, perfil }) {
             {vip && product.isVIPDiscountEnabled && finalPrice < basePrice ? <span className="loja-price-vip">VIP</span> : null}
           </div>
           <p className="loja-shipping-hint">
-            Escolha PAC ou SEDEX abaixo. O frete considera peso do item, regiao e regra de frete gratis acima do limite da loja.
+            Escolha PAC ou SEDEX. O valor segue a tabela fixa por UF + R$ 2 por unidade adicional; frete gr·tis quando o subtotal for R$ 150+ e o frete calculado for atÈ R$ 60.
           </p>
           <p className={`loja-stock ${stock > 0 && stock <= 12 ? 'loja-stock--low' : ''}`}>
             Estoque: {stock}
@@ -245,7 +246,7 @@ export default function LojaProduto({ user, perfil }) {
                 >
                   <strong>{option.label}</strong>
                   <span>{option.regionLabel}</span>
-                  <span>Prazo: {option.deliveryDays} dias</span>
+                  <span>Entrega: {formatStoreShippingEtaLabel(option)}</span>
                   <span>
                     Frete: R$ {Number(option.priceBrl || 0).toFixed(2)}
                     {Number(option.discountBrl || 0) > 0 ? ` (de R$ ${Number(option.originalPriceBrl || 0).toFixed(2)})` : ''}

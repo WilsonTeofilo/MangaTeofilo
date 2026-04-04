@@ -10,10 +10,6 @@ service firebase.storage {
           || request.auth.token.admin == true);
   }
 
-  function isMangaka() {
-    return request.auth != null && request.auth.token.panelRole == "mangaka";
-  }
-
   function hasAdminPanelAccess() {
     return request.auth != null
       && (request.auth.token.panelRole == "admin"
@@ -25,12 +21,16 @@ service firebase.storage {
     return value.matches('^[A-Za-z0-9_-]{2,128}$');
   }
 
+  /**
+   * Dono do path (uid no segmento) pode escrever na própria pasta sem depender de custom claim
+   * `panelRole` (muitos criadores só têm role no RTDB). Staff continua com override.
+   */
   function canWriteOwnerPath(ownerUid) {
     return isShitoAdmin()
       || hasAdminPanelAccess()
       || (request.auth != null
           && request.auth.uid == ownerUid
-          && isMangaka());
+          && isSafeSegment(ownerUid));
   }
 
   match /b/{bucket}/o {
@@ -44,20 +44,14 @@ service firebase.storage {
                    && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')));
     }
 
-    match /manga/{ownerUid}/{obra}/{fileName} {
-      allow read: if true;
-      allow write: if isSafeSegment(ownerUid)
-                   && isSafeSegment(obra)
-                   && canWriteOwnerPath(ownerUid)
-                   && (request.resource == null || (request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*')
-                   && !request.resource.contentType.matches('.*svg.*')
-                   && fileName.lower().matches('.*\\.(jpe?g|png|webp)$')));
-    }
-
-    match /obras/{ownerUid}/{obra}/{fileName} {
-      allow read: if true;
-      allow write: if isSafeSegment(ownerUid)
+    /**
+     * Páginas de capítulo (AdminPanel → manga/…) e capas/banners por obra (ObrasAdmin → obras/…).
+     * Mesma política: imagens até 5MB, sem SVG; dono do segmento ou staff.
+     */
+    match /{workImageRoot}/{ownerUid}/{obra}/{fileName} {
+      allow read: if workImageRoot == "manga" || workImageRoot == "obras";
+      allow write: if (workImageRoot == "manga" || workImageRoot == "obras")
+                   && isSafeSegment(ownerUid)
                    && isSafeSegment(obra)
                    && canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 5 * 1024 * 1024

@@ -8,6 +8,7 @@ import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { functions } from '../../services/firebase';
 import { submitCreatorApplicationPayload } from '../../utils/creatorApplicationClient';
 import { sanitizeCpfDigitsInput } from '../../utils/creatorRecord';
+import { CREATOR_FUTURE_PROGRAM } from '../../utils/creatorFutureProgramTeaser';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import './CreatorsApplyPage.css';
 
@@ -38,10 +39,13 @@ export default function CreatorsApplyPage({ user, perfil, adminAccess }) {
       payoutPixType: String(perfil?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
       profileImageCrop: perfil?.creatorApplication?.profileImageCrop || null,
       existingProfileImageUrl: (() => {
-        const candidates = [perfil?.creatorApplication?.profileImageUrl, perfil?.userAvatar];
+        const site = 'https://mangateofilo.com';
+        const candidates = [perfil?.creatorApplication?.profileImageUrl, perfil?.userAvatar, user?.photoURL];
         for (const raw of candidates) {
           const u = String(raw || '').trim();
+          if (!u) continue;
           if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
+          if (u.startsWith('/') && !u.startsWith('//') && u.length >= 2 && u.length <= 2048) return `${site}${u}`;
         }
         return '';
       })(),
@@ -74,6 +78,17 @@ export default function CreatorsApplyPage({ user, perfil, adminAccess }) {
             <li>Publicar sem monetização: acesso liberado na hora</li>
             <li>Monetização com dados legais e PIX passa por revisão da equipe</li>
           </ul>
+          <aside className="creators-apply-guest__future" aria-label="Programa futuro para criadores">
+            <p className="creators-apply-guest__future-eyebrow">{CREATOR_FUTURE_PROGRAM.eyebrow}</p>
+            <p className="creators-apply-guest__future-title">{CREATOR_FUTURE_PROGRAM.title}</p>
+            <p className="creators-apply-guest__future-disclaimer">{CREATOR_FUTURE_PROGRAM.disclaimer}</p>
+            <ul className="creators-apply-guest__future-list">
+              {CREATOR_FUTURE_PROGRAM.perks.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p className="creators-apply-guest__future-closer">{CREATOR_FUTURE_PROGRAM.closer}</p>
+          </aside>
           <div className="creators-apply-guest__actions">
             <button type="button" className="creators-apply-guest__primary" onClick={() => navigate(buildLoginUrlWithRedirect('/perfil'))}>
               Entrar ou cadastrar
@@ -103,11 +118,20 @@ export default function CreatorsApplyPage({ user, perfil, adminAccess }) {
         payload,
         uid: user.uid,
       });
-      if (data?.autoApproved && typeof window !== 'undefined') {
-        window.location.assign('/perfil');
-        return;
-      }
-      navigate('/perfil');
+      const autoApproved = data?.autoApproved === true;
+      return {
+        successTitle: autoApproved ? 'Criador liberado' : 'Solicitação enviada',
+        successBody: autoApproved
+          ? 'Seu acesso foi liberado. Ao continuar, atualizamos a página do seu perfil.'
+          : 'Recebemos sua candidatura. Ao continuar, você será levado ao perfil.',
+        afterDismiss: () => {
+          if (autoApproved && typeof window !== 'undefined') {
+            window.location.assign('/perfil');
+          } else {
+            navigate('/perfil');
+          }
+        },
+      };
     } catch (err) {
       const msg = err?.message || 'Não foi possível enviar sua solicitação agora.';
       throw new Error(msg);

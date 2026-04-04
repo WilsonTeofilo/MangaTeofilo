@@ -10,9 +10,14 @@ import { clearCart, getCartItems, removeFromCart, updateCartQuantity } from '../
 import { openStoreCheckout } from '../../utils/storeCheckout';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
+import { formatStoreShippingEtaLabel } from '../../utils/storeShipping';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import { getStoreBuyerProfileMissingFields } from '../../utils/storeBuyerProfile';
+import { describePodLeadTimePt, formatPodBookFormatPt, formatPodSaleModelPt } from '../../utils/printOnDemandOrderUi';
+import { formatBRL } from '../../utils/printOnDemandPricingV2';
+import { clearPodCartDraft, getPodCartDraft, POD_CART_CHANGED_EVENT } from '../../store/podCartStore';
 import './Loja.css';
+import './PrintOnDemandCartCheckout.css';
 
 function mapProducts(data) {
   const src = data && typeof data === 'object' ? data : {};
@@ -43,6 +48,7 @@ export default function LojaCarrinho({ user, perfil }) {
   const [shippingQuote, setShippingQuote] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingService, setShippingService] = useState('PAC');
+  const [podDraft, setPodDraft] = useState(() => getPodCartDraft());
 
   const vip = descontoVipLojaAtivo(perfil, user);
   const buyerMissingFields = useMemo(
@@ -62,6 +68,13 @@ export default function LojaCarrinho({ user, perfil }) {
       unsubProducts();
       unsubCfg();
     };
+  }, []);
+
+  useEffect(() => {
+    const syncPod = () => setPodDraft(getPodCartDraft());
+    syncPod();
+    window.addEventListener(POD_CART_CHANGED_EVENT, syncPod);
+    return () => window.removeEventListener(POD_CART_CHANGED_EVENT, syncPod);
   }, []);
 
   useEffect(() => {
@@ -104,6 +117,9 @@ export default function LojaCarrinho({ user, perfil }) {
   );
   const shipping = Number(selectedShippingOption?.priceBrl || 0);
   const total = Math.round((subtotal + shipping) * 100) / 100;
+
+  const hasStore = detailed.length > 0;
+  const hasPod = Boolean(podDraft);
 
   useEffect(() => {
     let active = true;
@@ -183,16 +199,103 @@ export default function LojaCarrinho({ user, perfil }) {
 
       {!user?.uid ? (
         <p className="loja-shipping-hint">
-          Vocù pode montar o carrinho sem conta. Para calcular frete e pagar, entre e complete os dados de entrega no perfil.
+            Voc? pode montar o carrinho da loja sem conta. Para calcular frete e pagar produtos, entre e complete os dados de
+          entrega no perfil. O lote de mang? f?sico exige login para pagar.
         </p>
       ) : null}
 
-      {!detailed.length ? (
+      {!hasPod && !hasStore ? (
         <section className="loja-empty">
-          <p>Seu carrinho esta vazio.</p>
+          <p>Seu carrinho est? vazio.</p>
+          <p className="loja-shipping-hint" style={{ marginTop: 12 }}>
+            <Link to="/loja">Ir ? loja</Link>
+            {' ? '}
+            <Link to="/print-on-demand?iniciar=1">Montar mang? f?sico</Link>
+          </p>
         </section>
-      ) : (
+      ) : null}
+
+      {hasPod ? (
+        <section className="pod-checkout-card" style={{ marginBottom: 22 }}>
+          <h2 className="pod-checkout-section-title" style={{ marginTop: 0 }}>
+            Mang? f?sico (lote sob demanda)
+          </h2>
+          {!user?.uid ? (
+            <p className="loja-shipping-hint">
+              H? um lote salvo neste aparelho.{' '}
+              <Link to={buildLoginUrlWithRedirect('/loja/carrinho')}>Entre na conta</Link> para revisar e pagar com
+              seguran?a.
+            </p>
+          ) : (
+            <>
+              <div className="pod-cart-line">
+                <div className="pod-cart-line__thumb">
+                  {podDraft.coverUrl ? (
+                    <img src={podDraft.coverUrl} alt="" className="pod-cart-line__thumb-img" />
+                  ) : (
+                    <span className="pod-cart-line__thumb-fallback" aria-hidden="true">
+                      ??
+                    </span>
+                  )}
+                </div>
+                <div className="pod-cart-line__body">
+                  <h3 className="pod-cart-line__title" style={{ fontSize: '1.02rem' }}>
+                    {podDraft.labelLine}
+                  </h3>
+                  <ul className="pod-cart-line__details">
+                    <li>
+                      <span className="pod-cart-line__k">Modelo</span>
+                      <span className="pod-cart-line__v">{formatPodBookFormatPt(podDraft.format)}</span>
+                    </li>
+                    <li>
+                      <span className="pod-cart-line__k">Tipo</span>
+                      <span className="pod-cart-line__v">{formatPodSaleModelPt(podDraft.saleModel)}</span>
+                    </li>
+                    <li>
+                      <span className="pod-cart-line__k">Qtd</span>
+                      <span className="pod-cart-line__v">{podDraft.quantity} un.</span>
+                    </li>
+                  </ul>
+                </div>
+                <div className="pod-cart-line__priceCol">
+                  <span className="pod-cart-line__priceLabel">Total do lote</span>
+                  <div className="pod-cart-line__price">{formatBRL(podDraft.amountDueBRL ?? 0)}</div>
+                </div>
+              </div>
+              <p className="pod-checkout-hint pod-checkout-hint--compact">
+                {describePodLeadTimePt(podDraft.saleModel, podDraft.format, podDraft.quantity)}
+              </p>
+              <div className="pod-cart-actions pod-cart-actions--split">
+                <button type="button" className="pod-checkout-btn pod-checkout-btn--ghost" onClick={() => clearPodCartDraft()}>
+                  Remover lote
+                </button>
+                <Link className="pod-checkout-btn pod-checkout-btn--ghost" to="/print-on-demand?iniciar=1">
+                  Editar configura??o
+                </Link>
+              </div>
+              <Link
+                className="pod-checkout-btn pod-checkout-btn--primary pod-checkout-btn--block"
+                style={{ marginTop: 14 }}
+                to="/print-on-demand/checkout"
+              >
+                Ir para pagamento do lote
+              </Link>
+            </>
+          )}
+        </section>
+      ) : null}
+
+      {hasStore && hasPod ? (
+        <p className="loja-shipping-hint" role="status">
+          Loja e mang? f?sico usam checkouts diferentes (cada um com seu pagamento no Mercado Pago).
+        </p>
+      ) : null}
+
+      {hasStore ? (
         <section className="loja-cart-list">
+          <h2 className="pod-checkout-section-title" style={{ margin: '0 0 14px', fontSize: '1.05rem' }}>
+            Produtos da loja
+          </h2>
           {detailed.map((line) => (
             <article key={lineKey(line.productId, line.size)} className="loja-cart-item">
               <img
@@ -226,13 +329,15 @@ export default function LojaCarrinho({ user, perfil }) {
               {selectedShippingOption ? (
                 <div>
                   {selectedShippingOption.label}: R$ {Number(selectedShippingOption.priceBrl || 0).toFixed(2)}
-                  {Number(selectedShippingOption.discountBrl || 0) > 0 ? ` ù Voce economizou R$ ${Number(selectedShippingOption.discountBrl || 0).toFixed(2)}` : ''}
+                  {Number(selectedShippingOption.discountBrl || 0) > 0
+                    ? ` ? Voc? economizou R$ ${Number(selectedShippingOption.discountBrl || 0).toFixed(2)}`
+                    : ''}
                 </div>
               ) : null}
               <div className="loja-cart-total-final">Total: R$ {total.toFixed(2)}</div>
             </div>
             <p className="loja-shipping-hint">
-              Frete dinamico por peso, servico e regiao. A API oficial dos Correios pede contrato; por isso o checkout usa motor proprio pronto para PAC e SEDEX e depois pode ser plugado na API oficial.
+              Frete por UF (tabela fixa) + R$ 2 por unidade adicional no pedido; PAC usa esse valor, SEDEX aplica acr?scimo sobre a mesma base. Prazo de entrega usa a regi?o da UF. Frete gr?tis: subtotal a partir de R$ 150 e valor de frete calculado at? R$ 60.
             </p>
             {shippingQuote ? (
               <div className="loja-shipping-options">
@@ -245,7 +350,7 @@ export default function LojaCarrinho({ user, perfil }) {
                   >
                     <strong>{option.label}</strong>
                     <span>{option.regionLabel}</span>
-                    <span>Prazo: {option.deliveryDays} dias</span>
+                    <span>Entrega: {formatStoreShippingEtaLabel(option)}</span>
                     <span>
                       Frete: R$ {Number(option.priceBrl || 0).toFixed(2)}
                       {Number(option.discountBrl || 0) > 0 ? ` (de R$ ${Number(option.originalPriceBrl || 0).toFixed(2)})` : ''}
@@ -272,11 +377,11 @@ export default function LojaCarrinho({ user, perfil }) {
               disabled={loading || hasInvalid || shippingLoading || !selectedShippingOption}
               onClick={handleCheckout}
             >
-              {loading ? 'Abrindo checkout...' : 'Finalizar compra'}
+              {loading ? 'Abrindo checkout...' : 'Finalizar compra da loja'}
             </button>
           </footer>
         </section>
-      )}
+      ) : null}
     </main>
   );
 }

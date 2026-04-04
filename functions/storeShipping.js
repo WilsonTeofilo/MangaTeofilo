@@ -1,6 +1,19 @@
+import {
+  computeFixedZoneShippingParts,
+  FREE_SHIPPING_MAX_SHIPPING_BRL,
+  FREE_SHIPPING_MIN_SUBTOTAL_BRL,
+} from './fixedZoneShipping.js';
+
 function round2(value) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
+
+/**
+ * Dias úteis entre pagamento e postagem (separação, embalagem, despacho).
+ * Somados ao prazo de trânsito PAC/SEDEX da tabela regional (`pacDays` / `sedexDays`).
+ */
+export const STORE_INTERNAL_PREP_DAYS_MIN = 2;
+export const STORE_INTERNAL_PREP_DAYS_MAX = 4;
 
 export const STORE_SHIPPING_REGIONS = {
   sudeste: { label: 'Sudeste', states: ['SP', 'RJ', 'MG', 'ES'], pacBase: 25, sedexBase: 34, pacPerKg: 6, sedexPerKg: 9, pacDays: 5, sedexDays: 2 },
@@ -36,88 +49,58 @@ export function detectShippingRegionFromState(state) {
   return 'sudeste';
 }
 
-function weightUnits(weightGrams) {
-  const weight = Math.max(0, Number(weightGrams || 0));
-  return Math.max(1, Math.ceil(weight / 1000));
-}
-
-function regionalBaseFromProduct(product, regionKey, serviceCode, normalizedRegions) {
-  const regional = product?.regionalShipping && typeof product.regionalShipping === 'object' ? product.regionalShipping : {};
-  const pacBase = Number(regional[regionKey]);
-  if (Number.isFinite(pacBase) && pacBase >= 0) {
-    return serviceCode === 'SEDEX' ? pacBase * 1.35 : pacBase;
-  }
-  const region = normalizedRegions[regionKey] || normalizedRegions.sudeste;
-  return serviceCode === 'SEDEX' ? region.sedexBase : region.pacBase;
-}
-
-function lineShippingCost(product, quantity, regionKey, serviceCode, config, normalizedRegions) {
-  const region = normalizedRegions[regionKey] || normalizedRegions.sudeste;
-  const shippingMode = String(
-    product?.shippingMode || config?.defaultShippingMode || 'fixed'
-  ).toLowerCase();
-  const weightGrams = Math.max(1, Number(product?.weightGrams || 450)) * Math.max(1, Number(quantity || 1));
-  const units = weightUnits(weightGrams);
-
-  if (shippingMode === 'region') {
-    const base = regionalBaseFromProduct(product, regionKey, serviceCode, normalizedRegions);
-    return {
-      priceBrl: round2(base + Math.max(0, units - 1) * (serviceCode === 'SEDEX' ? 4.5 : 3.25)),
-      deliveryDays: serviceCode === 'SEDEX' ? region.sedexDays : region.pacDays,
-      weightGrams,
-    };
-  }
-
-  if (shippingMode === 'api') {
-    const base = serviceCode === 'SEDEX' ? region.sedexBase : region.pacBase;
-    const perKg = serviceCode === 'SEDEX' ? region.sedexPerKg : region.pacPerKg;
-    return {
-      priceBrl: round2(base + Math.max(0, units - 1) * perKg),
-      deliveryDays: serviceCode === 'SEDEX' ? region.sedexDays : region.pacDays,
-      weightGrams,
-    };
-  }
-
-  const fixed = Math.max(0, Number(config?.fixedShippingBrl || 0));
-  return {
-    priceBrl: round2((serviceCode === 'SEDEX' ? fixed * 1.4 : fixed) + Math.max(0, units - 1) * (serviceCode === 'SEDEX' ? 5 : 3.5)),
-    deliveryDays: serviceCode === 'SEDEX' ? Math.max(2, region.sedexDays) : Math.max(4, region.pacDays),
-    weightGrams,
-  };
-}
-
 export function buildStoreShippingQuote({ items, productsById, config, buyerProfile, subtotal }) {
   const normalizedRegions = normalizeShippingRegions(config?.shippingRegions);
   const regionKey = detectShippingRegionFromState(buyerProfile?.state);
   const region = normalizedRegions[regionKey] || normalizedRegions.sudeste;
-  const services = ['PAC', 'SEDEX'];
-  const options = services.map((serviceCode) => {
-    let originalPriceBrl = 0;
-    let totalWeightGrams = 0;
-    let maxDays = 0;
+  const sub = Number(subtotal || 0);
 
-    for (const item of items || []) {
-      const product = productsById?.[item.productId];
-      if (!product) continue;
-      const line = lineShippingCost(product, item.quantity, regionKey, serviceCode, config, normalizedRegions);
-      originalPriceBrl += line.priceBrl;
-      totalWeightGrams += line.weightGrams;
-      maxDays = Math.max(maxDays, line.deliveryDays);
-    }
+  let totalUnits = 0;
+  let totalWeightGrams = 0;
+  for (const item of items || []) {
+    const product = productsById?.[item.productId];
+    if (!product) continue;
+    const qty = Math.max(1, Number(item.quantity) || 1);
+    totalUnits += qty;
+    totalWeightGrams += Math.max(1, Number(product.weightGrams || 450)) * qty;
+  }
+  if (totalUnits < 1) totalUnits = 1;
 
-    const freeThreshold = Math.max(0, Number(config?.freeShippingThresholdBrl || 0));
-    const discountBrl = Number(subtotal || 0) >= freeThreshold ? round2(originalPriceBrl) : 0;
+  const zoneParts = computeFixedZoneShippingParts({
+    state: buyerProfile?.state,
+    quantity: totalUnits,
+    cartTotal: sub,
+  });
+
+  const services = [
+    { code: 'PAC', mult: 1 },
+    { code: 'SEDEX', mult: 1.35 },
+  ];
+  const options = services.map(({ code: serviceCode, mult }) => {
+    const raw =
+      mult === 1
+        ? zoneParts.originalPriceBrl
+        : Math.max(0, Math.ceil((zoneParts.baseBrl + zoneParts.extraBrl) * mult));
+    const freeApplied = sub >= FREE_SHIPPING_MIN_SUBTOTAL_BRL && raw <= FREE_SHIPPING_MAX_SHIPPING_BRL;
+    const discountBrl = freeApplied ? raw : 0;
+    const priceBrl = freeApplied ? 0 : raw;
+    const transitDays = serviceCode === 'SEDEX' ? region.sedexDays : region.pacDays;
+    const deliveryDaysLow = transitDays + STORE_INTERNAL_PREP_DAYS_MIN;
+    const deliveryDaysHigh = transitDays + STORE_INTERNAL_PREP_DAYS_MAX;
     return {
       serviceCode,
       label: serviceCode,
       regionKey,
       regionLabel: region.label,
       totalWeightGrams,
-      originalPriceBrl: round2(originalPriceBrl),
-      discountBrl,
-      priceBrl: round2(Math.max(0, originalPriceBrl - discountBrl)),
-      internalCostBrl: round2(originalPriceBrl),
-      deliveryDays: maxDays || (serviceCode === 'SEDEX' ? region.sedexDays : region.pacDays),
+      originalPriceBrl: round2(raw),
+      discountBrl: round2(discountBrl),
+      priceBrl: round2(priceBrl),
+      internalCostBrl: round2(raw),
+      transitDays,
+      deliveryDays: transitDays,
+      deliveryDaysLow,
+      deliveryDaysHigh,
     };
   });
 

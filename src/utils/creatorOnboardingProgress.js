@@ -1,5 +1,11 @@
 import { obterObraIdCapitulo } from '../config/obras';
-import { CREATOR_BIO_MIN_LENGTH, CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY } from '../constants';
+import { resolveCreatorMonetizationStatusFromDb } from './creatorMonetizationUi';
+import {
+  CREATOR_BIO_MIN_LENGTH,
+  CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY,
+  CREATOR_MEMBERSHIP_PRICE_MAX_BRL,
+  CREATOR_MEMBERSHIP_PRICE_MIN_BRL,
+} from '../constants';
 import { validateCreatorSocialLinks } from './creatorSocialLinks';
 import { toRecordList } from './firebaseRecordList';
 
@@ -48,13 +54,19 @@ export function buildCreatorOnboardingSteps({
   const price = Number(perfilDb.creatorMembershipPriceBRL);
   const donation = Number(perfilDb.creatorDonationSuggestedBRL);
   const membershipEnabled = perfilDb.creatorMembershipEnabled !== false;
-  const monetizationStatus = String(perfilDb.creatorMonetizationStatus || '').trim().toLowerCase();
+  const monetizationResolved = resolveCreatorMonetizationStatusFromDb(perfilDb);
+  const monetizationStatus =
+    monetizationResolved !== ''
+      ? monetizationResolved
+      : String(perfilDb.creatorMonetizationStatus || '').trim().toLowerCase();
   const monetizationActive = monetizationStatus === 'active';
   const monetizationConfigured =
     Number.isFinite(price) &&
-    price >= 1 &&
+    price >= CREATOR_MEMBERSHIP_PRICE_MIN_BRL &&
+    price <= CREATOR_MEMBERSHIP_PRICE_MAX_BRL &&
     Number.isFinite(donation) &&
-    donation >= 1 &&
+    donation >= CREATOR_MEMBERSHIP_PRICE_MIN_BRL &&
+    donation <= CREATOR_MEMBERSHIP_PRICE_MAX_BRL &&
     membershipEnabled;
   const monetOk = monetizationPreference !== 'monetize'
     ? true
@@ -101,7 +113,7 @@ export function buildCreatorOnboardingSteps({
           ? 'Monetizacao bloqueada por idade. A conta pode publicar normalmente, sem receber.'
           : monetizationConfigured
             ? 'Configuracao enviada. Sua membership do criador esta pronta para validacao/liberacao.'
-            : 'Ative a membership do criador e defina valores de membership e doacao sugerida.',
+            : `Ative a membership do criador e defina valores entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL}.`,
       done: monetOk,
       action: 'form',
     },

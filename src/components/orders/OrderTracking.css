@@ -1,0 +1,683 @@
+/* Timeline horizontal (lista + detalhe) */
+.ot-timeline {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.ot-timeline--vertical {
+  flex-direction: column;
+  overflow-x: visible;
+  gap: 0;
+}
+
+.ot-timeline__step {
+  flex: 1 1 0;
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  position: relative;
+}
+
+.ot-timeline--vertical .ot-timeline__step {
+  flex: none;
+  width: 100%;
+  flex-direction: row;
+  align-items: flex-start;
+  text-align: left;
+  min-width: 0;
+  padding: 12px 0;
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
+  margin-left: 11px;
+  padding-left: 20px;
+}
+
+.ot-timeline--vertical .ot-timeline__step::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 14px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(15, 20, 30, 0.95);
+}
+
+.ot-timeline__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  flex-shrink: 0;
+}
+
+.ot-timeline__step--done .ot-timeline__dot {
+  background: #22c55e;
+  border-color: #4ade80;
+}
+
+.ot-timeline__step--current .ot-timeline__dot {
+  background: #facc15;
+  border-color: #fde047;
+  box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.22);
+}
+
+.ot-timeline--vertical .ot-timeline__step--done::before {
+  background: #22c55e;
+  border-color: #0a0f18;
+}
+
+.ot-timeline--vertical .ot-timeline__step--current::before {
+  background: #facc15;
+  border-color: #0a0f18;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.25);
+}
+
+.ot-timeline__label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  color: rgba(226, 232, 240, 0.55);
+  text-transform: uppercase;
+}
+
+.ot-timeline__step--done .ot-timeline__label,
+.ot-timeline__step--current .ot-timeline__label {
+  color: rgba(248, 250, 252, 0.88);
+}
+
+.ot-timeline__step--current .ot-timeline__label {
+  color: #fef9c3;
+}
+
+.ot-timeline--vertical .ot-timeline__sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.95);
+  max-width: 100%;
+}
+
+.ot-timeline--vertical .ot-timeline__step--current .ot-timeline__sub {
+  color: rgba(226, 232, 240, 0.88);
+}
+
+/* Página de detalhe do pedido */
+.ot-detail-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.ot-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #6ee7b7;
+  text-decoration: none;
+}
+
+.ot-detail-back:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ot-detail-hero {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 12, 20, 0.92);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  padding: 20px 20px 18px;
+  margin-bottom: 16px;
+}
+
+.ot-detail-hero__id {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.ot-detail-hero__status {
+  margin: 0 0 10px;
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #f8fafc;
+}
+
+.ot-detail-hero__eta {
+  margin: 0;
+  font-size: 0.88rem;
+  color: rgba(186, 230, 253, 0.92);
+  line-height: 1.45;
+}
+
+.ot-detail-hero__updated {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.ot-detail-block {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 10, 18, 0.88);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+.ot-detail-block h2 {
+  margin: 0 0 12px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.ot-detail-block p,
+.ot-detail-block li {
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.ot-detail-block ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.ot-detail-block__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.ot-detail-block__row:last-child {
+  margin-bottom: 0;
+}
+
+.ot-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ot-detail-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ot-detail-checklist li {
+  font-size: 0.84rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ot-detail-checklist li.is-on {
+  border-left: 3px solid #34d399;
+}
+
+.ot-detail-checklist li.is-off {
+  border-left: 3px solid rgba(148, 163, 184, 0.35);
+  opacity: 0.85;
+}
+
+.ot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ot-badge--neutral {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+.ot-badge--payment {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+.ot-badge--production {
+  background: rgba(56, 189, 248, 0.16);
+  color: #7dd3fc;
+}
+
+.ot-badge--transit {
+  background: rgba(129, 140, 248, 0.2);
+  color: #c7d2fe;
+}
+
+.ot-badge--done {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+}
+
+.ot-badge--cancel {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.ot-badge--problem {
+  background: rgba(251, 113, 133, 0.2);
+  color: #fecdd3;
+}
+
+/* Card unificado */
+.ot-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 12, 20, 0.92);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+.ot-card__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ot-card__id {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #f8fafc;
+}
+
+.ot-card__date {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.ot-card__mid {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.ot-card__thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  overflow: hidden;
+}
+
+.ot-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ot-card__product-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  line-height: 1.35;
+}
+
+.ot-card__product-meta {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.ot-card__money {
+  text-align: right;
+}
+
+.ot-card__money strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #ecfdf5;
+}
+
+.ot-card__money span {
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.ot-card__pay-hint {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.92);
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.22);
+  border-radius: 10px;
+}
+
+.ot-card__pay-hint--warn {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(248, 113, 113, 0.32);
+  color: #fecaca;
+}
+
+.ot-btn--disabled {
+  pointer-events: none;
+}
+
+.ot-detail-pay-hint {
+  margin: 0 0 14px;
+  max-width: 52ch;
+}
+
+.ot-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.ot-btn--primary {
+  background: linear-gradient(135deg, #eab308, #ca8a04);
+  color: #1a1a0a;
+}
+
+.ot-btn--primary:hover {
+  filter: brightness(1.06);
+  color: #0f0f05;
+}
+
+.ot-btn--ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ot-btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ot-card__hint {
+  margin: 8px 0 0;
+  font-size: 0.76rem;
+  color: #fda4af;
+}
+
+.ot-card__creator-metrics {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  font-size: 0.8rem;
+  color: #a7f3d0;
+}
+
+.ot-card__creator-metrics strong {
+  color: #ecfdf5;
+}
+
+@media (max-width: 520px) {
+  .ot-card__mid {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .ot-card__money {
+    grid-column: 1 / -1;
+    text-align: left;
+    margin-top: 4px;
+  }
+}
+
+/* Retorno Mercado Pago (POD) — sucesso / pendente */
+.ot-mp-return-banner {
+  margin: 0 0 22px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.ot-mp-return-banner--pending {
+  background: rgba(234, 179, 8, 0.12);
+  border-color: rgba(250, 204, 21, 0.28);
+}
+
+.ot-mp-return-banner h2 {
+  margin: 0 0 10px;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.ot-mp-return-banner__id {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.ot-mp-return-banner__body {
+  margin: 0 0 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.ot-mp-return-banner__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  background: linear-gradient(135deg, #ee4d2e 0%, #d63d22 100%);
+  color: #fff;
+  text-decoration: none;
+}
+
+.ot-mp-return-banner__cta:hover {
+  filter: brightness(1.05);
+  color: #fff;
+}
+
+/* Modal (cancelar pedido POD — comprador) */
+.ot-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5, 7, 12, 0.75);
+  backdrop-filter: blur(6px);
+}
+
+.ot-modal {
+  width: min(100%, 420px);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 204, 0, 0.22);
+  background: linear-gradient(165deg, #14161c 0%, #0c0e12 100%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  padding: 22px 22px 18px;
+  color: #ececec;
+}
+
+.ot-modal__title {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff0bf;
+}
+
+.ot-modal__body {
+  margin: 0 0 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.ot-modal__label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 12px;
+}
+
+.ot-modal__textarea {
+  resize: vertical;
+  min-height: 72px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f4f4f5;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.ot-modal__textarea:focus {
+  outline: none;
+  border-color: rgba(255, 204, 0, 0.45);
+}
+
+.ot-modal__error {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: #fca5a5;
+}
+
+.ot-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ot-pod-expiry-banner {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: rgba(234, 179, 8, 0.1);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.ot-pod-expiry-banner--gone {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.ot-pod-expiry-banner p {
+  margin: 0;
+}
+
+.ot-pod-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.ot-pod-events li {
+  display: grid;
+  grid-template-columns: minmax(0, 140px) minmax(0, 120px) 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.82rem;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 640px) {
+  .ot-pod-events li {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ot-pod-events__type {
+  color: rgba(255, 204, 0, 0.85);
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.ot-pod-events__msg {
+  color: rgba(255, 255, 255, 0.78);
+}

@@ -24,7 +24,10 @@ import {
 import {
   parseStoreExternalRef,
   criarPreferenciaLoja,
+  parsePodExternalRef,
+  criarPreferenciaPrintOnDemand,
 } from './mercadoPagoStore.js';
+import { persistPrintOnDemandOrder, notifyPrintOnDemandPaid } from './printOnDemandOrders.js';
 import { buildStoreShippingQuote } from './storeShipping.js';
 import {
   sanitizeTrackingValue,
@@ -60,6 +63,26 @@ import {
   recordCreatorManualPixPayout,
 } from './creatorDataLedger.js';
 import {
+  tryCommitUnifiedApprovedSettlement,
+  normalizeUnifiedSource,
+} from './platformPaymentSettlement.js';
+import { verifyMercadoPagoWebhookSignature } from './mercadoPagoWebhookVerify.js';
+import {
+  commitUnifiedStorePhysicalMirror,
+  commitUnifiedPodPaidMirror,
+  commitUnifiedRefundAdjustmentMirror,
+} from './unifiedFinanceMirror.js';
+import {
+  auditCreatorLedgerVsPayments,
+  repairCreatorLifetimeNetFromPaymentsSum,
+} from './ledgerReconciliation.js';
+import { buildPublicEngagementFromCycle } from './creatorEngagementPublicMirror.js';
+import {
+  processEngagementCycleTick as processEngagementCycleTickServer,
+  metricsFromUsuarioRow as metricsFromUsuarioRowServer,
+  toRecordList as toRecordListServer,
+} from './creatorEngagementCycleServer.js';
+import {
   ageFromBirthDateIso,
   resolveCreatorAgeYears,
   normalizeAndValidateCpf,
@@ -69,7 +92,14 @@ import {
   assembleCreatorRecordForRtdb,
   legalFullNameHasMinThreeWords,
   legalFullNameHasNoDigits,
+  resolveCreatorMonetizationStatusFromDb,
 } from './creatorRecord.js';
+import {
+  CREATOR_MEMBERSHIP_PRICE_MAX_BRL,
+  CREATOR_MEMBERSHIP_PRICE_MIN_BRL,
+  hasPublicCreatorMembershipOffer,
+  isValidCreatorMembershipPriceBRL,
+} from './creatorMembershipPricing.js';
 import {
   coercePayoutPixType,
   normalizePixPayoutKey,
@@ -129,6 +159,8 @@ const SMTP_PASS = defineSecret('SMTP_PASS');
 const SMTP_FROM = defineSecret('SMTP_FROM');
 /** Opcional: Access Token Mercado Pago (produção ou teste) para Checkout via API */
 const MP_ACCESS_TOKEN = defineSecret('MP_ACCESS_TOKEN');
+/** Opcional: segredo do Webhook (painel MP). Se não vazio, valida x-signature nas notificações POST. */
+const MP_WEBHOOK_SECRET = defineString('MP_WEBHOOK_SECRET', { default: '' });
 /** Base pública das HTTPS functions (webhook MP). Ajuste se o projeto usar outro host. */
 const FUNCTIONS_PUBLIC_URL = defineString('FUNCTIONS_PUBLIC_URL', {
   default: 'https://us-central1-shitoproject-ed649.cloudfunctions.net',
@@ -653,15 +685,25 @@ async function aplicarMembershipCriadorAprovada(
     memberUntil: newUntil,
   });
 
-  await recordCreatorPayment(db, {
-    creatorId: cid,
-    amount: paymentAmount,
-    currency: paymentCurrency,
-    type: 'creator_membership',
-    buyerUid: uid,
-    paymentId,
-    extra: { durationDays: 30 },
-  });
+  try {
+    await tryCommitUnifiedApprovedSettlement(db, {
+      mpPaymentId: String(paymentId),
+      userId: uid,
+      unifiedType: 'CREATOR_MEMBERSHIP',
+      creatorId: cid,
+      source: 'creator_link',
+      grossBRL: Number.isFinite(Number(paymentAmount)) ? round2(paymentAmount) : 0,
+      currency: String(paymentCurrency || 'BRL'),
+      creatorDataPaymentType: 'creator_membership',
+      extra: { durationDays: 30 },
+    });
+  } catch (e) {
+    logger.error('Membership criador: falha unified settlement', {
+      uid,
+      paymentId,
+      error: e?.message,
+    });
+  }
 
   return { applied: true, newUntil };
 }
@@ -818,7 +860,8 @@ async function aplicarPremiumAprovado(
   trafficSource,
   trafficCampaign,
   trafficClickId,
-  attributionCreatorId = null
+  attributionCreatorId = null,
+  unifiedSource = null
 ) {
   const now = Date.now();
   const snap = await db.ref(`usuarios/${uid}`).get();
@@ -826,6 +869,28 @@ async function aplicarPremiumAprovado(
     logger.error('Premium: usuario nao existe', { uid, paymentId });
     return { applied: false, duplicate: false };
   }
+  const buildPremiumUnifiedPayload = () => {
+    const attrC = sanitizeCreatorId(attributionCreatorId);
+    const storeSrc = normalizeUnifiedSource(unifiedSource, attributionCreatorId);
+    return {
+      mpPaymentId: String(paymentId),
+      userId: uid,
+      unifiedType: 'STORE_MEMBERSHIP',
+      creatorId: attrC,
+      source: storeSrc,
+      grossBRL: Number.isFinite(Number(paymentAmount)) ? round2(paymentAmount) : PREMIUM_PRICE_BRL,
+      currency: String(paymentCurrency || 'BRL'),
+      creatorDataPaymentType: attrC ? 'premium_attribution' : 'store_membership',
+      extra: {
+        planId: PREMIUM_PLAN_ID,
+        promoId: promoId || null,
+        promoName: promoName || null,
+        trafficSource: normalizeTrackingSource(trafficSource),
+        trafficCampaign: sanitizeTrackingValue(trafficCampaign, 100),
+        trafficClickId: sanitizeTrackingValue(trafficClickId, 120),
+      },
+    };
+  };
   const procRef = db.ref(`financas/mp_processed/${paymentId}`);
   const procTx = await procRef.transaction((curr) => {
     if (curr) return;
@@ -837,6 +902,11 @@ async function aplicarPremiumAprovado(
   });
   if (!procTx.committed) {
     logger.info('Premium: pagamento ja processado', { paymentId });
+    try {
+      await tryCommitUnifiedApprovedSettlement(db, buildPremiumUnifiedPayload());
+    } catch (e) {
+      logger.warn('Premium: unified settlement na reentrancia', { paymentId, error: e?.message });
+    }
     return { applied: false, duplicate: true };
   }
   const profile = snap.val() || {};
@@ -922,15 +992,12 @@ async function aplicarPremiumAprovado(
       amount: paymentAmount,
       memberUntil: newUntil,
     });
-    await recordCreatorPayment(db, {
-      creatorId: attrC,
-      amount: paymentAmount,
-      currency: paymentCurrency,
-      type: 'premium_attribution',
-      buyerUid: uid,
-      paymentId,
-      extra: { planId: PREMIUM_PLAN_ID },
-    });
+  }
+
+  try {
+    await tryCommitUnifiedApprovedSettlement(db, buildPremiumUnifiedPayload());
+  } catch (e) {
+    logger.error('Premium: falha unified settlement', { uid, paymentId, error: e?.message });
   }
 
   return { applied: true, newUntil };
@@ -975,6 +1042,20 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
           entryKey: `premium_refund_adjustment_${paymentId}_${status}`,
           extra: { planId: PREMIUM_PLAN_ID },
         }]);
+        try {
+          await commitUnifiedRefundAdjustmentMirror(db, {
+            mpPaymentId: String(paymentId),
+            creatorId: attrCid,
+            amount,
+            currency: String(pay.currency_id || 'BRL'),
+            kind: 'PREMIUM_ATTRIBUTION_REFUND',
+            status: String(status),
+            buyerUid: premiumUid,
+            extra: { flow: 'premium_attribution_refund', planId: PREMIUM_PLAN_ID },
+          });
+        } catch (e) {
+          logger.warn('unified refund mirror premium', { paymentId, error: e?.message });
+        }
       }
       logger.info('Premium: pagamento revertido/negado', { paymentId, status, uid: premiumUid });
       return;
@@ -995,7 +1076,8 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
       metadata.trafficSource ? String(metadata.trafficSource) : null,
       metadata.trafficCampaign ? String(metadata.trafficCampaign) : null,
       metadata.trafficClickId ? String(metadata.trafficClickId) : null,
-      metadata.attributionCreatorId ? String(metadata.attributionCreatorId).trim() : null
+      metadata.attributionCreatorId ? String(metadata.attributionCreatorId).trim() : null,
+      metadata.source != null ? String(metadata.source) : null
     );
     return;
   }
@@ -1056,6 +1138,23 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
             extra: { source: 'checkout_store' },
           }))
         );
+        for (const [cid, amt] of byCreatorRefund) {
+          try {
+            await commitUnifiedRefundAdjustmentMirror(db, {
+              mpPaymentId: String(paymentId),
+              creatorId: cid,
+              amount: amt,
+              currency: String(pay?.currency_id || 'BRL'),
+              kind: 'STORE_PHYSICAL_REFUND',
+              status: String(status),
+              orderId: storeRef.orderId,
+              buyerUid: storeRef.uid,
+              extra: { source: 'checkout_store' },
+            });
+          } catch (e) {
+            logger.warn('unified refund mirror loja', { paymentId, creatorId: cid, error: e?.message });
+          }
+        }
       }
       logger.info('Loja: pagamento revertido/negado', { paymentId, status, orderId: storeRef.orderId });
       return;
@@ -1171,9 +1270,131 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
           extra: { source: 'checkout_store' },
         });
       }
+      const lines = [...byCreator.entries()].map(([creatorId, amount]) => ({
+        creatorId,
+        amount: round2(amount),
+      }));
+      try {
+        await commitUnifiedStorePhysicalMirror(db, {
+          mpPaymentId: String(paymentId),
+          buyerUid: storeRef.uid,
+          orderId: storeRef.orderId,
+          currency: String(pay?.currency_id || 'BRL'),
+          totalBRL: expected,
+          lines,
+        });
+      } catch (e) {
+        logger.warn('Loja: falha unified mirror', { orderId: storeRef.orderId, error: e?.message });
+      }
     } catch (e) {
       logger.warn('Loja: falha ao registrar creatorData', { orderId: storeRef.orderId, error: e?.message });
     }
+    return;
+  }
+
+  const podRef = parsePodExternalRef(pay.external_reference);
+  if (podRef) {
+    const orderSnapPre = await db.ref(`loja/printOnDemandOrders/${podRef.orderId}`).get();
+    if (!orderSnapPre.exists()) {
+      logger.error('POD: pedido nao encontrado para pagamento', { paymentId, orderId: podRef.orderId });
+      return;
+    }
+    const orderPre = orderSnapPre.val() || {};
+    if (String(orderPre.status || '').toLowerCase() === 'cancelled') {
+      logger.warn('POD: pagamento recebido para pedido ja cancelado (analise manual / estorno)', {
+        paymentId,
+        orderId: podRef.orderId,
+      });
+      return;
+    }
+    if (String(orderPre.creatorUid || '') !== podRef.uid) {
+      logger.error('POD: uid divergente', { paymentId, orderId: podRef.orderId });
+      return;
+    }
+    if (String(orderPre.status || '').toLowerCase() !== 'pending_payment') {
+      logger.warn('POD: webhook ignorado — pedido nao esta aguardando pagamento', {
+        orderId: podRef.orderId,
+        status: orderPre.status,
+        paymentId,
+      });
+      return;
+    }
+    const expAt = Number(orderPre.expiresAt || 0);
+    if (expAt && Date.now() > expAt) {
+      logger.warn('POD: pagamento recebido apos expiracao da reserva (3h) — analise manual / estorno', {
+        orderId: podRef.orderId,
+        paymentId,
+      });
+      return;
+    }
+    const amount = Number(pay.transaction_amount);
+    const snap = orderPre.snapshot && typeof orderPre.snapshot === 'object' ? orderPre.snapshot : {};
+    const expected = round2(Number(snap.amountDueBRL ?? orderPre.expectedPayBRL ?? 0));
+    if (isRefundLikeStatus(status)) {
+      await db.ref(`loja/printOnDemandOrders/${podRef.orderId}`).update({
+        paymentStatus: status,
+        updatedAt: Date.now(),
+      });
+      logger.info('POD: pagamento revertido/negado', { paymentId, status, orderId: podRef.orderId });
+      return;
+    }
+    if (!Number.isFinite(amount) || !Number.isFinite(expected) || Math.abs(amount - expected) > 0.05) {
+      logger.error('POD: valor MP divergente', { paymentId, orderId: podRef.orderId, amount, expected });
+      return;
+    }
+    const procRef = db.ref(`financas/mp_processed/${paymentId}`);
+    const procTx = await procRef.transaction((curr) => {
+      if (curr) return;
+      return { uid: podRef.uid, orderId: podRef.orderId, at: Date.now(), tipo: 'pod_pago' };
+    });
+    if (!procTx.committed) {
+      logger.info('POD: pagamento ja processado', { paymentId, orderId: podRef.orderId });
+      return;
+    }
+    const now = Date.now();
+    const podOrderRef = db.ref(`loja/printOnDemandOrders/${podRef.orderId}`);
+    await podOrderRef.update({
+      status: 'paid',
+      paidAt: now,
+      paymentId: String(paymentId),
+      paymentStatus: String(pay?.status || 'approved'),
+      paymentAmount: amount,
+      updatedAt: now,
+    });
+    await podOrderRef.child('orderEvents').push({
+      at: now,
+      type: 'payment_approved',
+      message: 'Pagamento confirmado via Mercado Pago (webhook).',
+      actor: 'webhook',
+      paymentId: String(paymentId),
+    });
+    await db.ref('financas/eventos').push({
+      tipo: 'pod_pedido_pago',
+      uid: podRef.uid,
+      orderId: podRef.orderId,
+      paymentId: String(paymentId),
+      amount,
+      currency: String(pay?.currency_id || 'BRL'),
+      origem: 'print_on_demand',
+      at: now,
+    });
+    try {
+      await notifyPrintOnDemandPaid(db, podRef.uid, podRef.orderId);
+    } catch (e) {
+      logger.warn('POD: falha notificacao', { orderId: podRef.orderId, error: e?.message });
+    }
+    try {
+      await commitUnifiedPodPaidMirror(db, {
+        mpPaymentId: String(paymentId),
+        userId: podRef.uid,
+        orderId: podRef.orderId,
+        amountBRL: amount,
+        currency: String(pay?.currency_id || 'BRL'),
+      });
+    } catch (e) {
+      logger.warn('POD: falha unified mirror', { orderId: podRef.orderId, error: e?.message });
+    }
+    logger.info('POD: pedido marcado como pago', { paymentId, orderId: podRef.orderId });
     return;
   }
 
@@ -1217,12 +1438,38 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
         entryKey: `${creatorMembershipMode ? 'creator_membership' : 'apoio'}_refund_adjustment_${paymentId}_${status}`,
         extra: { origem: origemRefund },
       }]);
+      try {
+        await commitUnifiedRefundAdjustmentMirror(db, {
+          mpPaymentId: String(paymentId),
+          creatorId: apoioAttr,
+          amount,
+          currency,
+          kind: creatorMembershipMode ? 'CREATOR_MEMBERSHIP_REFUND' : 'DONATION_REFUND',
+          status: String(status),
+          buyerUid: apoioUid,
+          extra: { origem: origemRefund },
+        });
+      } catch (e) {
+        logger.warn('unified refund mirror apoio', { paymentId, error: e?.message });
+      }
     }
     if (creatorMembershipMode && apoioAttr) {
       await reverterMembershipCriadorSeNecessario(db, apoioUid, apoioAttr, paymentId, status);
     }
     logger.info('Apoio: pagamento revertido/negado', { paymentId, status, uid: apoioUid });
     return;
+  }
+
+  const description = String(pay.description || '').toLowerCase();
+  let origem = 'doacao_livre';
+  if (String(metadata.planId || '').trim()) {
+    origem = String(metadata.planId).trim();
+  } else if (description.includes('cafe')) {
+    origem = 'cafe';
+  } else if (description.includes('marmita')) {
+    origem = 'marmita';
+  } else if (description.includes('lendario')) {
+    origem = 'lendario';
   }
 
   const procRef = db.ref(`financas/mp_processed/${paymentId}`);
@@ -1236,21 +1483,46 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
   });
   if (!procTx.committed) {
     logger.info('Apoio: pagamento ja processado', { paymentId });
+    if (!creatorMembershipMode && Number.isFinite(amount) && amount > 0) {
+      try {
+        await tryCommitUnifiedApprovedSettlement(db, {
+          mpPaymentId: String(paymentId),
+          userId: apoioUid,
+          unifiedType: 'DONATION',
+          creatorId: apoioAttr || null,
+          source: normalizeUnifiedSource(metadata.source, apoioAttr),
+          grossBRL: amount,
+          currency,
+          creatorDataPaymentType: 'apoio',
+          extra: { origem },
+        });
+      } catch (e) {
+        logger.warn('Apoio: unified settlement na reentrancia', { paymentId, error: e?.message });
+      }
+    } else if (creatorMembershipMode && apoioAttr && Number.isFinite(amount) && amount > 0) {
+      try {
+        await tryCommitUnifiedApprovedSettlement(db, {
+          mpPaymentId: String(paymentId),
+          userId: apoioUid,
+          unifiedType: 'CREATOR_MEMBERSHIP',
+          creatorId: apoioAttr,
+          source: 'creator_link',
+          grossBRL: amount,
+          currency,
+          creatorDataPaymentType: 'creator_membership',
+          extra: { origem, repair: true },
+        });
+      } catch (e) {
+        logger.warn('Apoio: unified membership settlement na reentrancia', {
+          paymentId,
+          error: e?.message,
+        });
+      }
+    }
     return;
   }
 
   const now = Date.now();
-  const description = String(pay.description || '').toLowerCase();
-  let origem = 'doacao_livre';
-  if (String(metadata.planId || '').trim()) {
-    origem = String(metadata.planId).trim();
-  } else if (description.includes('cafe')) {
-    origem = 'cafe';
-  } else if (description.includes('marmita')) {
-    origem = 'marmita';
-  } else if (description.includes('lendario')) {
-    origem = 'lendario';
-  }
 
   await db.ref().update({
     [`financas/mp_processed/${paymentId}`]: {
@@ -1270,26 +1542,34 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     at: now,
   });
 
-  if (apoioAttr && Number.isFinite(amount) && amount > 0) {
+  if (Number.isFinite(amount) && amount > 0) {
     if (creatorMembershipMode) {
-      await aplicarMembershipCriadorAprovada(
-        db,
-        apoioUid,
-        apoioAttr,
-        paymentId,
-        amount,
-        currency
-      );
+      if (apoioAttr) {
+        await aplicarMembershipCriadorAprovada(
+          db,
+          apoioUid,
+          apoioAttr,
+          paymentId,
+          amount,
+          currency
+        );
+      }
     } else {
-      await recordCreatorPayment(db, {
-        creatorId: apoioAttr,
-        amount,
-        currency,
-        type: 'apoio',
-        buyerUid: apoioUid,
-        paymentId,
-        extra: { origem },
-      });
+      try {
+        await tryCommitUnifiedApprovedSettlement(db, {
+          mpPaymentId: String(paymentId),
+          userId: apoioUid,
+          unifiedType: 'DONATION',
+          creatorId: apoioAttr || null,
+          source: normalizeUnifiedSource(metadata.source, apoioAttr),
+          grossBRL: amount,
+          currency,
+          creatorDataPaymentType: 'apoio',
+          extra: { origem },
+        });
+      } catch (e) {
+        logger.error('Apoio: falha unified settlement', { paymentId, error: e?.message });
+      }
     }
   }
 
@@ -1536,6 +1816,103 @@ export const seedUserEntitlementsOnUsuarioCreate = onValueWritten(
     } catch (e) {
       logger.error('seedUserEntitlements falhou', { uid, error: e?.message });
     }
+  }
+);
+
+/** engagement* em usuarios_publicos só via servidor (rules .write false no cliente). */
+export const mirrorEngagementCycleToPublicProfile = onValueWritten(
+  {
+    ref: '/usuarios/{uid}/engagementCycle',
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 30,
+  },
+  async (event) => {
+    const uid = String(event.params?.uid || '').trim();
+    if (!uid) return;
+    const after = event.data?.after?.exists() ? event.data.after.val() : null;
+    const patch = buildPublicEngagementFromCycle(after, Date.now());
+    const db = getDatabase();
+    try {
+      await db.ref(`usuarios_publicos/${uid}`).update(patch);
+    } catch (e) {
+      logger.error('mirrorEngagementCycleToPublicProfile falhou', { uid, error: e?.message });
+    }
+  }
+);
+
+async function runCommitCreatorEngagementTickForUid(db, uidRaw) {
+  const uid = String(uidRaw || '').trim();
+  if (!uid) return { ok: false, error: 'uid_invalido' };
+  const now = Date.now();
+  const [userSnap, obrasSnap, capsSnap] = await Promise.all([
+    db.ref(`usuarios/${uid}`).get(),
+    db.ref('obras').get(),
+    db.ref('capitulos').get(),
+  ]);
+  const usuario = userSnap.val() || {};
+  const obras = toRecordListServer(obrasSnap.val() || {}).filter((o) => String(o?.creatorId || '').trim() === uid);
+  const obraIds = new Set(obras.map((o) => String(o.id || '').trim().toLowerCase()));
+  const caps = toRecordListServer(capsSnap.val() || {}).filter((cap) => {
+    if (String(cap?.creatorId || '').trim() === uid) return true;
+    const oid = String(cap?.obraId || cap?.mangaId || '').trim().toLowerCase();
+    return obraIds.has(oid);
+  });
+  const tick = processEngagementCycleTickServer({
+    engagementCycle: usuario.engagementCycle,
+    metrics: metricsFromUsuarioRowServer(usuario),
+    caps,
+    uid,
+    now,
+  });
+  if (!tick.changed) {
+    return { ok: true, applied: false, leveled: false };
+  }
+  await db.ref(`usuarios/${uid}/engagementCycle`).set(tick.state);
+  return { ok: true, applied: true, leveled: tick.leveled };
+}
+
+/** Criador: grava engagementCycle (boost/badge) só após cálculo no servidor; mirror atualiza o público. */
+export const commitCreatorEngagementCycleTick = onCall({ region: 'us-central1', cors: true }, async (request) => {
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Faca login.');
+  const db = getDatabase();
+  const res = await runCommitCreatorEngagementTickForUid(db, request.auth.uid);
+  if (!res.ok) throw new HttpsError('invalid-argument', res.error || 'Erro.');
+  return res;
+});
+
+/** Staff: reespelha engagement* em usuarios_publicos a partir de usuarios/.../engagementCycle (migração / stale). */
+export const adminBackfillEngagementPublicProfiles = onCall(
+  { region: 'us-central1', timeoutSeconds: 120, memory: '512MiB' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+    const ctx = await requireAdminAuth(request.auth);
+    requirePermission(ctx, 'financeiro');
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    const maxUpdates = Math.min(2000, Math.max(1, Number(body.maxUpdates) || 500));
+    const db = getDatabase();
+    const usuariosSnap = await db.ref('usuarios').get();
+    if (!usuariosSnap.exists()) {
+      return { ok: true, updated: 0, scannedWithCycle: 0, maxUpdates };
+    }
+    const all = usuariosSnap.val() || {};
+    let updated = 0;
+    let scannedWithCycle = 0;
+    for (const [uid, row] of Object.entries(all)) {
+      if (!row?.engagementCycle || typeof row.engagementCycle !== 'object') continue;
+      scannedWithCycle += 1;
+      if (updated >= maxUpdates) continue;
+      const pubSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+      if (!pubSnap.exists()) continue;
+      const patch = buildPublicEngagementFromCycle(row.engagementCycle, Date.now());
+      try {
+        await db.ref(`usuarios_publicos/${uid}`).update(patch);
+        updated += 1;
+      } catch (e) {
+        logger.warn('adminBackfillEngagementPublicProfiles falhou', { uid, error: e?.message });
+      }
+    }
+    return { ok: true, updated, scannedWithCycle, maxUpdates };
   }
 );
 
@@ -2019,8 +2396,11 @@ export const criarCheckoutApoio = onCall(
         throw new HttpsError('failed-precondition', 'Este criador ainda nao concluiu a identidade publica minima.');
       }
       creatorMembershipPrice = Number(creatorPublic.creatorMembershipPriceBRL);
-      if (!Number.isFinite(creatorMembershipPrice) || creatorMembershipPrice < 1 || creatorMembershipPrice > APOIO_CUSTOM_MAX) {
-        throw new HttpsError('failed-precondition', 'Este criador ainda nao configurou um valor valido de membership.');
+      if (!isValidCreatorMembershipPriceBRL(creatorMembershipPrice)) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Este criador ainda nao configurou um valor valido de membership (R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} a R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL}).`
+        );
       }
     }
 
@@ -2099,6 +2479,8 @@ export const criarCheckoutApoio = onCall(
             metadata: {
               tipo: 'creator_membership',
               creatorMembership: true,
+              transactionType: 'CREATOR_MEMBERSHIP',
+              source: 'creator_link',
             },
             backUrlQuery: `tipo=creator_membership&creatorId=${encodeURIComponent(creatorMembershipCreatorId)}`,
           }
@@ -2385,7 +2767,10 @@ export const criarCheckoutLoja = onCall(
       shippingMethod: shippingOption.serviceCode,
       shippingRegion: shippingOption.regionKey,
       shippingRegionLabel: shippingOption.regionLabel,
+      shippingTransitDays: shippingOption.transitDays ?? shippingOption.deliveryDays,
       shippingDeliveryDays: shippingOption.deliveryDays,
+      shippingDeliveryDaysLow: shippingOption.deliveryDaysLow ?? null,
+      shippingDeliveryDaysHigh: shippingOption.deliveryDaysHigh ?? null,
       shippingWeightGrams: shippingOption.totalWeightGrams,
       shippingCostInternal: round2(shippingOption.internalCostBrl),
       total,
@@ -2439,6 +2824,170 @@ export const criarCheckoutLoja = onCall(
     });
 
     return { ok: true, orderId, url };
+  }
+);
+
+/** Cria pedido POD (pending_payment) e retorna URL do checkout Mercado Pago. */
+export const createPrintOnDemandCheckout = onCall(
+  {
+    region: 'us-central1',
+    secrets: [MP_ACCESS_TOKEN],
+    cors: true,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para pagar.');
+    }
+    const uid = request.auth.uid;
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    let token;
+    try {
+      token = String(MP_ACCESS_TOKEN.value()).trim();
+    } catch {
+      throw new HttpsError('failed-precondition', 'Mercado Pago nao configurado (secret MP_ACCESS_TOKEN).');
+    }
+    if (!token) throw new HttpsError('failed-precondition', 'Token Mercado Pago vazio.');
+    const db = getDatabase();
+    let orderId;
+    try {
+      const created = await persistPrintOnDemandOrder(db, uid, body);
+      orderId = created.orderId;
+      const order = created.order;
+      const snap = order.snapshot && typeof order.snapshot === 'object' ? order.snapshot : {};
+      const amount = round2(Number(snap.amountDueBRL ?? 0));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        await db.ref(`loja/printOnDemandOrders/${orderId}`).remove();
+        throw new HttpsError('failed-precondition', 'Valor do pedido invalido.');
+      }
+      const saleModel = String(snap.saleModel || '');
+      const format = String(snap.format || '');
+      const qty = Number(snap.quantity || 0);
+      const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
+      const notificationUrl = `${baseFn}/mercadopagowebhook`;
+      const title = `Manga fisico — ${format === 'tankobon' ? 'Tankobon' : 'Meio-tanko'} x${qty}`;
+      const desc =
+        saleModel === 'store_promo'
+          ? 'Divulgacao na loja'
+          : saleModel === 'platform'
+            ? 'Venda pela plataforma'
+            : 'Compra pessoal';
+      const url = await criarPreferenciaPrintOnDemand(token, {
+        orderId,
+        uid,
+        title,
+        description: desc,
+        amountBRL: amount,
+        appBaseUrl: APP_BASE_URL.value(),
+        notificationUrl,
+      });
+      const t = Date.now();
+      await db.ref(`loja/printOnDemandOrders/${orderId}`).update({
+        checkoutUrl: url,
+        checkoutStartedAt: t,
+        expectedPayBRL: amount,
+        updatedAt: t,
+      });
+      await db.ref(`loja/printOnDemandOrders/${orderId}/orderEvents`).push({
+        at: t,
+        type: 'checkout_mp_created',
+        message: 'Preferencia de pagamento criada no Mercado Pago.',
+        actor: 'system',
+      });
+      return { ok: true, orderId, url };
+    } catch (e) {
+      if (orderId) {
+        try {
+          await db.ref(`loja/printOnDemandOrders/${orderId}`).remove();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      throw e;
+    }
+  }
+);
+
+/** Gera nova preferência MP para pedido POD já existente em pending_payment (ex.: sem checkoutUrl). */
+export const resumePrintOnDemandCheckout = onCall(
+  {
+    region: 'us-central1',
+    secrets: [MP_ACCESS_TOKEN],
+    cors: true,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para pagar.');
+    }
+    const uid = request.auth.uid;
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    const orderId = String(body.orderId || '').trim();
+    if (!orderId) {
+      throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+    }
+    let token;
+    try {
+      token = String(MP_ACCESS_TOKEN.value()).trim();
+    } catch {
+      throw new HttpsError('failed-precondition', 'Mercado Pago nao configurado (secret MP_ACCESS_TOKEN).');
+    }
+    if (!token) throw new HttpsError('failed-precondition', 'Token Mercado Pago vazio.');
+    const db = getDatabase();
+    const orderRef = db.ref(`loja/printOnDemandOrders/${orderId}`);
+    const snap = await orderRef.get();
+    if (!snap.exists()) {
+      throw new HttpsError('not-found', 'Pedido nao encontrado.');
+    }
+    const row = snap.val() || {};
+    if (String(row.creatorUid || '') !== uid) {
+      throw new HttpsError('permission-denied', 'Sem permissao.');
+    }
+    const status = String(row.status || '').trim().toLowerCase();
+    if (status !== 'pending_payment') {
+      throw new HttpsError(
+        'failed-precondition',
+        'So e possivel gerar pagamento para pedidos aguardando pagamento.'
+      );
+    }
+    const exp = Number(row.expiresAt || 0);
+    if (exp && Date.now() > exp) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Este pedido expirou (3 horas sem pagamento). Monte um novo lote no carrinho.'
+      );
+    }
+    const snapOrder = row.snapshot && typeof row.snapshot === 'object' ? row.snapshot : {};
+    const amount = round2(Number(snapOrder.amountDueBRL ?? 0));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new HttpsError('failed-precondition', 'Valor do pedido invalido.');
+    }
+    const saleModel = String(snapOrder.saleModel || '');
+    const format = String(snapOrder.format || '');
+    const qty = Number(snapOrder.quantity || 0);
+    const baseFn = FUNCTIONS_PUBLIC_URL.value().replace(/\/$/, '');
+    const notificationUrl = `${baseFn}/mercadopagowebhook`;
+    const title = `Manga fisico — ${format === 'tankobon' ? 'Tankobon' : 'Meio-tanko'} x${qty}`;
+    const desc =
+      saleModel === 'store_promo'
+        ? 'Divulgacao na loja'
+        : saleModel === 'platform'
+          ? 'Venda pela plataforma'
+          : 'Compra pessoal';
+    const url = await criarPreferenciaPrintOnDemand(token, {
+      orderId,
+      uid,
+      title,
+      description: desc,
+      amountBRL: amount,
+      appBaseUrl: APP_BASE_URL.value(),
+      notificationUrl,
+    });
+    await orderRef.update({
+      checkoutUrl: url,
+      checkoutStartedAt: Date.now(),
+      expectedPayBRL: amount,
+      updatedAt: Date.now(),
+    });
+    return { ok: true, url };
   }
 );
 
@@ -2534,6 +3083,25 @@ export const mercadopagowebhook = onRequest(
     if (!paymentId) {
       res.status(200).send('OK');
       return;
+    }
+
+    const mpWebhookSecret = String(MP_WEBHOOK_SECRET.value() || '').trim();
+    if (mpWebhookSecret) {
+      if (req.method === 'POST') {
+        const sigCheck = verifyMercadoPagoWebhookSignature(req, paymentId, mpWebhookSecret);
+        if (!sigCheck.ok && !sigCheck.skipped) {
+          logger.warn('mercadopagowebhook assinatura invalida', {
+            paymentId,
+            reason: sigCheck.reason,
+          });
+          res.status(401).send('Unauthorized');
+          return;
+        }
+      } else {
+        logger.warn(
+          'mercadopagowebhook: MP_WEBHOOK_SECRET definido mas notificacao GET (sem x-signature). Prefira POST no painel MP.'
+        );
+      }
     }
 
     let token;
@@ -2813,6 +3381,38 @@ export const adminObterPromocaoPremium = onCall(
     };
   }
 );
+
+/** Auditoria somente leitura: soma creatorData/.../payments vs lifetimeNetBRL (admin financeiro). */
+export const adminAuditCreatorLedgerReconciliation = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+  const ctx = await requireAdminAuth(request.auth);
+  requirePermission(ctx, 'financeiro');
+  const db = getDatabase();
+  const payload = request.data && typeof request.data === 'object' ? request.data : {};
+  return auditCreatorLedgerVsPayments(db, {
+    creatorId: payload.creatorId,
+    maxCreators: payload.maxCreators,
+  });
+});
+
+/** Alinha lifetimeNetBRL à soma de payments (requireAdminAuth já exclui mangaka). */
+export const adminRepairCreatorLifetimeNet = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+  const ctx = await requireAdminAuth(request.auth);
+  requirePermission(ctx, 'financeiro');
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const creatorId = String(body.creatorId || '').trim();
+  if (!creatorId) throw new HttpsError('invalid-argument', 'creatorId obrigatorio.');
+  const db = getDatabase();
+  const result = await repairCreatorLifetimeNetFromPaymentsSum(db, creatorId, {
+    apply: body.apply === true,
+    adjustAvailable: body.adjustAvailable === true,
+  });
+  if (!result.ok) {
+    throw new HttpsError('not-found', result.error === 'creator_sem_creatorData' ? 'Sem creatorData.' : 'Pedido invalido.');
+  }
+  return result;
+});
 
 export const adminSalvarPromocaoPremium = onCall(
   {
@@ -4043,7 +4643,7 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
     creatorStatus: String(row?.creatorStatus || ''),
     creatorOnboardingCompleted: row?.creatorOnboardingCompleted === true,
     creatorMonetizationPreference: String(row?.creatorMonetizationPreference || app?.monetizationPreference || ''),
-    creatorMonetizationStatus: String(row?.creatorMonetizationStatus || ''),
+    creatorMonetizationStatus: resolveCreatorMonetizationStatusFromDb(row),
     birthYear: Number(row?.birthYear || 0) || null,
     birthDate: String(row?.birthDate || '').trim() || null,
     creatorComplianceSummary: (() => {
@@ -4164,7 +4764,11 @@ async function pushUserNotification(db, uid, payload) {
     ? Number(payload.priority)
     : notificationPriorityFromType(type);
   const dedupeWindowMs =
-    Number(payload.dedupeWindowMs) > 0 ? Number(payload.dedupeWindowMs) : notificationDedupeWindowMs(type);
+    payload.dedupeWindowMs === 0
+      ? 0
+      : Number(payload.dedupeWindowMs) > 0
+        ? Number(payload.dedupeWindowMs)
+        : notificationDedupeWindowMs(type);
   const aggregateWindowMs =
     payload.allowGrouping === false
       ? 0
@@ -4453,7 +5057,11 @@ async function notifyUserByPreference(db, uid, profile, config) {
         : prefs.emailEnabled && prefs.creatorLifecycleEmail;
 
   if (canInApp && config.notification) {
-    await pushUserNotification(db, uid, config.notification);
+    try {
+      await pushUserNotification(db, uid, config.notification);
+    } catch (err) {
+      logger.error('pushUserNotification falhou (in-app)', { uid, kind, err: err?.message || String(err) });
+    }
   }
 
   if (canEmail && config.email) {
@@ -4934,6 +5542,9 @@ async function finalizeCreatorApplicationApproval(db, uid, row, reviewedByUid, o
       type: 'creator_application',
       title: isAutoPublishOnly ? 'Acesso de criador liberado' : 'Solicitacao aprovada',
       message: approvalMessage,
+      dedupeKey: `creator_lifecycle:application_approved:${uid}:${now}`,
+      dedupeWindowMs: 0,
+      allowGrouping: false,
       data: {
         status: 'approved',
         creatorStatus: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
@@ -5418,6 +6029,9 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
       type: banUser ? 'account_moderation' : 'creator_application',
       title: banUser ? 'Conta bloqueada' : 'Solicitacao rejeitada',
       message: rejectMessage,
+      dedupeKey: `creator_lifecycle:application_rejected:${uid}:${now}`,
+      dedupeWindowMs: 0,
+      allowGrouping: false,
       data: { status: 'rejected', reason, banUser, readPath: '/perfil' },
     },
     email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
@@ -5450,24 +6064,13 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
   const complianceRow =
     row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null;
   requireMonetizationComplianceOrThrow(complianceRow);
-  const membershipPrice = Number(row?.creatorMembershipPriceBRL);
-  const donationSuggested = Number(row?.creatorDonationSuggestedBRL);
-  if (
-    row?.creatorMembershipEnabled === false ||
-    !Number.isFinite(membershipPrice) ||
-    membershipPrice < 1 ||
-    !Number.isFinite(donationSuggested) ||
-    donationSuggested < 1
-  ) {
-    throw new HttpsError(
-      'failed-precondition',
-      'Configure membership ativa, valor da membership e doacao sugerida antes de liberar monetizacao.'
-    );
-  }
   const age = resolveCreatorAgeYears(row);
   const isUnderage = age != null && age < 18;
   const now = Date.now();
   const monetizationStatus = isUnderage ? 'blocked_underage' : 'active';
+  const canPublishMembership = monetizationStatus === 'active' && hasPublicCreatorMembershipOffer(row);
+  const membershipPricePub = canPublishMembership ? Number(row.creatorMembershipPriceBRL) : null;
+  const donationSuggestedPub = canPublishMembership ? Number(row.creatorDonationSuggestedBRL) : null;
 
   const creatorDocMonApprove = assembleCreatorRecordForRtdb({
     row,
@@ -5492,16 +6095,18 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
     [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: monetizationStatus === 'active',
     [`usuarios/${uid}/creatorProfile/ageVerified`]: age != null,
     [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
-    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: monetizationStatus === 'active',
-    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: monetizationStatus === 'active' ? membershipPrice : null,
-    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: monetizationStatus === 'active' ? donationSuggested : null,
+    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: canPublishMembership,
+    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: membershipPricePub,
+    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: donationSuggestedPub,
     [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
     [`usuarios_publicos/${uid}/updatedAt`]: now,
   });
 
   const monetizationApprovalMessage =
     monetizationStatus === 'active'
-      ? 'Sua monetizacao foi aprovada. Agora voce pode receber via membership do criador.'
+      ? canPublishMembership
+        ? 'Sua monetizacao foi aprovada. Assinaturas na sua pagina publica ja podem usar os valores que voce configurou.'
+        : `Sua monetizacao foi aprovada. No perfil, ative a membership e defina valor da membership e doacao sugerida entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL} para liberar assinatura com acesso antecipado as suas obras.`
       : 'Sua conta segue liberada para publicar, mas a monetizacao permanece bloqueada por idade.';
   await notifyUserByPreference(db, uid, row || {}, {
     kind: 'creator_lifecycle',
@@ -5509,6 +6114,9 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
       type: 'creator_monetization',
       title: monetizationStatus === 'active' ? 'Monetizacao aprovada' : 'Monetizacao bloqueada',
       message: monetizationApprovalMessage,
+      dedupeKey: `creator_lifecycle:monetization_approved:${uid}:${now}`,
+      dedupeWindowMs: 0,
+      allowGrouping: false,
       data: { monetizationStatus, readPath: '/perfil' },
     },
     email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
@@ -5584,6 +6192,9 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
       type: 'creator_monetization',
       title: 'Monetizacao nao aprovada',
       message: monetizationRejectMessage,
+      dedupeKey: `creator_lifecycle:monetization_rejected:${uid}:${now}`,
+      dedupeWindowMs: 0,
+      allowGrouping: false,
       data: { monetizationStatus: 'disabled', reason, readPath: '/perfil' },
     },
     email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
@@ -6189,7 +6800,11 @@ function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
     refundedAt: Number(row?.refundedAt || 0) || null,
     paymentStatus: String(row?.paymentStatus || ''),
     paymentId: row?.paymentId ?? null,
+    payoutStatus: String(row?.payoutStatus || ''),
     trackingCode: String(row?.trackingCode || row?.codigoRastreio || ''),
+    shippingAddress: row?.shippingAddress && typeof row.shippingAddress === 'object' ? row.shippingAddress : null,
+    productionChecklist:
+      row?.productionChecklist && typeof row.productionChecklist === 'object' ? row.productionChecklist : null,
     vipApplied: row?.vipApplied === true,
     creatorSubtotal,
     total: creatorSubtotal,
@@ -6246,6 +6861,37 @@ export const listMyStoreOrders = onCall({ region: 'us-central1' }, async (reques
     .map(([id, row]) => ({ id, ...(row || {}) }))
     .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
   return { ok: true, orders: list };
+});
+
+export const getStoreOrderForViewer = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const orderId = String(request.data?.orderId || '').trim();
+  if (!orderId) {
+    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+  }
+  const snap = await getDatabase().ref(`loja/pedidos/${orderId}`).get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Pedido nao encontrado.');
+  }
+  const row = snap.val() || {};
+  const uid = request.auth.uid;
+  if (String(row.uid || '') === uid) {
+    return { ok: true, viewerRole: 'buyer', order: { id: orderId, ...row } };
+  }
+  const ctx = await getAdminAuthContext(request.auth);
+  if (!ctx) {
+    throw new HttpsError('permission-denied', 'Sem permissao.');
+  }
+  if (ctx.mangaka && orderItemsForCreator({ id: orderId, ...row }, uid).length > 0) {
+    return {
+      ok: true,
+      viewerRole: 'seller',
+      order: sanitizeStoreOrderForViewer(orderId, { id: orderId, ...row }, uid),
+    };
+  }
+  throw new HttpsError('permission-denied', 'Sem permissao para ver este pedido.');
 });
 
 export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, async (request) => {
@@ -6398,10 +7044,17 @@ export const adminRevokeAllSessions = onCall(
 export {
   submitPrintOnDemandOrder,
   listMyPrintOnDemandOrders,
+  getMyPrintOnDemandOrder,
+  cancelMyPrintOnDemandOrder,
   adminListPrintOnDemandOrders,
   adminUpdatePrintOnDemandOrder,
   adminPatchPrintOnDemandOrderSuper,
+  expirePrintOnDemandPendingPayments,
 } from './printOnDemandOrders.js';
+
+export { chapterReaderShell } from './chapterReaderShell.js';
+
+export { recordDiscoveryCreatorMetrics } from './recordDiscoveryCreatorMetrics.js';
 
 export const dashboardRollupMensal = onSchedule(
   {

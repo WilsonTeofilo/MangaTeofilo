@@ -76,6 +76,12 @@
   animation: chapter-share-fade 0.35s ease;
 }
 
+.chapter-share-bar__copied--insta {
+  line-height: 1.45;
+  max-width: 42rem;
+  color: rgba(250, 250, 250, 0.88);
+}
+
 @keyframes chapter-share-fade {
   from {
     opacity: 0;

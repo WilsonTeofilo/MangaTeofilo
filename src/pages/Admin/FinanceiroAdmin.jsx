@@ -95,6 +95,9 @@ import { labelPrecoPremium, PREMIUM_PRECO_BRL } from '../../config/premiumAssina
 import './FinanceiroAdmin.css';
 
 const migrateDeprecatedFields = httpsCallable(functions, 'adminMigrateDeprecatedUserFields');
+const adminAuditCreatorLedgerReconciliation = httpsCallable(functions, 'adminAuditCreatorLedgerReconciliation');
+const adminRepairCreatorLifetimeNet = httpsCallable(functions, 'adminRepairCreatorLifetimeNet');
+const adminBackfillEngagementPublicProfiles = httpsCallable(functions, 'adminBackfillEngagementPublicProfiles');
 const adminObterPromocaoPremium = httpsCallable(functions, 'adminObterPromocaoPremium');
 const adminSalvarPromocaoPremium = httpsCallable(functions, 'adminSalvarPromocaoPremium');
 const adminIncrementarDuracaoPromocaoPremium = httpsCallable(functions, 'adminIncrementarDuracaoPromocaoPremium');
@@ -270,6 +273,22 @@ export default function FinanceiroAdmin() {
   const [promoActivityLog, setPromoActivityLog] = useState([]);
   const [metaPagamentosInput, setMetaPagamentosInput] = useState('');
   const [salvandoMeta, setSalvandoMeta] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditMsg, setAuditMsg] = useState('');
+  const [auditNote, setAuditNote] = useState('');
+  const [auditSummary, setAuditSummary] = useState(null);
+  const [auditRows, setAuditRows] = useState([]);
+  const [auditCreatorId, setAuditCreatorId] = useState('');
+  const [auditMaxCreators, setAuditMaxCreators] = useState('80');
+  const [repairCreatorId, setRepairCreatorId] = useState('');
+  const [repairAdjustAvailable, setRepairAdjustAvailable] = useState(false);
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairResult, setRepairResult] = useState(null);
+  const [repairMsg, setRepairMsg] = useState('');
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState('');
+  const [backfillResult, setBackfillResult] = useState(null);
+  const [backfillMaxUpdates, setBackfillMaxUpdates] = useState('500');
 
   const exportarHistoricoCampanhasCsv = () => {
     downloadCsv(
@@ -739,6 +758,123 @@ export default function FinanceiroAdmin() {
     carregarPromo();
   };
 
+  const rodarAuditoriaLedger = async () => {
+    setAuditMsg('');
+    setAuditLoading(true);
+    try {
+      const cid = String(auditCreatorId || '').trim();
+      const maxN = Number(auditMaxCreators);
+      const payload = {
+        maxCreators: Number.isFinite(maxN) ? maxN : 80,
+      };
+      if (cid) payload.creatorId = cid;
+      const { data } = await adminAuditCreatorLedgerReconciliation(payload);
+      if (!data?.ok) {
+        setAuditSummary(null);
+        setAuditRows([]);
+        setAuditNote('');
+        setAuditMsg('Resposta inesperada do servidor.');
+        return;
+      }
+      setAuditNote(String(data.note || ''));
+      setAuditSummary({
+        scanned: Number(data.scanned || 0),
+        mismatches: Number(data.mismatches || 0),
+      });
+      setAuditRows(Array.isArray(data.rows) ? data.rows : []);
+    } catch (e) {
+      setAuditSummary(null);
+      setAuditRows([]);
+      setAuditNote('');
+      setAuditMsg(mensagemErroCallable(e, 'Não foi possível executar a auditoria.'));
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const preverReparoLifetime = async () => {
+    setRepairMsg('');
+    setRepairResult(null);
+    const cid = String(repairCreatorId || '').trim();
+    if (!cid) {
+      setRepairMsg('Informe o Creator ID para reparo.');
+      return;
+    }
+    setRepairLoading(true);
+    try {
+      const { data } = await adminRepairCreatorLifetimeNet({
+        creatorId: cid,
+        apply: false,
+        adjustAvailable: false,
+      });
+      setRepairResult(data);
+    } catch (e) {
+      setRepairMsg(mensagemErroCallable(e, 'Não foi possível calcular o reparo.'));
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const aplicarReparoLifetime = async () => {
+    setRepairMsg('');
+    const cid = String(repairCreatorId || '').trim();
+    if (!cid) {
+      setRepairMsg('Informe o Creator ID.');
+      return;
+    }
+    const adj = repairAdjustAvailable
+      ? '\n\nTambém ajustar «disponível» pelo mesmo Δ (pode errar se já houve saques).'
+      : '';
+    if (
+      !window.confirm(
+        `Aplicar reparo em ${cid}? Isto grava lifetimeNetBRL = soma de payments (aprovados, sem refunded).${adj}`
+      )
+    ) {
+      return;
+    }
+    setRepairLoading(true);
+    try {
+      const { data } = await adminRepairCreatorLifetimeNet({
+        creatorId: cid,
+        apply: true,
+        adjustAvailable: repairAdjustAvailable,
+      });
+      setRepairResult(data);
+      if (data?.apply && data?.wouldChange === false) {
+        setRepairMsg('Nada a alterar (Δ já dentro da tolerância).');
+      }
+    } catch (e) {
+      setRepairMsg(mensagemErroCallable(e, 'Não foi possível aplicar o reparo.'));
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const rodarBackfillEngagementPublic = async () => {
+    setBackfillMsg('');
+    setBackfillResult(null);
+    if (
+      !window.confirm(
+        'Reespelhar campos engagement* em usuarios_publicos a partir do ciclo gravado em usuarios? ' +
+          'Útil após deploy das rules. Continuar?'
+      )
+    ) {
+      return;
+    }
+    setBackfillLoading(true);
+    try {
+      const maxU = Number(backfillMaxUpdates);
+      const { data } = await adminBackfillEngagementPublicProfiles({
+        maxUpdates: Number.isFinite(maxU) ? maxU : 500,
+      });
+      setBackfillResult(data);
+    } catch (e) {
+      setBackfillMsg(mensagemErroCallable(e, 'Backfill falhou.'));
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
   return (
     <main className="admin-empty-page">
       <section className="admin-empty-card financeiro-card">
@@ -766,6 +902,9 @@ export default function FinanceiroAdmin() {
           </button>
           <button type="button" className={aba === 'limpeza' ? 'active' : ''} onClick={() => setAba('limpeza')}>
             Limpeza de cadastro
+          </button>
+          <button type="button" className={aba === 'integridade' ? 'active' : ''} onClick={() => setAba('integridade')}>
+            Integridade (ledger)
           </button>
         </div>
 
@@ -1439,6 +1578,180 @@ export default function FinanceiroAdmin() {
               </button>
             </div>
             {msgPromo && <p className="financeiro-migracao-msg">{msgPromo}</p>}
+          </div>
+        )}
+
+        {aba === 'integridade' && (
+          <div className="financeiro-migracao financeiro-integridade">
+            <h2>Auditoria de ledger (somente leitura)</h2>
+            <p className="financeiro-migracao-texto">
+              Compara a soma de <code className="financeiro-inline-code">creatorData/.../payments</code> (aprovados, sem
+              refunded) com <code className="financeiro-inline-code">lifetimeNetBRL</code>. Serve como alerta — não altera
+              saldos.
+            </p>
+            <h3 className="financeiro-integridade-repair-title">Engajamento público (backfill)</h3>
+            <p className="financeiro-migracao-texto">
+              Atualiza <code className="financeiro-inline-code">usuarios_publicos/.../engagement*</code> a partir de{' '}
+              <code className="financeiro-inline-code">usuarios/.../engagementCycle</code> para quem já tinha ciclo antes
+              do espelho só-servidor. Só altera quem já tem nó em{' '}
+              <code className="financeiro-inline-code">usuarios_publicos</code>.
+            </p>
+            <div className="financeiro-grid financeiro-integridade-form">
+              <label>
+                Máx. perfis a atualizar
+                <input
+                  type="number"
+                  min={1}
+                  max={2000}
+                  value={backfillMaxUpdates}
+                  onChange={(e) => setBackfillMaxUpdates(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="financeiro-acoes financeiro-acoes--config">
+              <button
+                type="button"
+                className="financeiro-btn-secondary-lg"
+                disabled={backfillLoading}
+                onClick={rodarBackfillEngagementPublic}
+              >
+                {backfillLoading ? 'A executar...' : 'Executar backfill engagement público'}
+              </button>
+            </div>
+            {backfillMsg ? <p className="financeiro-migracao-msg">{backfillMsg}</p> : null}
+            {backfillResult?.ok ? (
+              <p className="financeiro-migracao-texto">
+                Atualizados: <strong>{backfillResult.updated}</strong> de até{' '}
+                <strong>{backfillResult.maxUpdates}</strong> · contas com ciclo:{' '}
+                <strong>{backfillResult.scannedWithCycle}</strong>
+              </p>
+            ) : null}
+            <div className="financeiro-grid financeiro-integridade-form">
+              <label>
+                Creator ID (opcional)
+                <input
+                  type="text"
+                  value={auditCreatorId}
+                  onChange={(e) => setAuditCreatorId(e.target.value)}
+                  placeholder="Deixe vazio para varrer vários criadores"
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Máx. criadores a varrer
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={auditMaxCreators}
+                  onChange={(e) => setAuditMaxCreators(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="financeiro-acoes financeiro-acoes--config">
+              <button
+                type="button"
+                className="financeiro-btn-primary financeiro-btn-cta-lg"
+                disabled={auditLoading}
+                onClick={rodarAuditoriaLedger}
+              >
+                {auditLoading ? 'A executar...' : 'Executar auditoria'}
+              </button>
+            </div>
+            {auditNote ? <p className="financeiro-migracao-texto financeiro-integridade-note">{auditNote}</p> : null}
+            {auditSummary ? (
+              <p className="financeiro-migracao-texto">
+                Varredura: <strong>{auditSummary.scanned}</strong> criador(es) · divergências (Δ &gt; R$ 0,05):{' '}
+                <strong>{auditSummary.mismatches}</strong>
+              </p>
+            ) : null}
+            {auditMsg ? <p className="financeiro-migracao-msg">{auditMsg}</p> : null}
+            {auditRows.length > 0 ? (
+              <div className="financeiro-integridade-table-wrap">
+                <table className="financeiro-integridade-table">
+                  <thead>
+                    <tr>
+                      <th>Creator</th>
+                      <th>Soma payments</th>
+                      <th>lifetimeNet</th>
+                      <th>Disponível</th>
+                      <th>Pendente</th>
+                      <th>Δ (soma − lifetime)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditRows.map((r) => (
+                      <tr key={r.creatorId} className={r.mismatch ? 'financeiro-integridade-row--warn' : ''}>
+                        <td>
+                          <code className="financeiro-inline-code">{r.creatorId}</code>
+                        </td>
+                        <td>{Number(r.sumPaymentAmounts || 0).toFixed(2)}</td>
+                        <td>{Number(r.lifetimeNetBRL || 0).toFixed(2)}</td>
+                        <td>{Number(r.availableBRL || 0).toFixed(2)}</td>
+                        <td>{Number(r.pendingPayoutBRL || 0).toFixed(2)}</td>
+                        <td>{Number(r.deltaSumVsLifetime || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            <h3 className="financeiro-integridade-repair-title">Reparo de lifetimeNet (opcional)</h3>
+            <p className="financeiro-migracao-texto">
+              Alinha <code className="financeiro-inline-code">balance/lifetimeNetBRL</code> à soma dos payments
+              (mesma heurística da auditoria). Use só quando tiver certeza do motivo da divergência. Opcionalmente ajusta
+              também o disponível pelo mesmo Δ (arriscado se já houve repasses).
+            </p>
+            <div className="financeiro-grid financeiro-integridade-form">
+              <label>
+                Creator ID (obrigatório)
+                <input
+                  type="text"
+                  value={repairCreatorId}
+                  onChange={(e) => setRepairCreatorId(e.target.value)}
+                  placeholder="UID do criador em creatorData"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="financeiro-check financeiro-integridade-check">
+                <input
+                  type="checkbox"
+                  checked={repairAdjustAvailable}
+                  onChange={(e) => setRepairAdjustAvailable(e.target.checked)}
+                />
+                Ao aplicar, também ajustar disponível (availableBRL += Δ)
+              </label>
+            </div>
+            <div className="financeiro-acoes financeiro-acoes--config">
+              <button
+                type="button"
+                className="financeiro-btn-secondary-lg"
+                disabled={repairLoading}
+                onClick={preverReparoLifetime}
+              >
+                {repairLoading ? '...' : 'Pré-visualizar'}
+              </button>
+              <button
+                type="button"
+                className="financeiro-btn-primary financeiro-btn-cta-lg"
+                disabled={repairLoading}
+                onClick={aplicarReparoLifetime}
+              >
+                Aplicar reparo
+              </button>
+            </div>
+            {repairMsg ? <p className="financeiro-migracao-msg">{repairMsg}</p> : null}
+            {Array.isArray(repairResult?.warnings) && repairResult.warnings.length > 0 ? (
+              <ul className="financeiro-migracao-list financeiro-integridade-warnings">
+                {repairResult.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+            {repairResult ? (
+              <pre className="financeiro-integridade-json">{JSON.stringify(repairResult, null, 2)}</pre>
+            ) : null}
           </div>
         )}
 

@@ -117,10 +117,10 @@
   resize: vertical;
 }
 
-.creator-app-modal__textarea--pix-random {
-  min-height: 52px;
+.creator-app-modal__input--pix-random {
   font-family: ui-monospace, monospace;
   font-size: 0.82rem;
+  letter-spacing: 0.02em;
 }
 
 .creator-app-modal__select {
@@ -682,4 +682,119 @@
   .creator-app-photo-preview--profile {
     max-width: none;
   }
+}
+
+/* Aviso explícito: monetização bloqueada por idade (sobre o modal / página CREATORS) */
+.creator-app-underage-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.creator-app-underage-dialog {
+  width: min(440px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: linear-gradient(165deg, #1a1510 0%, #0c0b09 100%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  color: #fef3c7;
+  padding: 0;
+}
+
+.creator-app-underage-dialog__title {
+  margin: 0;
+  padding: 18px 20px 10px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fcd34d;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.creator-app-underage-dialog__body {
+  padding: 16px 20px 8px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(254, 243, 199, 0.92);
+}
+
+.creator-app-underage-dialog__body p {
+  margin: 0 0 12px;
+}
+
+.creator-app-underage-dialog__actions {
+  padding: 8px 20px 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Erro de validação / envio e conclusão de envio (sobre o modal ou página CREATORS) */
+.creator-app-feedback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.creator-app-feedback-dialog {
+  width: min(420px, 100%);
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+.creator-app-feedback-dialog--error {
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: linear-gradient(165deg, #1c1012 0%, #0d090a 100%);
+  color: #fecaca;
+}
+
+.creator-app-feedback-dialog--success {
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  background: linear-gradient(165deg, #0f1a15 0%, #080d0b 100%);
+  color: #d1fae5;
+}
+
+.creator-app-feedback-dialog__title {
+  margin: 0;
+  padding: 18px 20px 10px;
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.creator-app-feedback-dialog--error .creator-app-feedback-dialog__title {
+  color: #fca5a5;
+}
+
+.creator-app-feedback-dialog--success .creator-app-feedback-dialog__title {
+  color: #6ee7b7;
+}
+
+.creator-app-feedback-dialog__body {
+  padding: 16px 20px 8px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.creator-app-feedback-dialog__body p {
+  margin: 0;
+}
+
+.creator-app-feedback-dialog__actions {
+  padding: 8px 20px 20px;
+  display: flex;
+  justify-content: flex-end;
 }

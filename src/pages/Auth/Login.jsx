@@ -72,11 +72,7 @@ export default function Login() {
       navigate(resolved, { replace: true });
       return;
     }
-    if (authUser && isAdminUser(authUser)) {
-      navigate('/', { replace: true });
-      return;
-    }
-    navigate('/perfil', { replace: true });
+    navigate('/', { replace: true });
   };
   // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');

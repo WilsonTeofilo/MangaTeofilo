@@ -156,6 +156,7 @@ ${urls.map((u) => `  <url>
       'Disallow: /biblioteca',
       'Disallow: /loja/carrinho',
       'Disallow: /loja/pedidos',
+      'Disallow: /pedidos',
       `Sitemap: ${SITE_URL}/sitemap.xml`,
       '',
     ].join('\n'),

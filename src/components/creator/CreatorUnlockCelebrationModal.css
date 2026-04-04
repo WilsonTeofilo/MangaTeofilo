@@ -1,0 +1,93 @@
+.creator-unlock-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.creator-unlock-modal {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 20px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(165deg, rgba(30, 27, 15, 0.98), rgba(15, 23, 42, 0.98));
+  padding: 28px 26px 24px;
+  text-align: center;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.creator-unlock-modal__confetti {
+  font-size: 2.2rem;
+  line-height: 1;
+  margin-bottom: 8px;
+  letter-spacing: 0.2em;
+}
+
+.creator-unlock-modal__title {
+  margin: 0 0 10px;
+  font-size: 1.75rem;
+  font-weight: 900;
+  color: #fef3c7;
+  letter-spacing: -0.02em;
+}
+
+.creator-unlock-modal__lead {
+  margin: 0 0 16px;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+}
+
+.creator-unlock-modal__list {
+  text-align: left;
+  margin: 0 0 22px;
+  padding: 0 0 0 1.1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #cbd5e1;
+}
+
+.creator-unlock-modal__list li {
+  margin-bottom: 8px;
+}
+
+.creator-unlock-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.creator-unlock-modal__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.creator-unlock-modal__btn--ghost {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.creator-unlock-modal__btn--primary {
+  background: linear-gradient(135deg, #fbbf24, #d97706);
+  color: #1a0f00;
+}
+
+.creator-unlock-modal__btn:hover {
+  filter: brightness(1.08);
+}

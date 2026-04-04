@@ -3,6 +3,7 @@ import { onValue, push, ref as dbRef, remove, set } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
+import { resolveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import './CreatorFrame.css';
 
@@ -52,7 +53,12 @@ export default function CreatorMonetizationDashboard({ user }) {
   }, [uid]);
 
   const monetizationPreference = String(perfil?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
-  const monetizationStatus = String(perfil?.creatorMonetizationStatus || 'disabled').trim().toLowerCase();
+  const monetizationStatusResolved = resolveCreatorMonetizationStatusFromDb(perfil || {});
+  const monetizationStatus = (
+    monetizationStatusResolved !== ''
+      ? monetizationStatusResolved
+      : String(perfil?.creatorMonetizationStatus || 'disabled').trim().toLowerCase()
+  );
   const monetizationReviewReason = String(perfil?.creatorMonetizationReviewReason || '').trim();
   const modeLabel = monetizationModeLabel(monetizationPreference, monetizationStatus);
 

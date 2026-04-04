@@ -77,6 +77,8 @@ export async function criarPreferenciaApoio(
       uid: String(uid),
       tipo: 'apoio',
       planId: String(planId),
+      transactionType: 'DONATION',
+      source: attributionCreatorId ? 'creator_link' : 'platform',
       attributionCreatorId: attributionCreatorId ? String(attributionCreatorId).trim() : null,
       ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
     };
@@ -162,6 +164,8 @@ export async function criarPreferenciaApoioValorLivre(
       uid: String(uid),
       tipo: 'apoio_custom',
       customAmount: v,
+      transactionType: 'DONATION',
+      source: attributionCreatorId ? 'creator_link' : 'platform',
       attributionCreatorId: attributionCreatorId ? String(attributionCreatorId).trim() : null,
       ...(options.metadata && typeof options.metadata === 'object' ? options.metadata : {}),
     };

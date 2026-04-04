@@ -1,3 +1,9 @@
+import {
+  computeFixedZoneShippingParts as computeFixedZoneShippingPartsImported,
+  FREE_SHIPPING_MAX_SHIPPING_BRL,
+  FREE_SHIPPING_MIN_SUBTOTAL_BRL,
+} from './fixedZoneShipping.js';
+
 export const SALE_MODEL = {
   PLATFORM: 'platform',
   PERSONAL: 'personal',
@@ -36,6 +42,29 @@ export const PERSONAL_UNIT_BRL = {
 
 export const PLATFORM_APPROVAL_SLA_DAYS = 2;
 export const PERSONAL_DELIVERY_BUFFER_DAYS = 12;
+
+/** Reserva do checkout: 3 horas para concluir pagamento (cancelamento automático depois). */
+export const POD_PENDING_PAYMENT_TTL_MS = 3 * 60 * 60 * 1000;
+
+export { computeFixedZoneShippingPartsImported as computeFixedZoneShippingParts };
+export { FREE_SHIPPING_MIN_SUBTOTAL_BRL, FREE_SHIPPING_MAX_SHIPPING_BRL };
+
+/** Subtotal mínimo (só produtos) para poder isentar frete quando o valor calculado por UF for baixo. */
+export const PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL = FREE_SHIPPING_MIN_SUBTOTAL_BRL;
+
+/** Frete modo «Produzir para mim»: tabela fixa por UF + R$ 2/unidade extra + regra de grátis condicional. */
+export function quotePersonalDeliveryShippingBRL(uf, quantity, goodsSubtotal) {
+  return computeFixedZoneShippingPartsImported({
+    state: uf,
+    quantity,
+    cartTotal: goodsSubtotal,
+  }).priceBrl;
+}
+
+const WEIGHT_GRAMS_PER_UNIT = {
+  [BOOK_FORMAT.TANKOBON]: 300,
+  [BOOK_FORMAT.MEIO_TANKO]: 160,
+};
 
 const PRODUCTION_TIME_RULES = {
   [BOOK_FORMAT.TANKOBON]: {
@@ -137,6 +166,7 @@ export function computePersonalOrder(format, quantity) {
   const goodsTotal = Math.round(row.unitCost * qty * 100) / 100;
   const platformProfitIncludedTotal = Math.round(row.platformProfitIncluded * qty * 100) / 100;
   const freeShipping = qty >= Number(row.freeShippingAt || 999);
+  const wUnit = WEIGHT_GRAMS_PER_UNIT[format] || 300;
   return {
     unitCostBRL: row.unitCost,
     creatorUnitPriceBRL: row.unitCost,
@@ -146,6 +176,8 @@ export function computePersonalOrder(format, quantity) {
     freeShipping,
     freeShippingAt: row.freeShippingAt,
     creatorProductKind: 'personal_purchase',
+    weightGramsPerUnit: wUnit,
+    weightGramsTotal: Math.round(wUnit * qty),
     shippingNote: freeShipping
       ? `Frete gratis a partir de ${row.freeShippingAt} unidades. O prazo abaixo ja considera producao + entrega.`
       : `Frete a parte: abaixo de ${row.freeShippingAt} unidades o frete e cobrado separadamente.`,

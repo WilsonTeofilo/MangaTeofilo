@@ -9,6 +9,10 @@
   gap: 20px;
 }
 
+.creator-workspace-level-row {
+  margin-top: -4px;
+}
+
 .creator-workspace-hero,
 .creator-workspace-onboarding,
 .creator-pillar-card,

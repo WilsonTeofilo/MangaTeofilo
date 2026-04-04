@@ -42,3 +42,7 @@ export const CREATOR_BIO_MIN_LENGTH = 24;
 export const CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY = 24;
 export const CREATOR_BIO_MAX_LENGTH = 450;
 
+/** Membership do autor (acesso antecipado às obras dele): faixa em R$ que só o criador define no perfil. */
+export const CREATOR_MEMBERSHIP_PRICE_MIN_BRL = 7;
+export const CREATOR_MEMBERSHIP_PRICE_MAX_BRL = 18;
+

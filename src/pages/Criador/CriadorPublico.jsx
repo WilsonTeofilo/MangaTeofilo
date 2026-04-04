@@ -8,6 +8,7 @@ import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
 import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
 import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import './CriadorPublico.css';
 
 function toList(data) {
@@ -92,8 +93,11 @@ export default function CriadorPublico() {
     ].filter(Boolean);
   }, [perfilPublico]);
 
+  const formattedPublic = formatUserDisplayWithHandle(perfilPublico);
   const nomeCriador =
-    String(perfilPublico?.creatorDisplayName || perfilPublico?.userName || '').trim() ||
+    (formattedPublic !== 'Usuário'
+      ? formattedPublic
+      : String(perfilPublico?.creatorDisplayName || perfilPublico?.userName || '').trim()) ||
     (obras[0]?.creatorName ? String(obras[0].creatorName) : '') ||
     'Criador';
 
@@ -133,7 +137,7 @@ export default function CriadorPublico() {
       <main className="criador-page">
         <section className="criador-empty">
           <h1>Perfil indisponivel</h1>
-          <p>Este perfil de criador nao esta acessivel no momento.</p>
+          <p>Este perfil de criador não está acessível no momento.</p>
         </section>
       </main>
     );
@@ -143,7 +147,7 @@ export default function CriadorPublico() {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Criador nao encontrado</h1>
+          <h1>Criador não encontrado</h1>
           <p>Nao ha dados publicos para este link.</p>
         </section>
       </main>
@@ -167,7 +171,7 @@ export default function CriadorPublico() {
         <div className="criador-hero__content">
           <span className="criador-hero__pill">Criador</span>
           <h1>{nomeCriador}</h1>
-          <p>{bio || 'Criador autoral da plataforma MangaTeofilo.'}</p>
+          <p>{bio || 'Autor publicando na MangaTeofilo.'}</p>
           <div className="criador-hero__actions">
             {supportEnabled ? (
               <button type="button" onClick={() => navigate(apoiePathParaCriador(creatorUid))}>
@@ -185,7 +189,7 @@ export default function CriadorPublico() {
           ) : null}
           {!supportEnabled ? (
             <p className="criador-hero__support-copy">
-              Este criador esta em modo apenas publicar. Apoio e membership ainda nao estao disponiveis.
+              Este criador está em modo “só publicar”. Apoio e membership ainda não estão disponíveis.
             </p>
           ) : null}
           {membershipEnabled ? (

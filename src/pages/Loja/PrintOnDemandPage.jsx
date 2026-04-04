@@ -714,7 +714,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 Fechar
               </button>
               <Link
-                to="/creator/dashboard#creator-level"
+                to="/creator/monetizacao"
                 className="pod-btn pod-btn--primary pod-modal__link-btn"
                 onClick={() => setModal(null)}
               >
@@ -809,7 +809,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                     )}
                     <Link
                       className="pod-platform-gate__cta"
-                      to="/creator/dashboard#creator-level"
+                      to="/creator/monetizacao"
                       onClick={(e) => e.stopPropagation()}
                     >
                       Ver progresso
@@ -1111,7 +1111,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   className={`pod-qty-btn ${quantity === q ? 'is-selected' : ''}`}
                   onClick={() => setQuantity(q)}
                 >
-                  {q}
+                  {saleModel === SALE_MODEL.PERSONAL && q === 1 ? '1 · teste' : q}
                 </button>
               ))}
             </div>

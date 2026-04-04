@@ -1,3 +1,5 @@
+import { isStaffEquipeWithoutCreator } from './appRoles';
+
 /**
  * Campos de permissao alinhados a `functions/adminRbac.js` (normalizePermissionsForRegistry).
  * A UI de equipe agrupa apenas permissoes operacionais de staff.
@@ -25,8 +27,9 @@ export const ADMIN_ROUTE_PREFIXES = [
 
 /** Atalhos creator espelhados em `App.jsx` — dependem de `canAccessCreatorPath`. */
 export const CREATOR_ROUTE_PREFIXES = [
+  '/creator/monetizacao',
+  '/creator/missoes',
   '/creator/dashboard',
-  '/creator/perfil',
   '/creator/audience',
   '/creator/obras',
   '/creator/capitulos',
@@ -53,8 +56,8 @@ export function adminHasFullPanel(access) {
 }
 
 function hasCreatorScopeAccess(access) {
-  if (!access?.canAccessAdmin) return false;
   if (access?.isMangaka) return true;
+  if (!access?.canAccessAdmin) return false;
   if (adminHasFullPanel(access)) return true;
   const perm = access.permissions || {};
   return Boolean(
@@ -73,22 +76,7 @@ function hasCreatorScopeAccess(access) {
  */
 export function canAccessAdminPath(pathname, access) {
   if (!access?.canAccessAdmin) return false;
-  if (access?.isMangaka) {
-    if (pathname.startsWith('/admin/equipe') || pathname.startsWith('/admin/sessoes')) return false;
-    if (pathname.startsWith('/admin/avatares')) return false;
-    if (pathname.startsWith('/admin/dashboard')) return false;
-    if (
-      pathname.startsWith('/admin/loja') ||
-      pathname.startsWith('/admin/products') ||
-      pathname.startsWith('/admin/pedidos')
-    ) {
-      return true;
-    }
-    if (pathname.startsWith('/admin/financeiro')) return true;
-    if (pathname.startsWith('/admin/capitulos')) return true;
-    if (pathname.startsWith('/admin/manga')) return true;
-    if (pathname.startsWith('/admin/obras')) return true;
-  }
+  if (access?.isMangaka) return false;
   if (adminHasFullPanel(access)) return true;
   const perm = access.permissions || {};
   if (pathname === '/admin') return true;
@@ -136,40 +124,74 @@ export function canAccessAdminPath(pathname, access) {
 }
 
 export function canAccessCreatorPath(pathname, access) {
-  if (!hasCreatorScopeAccess(access)) return false;
-  if (pathname === '/creator' || pathname === '/creator/') return true;
-  if (pathname.startsWith('/creator/perfil')) {
+  const p = String(pathname || '');
+  /** Onboarding só para contas que não são equipe sem creator. */
+  if (p.startsWith('/creator/onboarding')) {
+    if (isStaffEquipeWithoutCreator(access)) return false;
     return true;
   }
-  if (pathname.startsWith('/creator/dashboard')) {
+  if (!hasCreatorScopeAccess(access)) return false;
+  /** Equipe: só ferramentas operacionais; sem monetização, missões, analytics nem dashboard creator. */
+  if (isStaffEquipeWithoutCreator(access)) {
+    if (
+      p.startsWith('/creator/monetizacao') ||
+      p.startsWith('/creator/missoes') ||
+      p.startsWith('/creator/dashboard') ||
+      p.startsWith('/creator/audience') ||
+      p.startsWith('/creator/print') ||
+      (p.startsWith('/print-on-demand') && p.includes('ctx=creator'))
+    ) {
+      return false;
+    }
+  }
+  if (p === '/creator' || p === '/creator/') {
+    if (isStaffEquipeWithoutCreator(access)) {
+      return canAccessAdminPath('/admin/obras', access) || canAccessAdminPath('/admin/capitulos', access);
+    }
+    return true;
+  }
+  /** Hub de conta: equipe usa como leitor; não é painel creator. */
+  if (p === '/perfil') {
+    return true;
+  }
+  if (p.startsWith('/creator/monetizacao')) {
+    return access?.isMangaka === true;
+  }
+  if (p.startsWith('/creator/missoes')) {
+    return access?.isMangaka === true;
+  }
+  if (p.startsWith('/creator/dashboard')) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/dashboard', access) || canAccessAdminPath('/admin/financeiro', access);
   }
-  if (pathname.startsWith('/creator/audience')) {
+  if (p.startsWith('/creator/audience')) {
     return access?.isMangaka === true;
   }
-  if (pathname.startsWith('/creator/obras')) {
+  if (p.startsWith('/creator/obras')) {
+    if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/obras', access);
   }
-  if (pathname.startsWith('/creator/capitulos')) {
+  if (p.startsWith('/creator/capitulos')) {
+    if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/capitulos', access);
   }
-  if (pathname.startsWith('/creator/editor')) {
+  if (p.startsWith('/creator/editor')) {
+    if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/manga', access) || canAccessAdminPath('/admin/capitulos', access);
   }
-  if (pathname.startsWith('/creator/promocoes')) {
+  if (p.startsWith('/creator/promocoes')) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/financeiro', access);
   }
-  if (pathname.startsWith('/creator/loja')) {
+  if (p.startsWith('/creator/loja')) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/loja', access) || canAccessAdminPath('/admin/pedidos', access);
   }
-  if (pathname.startsWith('/creator/print')) {
+  if (p.startsWith('/creator/print')) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/loja', access) || canAccessAdminPath('/admin/pedidos', access);
   }
-  if (pathname.startsWith('/print-on-demand') && pathname.includes('ctx=creator')) {
+  if (p.startsWith('/print-on-demand') && p.includes('ctx=creator')) {
     if (access?.isMangaka) return true;
     return canAccessAdminPath('/admin/loja', access) || canAccessAdminPath('/admin/pedidos', access);
   }
@@ -199,9 +221,11 @@ export function getDefaultAdminRedirect(access) {
 }
 
 const CREATOR_HOME_CANDIDATES = [
+  '/perfil',
+  '/creator/monetizacao',
+  '/creator/missoes',
   '/creator/dashboard',
   '/creator/audience',
-  '/creator/perfil',
   '/creator/obras',
   '/creator/capitulos',
   '/creator/promocoes',
@@ -211,6 +235,17 @@ const CREATOR_HOME_CANDIDATES = [
 ];
 
 export function getDefaultCreatorRedirect(access) {
+  if (isStaffEquipeWithoutCreator(access)) {
+    const prefer = ['/creator/obras', '/creator/capitulos', '/admin/obras', '/admin/capitulos'];
+    for (const path of prefer) {
+      if (path.startsWith('/admin')) {
+        if (canAccessAdminPath(path, access)) return path;
+      } else if (canAccessCreatorPath(path, access)) {
+        return path;
+      }
+    }
+    return getDefaultAdminRedirect(access);
+  }
   for (const path of CREATOR_HOME_CANDIDATES) {
     if (canAccessCreatorPath(path, access)) return path;
   }

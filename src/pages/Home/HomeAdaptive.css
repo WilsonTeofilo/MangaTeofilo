@@ -963,3 +963,14 @@
     width: 76px;
   }
 }
+
+/* TV / telas largas: conteúdo não fica “espremido” no centro */
+@media (min-width: 1920px) {
+  .home-multi {
+    max-width: min(1680px, 100%);
+  }
+
+  .home-single-alt {
+    max-width: min(1680px, 100%);
+  }
+}

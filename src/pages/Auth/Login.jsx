@@ -1,5 +1,5 @@
 // src/pages/Auth/Login.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   signInWithEmailAndPassword,
@@ -12,7 +12,13 @@ import {
 } from 'firebase/auth';
 import { ref, get, onValue, update } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
-import { LISTA_AVATARES, AVATAR_FALLBACK, isAdminUser, DISPLAY_NAME_MAX_LENGTH } from '../../constants';
+import {
+  LISTA_AVATARES,
+  AVATAR_FALLBACK,
+  DEFAULT_USER_DISPLAY_NAME,
+  isAdminUser,
+  DISPLAY_NAME_MAX_LENGTH,
+} from '../../constants';
 import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSyncV2';
 import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
 import { avatarEhPublicoNoCadastro } from '../../utils/avatarAccess';
@@ -65,9 +71,21 @@ async function carregarStatusConta(uid) {
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const irParaAposLogin = (authUser) => {
+  const resolvePostLoginRedirect = (authUser) => {
     const raw = searchParams.get('redirect');
     const resolved = resolveSafeInternalRedirect(raw);
+    const isCreatorFlow =
+      resolved === '/creators' ||
+      resolved.startsWith('/creator') ||
+      resolved.startsWith('/print-on-demand?ctx=creator') ||
+      resolved.includes('ctx=creator');
+    if (isAdminUser(authUser) && isCreatorFlow) {
+      return '/admin/criadores';
+    }
+    return resolved;
+  };
+  const irParaAposLogin = (authUser) => {
+    const resolved = resolvePostLoginRedirect(authUser);
     if (resolved !== '/') {
       navigate(resolved, { replace: true });
       return;
@@ -92,6 +110,9 @@ export default function Login() {
   const [listaAvatares,   setListaAvatares]   = useState(LISTA_AVATARES);
   const [selectedAvatar,  setSelectedAvatar]  = useState(LISTA_AVATARES[0] || AVATAR_FALLBACK);
   const [signupIntent,    setSignupIntent]    = useState('reader');
+  /** Fluxo explícito "criar conta" — envia código mesmo sem usuário no Auth */
+  const [signupCodeMode, setSignupCodeMode]    = useState(false);
+  const lastCodeWasSignupRef = useRef(false);
 
   const hasUpper   = /[A-Z]/.test(password);
   const hasNumber  = /\d/.test(password);
@@ -103,11 +124,26 @@ export default function Login() {
   const validarEmailComDica = (rawEmail) => {
     const norm = normalizeLoginEmail(rawEmail);
     if (!norm) return { ok: false, message: 'Informe um e-mail válido.' };
-    if (norm.includes('@gmail') && !norm.endsWith('@gmail.com')) {
+    if (norm.includes('@gmail') && !norm.endsWith('@gmail.com') && !norm.endsWith('@googlemail.com')) {
       return {
         ok: false,
-        message: 'Parece Gmail incompleto. Use o formato correto: seuemail@gmail.com',
+        message: 'Parece Gmail incompleto. Use: seuemail@gmail.com (ou @googlemail.com).',
       };
+    }
+    const domainTypos = [
+      ['@gmial.com', '@gmail.com'],
+      ['@gmai.com', '@gmail.com'],
+      ['@gmail.con', '@gmail.com'],
+      ['@gmail.coom', '@gmail.com'],
+      ['@gmail.co', '@gmail.com'],
+      ['@hotmai.com', '@hotmail.com'],
+      ['@hotmal.com', '@hotmail.com'],
+      ['@outlok.com', '@outlook.com'],
+    ];
+    for (const [bad, good] of domainTypos) {
+      if (norm.endsWith(bad)) {
+        return { ok: false, message: `Confira o domínio do e-mail (ex.: …${good}).` };
+      }
     }
     const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(norm)) {
@@ -174,7 +210,7 @@ export default function Login() {
 
       if (isAdminUser(googleUser)) {
         const av = listaAvatares[0] || AVATAR_FALLBACK;
-        await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
+        await ensureUsuarioRecord(googleUser, googleUser.displayName || DEFAULT_USER_DISPLAY_NAME, av, listaAvatares, 'ativo');
         await ativarContaUsuario(googleUser.uid);
         irParaAposLogin(googleUser);
         return;
@@ -190,11 +226,11 @@ export default function Login() {
       const av = listaAvatares[0] || AVATAR_FALLBACK;
       await updateProfile(googleUser, {
         photoURL:    av,
-        displayName: googleUser.displayName || 'Guerreiro',
+        displayName: googleUser.displayName || DEFAULT_USER_DISPLAY_NAME,
       });
       await refreshAuthUser(googleUser);
 
-      await ensureUsuarioRecord(googleUser, googleUser.displayName || 'Guerreiro', av, listaAvatares, 'ativo');
+      await ensureUsuarioRecord(googleUser, googleUser.displayName || DEFAULT_USER_DISPLAY_NAME, av, listaAvatares, 'ativo');
       await ativarContaUsuario(googleUser.uid);
 
       irParaAposLogin(googleUser);
@@ -209,8 +245,11 @@ export default function Login() {
     }
   };
 
-  /** Envia código por e-mail (primeira vez ou reenvio). Retorna true se ok. */
-  const enviarCodigoLogin = async () => {
+  /**
+   * Envia código por e-mail. `signupExplicit`: true = cadastro novo (servidor envia mesmo sem Auth).
+   * Retorna true se ok.
+   */
+  const enviarCodigoLogin = async (signupExplicit = false) => {
     const attempt = getAttemptState('sendCode');
     if (attempt.blocked) {
       setError(`Muitas tentativas. Tente novamente em ${attempt.retryInSec}s.`);
@@ -225,7 +264,7 @@ export default function Login() {
     const emailNorm = validacao.email;
     setEmail(emailNorm);
 
-    if (emailNorm.endsWith('@gmail.com')) {
+    if (!signupExplicit) {
       try {
         const methods = await fetchSignInMethodsForEmail(auth, emailNorm);
         const temGoogle = methods.includes('google.com');
@@ -233,19 +272,35 @@ export default function Login() {
 
         if (temGoogle && !temSenhaSite) {
           setStep('existing-google');
+          setSignupCodeMode(false);
+          setError('');
           setInfo(
-            'Detectamos que este Gmail usa login com Google. Clique em Conectar com Google para entrar.'
+            'Este e-mail já está cadastrado com login pelo Google. A senha do Gmail não vale aqui — use «Conectar com Google». Não há perfil com e-mail e senha neste site para esse endereço.'
           );
           return false;
         }
 
         if (methods.length === 0) {
-          setInfo('Este Gmail ainda não tem conta. Envie o código para cadastrar.');
-        } else if (temGoogle && temSenhaSite) {
-          setInfo('Este Gmail tem Google e senha no site. Você pode usar qualquer um dos dois.');
+          setSignupCodeMode(true);
+          setError('');
+          setInfo(
+            'Não encontramos conta com este e-mail no MangaTeofilo. Se você já entrou com Google, use o botão Google. Para cadastrar com e-mail, use «Receber código para criar conta» abaixo (evita gastar e-mail à toa).'
+          );
+          return false;
+        }
+
+        if (temGoogle && temSenhaSite) {
+          setInfo('Esta conta tem Google e senha no site — você pode usar o código ou qualquer um dos dois.');
+        } else {
+          setInfo('');
         }
       } catch {
-        // Se a checagem falhar, seguimos com o fluxo padrão de código.
+        setSignupCodeMode(true);
+        setError('');
+        setInfo(
+          'Não conseguimos consultar o e-mail agora. Se é cadastro novo, use «Receber código para criar conta». Se já tem conta, use Google ou tente de novo em instantes.'
+        );
+        return false;
       }
     }
 
@@ -255,15 +310,21 @@ export default function Login() {
       const resp = await fetch('https://sendlogincode-4oan3cdrua-uc.a.run.app', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailNorm }),
+        body: JSON.stringify({ email: emailNorm, signup: signupExplicit === true }),
       });
 
       const data = await resp.json();
       if (!resp.ok || !data.ok) {
-        throw new Error(data.error || 'Não foi possível enviar o código.');
+        const msg =
+          data?.code === 'NO_AUTH_USER'
+            ? String(data.error || 'Nenhuma conta com este e-mail.')
+            : data.error || 'Não foi possível enviar o código.';
+        throw new Error(msg);
       }
 
       registerAttemptResult('sendCode', true);
+      lastCodeWasSignupRef.current = signupExplicit === true;
+      setSignupCodeMode(false);
       setInfo('Código enviado! Confira seu e-mail (e spam) e digite abaixo.');
       setResendCooldown(45);
       return true;
@@ -279,14 +340,21 @@ export default function Login() {
   const handleSendCode = async (e) => {
     e.preventDefault();
     setInfo('');
-    const ok = await enviarCodigoLogin();
+    const ok = await enviarCodigoLogin(false);
+    if (ok) setStep('code');
+  };
+
+  const handleSendCodeSignup = async (e) => {
+    e?.preventDefault?.();
+    setInfo('');
+    const ok = await enviarCodigoLogin(true);
     if (ok) setStep('code');
   };
 
   const handleResendCode = async () => {
     if (resendCooldown > 0 || loading) return;
     setError('');
-    await enviarCodigoLogin();
+    await enviarCodigoLogin(lastCodeWasSignupRef.current === true);
   };
 
   // --- FLUXO: 2) VALIDAR CÓDIGO ────────────────────────────────────────────
@@ -427,11 +495,11 @@ export default function Login() {
       registerAttemptResult('registerPassword', true);
       setInfo(
         signupIntent === 'creator'
-          ? 'Conta criada! Abrindo seu perfil — use "Quero virar criador" para enviar a candidatura.'
+          ? 'Conta criada! Abrindo o cadastro de criador em pagina dedicada.'
           : 'Conta criada! Bem-vindo à Tempestade.'
       );
       if (signupIntent === 'creator') {
-        navigate('/perfil', { replace: true });
+        navigate('/creator/onboarding', { replace: true });
       } else {
         irParaAposLogin(cred.user);
       }
@@ -474,7 +542,7 @@ export default function Login() {
         const av = listaAvatares[0] || AVATAR_FALLBACK;
         await ensureUsuarioRecord(
           cred.user,
-          cred.user.displayName || 'Guerreiro',
+          cred.user.displayName || DEFAULT_USER_DISPLAY_NAME,
           cred.user.photoURL || av,
           listaAvatares,
           'ativo'
@@ -495,7 +563,7 @@ export default function Login() {
       const av = listaAvatares[0] || AVATAR_FALLBACK;
       const perfil = await ensureUsuarioRecord(
         cred.user,
-        cred.user.displayName || 'Guerreiro',
+        cred.user.displayName || DEFAULT_USER_DISPLAY_NAME,
         cred.user.photoURL || av,
         listaAvatares,
         'ativo'
@@ -552,13 +620,16 @@ export default function Login() {
   return (
     <main className="login-content">
       <div className="login-card">
-        <h1 className="login-title shito-glitch">Bem vindo de volta!</h1>
+        <p className="login-brand-mark" aria-hidden="true">
+          MangaTeofilo
+        </p>
+        <h1 className="login-title">Bem-vindo de volta</h1>
         <p className="login-subtitle">
-          {step === 'email' && 'ENTRAR NA TEMPESTADE'}
-          {step === 'code' && 'INSIRA O CÓDIGO ENVIADO'}
-          {step === 'new-user' && 'DESPERTAR NOVA ALMA'}
-          {step === 'existing-password' && 'DIGITE SUA SENHA'}
-          {step === 'existing-google' && 'ENTRE COM GOOGLE'}
+          {step === 'email' && 'Entrar ou criar conta'}
+          {step === 'code' && 'Insira o código enviado'}
+          {step === 'new-user' && 'Configure seu perfil'}
+          {step === 'existing-password' && 'Digite sua senha'}
+          {step === 'existing-google' && 'Entre com Google'}
         </p>
 
         {/* STEP 1: E-MAIL */}
@@ -577,9 +648,25 @@ export default function Login() {
                 />
               </div>
               <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENVIAR CÓDIGO'}
+                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'Enviar código (tenho conta)'}
               </button>
             </form>
+
+            {signupCodeMode ? (
+              <div className="login-signup-code-hint">
+                <p className="login-info-inline">
+                  Primeiro acesso com este e-mail? Receba o código só para cadastro (não gasta tentativa de quem já tem conta).
+                </p>
+                <button
+                  type="button"
+                  className="btn-submit-shito btn-submit-shito--secondary"
+                  disabled={loading}
+                  onClick={handleSendCodeSignup}
+                >
+                  {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'Receber código para criar conta'}
+                </button>
+              </div>
+            ) : null}
 
             <div className="social-divider"><span>OU</span></div>
 

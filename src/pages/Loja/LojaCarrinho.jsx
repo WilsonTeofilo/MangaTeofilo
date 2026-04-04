@@ -46,6 +46,8 @@ export default function LojaCarrinho({ user, perfil }) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [shippingQuote, setShippingQuote] = useState(null);
+  /** Preços por linha e subtotal devolvidos por `quoteStoreShipping` (autoridade para exibição). */
+  const [serverCartPricing, setServerCartPricing] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingService, setShippingService] = useState('PAC');
   const [podDraft, setPodDraft] = useState(() => getPodCartDraft());
@@ -109,12 +111,33 @@ export default function LojaCarrinho({ user, perfil }) {
       .filter(Boolean);
   }, [cartItems, products, config.vipDiscountPct, vip]);
 
-  const subtotal = detailed.filter((l) => !l.invalidSize).reduce((sum, line) => sum + line.lineTotal, 0);
   const hasInvalid = detailed.some((l) => l.invalidSize);
   const selectedShippingOption = useMemo(
     () => shippingQuote?.options?.find((option) => option.serviceCode === shippingService) || null,
     [shippingQuote, shippingService]
   );
+  const priceByLineKey = useMemo(() => {
+    const m = new Map();
+    for (const row of serverCartPricing?.pricedLines || []) {
+      m.set(lineKey(row.productId, row.size || ''), row);
+    }
+    return m;
+  }, [serverCartPricing]);
+
+  const subtotal = useMemo(() => {
+    const clientSub = detailed.filter((l) => !l.invalidSize).reduce((sum, line) => sum + line.lineTotal, 0);
+    if (
+      serverCartPricing != null &&
+      Number.isFinite(Number(serverCartPricing.subtotal)) &&
+      shippingQuote &&
+      !hasInvalid &&
+      detailed.length > 0
+    ) {
+      return Number(serverCartPricing.subtotal);
+    }
+    return clientSub;
+  }, [detailed, serverCartPricing, shippingQuote, hasInvalid]);
+
   const shipping = Number(selectedShippingOption?.priceBrl || 0);
   const total = Math.round((subtotal + shipping) * 100) / 100;
 
@@ -126,6 +149,7 @@ export default function LojaCarrinho({ user, perfil }) {
     async function loadQuote() {
       if (!user?.uid || !detailed.length || hasInvalid || buyerMissingFields.length) {
         setShippingQuote(null);
+        setServerCartPricing(null);
         return;
       }
       setShippingLoading(true);
@@ -140,8 +164,16 @@ export default function LojaCarrinho({ user, perfil }) {
         const quote = data?.quote || null;
         setShippingQuote(quote);
         setShippingService(quote?.defaultServiceCode || 'PAC');
+        if (data?.subtotal != null && Array.isArray(data?.pricedLines)) {
+          setServerCartPricing({ subtotal: data.subtotal, pricedLines: data.pricedLines });
+        } else {
+          setServerCartPricing(null);
+        }
       } catch {
-        if (active) setShippingQuote(null);
+        if (active) {
+          setShippingQuote(null);
+          setServerCartPricing(null);
+        }
       } finally {
         if (active) setShippingLoading(false);
       }
@@ -296,8 +328,13 @@ export default function LojaCarrinho({ user, perfil }) {
           <h2 className="pod-checkout-section-title" style={{ margin: '0 0 14px', fontSize: '1.05rem' }}>
             Produtos da loja
           </h2>
-          {detailed.map((line) => (
-            <article key={lineKey(line.productId, line.size)} className="loja-cart-item">
+          {detailed.map((line) => {
+            const pk = lineKey(line.productId, line.size);
+            const srv = priceByLineKey.get(pk);
+            const unitPrice = srv ? srv.unitPrice : line.unitPrice;
+            const lineTotal = srv ? srv.lineTotal : line.lineTotal;
+            return (
+            <article key={pk} className="loja-cart-item">
               <img
                 src={(Array.isArray(line.product.images) && line.product.images[0]) || '/assets/fotos/shito.jpg'}
                 alt=""
@@ -306,7 +343,7 @@ export default function LojaCarrinho({ user, perfil }) {
                 <h3>{line.product.title}</h3>
                 {line.size ? <p className="loja-cart-size">Tam.: {line.size}</p> : null}
                 {line.invalidSize ? <p className="loja-error">Escolha tamanho valido (edite no produto).</p> : null}
-                <p>R$ {line.unitPrice.toFixed(2)} / un</p>
+                <p>R$ {unitPrice.toFixed(2)} / un</p>
               </div>
               <input
                 type="number"
@@ -317,15 +354,23 @@ export default function LojaCarrinho({ user, perfil }) {
                   setCartItems(updateCartQuantity(line.productId, Number(e.target.value || 1), line.size || ''))
                 }
               />
-              <strong>R$ {line.invalidSize ? '--' : line.lineTotal.toFixed(2)}</strong>
+              <strong>R$ {line.invalidSize ? '--' : lineTotal.toFixed(2)}</strong>
               <button type="button" onClick={() => setCartItems(removeFromCart(line.productId, line.size || ''))}>
                 Remover
               </button>
             </article>
-          ))}
+            );
+          })}
           <footer className="loja-cart-footer">
             <div className="loja-cart-totals">
-              <div>Subtotal: R$ {subtotal.toFixed(2)}</div>
+              <div>
+                Subtotal: R$ {subtotal.toFixed(2)}
+                {serverCartPricing && shippingQuote ? (
+                  <span className="loja-shipping-hint" style={{ display: 'block', marginTop: 4 }}>
+                    Valores das linhas e subtotal conferidos pelo servidor na cotação de frete; total cobrado segue o checkout.
+                  </span>
+                ) : null}
+              </div>
               {selectedShippingOption ? (
                 <div>
                   {selectedShippingOption.label}: R$ {Number(selectedShippingOption.priceBrl || 0).toFixed(2)}
@@ -337,7 +382,9 @@ export default function LojaCarrinho({ user, perfil }) {
               <div className="loja-cart-total-final">Total: R$ {total.toFixed(2)}</div>
             </div>
             <p className="loja-shipping-hint">
-              Frete por UF (tabela fixa) + R$ 2 por unidade adicional no pedido; PAC usa esse valor, SEDEX aplica acr?scimo sobre a mesma base. Prazo de entrega usa a regi?o da UF. Frete gr?tis: subtotal a partir de R$ 150 e valor de frete calculado at? R$ 60.
+              Frete por UF (tabela fixa) + R$ 2 por unidade extra; SEDEX usa acréscimo sobre a mesma base. Prazo conforme UF.
+              Sudeste, Sul e Centro-Oeste: com subtotal a partir de R$ 165 ou 3+ unidades, até 30% de desconto só no frete (teto
+              R$ 20).
             </p>
             {shippingQuote ? (
               <div className="loja-shipping-options">

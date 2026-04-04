@@ -1,4 +1,4 @@
-import { AVATAR_FALLBACK } from '../constants';
+import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME } from '../constants';
 
 function asNonEmptyString(value, fallback = '') {
   const normalized = String(value || '').trim();
@@ -12,7 +12,7 @@ function hasOwn(obj, key) {
 export function buildUsuarioBaseRecord({
   uid,
   email = '',
-  userName = 'Guerreiro',
+  userName = DEFAULT_USER_DISPLAY_NAME,
   userAvatar = AVATAR_FALLBACK,
   status = 'pendente',
   now = Date.now(),
@@ -20,7 +20,7 @@ export function buildUsuarioBaseRecord({
   return {
     uid,
     email: asNonEmptyString(email, ''),
-    userName: asNonEmptyString(userName, 'Guerreiro'),
+    userName: asNonEmptyString(userName, DEFAULT_USER_DISPLAY_NAME),
     userAvatar: asNonEmptyString(userAvatar, AVATAR_FALLBACK),
     role: 'user',
     accountType: 'comum',
@@ -102,7 +102,7 @@ export function buildUsuarioPublicoPatch(current = {}, options = {}) {
   const now = Number(options.now || Date.now());
   const patch = {};
 
-  const userName = asNonEmptyString(options.userName || current.userName, 'Guerreiro');
+  const userName = asNonEmptyString(options.userName || current.userName, DEFAULT_USER_DISPLAY_NAME);
   const userAvatar = asNonEmptyString(options.userAvatar || current.userAvatar, AVATAR_FALLBACK);
   const accountType = asNonEmptyString(options.accountType || current.accountType, 'comum');
   const signupIntent = asNonEmptyString(options.signupIntent || current.signupIntent, 'reader');

@@ -155,7 +155,7 @@ export default function LojaCatalogo({ user, perfil }) {
       <main className="loja-page">
         <section className="loja-empty">
           <h1>Loja em preparacao</h1>
-          <p>Em breve voce podera comprar produtos fisicos direto por aqui.</p>
+          <p>Em breve você poderá comprar produtos físicos por aqui, com checkout integrado.</p>
         </section>
       </main>
     );

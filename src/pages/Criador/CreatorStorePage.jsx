@@ -30,8 +30,8 @@ export default function CreatorStorePage({ user }) {
             >
               Catálogo e produtos
             </button>
-            <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/dashboard')}>
-              Voltar ao workspace
+            <button type="button" className="creator-frame-btn" onClick={() => navigate('/perfil')}>
+              Meu perfil
             </button>
           </div>
         </header>

@@ -2,12 +2,7 @@ rules_version = '2';
 service firebase.storage {
   function isShitoAdmin() {
     return request.auth != null
-      && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3"
-          || request.auth.uid == "QayqN0MpBTQK6je44JwAXWapoQU2"
-          || request.auth.uid == "20kR47W8PfTGIvGxGOGRsB2JiFA3"
-          || request.auth.token.email == "wilsonteofilosouza@live.com"
-          || request.auth.token.email == "drakenteofilo@gmail.com"
-          || request.auth.token.admin == true);
+      && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3" || request.auth.uid == "QayqN0MpBTQK6je44JwAXWapoQU2" || request.auth.uid == "20kR47W8PfTGIvGxGOGRsB2JiFA3" || request.auth.token.email == "wilsonteofilosouza@live.com" || request.auth.token.email == "drakenteofilo@gmail.com" || request.auth.token.admin == true);
   }
 
   function hasAdminPanelAccess() {
@@ -34,6 +29,12 @@ service firebase.storage {
   }
 
   match /b/{bucket}/o {
+    /**
+     * URLs públicas enumeráveis: capas/{uid}/*, manga/{uid}/{obra}/*, obras/{uid}/{obra}/*
+     * Qualquer pessoa pode tentar varrer uid/obra (segmentos validados por isSafeSegment).
+     * Conteúdo sensível não deve depender do segredo do path — use nomes de ficheiro imprevisíveis
+     * e regras de leitura acima. Ver docs/firebase-public-surface.md.
+     */
     match /capas/{ownerUid}/{fileName} {
       allow read: if true;
       allow write: if isSafeSegment(ownerUid)
@@ -79,10 +80,19 @@ service firebase.storage {
                    && fileName.lower().matches('.*\\.webp$')));
     }
 
-    /** Miolo PDF e capa (imagem) para pedidos print-on-demand; leitura pelo dono e staff. */
-    /** Assets da loja (capa, PDF miolo) — admin ou mangá dono do segmento. */
+    /**
+     * Assets da loja (imagens de vitrine + PDF digital).
+     * Imagens: leitura pública (URLs no catálogo). PDF: só com Firebase Auth (evita hotlink anônimo);
+     * upload continua restrito ao dono do segmento / staff.
+     */
     match /loja_produtos/{ownerUid}/{fileName} {
-      allow read: if true;
+      allow read: if isSafeSegment(ownerUid)
+                  && resource != null
+                  && (
+                    (resource.contentType.matches('image/.*')
+                     && !resource.contentType.matches('.*svg.*'))
+                    || (resource.contentType == "application/pdf" && request.auth != null)
+                  );
       allow write: if isSafeSegment(ownerUid)
                    && canWriteOwnerPath(ownerUid)
                    && (request.resource == null || (request.resource.size < 60 * 1024 * 1024

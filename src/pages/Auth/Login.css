@@ -77,6 +77,16 @@
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+.login-brand-mark {
+  text-align: center;
+  font-size: clamp(0.75rem, 2.5vw, 0.9rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
 .login-title {
   font-size: clamp(1.65rem, 7.5vw, 3.5rem);
   font-weight: 900;
@@ -101,6 +111,32 @@
   margin-bottom: clamp(20px, 5vw, 36px);
   line-height: 1.35;
   padding-inline: 4px;
+}
+
+.login-signup-code-hint {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-input);
+}
+
+.login-info-inline {
+  font-size: clamp(0.78rem, 2.6vw, 0.85rem);
+  color: var(--text-muted);
+  line-height: 1.45;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.btn-submit-shito--secondary {
+  margin-top: 0;
+  background: transparent !important;
+  border: 1px solid var(--naraa-gold) !important;
+  color: var(--naraa-gold) !important;
+  box-shadow: none !important;
+}
+
+.btn-submit-shito--secondary:hover:not(:disabled) {
+  background: rgba(255, 204, 0, 0.12) !important;
 }
 
 .login-google-hint {

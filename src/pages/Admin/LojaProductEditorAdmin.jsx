@@ -28,7 +28,7 @@ async function uploadLojaFile(file, ownerUid, kind) {
   const u = String(ownerUid || '').trim();
   if (!u) throw new Error('UID de destino inválido para upload.');
   const ext =
-    kind === 'pdf'
+    kind === 'pdf' || kind === 'miolo'
       ? '.pdf'
       : String(file.name || '')
           .toLowerCase()
@@ -36,7 +36,7 @@ async function uploadLojaFile(file, ownerUid, kind) {
   const path = `loja_produtos/${u}/${kind}_${Date.now()}${ext}`;
   const r = storageRef(storage, path);
   const contentType =
-    kind === 'pdf'
+    kind === 'pdf' || kind === 'miolo'
       ? 'application/pdf'
       : String(file.type || 'image/jpeg').split(';')[0] || 'image/jpeg';
   await uploadBytes(r, file, { contentType });

@@ -423,11 +423,11 @@ export default function Apoie({ user, perfil }) {
       return;
     }
     if (!attributionCreatorIdParaCheckout || !creatorOffer?.creatorMembershipEnabled) {
-      setErroMembershipCriador('Este criador ainda nao ativou a membership publica.');
+      setErroMembershipCriador('Este criador ainda não ativou a membership pública.');
       return;
     }
     if (attributionCreatorIdParaCheckout === user.uid) {
-      setErroMembershipCriador('Voce nao pode assinar a propria membership de criador.');
+      setErroMembershipCriador('Você não pode assinar a própria membership de criador.');
       return;
     }
     setErroMembershipCriador('');
@@ -586,16 +586,16 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="apoie-title-discord">Apoie Kokuin : Heranca do Abismo</h1>
+          <h1 className="apoie-title-discord">Apoie Kokuin: Herança do Abismo</h1>
 
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="status">
-              Voce entrou por um link de criador: os apoios desta sessao podem ser atribuidos a esse perfil.
+              Você entrou por um link de criador: os apoios desta sessão podem ser atribuídos a esse perfil.
             </p>
           ) : null}
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="note">
-              Atribuicao significa metrica interna e repasse futuro quando essa regra estiver ativa. O valor cobrado nao muda por causa disso.
+              Atribuição vale para métrica interna e repasse futuro, quando a regra estiver ativa. O valor cobrado não muda por causa disso.
             </p>
           ) : null}
 
@@ -678,24 +678,25 @@ export default function Apoie({ user, perfil }) {
                 {creatorOffer.creatorName} - {formatarPrecoBrl(creatorOffer.creatorMembershipPriceBRL)} / 30 dias
               </h2>
               <p className="apoie-premium-desc">
-                Esta assinatura pertence ao criador. Ela libera acesso antecipado apenas aos capitulos vinculados a <strong>{creatorOffer.creatorName}</strong> e representa apoio financeiro direto a esse autor.
+                Esta assinatura é do criador. Ela libera acesso antecipado só aos capítulos ligados a{' '}
+                <strong>{creatorOffer.creatorName}</strong> — o valor é apoio direto a esse autor.
               </p>
               <ul className="apoie-premium-lista">
                 <li>
                   <i className="fa-solid fa-book-open-reader" /> Early access apenas nas obras ligadas a {creatorOffer.creatorName}.
                 </li>
                 <li>
-                  <i className="fa-solid fa-heart" /> O apoio financeiro desta assinatura vai para o criador atribuido.
+                  <i className="fa-solid fa-heart" /> O valor desta assinatura vai para o criador indicado.
                 </li>
                 <li>
-                  <i className="fa-solid fa-layer-group" /> Nao substitui o Premium da plataforma e nao libera beneficios globais.
+                  <i className="fa-solid fa-layer-group" /> Não substitui o Premium da plataforma nem libera benefícios globais.
                 </li>
               </ul>
               {membershipCriadorAtiva && (
                 <p className="apoie-premium-status" role="status">
-                  Sua membership deste criador esta <strong>ativa</strong>
+                  Sua membership deste criador está <strong>ativa</strong>
                   {typeof membershipAtualDoCriador?.memberUntil === 'number'
-                    ? ` ate ${formatarDataLongaBr(membershipAtualDoCriador.memberUntil)}`
+                    ? ` até ${formatarDataLongaBr(membershipAtualDoCriador.memberUntil)}`
                     : ''}
                   .
                 </p>

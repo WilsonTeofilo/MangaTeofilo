@@ -107,6 +107,27 @@ export function normalizeGenreList(selected) {
   return out;
 }
 
+/** Gêneros válidos para o formulário admin a partir do registro RTDB (inglês ou legado PT). */
+export function parseObraGenreIdsForForm(obra) {
+  const rawGenres = obra?.genres;
+  const fromGenres = Array.isArray(rawGenres)
+    ? rawGenres
+    : rawGenres && typeof rawGenres === 'object'
+      ? Object.values(rawGenres)
+      : [];
+  let ids = normalizeGenreList(fromGenres);
+  if (ids.length === 0 && Array.isArray(obra?.generos)) {
+    ids = normalizeGenreList(obra.generos);
+  } else if (ids.length === 0 && typeof obra?.generos === 'string') {
+    ids = normalizeGenreList(obra.generos.split(','));
+  } else if (ids.length === 0 && typeof obra?.genero === 'string') {
+    ids = normalizeGenreList([obra.genero]);
+  }
+  const mainRaw = String(obra?.mainGenre || '').trim().toLowerCase();
+  if (ids.length === 0 && GENRE_ID_SET.has(mainRaw)) ids = normalizeGenreList([mainRaw]);
+  return ids;
+}
+
 export function normalizeTagsFromInput(raw) {
   const s = String(raw || '').trim();
   if (!s) return [];
@@ -247,6 +268,13 @@ export function validateObraWorkForm(p) {
   if (!p.isMangaka && !p.editandoId) {
     const cid = String(p.adminCreatorId || '').trim();
     if (!isValidCreatorUid(cid)) errors.push('Selecione ou informe o UID do autor (criador) da obra.');
+  }
+
+  if (!p.isMangaka && p.editandoId) {
+    const cidEdit = String(p.adminCreatorId || '').trim();
+    if (cidEdit && !isValidCreatorUid(cidEdit)) {
+      errors.push('UID do autor inválido (use o ID Firebase Auth do criador).');
+    }
   }
 
   return {

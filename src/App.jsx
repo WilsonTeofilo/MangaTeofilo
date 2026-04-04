@@ -7,6 +7,7 @@ import {
   Navigate,
   useLocation,
   useSearchParams,
+  useParams,
 } from 'react-router-dom';
 import { buildLoginUrlWithRedirect, resolveSafeInternalRedirect } from './utils/loginRedirectPath';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -28,6 +29,7 @@ import {
   creatorOnboardingPrimaryNextPath,
 } from './utils/creatorOnboardingProgress';
 import { effectiveCreatorMonetizationStatus } from './utils/creatorMonetizationUi';
+import { useCreatorScopedCatalog } from './hooks/useCreatorScopedCatalog';
 
 import Header from './components/Header.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
@@ -53,8 +55,8 @@ const Login = lazy(() => import('./pages/Auth/Login.jsx'));
 const Perfil = lazy(() => import('./pages/Perfil/Perfil.jsx'));
 const Leitor = lazy(() => import('./pages/Leitor/Leitor.jsx'));
 const CreatorPublicProfilePage = lazy(() => import('./pages/Criador/CreatorPublicProfilePage.jsx'));
-const CreatorWorkspace = lazy(() => import('./pages/Criador/CreatorWorkspace.jsx'));
-const CreatorProfilePage = lazy(() => import('./pages/Criador/CreatorProfilePage.jsx'));
+const CreatorMonetizationGrowthPage = lazy(() => import('./pages/Criador/CreatorMonetizationGrowthPage.jsx'));
+const CreatorMissionsPage = lazy(() => import('./pages/Criador/CreatorMissionsPage.jsx'));
 const CreatorAudiencePage = lazy(() => import('./pages/Criador/CreatorAudiencePage.jsx'));
 const CreatorMonetizationPage = lazy(() => import('./pages/Criador/CreatorMonetizationPage.jsx'));
 const CreatorStorePage = lazy(() => import('./pages/Criador/CreatorStorePage.jsx'));
@@ -76,6 +78,7 @@ const SessoesAdmin = lazy(() => import('./pages/Admin/SessoesAdmin.jsx'));
 const MangakaFinanceiroAdmin = lazy(() => import('./pages/Admin/MangakaFinanceiroAdmin.jsx'));
 const CriadoresAdmin = lazy(() => import('./pages/Admin/CriadoresAdmin.jsx'));
 const CreatorsApplyPage = lazy(() => import('./pages/Creators/CreatorsApplyPage.jsx'));
+const CreatorOnboardingPage = lazy(() => import('./pages/Creators/CreatorOnboardingPage.jsx'));
 const UsernamePublicRoute = lazy(() => import('./pages/Public/UsernamePublicRoute.jsx'));
 
 function RedirectToLogin() {
@@ -83,14 +86,30 @@ function RedirectToLogin() {
   return <Navigate to={buildLoginUrlWithRedirect(loc.pathname, loc.search)} replace />;
 }
 
-function LoginRoute({ podeAcessarApp }) {
+function resolveShellRedirectTarget(raw, { usuario, adminAccess }) {
+  const target =
+    raw != null && String(raw).trim() !== ''
+      ? resolveSafeInternalRedirect(raw)
+      : '/';
+  const isCreatorFlow =
+    target === '/creators' ||
+    target.startsWith('/creator') ||
+    target.startsWith('/print-on-demand?ctx=creator') ||
+    target.includes('ctx=creator');
+  if ((adminAccess?.canAccessAdmin || isAdminUser(usuario)) && isCreatorFlow) {
+    if (adminAccess?.canAccessAdmin && canAccessAdminPath('/admin/criadores', adminAccess)) {
+      return '/admin/criadores';
+    }
+    return '/admin';
+  }
+  return target;
+}
+
+function LoginRoute({ podeAcessarApp, usuario, adminAccess }) {
   const [sp] = useSearchParams();
   if (podeAcessarApp) {
     const raw = sp.get('redirect');
-    const target =
-      raw != null && String(raw).trim() !== ''
-        ? resolveSafeInternalRedirect(raw)
-        : '/';
+    const target = resolveShellRedirectTarget(raw, { usuario, adminAccess });
     return <Navigate to={target} replace />;
   }
   return <Login />;
@@ -100,6 +119,13 @@ function LoginRoute({ podeAcessarApp }) {
 function LegacyPrintOnDemandRedirect() {
   const { search } = useLocation();
   return <Navigate to={`/print-on-demand${search}`} replace />;
+}
+
+function LegacyReaderPublicRedirect() {
+  const { readerUid } = useParams();
+  const uid = String(readerUid || '').trim();
+  if (!uid) return <Navigate to="/works" replace />;
+  return <Navigate to={`/criador/${encodeURIComponent(uid)}?tab=likes`} replace />;
 }
 
 function computePodeAcessarApp(usuario, perfilUsuario) {
@@ -120,9 +146,6 @@ function AppRoutes() {
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [perfilLoadedUid, setPerfilLoadedUid] = useState('');
   const [adminAccess, setAdminAccess] = useState(emptyAdminAccess());
-  const [creatorObrasVal, setCreatorObrasVal] = useState(null);
-  const [creatorCapsVal, setCreatorCapsVal] = useState(null);
-  const [creatorProdutosVal, setCreatorProdutosVal] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -131,9 +154,6 @@ function AppRoutes() {
         setPerfilUsuario(null);
         setPerfilLoadedUid('');
         setAdminAccess(emptyAdminAccess());
-        setCreatorObrasVal(null);
-        setCreatorCapsVal(null);
-        setCreatorProdutosVal(null);
       }
       setCarregando(false);
     });
@@ -156,26 +176,13 @@ function AppRoutes() {
     return () => unsub();
   }, [usuario?.uid]);
 
-  useEffect(() => {
-    const roleMk = String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka';
-    if (!usuario?.uid || (!adminAccess.isMangaka && !roleMk)) {
-      return () => {};
-    }
-    const unsubObras = onValue(ref(db, 'obras'), (snap) => {
-      setCreatorObrasVal(snap.exists() ? snap.val() : {});
-    });
-    const unsubCaps = onValue(ref(db, 'capitulos'), (snap) => {
-      setCreatorCapsVal(snap.exists() ? snap.val() : {});
-    });
-    const unsubProdutos = onValue(ref(db, 'loja/produtos'), (snap) => {
-      setCreatorProdutosVal(snap.exists() ? snap.val() : {});
-    });
-    return () => {
-      unsubObras();
-      unsubCaps();
-      unsubProdutos();
-    };
-  }, [usuario?.uid, adminAccess.isMangaka, perfilUsuario?.role]);
+  const staffBypassMangaka = adminAccess.superAdmin || adminAccess.byAllowlist;
+  const roleMk =
+    !staffBypassMangaka && String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka';
+  const creatorCatalogUid =
+    usuario?.uid && (adminAccess.isMangaka === true || roleMk === true) ? usuario.uid : null;
+  const { obrasVal: creatorObrasVal, capsVal: creatorCapsVal, produtosVal: creatorProdutosVal } =
+    useCreatorScopedCatalog(db, creatorCatalogUid);
 
   useEffect(() => {
     if (!usuario?.uid) return;
@@ -224,8 +231,24 @@ function AppRoutes() {
   }
 
   const isAdmin = adminAccess.canAccessAdmin;
-  const canAccessAdminWorkspace = isAdmin && !adminAccess.isMangaka;
-  const canAccessCreator = canAccessCreatorPath('/creator', adminAccess);
+  /** Mangaka: perfil RTDB pode afirmar mangaka antes do callable `adminGetMyAdminProfile` responder. */
+  const mangakaFromPerfil =
+    Boolean(usuario?.uid) &&
+    perfilLoadedUid === usuario.uid &&
+    String(perfilUsuario?.role || '').toLowerCase() === 'mangaka' &&
+    !adminAccess.superAdmin &&
+    !adminAccess.byAllowlist;
+  const isMangakaEffective = adminAccess.isMangaka === true || mangakaFromPerfil;
+  const accessForCreatorRouting =
+    adminAccess.superAdmin || adminAccess.byAllowlist
+      ? { ...adminAccess, isMangaka: false }
+      : mangakaFromPerfil && !adminAccess.profileLoaded
+        ? { ...adminAccess, isMangaka: true, canAccessAdmin: false, panelRole: 'mangaka' }
+        : adminAccess;
+  const routeShellReady =
+    !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist || mangakaFromPerfil;
+  const canAccessAdminWorkspace = isAdmin && !isMangakaEffective;
+  const canAccessCreator = canAccessCreatorPath('/creator', accessForCreatorRouting);
   const creatorOnboardingSteps = buildCreatorOnboardingSteps({
     uid: usuario?.uid,
     perfilDb: perfilUsuario || {},
@@ -235,16 +258,15 @@ function AppRoutes() {
     storeSkipped: Boolean(perfilUsuario?.creatorOnboardingStoreSkipped),
   });
   const creatorOnboardingComplete =
-    !adminAccess.isMangaka || creatorOnboardingIsRequiredComplete(creatorOnboardingSteps);
+    !isMangakaEffective || creatorOnboardingIsRequiredComplete(creatorOnboardingSteps);
   const creatorOnboardingNextPath = creatorOnboardingPrimaryNextPath(creatorOnboardingSteps);
   const creatorMonetizationIsActive =
     effectiveCreatorMonetizationStatus(
       perfilUsuario?.creatorMonetizationPreference,
       perfilUsuario?.creatorMonetizationStatus
     ) === 'active';
-  const adminAccessReady = !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist;
   const adminPathOk = (path) => canAccessAdminPath(path, adminAccess);
-  const creatorPathOk = (path) => canAccessCreatorPath(path, adminAccess);
+  const creatorPathOk = (path) => canAccessCreatorPath(path, accessForCreatorRouting);
   const qs = new URLSearchParams(location.search || '');
   const trafficSource = String(qs.get('src') || '').toLowerCase();
   const cameFromPromoTracking =
@@ -349,7 +371,10 @@ function AppRoutes() {
                 user={podeAcessarApp ? usuario : null}
                 showCreatorSalesTab={
                   podeAcessarApp &&
-                  (adminAccess.isMangaka || String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka')
+                  (adminAccess.isMangaka === true ||
+                    (String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka' &&
+                      !adminAccess.superAdmin &&
+                      !adminAccess.byAllowlist))
                 }
               />
             }
@@ -361,7 +386,10 @@ function AppRoutes() {
                 user={podeAcessarApp ? usuario : null}
                 showCreatorSalesTab={
                   podeAcessarApp &&
-                  (adminAccess.isMangaka || String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka')
+                  (adminAccess.isMangaka === true ||
+                    (String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka' &&
+                      !adminAccess.superAdmin &&
+                      !adminAccess.byAllowlist))
                 }
               />
             }
@@ -412,14 +440,10 @@ function AppRoutes() {
           <Route
             path="/creators"
             element={
-              usuario && !adminAccessReady ? (
+              usuario && !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : (
-                <CreatorsApplyPage
-                  user={podeAcessarApp ? usuario : null}
-                  perfil={podeAcessarApp ? perfilUsuario : null}
-                  adminAccess={adminAccess}
-                />
+                <CreatorsApplyPage user={podeAcessarApp ? usuario : null} adminAccess={adminAccess} />
               )
             }
           />
@@ -434,23 +458,40 @@ function AppRoutes() {
             }
           />
 
-          <Route path="/login" element={<LoginRoute podeAcessarApp={podeAcessarApp} />} />
+          <Route
+            path="/login"
+            element={<LoginRoute podeAcessarApp={podeAcessarApp} usuario={usuario} adminAccess={adminAccess} />}
+          />
 
           <Route
             path="/perfil"
             element={
-              podeAcessarApp ? <Perfil user={usuario} adminAccess={adminAccess} /> : <RedirectToLogin />
+              podeAcessarApp ? (
+                <Perfil
+                  user={usuario}
+                  adminAccess={adminAccess}
+                  suppressCreatorProfileUi={canAccessAdminWorkspace}
+                />
+              ) : (
+                <RedirectToLogin />
+              )
             }
           />
           <Route
-            path="/creator/perfil"
+            path="/creator/onboarding"
             element={
-              !adminAccessReady ? (
+              usuario && !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : creatorPathOk('/creator/perfil') ? (
-                podeAcessarApp ? <CreatorProfilePage user={usuario} adminAccess={adminAccess} /> : <RedirectToLogin />
+              ) : canAccessAdminWorkspace ? (
+                <Navigate to={getDefaultAdminRedirect(adminAccess)} replace />
+              ) : podeAcessarApp ? (
+                creatorPathOk('/creator/onboarding') ? (
+                  <CreatorOnboardingPage user={usuario} perfil={perfilUsuario} adminAccess={adminAccess} />
+                ) : (
+                  <Navigate to="/" replace />
+                )
               ) : (
-                <Navigate to="/" replace />
+                <RedirectToLogin />
               )
             }
           />
@@ -459,19 +500,20 @@ function AppRoutes() {
             element={<CreatorPublicProfilePage user={podeAcessarApp ? usuario : null} />}
           />
           <Route path="/@:userHandle" element={<UsernamePublicRoute />} />
+          <Route path="/leitor/:readerUid" element={<LegacyReaderPublicRedirect />} />
 
           <Route
             path="/admin"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : canAccessAdminWorkspace ? (
                 <Navigate to={getDefaultAdminRedirect(adminAccess)} replace />
               ) : canAccessCreator ? (
                 <Navigate
-                  to={adminAccess.isMangaka && !creatorOnboardingComplete
+                  to={isMangakaEffective && !creatorOnboardingComplete
                     ? creatorOnboardingNextPath
-                    : getDefaultCreatorRedirect(adminAccess)}
+                    : getDefaultCreatorRedirect(accessForCreatorRouting)}
                   replace
                 />
               ) : (
@@ -482,13 +524,13 @@ function AppRoutes() {
           <Route
             path="/creator"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : canAccessCreator ? (
                 <Navigate
-                  to={adminAccess.isMangaka && !creatorOnboardingComplete
+                  to={isMangakaEffective && !creatorOnboardingComplete
                     ? creatorOnboardingNextPath
-                    : getDefaultCreatorRedirect(adminAccess)}
+                    : getDefaultCreatorRedirect(accessForCreatorRouting)}
                   replace
                 />
               ) : (
@@ -499,7 +541,7 @@ function AppRoutes() {
           <Route
             path="/admin/capitulos"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/capitulos') ? (
                 <CapitulosAdminHub adminAccess={adminAccess} />
@@ -511,7 +553,7 @@ function AppRoutes() {
           <Route
             path="/admin/manga"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/manga') ? (
                 <AdminPanel adminAccess={adminAccess} workspace="admin" />
@@ -523,7 +565,7 @@ function AppRoutes() {
           <Route
             path="/admin/obras"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/obras') ? (
                 <ObrasAdmin adminAccess={adminAccess} workspace="admin" />
@@ -535,7 +577,7 @@ function AppRoutes() {
           <Route
             path="/admin/avatares"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/avatares') ? (
                 <AvatarAdmin />
@@ -547,7 +589,7 @@ function AppRoutes() {
           <Route
             path="/admin/dashboard"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/dashboard') ? (
                 <DashboardAdmin />
@@ -559,10 +601,10 @@ function AppRoutes() {
           <Route
             path="/admin/financeiro"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/financeiro') ? (
-                adminAccess?.isMangaka ? (
+                isMangakaEffective ? (
                   <MangakaFinanceiroAdmin user={usuario} workspace="admin" />
                 ) : (
                   <FinanceiroAdmin />
@@ -576,19 +618,19 @@ function AppRoutes() {
           <Route
             path="/admin/store/settings"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/store/settings') ? (
                 <StoreSettingsAdmin />
               ) : (
-                <Navigate to={adminAccess?.isMangaka ? '/admin/products' : '/'} replace />
+                <Navigate to={isMangakaEffective ? '/admin/products' : '/'} replace />
               )
             }
           />
           <Route
             path="/admin/products/create"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/products') ? (
                 <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
@@ -600,7 +642,7 @@ function AppRoutes() {
           <Route
             path="/admin/products/:productId/edit"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/products') ? (
                 <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
@@ -612,7 +654,7 @@ function AppRoutes() {
           <Route
             path="/admin/products"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/products') ? (
                 <LojaProductsListAdmin user={usuario} adminAccess={adminAccess} workspace="admin" />
@@ -624,7 +666,7 @@ function AppRoutes() {
           <Route
             path="/admin/pedidos"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/pedidos') ? (
                 <AdminPedidosHub user={usuario} adminAccess={adminAccess} />
@@ -638,7 +680,7 @@ function AppRoutes() {
           <Route
             path="/admin/sessoes"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/sessoes') ? (
                 <SessoesAdmin adminAccess={adminAccess} />
@@ -650,7 +692,7 @@ function AppRoutes() {
           <Route
             path="/admin/equipe"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/equipe') ? (
                 <EquipeAdmin adminAccess={adminAccess} />
@@ -662,7 +704,7 @@ function AppRoutes() {
           <Route
             path="/admin/criadores"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/criadores') ? (
                 <CriadoresAdmin />
@@ -672,13 +714,37 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/creator/monetizacao"
+            element={
+              !routeShellReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/monetizacao') && isMangakaEffective ? (
+                <CreatorMonetizationGrowthPage user={usuario} perfil={perfilUsuario} />
+              ) : (
+                <Navigate to="/perfil" replace />
+              )
+            }
+          />
+          <Route
+            path="/creator/missoes"
+            element={
+              !routeShellReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : creatorPathOk('/creator/missoes') && isMangakaEffective ? (
+                <CreatorMissionsPage user={usuario} perfil={perfilUsuario} />
+              ) : (
+                <Navigate to="/perfil" replace />
+              )
+            }
+          />
+          <Route
             path="/creator/dashboard"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/dashboard') ? (
-                adminAccess?.isMangaka ? (
-                  <CreatorWorkspace user={usuario} perfil={perfilUsuario} />
+                isMangakaEffective ? (
+                  <Navigate to="/perfil" replace />
                 ) : adminPathOk('/admin/dashboard') ? (
                   <DashboardAdmin />
                 ) : (
@@ -692,19 +758,19 @@ function AppRoutes() {
           <Route
             path="/creator/audience"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : creatorPathOk('/creator/audience') && adminAccess?.isMangaka ? (
+              ) : creatorPathOk('/creator/audience') && isMangakaEffective ? (
                 <CreatorAudiencePage user={usuario} perfil={perfilUsuario} />
               ) : (
-                <Navigate to="/creator/dashboard" replace />
+                <Navigate to="/perfil" replace />
               )
             }
           />
           <Route
             path="/creator/obras"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/obras') ? (
                 <CreatorWorksPage adminAccess={adminAccess} />
@@ -716,7 +782,7 @@ function AppRoutes() {
           <Route
             path="/creator/capitulos"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/capitulos') ? (
                 <CreatorChaptersPage adminAccess={adminAccess} />
@@ -728,7 +794,7 @@ function AppRoutes() {
           <Route
             path="/creator/editor"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/editor') ? (
                 <CreatorChapterEditorPage adminAccess={adminAccess} />
@@ -740,26 +806,26 @@ function AppRoutes() {
           <Route
             path="/creator/avatares"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/avatares') ? (
                 <Navigate to="/admin/avatares" replace />
               ) : (
-                <Navigate to="/creator/perfil" replace />
+                <Navigate to="/perfil" replace />
               )
             }
           />
           <Route
             path="/creator/promocoes"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/promocoes') ? (
-                adminAccess?.isMangaka ? (
+                isMangakaEffective ? (
                   creatorMonetizationIsActive ? (
                     <CreatorMonetizationPage user={usuario} />
                   ) : (
-                    <Navigate to="/creator/dashboard" replace />
+                    <Navigate to="/perfil" replace />
                   )
                 ) : (
                   <FinanceiroAdmin />
@@ -772,50 +838,50 @@ function AppRoutes() {
           <Route
             path="/creator/loja/produtos/criar"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : creatorPathOk('/creator/loja') && adminAccess?.isMangaka && creatorMonetizationIsActive ? (
+              ) : creatorPathOk('/creator/loja') && isMangakaEffective && creatorMonetizationIsActive ? (
                 <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
               ) : (
-                <Navigate to="/creator/dashboard" replace />
+                <Navigate to="/perfil" replace />
               )
             }
           />
           <Route
             path="/creator/loja/produtos/:productId/editar"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : creatorPathOk('/creator/loja') && adminAccess?.isMangaka && creatorMonetizationIsActive ? (
+              ) : creatorPathOk('/creator/loja') && isMangakaEffective && creatorMonetizationIsActive ? (
                 <LojaProductEditorAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
               ) : (
-                <Navigate to="/creator/dashboard" replace />
+                <Navigate to="/perfil" replace />
               )
             }
           />
           <Route
             path="/creator/loja/produtos"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : creatorPathOk('/creator/loja') && adminAccess?.isMangaka && creatorMonetizationIsActive ? (
+              ) : creatorPathOk('/creator/loja') && isMangakaEffective && creatorMonetizationIsActive ? (
                 <LojaProductsListAdmin user={usuario} adminAccess={adminAccess} workspace="creator" />
               ) : (
-                <Navigate to="/creator/dashboard" replace />
+                <Navigate to="/perfil" replace />
               )
             }
           />
           <Route
             path="/creator/loja"
             element={
-              !adminAccessReady ? (
+              !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/loja') ? (
-                adminAccess?.isMangaka ? (
+                isMangakaEffective ? (
                   creatorMonetizationIsActive ? (
                     <CreatorStorePage user={usuario} />
                   ) : (
-                    <Navigate to="/creator/dashboard" replace />
+                    <Navigate to="/perfil" replace />
                   )
                 ) : adminPathOk('/admin/pedidos') ? (
                   <AdminPedidosHub user={usuario} adminAccess={adminAccess} />

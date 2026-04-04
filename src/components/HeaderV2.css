@@ -1059,8 +1059,44 @@ body.mobile-menu-open {
 
   .nav-container {
     width: 100%;
-    padding: 0 16px;
-    gap: 10px;
+    padding: 0 max(12px, env(safe-area-inset-left, 0px)) 0 max(12px, env(safe-area-inset-right, 0px));
+    gap: 8px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  /* Ordem: logo → menu (área de toque) → ações à direita → drawer (largura 0 no fluxo) */
+  .nav-container > .nav-logo {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: calc(100vw - 200px);
+  }
+
+  .nav-container > .mobile-menu-icon {
+    order: 2;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    margin: 0 -4px 0 0;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+  }
+
+  .nav-container > .nav-auth {
+    order: 3;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .nav-container > .nav-center-wrap {
+    order: 4;
   }
 
   .nav-logo {
@@ -1098,12 +1134,27 @@ body.mobile-menu-open {
     flex-shrink: 0;
   }
 
+  .header-notification-panel {
+    width: min(360px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    right: max(8px, env(safe-area-inset-right, 0px));
+    max-height: min(70dvh, 520px);
+  }
+
+  .header-account-menu {
+    right: max(8px, env(safe-area-inset-right, 0px));
+    left: auto;
+    width: min(300px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    min-width: 0;
+    max-width: calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  }
+
   .nav-menu--primary {
     position: fixed;
     top: 0;
     right: 0;
     width: min(86vw, 340px);
     height: 100dvh;
+    max-height: 100dvh;
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
@@ -1177,10 +1228,6 @@ body.mobile-menu-open {
     height: var(--header-ctrl-size, 44px);
   }
 
-  .header-notification-panel {
-    max-height: min(65vh, 480px);
-  }
-
   .header-account-menu {
     max-height: min(calc(100dvh - 88px), 460px);
   }
@@ -1238,5 +1285,13 @@ body.mobile-menu-open {
     display: inline;
     font-size: 1rem;
     line-height: 1;
+  }
+}
+
+/* TV / ultrawide: respiro lateral e largura útil maior */
+@media (min-width: 1920px) {
+  .nav-container {
+    max-width: min(100%, 1680px);
+    padding: 0 clamp(20px, 2.5vw, 40px);
   }
 }

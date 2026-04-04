@@ -234,7 +234,7 @@ export default function CreatorStoreOperations({ user }) {
             <li><span>Sem estoque</span><strong>{metrics.noStock}</strong></li>
           </ul>
           {!lowStockProducts.length ? (
-            <p className="creator-empty-copy">Seu catalogo nao tem alerta imediato de estoque.</p>
+            <p className="creator-empty-copy">Seu catálogo não tem alerta imediato de estoque.</p>
           ) : (
             <ul className="creator-activity-list">
               {lowStockProducts.map((product) => (

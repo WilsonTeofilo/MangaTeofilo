@@ -6,6 +6,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../services/firebase';
 import { addBusinessDaysLocal } from '../../utils/businessDays';
 import { PRODUCTION_CHECKLIST_KEYS, formatBRL } from '../../utils/printOnDemandPricingV2';
+import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import './PrintOnDemandAdmin.css';
 
 /** Transições normais (cancelamento é fluxo separado com motivo obrigatório). */
@@ -180,7 +181,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
           try {
             const snap = await get(ref(db, `usuarios_publicos/${uid}`));
             const v = snap.exists() ? snap.val() : null;
-            const name = String(v?.creatorDisplayName || v?.userName || '').trim();
+            const name = formatUserDisplayWithHandle(v);
             next[uid] = name || `${String(uid).slice(0, 8)}…`;
           } catch {
             next[uid] = String(uid).slice(0, 8);

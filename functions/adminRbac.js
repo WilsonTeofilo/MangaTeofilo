@@ -7,19 +7,14 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 
+import platformStaffAllowlist from '../shared/platformStaffAllowlist.json' with { type: 'json' };
+
 export const ADMIN_REGISTRY_PATH = 'admins/registry';
 
-/** UIDs dos super admins (mesmos de constants no front). */
-export const SUPER_ADMIN_UIDS = new Set([
-  'n5JTPLsxpyQPeC5qQtraSrBa4rG3',
-  'QayqN0MpBTQK6je44JwAXWapoQU2',
-  '20kR47W8PfTGIvGxGOGRsB2JiFA3',
-]);
+/** UIDs dos super admins — mesma lista que `shared/platformStaffAllowlist.json` / `src/constants.js`. */
+export const SUPER_ADMIN_UIDS = new Set(platformStaffAllowlist.uids);
 
-export const SUPER_ADMIN_EMAILS = new Set([
-  'wilsonteofilosouza@live.com',
-  'drakenteofilo@gmail.com',
-]);
+export const SUPER_ADMIN_EMAILS = new Set(platformStaffAllowlist.emails);
 
 /** Chaves logicas -> campo em permissions no registry. */
 export const PERM = {
@@ -100,15 +95,6 @@ export async function getAdminAuthContext(auth) {
   const db = getDatabase();
   const snap = await db.ref(`${ADMIN_REGISTRY_PATH}/${auth.uid}`).get();
   const row = snap.val();
-  if (row && row.role === 'mangaka') {
-    return {
-      uid: auth.uid,
-      super: false,
-      legacy: false,
-      mangaka: true,
-      permissions: defaultMangakaPermissions(),
-    };
-  }
   if (row && row.role === 'admin') {
     return {
       uid: auth.uid,
@@ -119,6 +105,13 @@ export async function getAdminAuthContext(auth) {
     };
   }
   return null;
+}
+
+export async function isCreatorAccountAuth(auth) {
+  if (!auth?.uid) return false;
+  if (String(auth.token?.panelRole || '').trim().toLowerCase() === 'mangaka') return true;
+  const snap = await getDatabase().ref(`usuarios/${auth.uid}/role`).get();
+  return String(snap.val() || '').trim().toLowerCase() === 'mangaka';
 }
 
 export async function requireAdminAuth(auth) {

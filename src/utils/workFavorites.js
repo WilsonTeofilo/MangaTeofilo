@@ -6,6 +6,7 @@
 
 import { ref, remove, set } from 'firebase/database';
 import { alreadyFavorited, applyWorkFavoriteDelta } from './discoveryStats';
+import { syncReaderPublicFavoritesMirror } from './readerPublicProfile';
 
 export const WORK_FAVORITES_LEGACY_KEY = 'favoritosObras';
 export const WORK_FAVORITES_CANON_KEY = 'favorites';
@@ -19,8 +20,8 @@ export function mergeWorkFavoriteMaps(legacyVal, modernVal) {
 export async function saveWorkFavoriteBoth(db, uid, workId, payload) {
   const base = `usuarios/${uid}`;
   const existed = await alreadyFavorited(db, uid, workId);
-  await set(ref(db, `${base}/${WORK_FAVORITES_LEGACY_KEY}/${workId}`), payload);
   await set(ref(db, `${base}/${WORK_FAVORITES_CANON_KEY}/${workId}`), payload);
+  await remove(ref(db, `${base}/${WORK_FAVORITES_LEGACY_KEY}/${workId}`)).catch(() => {});
   if (!existed) {
     await applyWorkFavoriteDelta(db, {
       workId,
@@ -28,14 +29,18 @@ export async function saveWorkFavoriteBoth(db, uid, workId, payload) {
       amount: 1,
     });
   }
+  void syncReaderPublicFavoritesMirror(db, uid).catch(() => {});
 }
 
 export async function removeWorkFavoriteBoth(db, uid, workId) {
   const base = `usuarios/${uid}`;
   const existed = await alreadyFavorited(db, uid, workId);
-  await remove(ref(db, `${base}/${WORK_FAVORITES_LEGACY_KEY}/${workId}`));
-  await remove(ref(db, `${base}/${WORK_FAVORITES_CANON_KEY}/${workId}`));
+  await Promise.all([
+    remove(ref(db, `${base}/${WORK_FAVORITES_LEGACY_KEY}/${workId}`)).catch(() => {}),
+    remove(ref(db, `${base}/${WORK_FAVORITES_CANON_KEY}/${workId}`)),
+  ]);
   if (existed) {
     await applyWorkFavoriteDelta(db, { workId, amount: -1 });
   }
+  void syncReaderPublicFavoritesMirror(db, uid).catch(() => {});
 }

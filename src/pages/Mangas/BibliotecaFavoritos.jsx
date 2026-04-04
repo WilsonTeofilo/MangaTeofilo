@@ -13,8 +13,9 @@ import {
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
-import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth } from '../../utils/workFavorites';
+import { removeWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import { syncReaderPublicFavoritesMirror } from '../../utils/readerPublicProfile';
 import './BibliotecaFavoritos.css';
 
 function pathObraPublica(obra, obraIdFallback) {
@@ -41,7 +42,6 @@ export default function BibliotecaFavoritos({ user, perfil }) {
   const [favoritosLoadedFor, setFavoritosLoadedFor] = useState('');
   const [loadingObras, setLoadingObras] = useState(true);
   const [loadingCaps, setLoadingCaps] = useState(true);
-  const [favoritosLegacy, setFavoritosLegacy] = useState({});
   const [favoritosCanon, setFavoritosCanon] = useState({});
   const [obras, setObras] = useState([]);
   const [capitulos, setCapitulos] = useState([]);
@@ -50,35 +50,18 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     if (!user?.uid) {
       return () => {};
     }
-    let pending = 2;
-    const done = () => {
-      pending -= 1;
-      if (pending <= 0) setFavoritosLoadedFor(user.uid);
-    };
-    const u1 = onValue(ref(db, `usuarios/${user.uid}/favoritosObras`), (snapshot) => {
-      setFavoritosLegacy(snapshot.exists() ? snapshot.val() || {} : {});
-      done();
-    }, () => {
-      setFavoritosLegacy({});
-      done();
-    });
     const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
       setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
-      done();
+      setFavoritosLoadedFor(user.uid);
     }, () => {
       setFavoritosCanon({});
-      done();
+      setFavoritosLoadedFor(user.uid);
     });
     return () => {
-      u1();
       u2();
     };
   }, [user?.uid]);
-
-  const favoritosMap = useMemo(
-    () => mergeWorkFavoriteMaps(favoritosLegacy, favoritosCanon),
-    [favoritosLegacy, favoritosCanon]
-  );
+  const favoritosMap = favoritosCanon;
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
@@ -110,6 +93,11 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid || favoritosLoadedFor !== user.uid) return;
+    void syncReaderPublicFavoritesMirror(db, user.uid).catch(() => {});
+  }, [favoritosCanon, favoritosLoadedFor, user?.uid]);
 
   const cards = useMemo(() => {
     const favoritosIds = Object.keys(favoritosMap || {});

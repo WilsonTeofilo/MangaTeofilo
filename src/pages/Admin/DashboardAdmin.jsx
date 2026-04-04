@@ -5,6 +5,7 @@ import { functions } from '../../services/firebase';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { formatarTempoRestanteAssinatura } from '../../utils/assinaturaTempoRestante';
 import { formatarDataHoraBr } from '../../utils/datasBr';
+import { formatUserDisplayFromMixed } from '../../utils/publicCreatorName';
 import './DashboardAdmin.css';
 
 const adminDashboardResumo = httpsCallable(functions, 'adminDashboardResumo');
@@ -477,25 +478,28 @@ export default function DashboardAdmin() {
     const base = rankingMode === 'assinaturas' ? subscriptionStats : donationStats;
     const q = rankingSearch.trim().toLowerCase();
     if (!q) return base;
-    return base.filter((row) =>
-      String(row.userName || 'Guerreiro').toLowerCase().includes(q)
-    );
+    return base.filter((row) => {
+      const label = formatUserDisplayFromMixed(row).toLowerCase();
+      return label.includes(q) || String(row.uid || '').toLowerCase().includes(q);
+    });
   }, [rankingMode, rankingSearch, subscriptionStats, donationStats]);
 
   const filteredSubsRows = useMemo(() => {
     const q = subsSearch.trim().toLowerCase();
     if (!q) return subscriptionStats;
-    return subscriptionStats.filter((row) =>
-      String(row.userName || 'Guerreiro').toLowerCase().includes(q)
-    );
+    return subscriptionStats.filter((row) => {
+      const label = formatUserDisplayFromMixed(row).toLowerCase();
+      return label.includes(q) || String(row.uid || '').toLowerCase().includes(q);
+    });
   }, [subsSearch, subscriptionStats]);
 
   const filteredDoaRows = useMemo(() => {
     const q = doaSearch.trim().toLowerCase();
     if (!q) return donationStats;
-    return donationStats.filter((row) =>
-      String(row.userName || 'Guerreiro').toLowerCase().includes(q)
-    );
+    return donationStats.filter((row) => {
+      const label = formatUserDisplayFromMixed(row).toLowerCase();
+      return label.includes(q) || String(row.uid || '').toLowerCase().includes(q);
+    });
   }, [doaSearch, donationStats]);
 
   const rankingPaginated = useMemo(
@@ -968,7 +972,7 @@ export default function DashboardAdmin() {
                 {(dados?.current?.topDoadores || []).map((u, idx) => (
                   <div key={u.uid} className={`top-row ${idx === 0 ? 'top-row--winner' : ''}`}>
                     <span>{idx === 0 ? '🥇' : `${idx + 1}.`}</span>
-                    <span>{u.userName || 'Guerreiro'}</span>
+                    <span>{formatUserDisplayFromMixed(u)}</span>
                     <span>{formatGender(u.gender || 'nao_informado')}</span>
                     <strong>{brl(u.amount || 0)}</strong>
                   </div>
@@ -1061,7 +1065,7 @@ export default function DashboardAdmin() {
                     onClick={() => setSelectedUid(row.uid)}
                   >
                     <span>{rankBadge(row.rank)}</span>
-                    <span>{row.userName || 'Guerreiro'}</span>
+                    <span>{formatUserDisplayFromMixed(row)}</span>
                     <span>{brl(row.totalSpent || 0)}</span>
                     <span>{row.count || 0}</span>
                     <span title={rankingMode === 'assinaturas' ? TITLE_COL_ESTIMATIVA : undefined}>
@@ -1118,7 +1122,7 @@ export default function DashboardAdmin() {
                 const restTxt = row.status === 'ativo' && rest.ativo ? rest.texto : '—';
                 return (
                 <button type="button" key={row.uid} className="analytics-row analytics-row--subs analytics-row--click" onClick={() => setSelectedUid(row.uid)}>
-                  <span>{row.userName || 'Guerreiro'}</span>
+                  <span>{formatUserDisplayFromMixed(row)}</span>
                   <span>{row.count || 0}</span>
                   <span>{brl(row.totalSpent || 0)}</span>
                   <span>{brl(row.averagePrice || 0)}</span>
@@ -1176,7 +1180,7 @@ export default function DashboardAdmin() {
               </div>
               {doaPaginated.rows.map((row) => (
                 <button type="button" key={row.uid} className="analytics-row analytics-row--don analytics-row--click" onClick={() => setSelectedUid(row.uid)}>
-                  <span>{row.userName || 'Guerreiro'}</span>
+                  <span>{formatUserDisplayFromMixed(row)}</span>
                   <span>{row.count || 0}</span>
                   <span>{brl(row.totalSpent || 0)}</span>
                   <span>{brl(row.averageDonation || 0)}</span>
@@ -1369,7 +1373,7 @@ export default function DashboardAdmin() {
         <div className="analytics-modal-backdrop" onClick={() => setSelectedUid('')} role="presentation">
           <section className="analytics-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <header>
-              <h3>{selectedUser?.userName || 'Usuário'} — Histórico financeiro</h3>
+              <h3>{formatUserDisplayFromMixed(selectedUser)} — Histórico financeiro</h3>
               <button type="button" onClick={() => setSelectedUid('')}>Fechar</button>
             </header>
             <div className="analytics-modal-body">

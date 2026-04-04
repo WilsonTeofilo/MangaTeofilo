@@ -54,7 +54,7 @@ export function storeOrderTimelineMeta(status, paymentStatus) {
   if (s === 'processing' || s === 'in_production') {
     return { activeStep: 2, cancelled: false, problem: false, paymentPending: false };
   }
-  if (s === 'shipped') {
+  if (s === 'ready_to_ship' || s === 'shipped') {
     return { activeStep: 3, cancelled: false, problem: false, paymentPending: false };
   }
   if (s === 'delivered') {
@@ -122,7 +122,7 @@ export function storeOrderFilterBucket(order) {
   if (ps === 'rejected' || ps === 'cancelled' || (s === 'pending' && ps && ps !== 'approved')) return 'problem';
   if (s === 'pending' || s === 'pending_payment') return 'payment_pending';
   if (s === 'processing' || s === 'in_production' || s === 'paid' || s === 'order_received') return 'production';
-  if (s === 'shipped') return 'transit';
+  if (s === 'ready_to_ship' || s === 'shipped') return 'transit';
   if (s === 'delivered') return 'delivered';
   return 'production';
 }
@@ -206,7 +206,7 @@ export function enrichStoreTimelineSteps(order, steps, formatDate) {
       return { ...step, detail: 'Preparação e produção do pedido.' };
     }
     if (step.key === 'transit') {
-      if (s === 'shipped') {
+      if (s === 'ready_to_ship' || s === 'shipped') {
         const tr = String(order?.trackingCode || order?.codigoRastreio || '').trim();
         return {
           ...step,

@@ -23,8 +23,8 @@ export default function CreatorChaptersPage({ adminAccess }) {
             <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/editor')}>
               Novo capítulo
             </button>
-            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/dashboard')}>
-              Voltar ao workspace
+            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/perfil')}>
+              Meu perfil
             </button>
           </div>
         </header>

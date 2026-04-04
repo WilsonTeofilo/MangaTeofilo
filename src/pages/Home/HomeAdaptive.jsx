@@ -59,7 +59,6 @@ export default function HomeAdaptive({ user }) {
   const [capitulos, setCapitulos] = useState([]);
   const [creatorsMap, setCreatorsMap] = useState({});
   const [heroIndex, setHeroIndex] = useState(0);
-  const [categoriaAtiva, setCategoriaAtiva] = useState('all');
   const [readingTick, setReadingTick] = useState(0);
   const blocoImpressionRef = useRef(new Set());
 
@@ -124,13 +123,6 @@ export default function HomeAdaptive({ user }) {
     };
   }, [capitulos, creatorsMap, obrasPublicadas]);
 
-  const obrasCategoria = useMemo(() => {
-    if (categoriaAtiva === 'all') return dadosMulti.obrasComStats;
-    return dadosMulti.obrasComStats.filter((obra) =>
-      obra.genres.some((g) => g.toLowerCase() === categoriaAtiva)
-    );
-  }, [categoriaAtiva, dadosMulti.obrasComStats]);
-
   const continueReading = useMemo(() => {
     const lr = getLastRead();
     if (!lr) return null;
@@ -163,7 +155,7 @@ export default function HomeAdaptive({ user }) {
 
   useEffect(() => {
     if (modoHome !== 'multi') return;
-    ['hero', 'updates', 'trending', 'creators', 'categorias', 'recomendados'].forEach((blockId) => {
+    ['hero', 'updates', 'trending', 'creators', 'recomendados'].forEach((blockId) => {
       if (blocoImpressionRef.current.has(blockId)) return;
       blocoImpressionRef.current.add(blockId);
       registrarEventoHome('home_block_impression', blockId);
@@ -299,7 +291,7 @@ export default function HomeAdaptive({ user }) {
         >
           <div className="home-hero-content">
             <span className="home-hero-pill">Destaque agora</span>
-            <h1>{dadosMulti.hero[heroIndex]?.titulo || 'Catálogo MangaTeofilo'}</h1>
+            <h1>{dadosMulti.hero[heroIndex]?.titulo || 'Catálogo da MangaTeofilo'}</h1>
             <p className="home-hero-tagline">
               {dadosMulti.hero[heroIndex]?.sinopse
                 ? String(dadosMulti.hero[heroIndex].sinopse).slice(0, 140) +
@@ -522,10 +514,9 @@ export default function HomeAdaptive({ user }) {
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && navigate(`/criador/${encodeURIComponent(creator.creatorId)}`)}
             >
-              <img src={creator.avatarUrl || '/assets/fotos/shito.jpg'} alt={creator.displayName} />
+              <img src={creator.avatarUrl || '/assets/fotos/shito.jpg'} alt={creator.publicLabel} />
               <div className="home-creator-card-body">
-                <strong>{creator.displayName}</strong>
-                <span>@{creator.username || creator.creatorId}</span>
+                <strong>{creator.publicLabel}</strong>
                 <span>{creator.followersCount} seguidores</span>
                 <span>{creator.worksCount} obra(s) · {Math.round(creator.totalViews)} views</span>
               </div>
@@ -533,49 +524,6 @@ export default function HomeAdaptive({ user }) {
           ))}
         </div>
       </section>
-
-      <section className="home-multi-section">
-        <div className="home-multi-section-head">
-          <h2>Categorias</h2>
-        </div>
-        <div className="home-category-chips">
-          {dadosMulti.categorias.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              className={`home-chip ${categoriaAtiva === cat.id ? 'active' : ''}`}
-              onClick={() => {
-                setCategoriaAtiva(cat.id);
-                registrarEventoHome('home_block_click', 'categorias', cat.id);
-              }}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-        <div className="home-obras-grid">
-          {obrasCategoria.slice(0, 12).map((obra) => (
-            <article
-              key={`cat_${obra.id}`}
-              className="home-obra-card"
-              onClick={() => {
-                registrarEventoHome('home_block_click', 'categorias', String(obra.id));
-                navigate(pathObraPublica(obra));
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && navigate(pathObraPublica(obra))}
-            >
-              <img src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
-              <div className="home-obra-card-body">
-                <strong>{obra.titulo || obra.id}</strong>
-                <span>{obra.genres[0] || 'Sem gênero'}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className="home-multi-section">
         <div className="home-multi-section-head">
           <h2>🚀 Crescendo agora</h2>
@@ -609,3 +557,5 @@ export default function HomeAdaptive({ user }) {
     </div>
   );
 }
+
+

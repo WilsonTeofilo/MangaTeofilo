@@ -23,8 +23,23 @@ function workIdFromChapter(cap) {
   return String(cap.obraId || '').trim();
 }
 
+function safeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 async function incrementPathTx(ref, amount) {
   await ref.transaction((current) => Math.max(0, Number(current || 0) + amount));
+}
+
+async function markUniquePath(ref) {
+  let created = false;
+  await ref.transaction((current) => {
+    if (current) return current;
+    created = true;
+    return Date.now();
+  });
+  return created;
 }
 
 async function bumpAuthRateLimit(db, uid) {
@@ -118,6 +133,58 @@ async function handleChapterReadUnique(db, creatorId, viewerUid, dateKey) {
   }
 }
 
+async function updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, chapterTitle, viewerUid }) {
+  if (!workId || !chapterId || !viewerUid) return;
+  const readerPath = db.ref(`workRetentionRaw/${workId}/chapterReaders/${chapterId}/${viewerUid}`);
+  const isFirstReadForChapter = await markUniquePath(readerPath);
+  if (!isFirstReadForChapter) return;
+
+  await Promise.all([
+    incrementPathTx(db.ref(`workRetention/${workId}/chapters/${chapterId}/readersCount`), 1),
+    db.ref(`workRetention/${workId}/chapters/${chapterId}/chapterId`).set(chapterId),
+    db.ref(`workRetention/${workId}/chapters/${chapterId}/chapterNumber`).set(safeNumber(chapterNumber)),
+    db
+      .ref(`workRetention/${workId}/chapters/${chapterId}/chapterTitle`)
+      .set(String(chapterTitle || '').trim() || `Capitulo ${chapterNumber || ''}`.trim()),
+  ]);
+
+  const lastReadRef = db.ref(`workRetentionRaw/${workId}/lastReadByUser/${viewerUid}`);
+  const lastReadSnap = await lastReadRef.get();
+  const lastRead = lastReadSnap.exists() ? lastReadSnap.val() || {} : {};
+  const prevChapterId = String(lastRead?.chapterId || '').trim();
+  const prevChapterNumber = Number(lastRead?.chapterNumber || 0);
+  const nextChapterNumber = Number(chapterNumber || 0);
+
+  if (
+    prevChapterId &&
+    prevChapterId !== chapterId &&
+    Number.isFinite(prevChapterNumber) &&
+    Number.isFinite(nextChapterNumber) &&
+    prevChapterNumber > 0 &&
+    nextChapterNumber === prevChapterNumber + 1
+  ) {
+    const transitionId = `${prevChapterId}__${chapterId}`;
+    const transitionSeenRef = db.ref(`workRetentionRaw/${workId}/transitionsSeen/${transitionId}/${viewerUid}`);
+    const isFirstTransition = await markUniquePath(transitionSeenRef);
+    if (isFirstTransition) {
+      const tBase = `workRetention/${workId}/transitions/${transitionId}`;
+      await Promise.all([
+        db.ref(`${tBase}/fromChapterId`).set(prevChapterId),
+        db.ref(`${tBase}/toChapterId`).set(chapterId),
+        db.ref(`${tBase}/fromChapterNumber`).set(prevChapterNumber),
+        db.ref(`${tBase}/toChapterNumber`).set(nextChapterNumber),
+        incrementPathTx(db.ref(`${tBase}/retainedReaders`), 1),
+      ]);
+    }
+  }
+
+  await lastReadRef.set({
+    chapterId,
+    chapterNumber: safeNumber(chapterNumber),
+    readAt: Date.now(),
+  });
+}
+
 export const recordDiscoveryCreatorMetrics = onCall(
   { region: REGION, cors: true, invoker: 'public' },
   async (request) => {
@@ -127,6 +194,8 @@ export const recordDiscoveryCreatorMetrics = onCall(
     const workId = String(data.workId || '').trim();
     const chapterId = String(data.chapterId || '').trim();
     const viewerUid = String(data.viewerUid || '').trim();
+    const chapterNumber = Number(data.chapterNumber || 0);
+    const chapterTitle = String(data.chapterTitle || '').trim();
 
     if (!['work_favorite', 'chapter_read', 'chapter_comment', 'chapter_like'].includes(action)) {
       throw new HttpsError('invalid-argument', 'action invalida.');
@@ -170,6 +239,42 @@ export const recordDiscoveryCreatorMetrics = onCall(
 
     const field = FIELD_BY_ACTION[action];
     const dk = dateKeySaoPaulo();
+
+    if (action === 'chapter_read') {
+      await Promise.all([
+        incrementPathTx(db.ref(`capitulos/${chapterId}/viewsCount`), delta),
+        incrementPathTx(db.ref(`capitulos/${chapterId}/visualizacoes`), delta),
+        incrementPathTx(db.ref(`obras/${workId}/viewsCount`), delta),
+        incrementPathTx(db.ref(`obras/${workId}/visualizacoes`), delta),
+      ]);
+      if (delta === 1) {
+        await db.ref(`workRetention/${workId}/updatedAt`).set(Date.now());
+        if (viewerUid) {
+          await updateWorkRetentionRead(db, {
+            workId,
+            chapterId,
+            chapterNumber,
+            chapterTitle,
+            viewerUid,
+          });
+        }
+      }
+    }
+
+    if (action === 'work_favorite') {
+      await incrementPathTx(db.ref(`obras/${workId}/favoritesCount`), delta);
+    }
+
+    if (action === 'chapter_comment') {
+      await Promise.all([
+        incrementPathTx(db.ref(`capitulos/${chapterId}/commentsCount`), delta),
+        incrementPathTx(db.ref(`obras/${workId}/commentsCount`), delta),
+      ]);
+    }
+
+    if (action === 'chapter_like') {
+      await incrementPathTx(db.ref(`obras/${workId}/likesCount`), delta);
+    }
 
     await applyCreatorMetricDelta(db, creatorId, field, delta, dk);
 

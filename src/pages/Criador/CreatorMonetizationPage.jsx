@@ -20,15 +20,8 @@ export default function CreatorMonetizationPage({ user }) {
             </p>
           </div>
           <div className="creator-frame-actions">
-            <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/perfil')}>
-              Perfil do criador
-            </button>
-            <button
-              type="button"
-              className="creator-frame-btn is-primary"
-              onClick={() => navigate('/creator/dashboard')}
-            >
-              Voltar ao workspace
+            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/perfil')}>
+              Meu perfil
             </button>
           </div>
         </header>

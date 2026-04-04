@@ -2,49 +2,49 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://mangateofilo.com/</loc>
-    <lastmod>2026-04-04T09:24:06.321Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.128Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/works</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/mangas</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/sobre-autor</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/apoie</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/loja</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/print-on-demand</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://mangateofilo.com/creators</loc>
-    <lastmod>2026-04-04T09:24:06.322Z</lastmod>
+    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
@@ -105,6 +105,12 @@
   <url>
     <loc>https://mangateofilo.com/ler/-OpLGYA9jqwZZ31gamUj</loc>
     <lastmod>2026-04-03T14:17:00.000Z</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mangateofilo.com/ler/-OpOsz8NCzoDx-Yll2Zy</loc>
+    <lastmod>2026-04-04T19:06:44.455Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>

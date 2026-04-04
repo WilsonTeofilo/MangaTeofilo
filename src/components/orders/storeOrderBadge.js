@@ -12,7 +12,7 @@ export function storeOrderBadgeProps(order) {
   if (s === 'processing' || s === 'in_production' || s === 'paid' || s === 'order_received') {
     return { className: 'ot-badge ot-badge--production', label };
   }
-  if (s === 'shipped') return { className: 'ot-badge ot-badge--transit', label };
+  if (s === 'ready_to_ship' || s === 'shipped') return { className: 'ot-badge ot-badge--transit', label };
   if (s === 'delivered') return { className: 'ot-badge ot-badge--done', label };
   return { className: 'ot-badge ot-badge--neutral', label };
 }

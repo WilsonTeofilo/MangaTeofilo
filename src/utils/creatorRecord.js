@@ -74,8 +74,18 @@ export function buildCreatorRecordForProfileSave({
       : inferPayoutPixTypeFromStoredKey(pixKey);
   const hasCompliance = fullName.length >= 6 && cpfDigits.length === 11 && pixKey.length > 0;
 
+  const prevMon = prev.monetization && typeof prev.monetization === 'object' ? prev.monetization : {};
+  const approvedPersisted = prevMon.approved === true;
+  const approved =
+    approvedPersisted || st === 'active' || st === 'pending_review';
+  const enabled = pref === 'monetize' && st === 'active';
+  const legalDoc = hasCompliance ? { fullName, cpf: cpfDigits } : prevMon.legal || null;
+  const payoutDoc = hasCompliance
+    ? { type: 'pix', key: pixKey.slice(0, 2000), pixType }
+    : prevMon.payout || null;
+
   let monetization;
-  if (!isAdult || pref !== 'monetize') {
+  if (!isAdult) {
     monetization = {
       enabled: false,
       requested: false,
@@ -85,11 +95,11 @@ export function buildCreatorRecordForProfileSave({
     };
   } else {
     monetization = {
-      enabled: st === 'active',
-      requested: true,
-      approved: st === 'active',
-      legal: hasCompliance ? { fullName, cpf: cpfDigits } : null,
-      payout: hasCompliance ? { type: 'pix', key: pixKey.slice(0, 2000), pixType } : null,
+      enabled,
+      requested: pref === 'monetize' && (st === 'pending_review' || !approved),
+      approved,
+      legal: legalDoc,
+      payout: payoutDoc,
     };
   }
 
@@ -129,7 +139,7 @@ export function readCreatorMonetizationSummary(row) {
   return {
     enabled: st === 'active',
     requested: pref === 'monetize' && (st === 'pending_review' || st === 'active' || st === 'blocked_underage'),
-    approved: st === 'active',
+    approved: st === 'active' || st === 'pending_review',
     hasPixPayout: Boolean(String(row?.creatorCompliance?.payoutInstructions || '').trim()),
     hasLegal: Boolean(String(row?.creatorCompliance?.legalFullName || '').trim()),
   };

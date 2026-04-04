@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
+import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import { formatLojaOrderStatusPt, formatLojaPayoutStatusPt } from '../../config/store';
 import './AdminLojaPedidos.css';
 
@@ -70,7 +71,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
       for (const uid of uids) {
         try {
           const s = await get(ref(db, `usuarios_publicos/${uid}`));
-          updates[uid] = s.exists() ? String(s.val()?.userName || uid) : uid;
+          updates[uid] = s.exists() ? formatUserDisplayWithHandle(s.val()) : uid;
         } catch {
           updates[uid] = uid;
         }
@@ -186,7 +187,12 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
 
       {msg ? <p className="admin-loja-pedidos__msg">{msg}</p> : null}
       <div className="admin-loja-pedidos__actions">
-        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar pedido, cliente, rastreio ou servico" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por pedido, cliente, rastreio ou serviço…"
+        />
       </div>
 
       <div className="admin-loja-pedidos__layout">

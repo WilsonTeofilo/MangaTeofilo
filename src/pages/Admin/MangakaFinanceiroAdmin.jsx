@@ -246,15 +246,15 @@ export default function MangakaFinanceiroAdmin({ user, workspace = 'admin' }) {
       <section className="admin-empty-card financeiro-card">
         <header className="financeiro-header">
           <div>
-            <h1>{workspace === 'creator' ? 'Monetizacao do criador' : 'Meu financeiro'}</h1>
+            <h1>{workspace === 'creator' ? 'Sua monetização' : 'Meu financeiro'}</h1>
             <p>
-              Pagamentos e assinaturas vinculados ao seu <code>creatorId</code> aparecem aqui quando o backend
-              gravar em <code>creatorData / (seu uid) / payments | subscriptions</code>.
+              Pagamentos e assinaturas ligados ao seu <code>creatorId</code> aparecem aqui conforme o sistema
+              registra em <code>creatorData / (seu uid) / payments | subscriptions</code>.
             </p>
             <p>
               {isCreatorWorkspace
-                ? 'Veja membership, apoios, promocoes e operacao da sua receita sem depender do admin.'
-                : 'Agora o painel separa membership do criador, apoios e loja, para voce operar a propria receita com mais clareza.'}
+                ? 'Acompanhe membership, apoios, promoções e o dia a dia da sua receita — direto do seu painel.'
+                : 'O painel separa membership, apoios e loja para você enxergar sua receita com mais clareza.'}
             </p>
           </div>
           <div className="financeiro-header-actions">
@@ -262,7 +262,7 @@ export default function MangakaFinanceiroAdmin({ user, workspace = 'admin' }) {
               Minhas obras
             </button>
             <button type="button" onClick={() => navigate(capitulosPath)}>
-              Capitulos
+              Capítulos
             </button>
           </div>
         </header>

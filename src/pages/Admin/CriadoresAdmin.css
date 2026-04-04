@@ -441,6 +441,13 @@
   margin-top: 3px;
 }
 
+.criadores-admin-dl--metrics dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 @media (max-width: 640px) {
   .criadores-admin-list th:nth-child(3),
   .criadores-admin-list td:nth-child(3) {

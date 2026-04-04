@@ -56,9 +56,23 @@ export default function Header({ usuario, perfil, adminAccess }) {
   );
 
   const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
-  const isMangakaPanel = Boolean(adminAccess?.isMangaka);
+  /** Alinha a App.jsx: perfil RTDB = mangaka antes do callable devolver `isMangaka`. */
+  const creatorNavAccess = useMemo(() => {
+    if (adminAccess?.superAdmin || adminAccess?.byAllowlist) {
+      return { ...adminAccess, isMangaka: false };
+    }
+    if (adminAccess?.canAccessAdmin && adminAccess?.profileLoaded && adminAccess?.isMangaka !== true) {
+      return { ...adminAccess, isMangaka: false };
+    }
+    const rM = String(perfil?.role || '').toLowerCase() === 'mangaka';
+    if (rM && adminAccess?.isMangaka !== true && adminAccess?.profileLoaded === false) {
+      return { ...adminAccess, isMangaka: true, canAccessAdmin: false, panelRole: 'mangaka' };
+    }
+    return adminAccess;
+  }, [perfil?.role, adminAccess]);
+  const isMangakaPanel = Boolean(creatorNavAccess?.isMangaka);
   const canSeeAdminWorkspace = !isMangakaPanel && canAccessAdminPath('/admin', adminAccess);
-  const canSeeCreatorWorkspace = canAccessCreatorPath('/creator', adminAccess);
+  const canSeeCreatorWorkspace = canAccessCreatorPath('/creator', creatorNavAccess);
 
   const storeCartCount = cartCount(storeCartItems);
   const combinedCartCount = storeCartCount + (podCartActive ? 1 : 0);
@@ -80,15 +94,15 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const showCreatorsNav = !isMangakaPanel && !canSeeAdminWorkspace;
 
   const lanceSuaLinhaPath =
-    usuario && adminAccess?.isMangaka && creatorMonetizationIsActive ? '/creator/print' : '/print-on-demand';
+    usuario && creatorNavAccess?.isMangaka && creatorMonetizationIsActive ? '/creator/print' : '/print-on-demand';
 
   /** Navegação central (site leitor) — CTA «Lance sua linha» fica à parte. */
   const primaryNavItems = useMemo(
     () => [
-      { label: 'Explorar', path: '/works' },
-      ...(usuario ? [{ label: 'Biblioteca', path: '/biblioteca' }] : []),
+      { label: 'Obras', path: '/works' },
+      ...(usuario ? [{ label: 'Minha biblioteca', path: '/biblioteca' }] : []),
       { label: 'Loja', path: '/loja' },
-      { label: 'Sobre nós', path: '/sobre-autor' },
+      { label: 'Sobre', path: '/sobre-autor' },
     ],
     [usuario]
   );
@@ -98,6 +112,8 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   const workspaceMenus = useMemo(() => {
     const menus = [];
+    const adminWorkspaceCreatorStrip = canSeeAdminWorkspace;
+
     if (canSeeAdminWorkspace) {
       const lojaMenuBits = [];
       if (canAccessAdminPath('/admin/products', adminAccess)) {
@@ -112,48 +128,91 @@ export default function Header({ usuario, perfil, adminAccess }) {
         if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
         lojaMenuBits.push({ label: 'Configurações', path: '/admin/store/settings' });
       }
+      if (
+        adminWorkspaceCreatorStrip &&
+        canAccessCreatorPath('/creator/promocoes', creatorNavAccess) &&
+        canAccessAdminPath('/admin/financeiro', adminAccess)
+      ) {
+        if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
+        lojaMenuBits.push({ label: 'Promocoes', path: '/creator/promocoes' });
+      }
+      if (
+        adminWorkspaceCreatorStrip &&
+        canAccessCreatorPath('/creator/loja', creatorNavAccess) &&
+        (canAccessAdminPath('/admin/loja', adminAccess) || canAccessAdminPath('/admin/pedidos', adminAccess))
+      ) {
+        if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
+        lojaMenuBits.push({ label: 'Loja', path: '/creator/loja' });
+      }
+
+      const criadorMenuBits = [];
+      const obOk = canAccessCreatorPath('/creator/obras', creatorNavAccess);
+      const capOk = canAccessCreatorPath('/creator/capitulos', creatorNavAccess);
+      if (obOk || capOk) {
+        criadorMenuBits.push({ type: 'heading', label: 'Criador' });
+        if (obOk) criadorMenuBits.push({ label: 'Obras', path: '/creator/obras' });
+        if (capOk) criadorMenuBits.push({ label: 'Capitulos', path: '/creator/capitulos' });
+      }
 
       menus.push({
         id: 'admin',
         label: 'ADMIN',
+        clusterTitle: 'Painel da equipe',
         items: [
           canAccessAdminPath('/admin/equipe', adminAccess) ? { label: 'Equipe', path: '/admin/equipe' } : null,
           canAccessAdminPath('/admin/criadores', adminAccess) ? { label: 'Criadores', path: '/admin/criadores' } : null,
           canAccessAdminPath('/admin/sessoes', adminAccess) ? { label: 'Sessoes', path: '/admin/sessoes' } : null,
           canAccessAdminPath('/admin/avatares', adminAccess) ? { label: 'Avatares', path: '/admin/avatares' } : null,
           canAccessAdminPath('/admin/dashboard', adminAccess) ? { label: 'Financeiro', path: '/admin/dashboard' } : null,
-          canAccessAdminPath('/admin/financeiro', adminAccess) ? { label: 'Promocoes', path: '/admin/financeiro' } : null,
+          adminWorkspaceCreatorStrip || !canAccessAdminPath('/admin/financeiro', adminAccess)
+            ? null
+            : { label: 'Promocoes', path: '/admin/financeiro' },
           ...lojaMenuBits,
+          ...criadorMenuBits,
         ].filter(Boolean),
       });
     }
-    if (canSeeCreatorWorkspace) {
+    if (canSeeCreatorWorkspace && !canSeeAdminWorkspace) {
       menus.push({
         id: 'creator',
         label: 'CREATOR',
         subtitle: isMangakaPanel ? 'Meu conteudo' : 'Conteudo global',
         items: [
-          canAccessCreatorPath('/creator/perfil', adminAccess)
-            ? { label: 'Identidade pública', path: '/creator/perfil' }
+          canAccessCreatorPath('/perfil', creatorNavAccess)
+            ? { label: 'Identidade pública', path: '/perfil' }
             : null,
-          canAccessCreatorPath('/creator/dashboard', adminAccess) ? { label: 'Workspace', path: '/creator/dashboard' } : null,
-          canAccessCreatorPath('/creator/audience', adminAccess) ? { label: 'Analytics', path: '/creator/audience' } : null,
-          canAccessCreatorPath('/creator/obras', adminAccess) ? { label: isMangakaPanel ? 'Minhas obras' : 'Obras', path: '/creator/obras' } : null,
-          canAccessCreatorPath('/creator/capitulos', adminAccess) ? { label: 'Capitulos', path: '/creator/capitulos' } : null,
-          canAccessCreatorPath('/creator/promocoes', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
+          canAccessCreatorPath('/creator/monetizacao', creatorNavAccess)
+            ? { label: 'Monetização', path: '/creator/monetizacao' }
+            : null,
+          canAccessCreatorPath('/creator/missoes', creatorNavAccess)
+            ? { label: 'Missões & XP', path: '/creator/missoes' }
+            : null,
+          canAccessCreatorPath('/creator/audience', creatorNavAccess) ? { label: 'Analytics', path: '/creator/audience' } : null,
+          canAccessCreatorPath('/creator/obras', creatorNavAccess)
+            ? { label: isMangakaPanel ? 'Minhas obras' : 'Obras', path: '/creator/obras' }
+            : null,
+          canAccessCreatorPath('/creator/capitulos', creatorNavAccess) ? { label: 'Capitulos', path: '/creator/capitulos' } : null,
+          canAccessCreatorPath('/creator/promocoes', creatorNavAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
             ? { label: 'Promocoes', path: '/creator/promocoes' }
             : null,
-          canAccessCreatorPath('/creator/loja', adminAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
+          canAccessCreatorPath('/creator/loja', creatorNavAccess) && (!isMangakaPanel || creatorMonetizationIsActive)
             ? { label: 'Loja', path: '/creator/loja' }
             : null,
-          canAccessCreatorPath('/creator/dashboard', adminAccess)
+          isMangakaPanel && canSeeCreatorWorkspace
             ? { label: 'Meus pedidos', path: '/pedidos?tab=fisico' }
             : null,
         ].filter(Boolean),
       });
     }
     return menus;
-  }, [adminAccess, canSeeAdminWorkspace, canSeeCreatorWorkspace, creatorMonetizationIsActive, isMangakaPanel]);
+  }, [
+    adminAccess,
+    creatorNavAccess,
+    canSeeAdminWorkspace,
+    canSeeCreatorWorkspace,
+    creatorMonetizationIsActive,
+    isMangakaPanel,
+  ]);
 
   const persistWorkspace = (workspaceId) => {
     if (typeof window !== 'undefined') {
@@ -525,15 +584,22 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   const renderWorkspaceAccountSections = () =>
     workspaceMenus.map((workspace) => {
-      const dashPath = workspace.id === 'admin' ? '/admin/dashboard' : '/creator/dashboard';
+      const dashPath =
+        workspace.id === 'admin'
+          ? '/admin/dashboard'
+          : isMangakaPanel
+            ? '/perfil'
+            : '/creator/dashboard';
       const canDash =
         workspace.id === 'admin'
           ? canAccessAdminPath(dashPath, adminAccess)
-          : canAccessCreatorPath(dashPath, adminAccess);
+          : canSeeAdminWorkspace
+            ? false
+            : canAccessCreatorPath(dashPath, adminAccess);
       return (
         <div key={workspace.id} className="header-account-menu__cluster">
           <div className="header-account-menu__heading">
-            {workspace.id === 'admin' ? 'Administração' : 'Criador'}
+            {workspace.clusterTitle || (workspace.id === 'admin' ? 'Administração' : 'Criador')}
           </div>
           {canDash ? (
             <button
@@ -541,7 +607,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
               className="header-account-menu__dash"
               onClick={() => pushRoute(dashPath, workspace.id)}
             >
-              {workspace.id === 'admin' ? 'Painel admin' : 'Painel do criador'}
+              {workspace.id === 'admin' ? 'Painel admin' : 'Criador'}
             </button>
           ) : null}
           {workspace.items.map((item, idx) =>
@@ -561,7 +627,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   return (
     <nav
-      className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''} ${menuAberto ? 'menu-open' : ''}`}
+      className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''} ${canSeeAdminWorkspace ? 'reader-header--staff-shell' : ''} ${menuAberto ? 'menu-open' : ''}`}
     >
       <div className="nav-container">
         <button type="button" className="nav-logo" onClick={() => pushRoute('/')}>
@@ -768,14 +834,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
                         {renderWorkspaceAccountSections()}
                         <div className="header-account-menu__divider" role="presentation" />
                       </>
-                    ) : null}
-                    <button type="button" onClick={() => pushRoute('/sobre-autor')}>
-                      Sobre nós
-                    </button>
-                    {showCreatorsNav ? (
-                      <button type="button" onClick={() => pushRoute('/creators')}>
-                        Programa CREATORS
-                      </button>
                     ) : null}
                     <div className="header-account-menu__divider" role="presentation" />
                     <button type="button" className="header-account-menu__logout" onClick={handleLogout}>

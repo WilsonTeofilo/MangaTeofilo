@@ -1,4 +1,4 @@
-import { normalizeShippingRegions } from '../utils/storeShipping';
+import { normalizeShippingRegions } from '../../shared/storeShipping.js';
 
 /** Chaves de categoria na loja (UI + RTDB `product.category`) */
 export const STORE_CATEGORY_KEYS = {
@@ -162,6 +162,7 @@ export function formatLojaOrderStatusPt(status) {
   if (v === 'pending' || v === 'pending_payment') return 'Aguardando pagamento';
   if (v === 'paid' || v === 'order_received') return 'Pedido confirmado';
   if (v === 'processing' || v === 'in_production') return 'Em produção';
+  if (v === 'ready_to_ship') return 'Pronto para envio';
   if (v === 'shipped') return 'Enviado · em trânsito';
   if (v === 'delivered') return 'Entregue';
   if (v === 'cancelled') return 'Cancelado';

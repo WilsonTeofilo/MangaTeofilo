@@ -12,9 +12,14 @@ import {
 } from '../../utils/birthDateAge';
 import { formatCpfForDisplay, isValidBrazilianCpfDigits } from '../../utils/cpfValidate';
 import { evaluateMonetizationComplianceAdmin } from '../../utils/monetizationComplianceGate';
+import {
+  evaluateCreatorApplicationApprovalGate,
+  formatMetricDeltaLine,
+} from '../../utils/creatorApplicationGate';
 import './FinanceiroAdmin.css';
 import './AdminStaff.css';
 import './CriadoresAdmin.css';
+import { formatUserDisplayFromMixed } from '../../utils/publicCreatorName';
 
 const adminListCreatorApplications = httpsCallable(functions, 'adminListCreatorApplications');
 const adminApproveCreatorApplication = httpsCallable(functions, 'adminApproveCreatorApplication');
@@ -49,6 +54,20 @@ function wantsMonetization(item) {
     item?.creatorApplication?.monetizationRequested === true ||
     String(item?.creatorMonetizationPreference || '').trim().toLowerCase() === 'monetize'
   );
+}
+
+/** Comparativo Nível 1 (vitrine) — dados vêm do callable ou recalculados se faltar campo. */
+function creatorApprovalGateFromItem(item) {
+  if (item?.creatorApprovalMetrics && item?.creatorApprovalThresholds) {
+    return {
+      ok: Boolean(item.creatorApprovalMetricsOk),
+      metrics: item.creatorApprovalMetrics,
+      thresholds: item.creatorApprovalThresholds,
+      shortfalls: item.creatorApprovalShortfalls || { followers: 0, views: 0, likes: 0 },
+      surplus: item.creatorApprovalSurplus || { followers: 0, views: 0, likes: 0 },
+    };
+  }
+  return evaluateCreatorApplicationApprovalGate(item);
 }
 
 function pixTypeLabel(t) {
@@ -107,7 +126,8 @@ function CreatorDetailDrawer({
   const isPending = item.creatorApplicationStatus === 'requested';
   const monetizationPending =
     item.creatorApplicationStatus === 'approved' && item.creatorMonetizationStatus === 'pending_review';
-  const displayName = item.creatorDisplayName || item.userName || '—';
+  const displayNameRaw = formatUserDisplayFromMixed(item);
+  const displayName = displayNameRaw === 'Usuário' ? '—' : displayNameRaw;
   const bio = String(item.creatorBio || item.creatorBioShort || '').trim() || '—';
   const ageI = accountAgeInfo(item);
   const mon = wantsMonetization(item);
@@ -119,6 +139,8 @@ function CreatorDetailDrawer({
   const complianceGate = mon ? evaluateMonetizationComplianceAdmin(compliance) : { ok: true, reasons: [] };
   const minorMonetizeWarn = mon && ageI.isAdult === false;
   const canLiberarMonetizacao = complianceGate.ok;
+  const approvalGate = creatorApprovalGateFromItem(item);
+  const canApproveCreatorPending = isPending && approvalGate.ok;
   const balance = item.creatorBalanceAdmin || null;
   const recentPayouts = Array.isArray(item.creatorRecentPayoutsAdmin) ? item.creatorRecentPayoutsAdmin : [];
   const availableForPayout = Number(balance?.availableBRL || 0);
@@ -156,6 +178,58 @@ function CreatorDetailDrawer({
               Menor de idade com pedido de monetização — revise com cuidado e alinhe à política da plataforma.
             </p>
           ) : null}
+          <section className="criadores-admin-section criadores-admin-section--metrics">
+            <h3 className="criadores-admin-section__title">Requisitos para aprovar candidatura (Nível 1)</h3>
+            <p className="criadores-admin-compliance-hint" style={{ marginTop: 0 }}>
+              Mesmas metas da vitrine POD: seguidores, views e likes na plataforma. O servidor bloqueia aprovação se
+              faltar qualquer uma. Quem já está aprovado permanece; a regra vale para novas decisões.
+            </p>
+            {!approvalGate.ok ? (
+              <div className="criadores-admin-compliance-warn" role="alert">
+                <strong>Metas não atingidas — não é possível aprovar esta solicitação até o criador cumprir tudo.</strong>
+              </div>
+            ) : (
+              <p className="criadores-admin-alert criadores-admin-alert--ok" role="status" style={{ marginBottom: 12 }}>
+                Todas as metas mínimas foram atingidas (ou superadas).
+              </p>
+            )}
+            <dl className="criadores-admin-dl criadores-admin-dl--metrics">
+              <div>
+                <dt>Seguidores</dt>
+                <dd>
+                  <span className="criadores-admin-mono">
+                    {approvalGate.metrics.followers} / {approvalGate.thresholds.followers}
+                  </span>
+                  <span className={`criadores-admin-pill ${approvalGate.metrics.followers >= approvalGate.thresholds.followers ? 'criadores-admin-pill--ok' : 'criadores-admin-pill--bad'}`}>
+                    {formatMetricDeltaLine('followers', approvalGate)}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Views (obras)</dt>
+                <dd>
+                  <span className="criadores-admin-mono">
+                    {approvalGate.metrics.views} / {approvalGate.thresholds.views}
+                  </span>
+                  <span className={`criadores-admin-pill ${approvalGate.metrics.views >= approvalGate.thresholds.views ? 'criadores-admin-pill--ok' : 'criadores-admin-pill--bad'}`}>
+                    {formatMetricDeltaLine('views', approvalGate)}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Likes</dt>
+                <dd>
+                  <span className="criadores-admin-mono">
+                    {approvalGate.metrics.likes} / {approvalGate.thresholds.likes}
+                  </span>
+                  <span className={`criadores-admin-pill ${approvalGate.metrics.likes >= approvalGate.thresholds.likes ? 'criadores-admin-pill--ok' : 'criadores-admin-pill--bad'}`}>
+                    {formatMetricDeltaLine('likes', approvalGate)}
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </section>
+
           <section className="criadores-admin-section criadores-admin-section--profile">
             <h3 className="criadores-admin-section__title">Perfil</h3>
             <dl className="criadores-admin-dl">
@@ -441,8 +515,23 @@ function CreatorDetailDrawer({
         <footer className="criadores-admin-drawer__foot">
           {isPending ? (
             <>
+              {!canApproveCreatorPending ? (
+                <p className="criadores-admin-foot-blocked" role="alert">
+                  <strong>Aprovar criador bloqueado:</strong> o candidato ainda não atingiu seguidores, views e likes
+                  mínimos (Nível 1). O botão só libera quando as três metas estiverem OK.
+                </p>
+              ) : null}
               <div className="criadores-admin-actions-row">
-                <button type="button" disabled={rowBusy} onClick={() => onApproveApplication(uid)}>
+                <button
+                  type="button"
+                  disabled={rowBusy || !canApproveCreatorPending}
+                  title={
+                    !canApproveCreatorPending
+                      ? 'Metas Nível 1 incompletas — veja a seção de requisitos acima'
+                      : 'Aprovar candidatura'
+                  }
+                  onClick={() => onApproveApplication(uid)}
+                >
                   {rowBusy ? 'Salvando…' : 'Aprovar criador'}
                 </button>
                 <button
@@ -684,7 +773,7 @@ export default function CriadoresAdmin() {
     const detail = applications.find((item) => item.uid === uid);
     const available = Number(detail?.creatorBalanceAdmin?.availableBRL || 0);
     if (!(available > 0)) {
-      setError('Este criador nao possui saldo disponivel para repasse.');
+      setError('Este criador não possui saldo disponível para repasse.');
       return;
     }
     const rawAmount = String(payoutAmounts[uid] || '').trim().replace(',', '.');
@@ -783,7 +872,9 @@ export default function CriadoresAdmin() {
                 </thead>
                 <tbody>
                   {applications.map((item) => {
-                    const name = item.creatorDisplayName || item.userName || item.email || item.uid;
+                    const nameRaw = formatUserDisplayFromMixed(item);
+                    const name =
+                      nameRaw === 'Usuário' ? item.creatorDisplayName || item.userName || item.email || item.uid : nameRaw;
                     const mon = wantsMonetization(item);
                     return (
                       <tr key={item.uid}>

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import './SobreAutorV2.css';
 
 const INTRO_METRICS = [
-  { label: 'Visao', value: 'Arte + tecnologia' },
+  { label: 'Visão', value: 'Arte + tecnologia' },
   { label: 'Foco', value: 'Autores independentes' },
   { label: 'Projeto', value: 'Kokuin e MangaTeofilo' },
 ];
@@ -13,18 +13,18 @@ const STORY_BLOCKS = [
   {
     title: 'O ponto de virada',
     text:
-      'MangaTeofilo nao nasceu para ser so mais um site de leitura. A ideia surgiu como resposta a um vazio real: muita gente tem universo, personagem e conflito, mas para no meio do caminho porque acredita que sem desenho impecavel nao existe historia possivel. A plataforma foi pensada para quebrar essa barreira e transformar criacao autoral em algo mais acessivel, estruturado e viavel.',
+      'A MangaTeofilo não nasceu para ser só mais um site de leitura. Veio de um incômodo real: muita gente tem universo, personagem e conflito, mas trava no meio do caminho porque acha que, sem desenho impecável, não há história possível. Queremos derrubar essa ideia e tornar a criação autoral mais acessível, organizada e viável.',
   },
   {
-    title: 'Como tudo comecou',
+    title: 'Como tudo começou',
     text:
-      'Antes de existir codigo, layout ou sistema, existia uma paixao que veio cedo. Pokemon abriu a porta, Dragon Ball Z acelerou o interesse e Naruto consolidou aquela vontade de entender como historias conseguem marcar tanto uma pessoa. Foi nessa fase que ler deixou de ser obrigacao e virou ferramenta para entrar em mundos novos. Entre manutencao, curiosidade tecnica, computador desmontado e estudo, a vontade de criar algo proprio foi crescendo ate encontrar um formato claro.',
+      'Antes de código, layout ou sistema, veio a paixão cedo. Pokémon abriu a porta, Dragon Ball Z acelerou o interesse e Naruto mostrou como histórias marcam a gente. Ler deixou de ser obrigação e virou porta para mundos novos. Entre manutenção, curiosidade técnica, computador desmontado e estudo, a vontade de criar algo próprio foi crescendo até virar um formato claro.',
     accent: true,
   },
   {
     title: 'O que a plataforma entrega',
     text:
-      'Hoje a proposta e unir descoberta, leitura, acompanhamento de autores, publicacao de obras e produtos ligados a essas historias em um mesmo ecossistema. Em vez de tratar o criador como alguem dependente de plataformas fragmentadas, a MangaTeofilo organiza a jornada inteira com identidade, ranking, vitrine e espaco para monetizacao. A ideia central e simples: dar estrutura para que imaginacao tenha continuidade e para que o autor possa evoluir sem perder controle sobre aquilo que construiu.',
+      'Hoje a proposta é juntar descoberta, leitura, acompanhamento de autores, publicação de obras e produtos ligados a essas histórias no mesmo lugar. Em vez de espalhar o criador em ferramentas soltas, a MangaTeofilo organiza a jornada com identidade, vitrine, ranking e caminhos para monetização — sempre com o autor no centro do que construiu.',
   },
 ];
 
@@ -51,12 +51,12 @@ export default function SobreAutorV2() {
       <main className="sobre-autor-content">
         <section className="sobre-hero">
           <div className="sobre-copy">
-            <span className="sobre-eyebrow">SOBRE NOS</span>
-            <h1 className="sobre-title">Uma plataforma criada para transformar ideia em obra viva.</h1>
+            <span className="sobre-eyebrow">SOBRE NÓS</span>
+            <h1 className="sobre-title">Uma plataforma para transformar ideia em obra viva.</h1>
             <p className="sobre-lead">
-              MangaTeofilo conecta criacao autoral, leitura, descoberta e identidade visual em um unico
-              ecossistema. O objetivo nao e apenas publicar mangas, e construir um lugar onde historias
-              independentes consigam nascer, crescer e encontrar publico com mais forca.
+              A MangaTeofilo conecta criação autoral, leitura, descoberta e identidade visual num único
+              ecossistema. O objetivo não é só publicar mangá: é dar um lugar onde histórias independentes
+              nasçam, cresçam e encontrem leitores de verdade.
             </p>
 
             <div className="sobre-metrics" aria-label="Resumo da proposta">
@@ -115,8 +115,8 @@ export default function SobreAutorV2() {
                 <span className="sobre-visual-role">AUTOR E FUNDADOR</span>
                 <strong className="sobre-visual-name">Wilson Teofilo</strong>
                 <p className="sobre-visual-text">
-                  Codigo, manutencao, narrativa e visao de produto andando juntos para dar forma a um
-                  projeto autoral que ainda esta so no comeco.
+                  Código, manutenção, narrativa e visão de produto caminhando juntos para dar forma a um
+                  projeto autoral que ainda está só no começo.
                 </p>
               </div>
             </div>
@@ -124,8 +124,8 @@ export default function SobreAutorV2() {
             {revelarPorToque && (
               <p className="sobre-touch-hint" aria-live="polite">
                 {isPhotoHovered
-                  ? 'Toque de novo para voltar a foto original'
-                  : 'Toque na foto para revelar a versao manga'}
+                  ? 'Toque de novo para voltar à foto original'
+                  : 'Toque na foto para revelar a versão mangá'}
               </p>
             )}
           </aside>
@@ -134,11 +134,11 @@ export default function SobreAutorV2() {
         <section className="sobre-story-grid">
           <div className="sobre-story-intro">
             <span className="sobre-section-label">Manifesto</span>
-            <h2 className="sobre-section-title">Criar nao deveria depender de permissao.</h2>
+            <h2 className="sobre-section-title">Criar não deveria depender de permissão.</h2>
             <p className="sobre-section-text">
-              A proposta do projeto e clara: reduzir friccao, organizar a experiencia e apresentar a obra
-              de forma profissional sem abandonar autenticidade. O leitor entende rapido onde esta, o autor
-              ganha uma base mais consistente e a historia deixa de parecer perdida no meio da pagina.
+              A proposta é clara: menos atrito, experiência organizada e obra apresentada com capricho, sem
+              perder a cara de quem criou. O leitor acha rápido o que busca, o autor ganha base sólida e a
+              história deixa de parecer perdida no meio da página.
             </p>
           </div>
 
@@ -159,12 +159,11 @@ export default function SobreAutorV2() {
 
         <section className="sobre-cta-panel">
           <div>
-            <span className="sobre-section-label">Proximo passo</span>
-            <h2 className="sobre-cta-title">A melhor forma de entender a proposta ainda e entrando no universo.</h2>
+            <span className="sobre-section-label">Próximo passo</span>
+            <h2 className="sobre-cta-title">A melhor forma de sentir a proposta ainda é entrando no universo.</h2>
             <p className="sobre-cta-text">
-              Kokuin: Heranca do Abismo funciona como a obra-base dessa visao. Ler a historia e ver o
-              projeto em movimento ajuda a entender melhor o que a plataforma quer construir daqui para
-              frente.
+              Kokuin: Herança do Abismo é a obra-base dessa visão. Ler e ver o projeto em movimento ajuda a
+              entender o que a plataforma quer construir daqui pra frente.
             </p>
           </div>
 

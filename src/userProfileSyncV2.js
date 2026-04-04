@@ -1,7 +1,7 @@
 import { ref, get, set, update } from 'firebase/database';
 import { getIdToken, reload } from 'firebase/auth';
 import { db } from './services/firebase';
-import { AVATAR_FALLBACK, isAdminUser } from './constants';
+import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME, isAdminUser } from './constants';
 import {
   USUARIOS_DEPRECATED_KEYS,
   USUARIOS_PUBLICOS_DEPRECATED_KEYS,
@@ -78,7 +78,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
     const record = buildUsuarioBaseRecord({
       uid: usuario.uid,
       email,
-      userName: nome || 'Guerreiro',
+      userName: nome || DEFAULT_USER_DISPLAY_NAME,
       userAvatar: avatar,
       status: 'pendente',
       now: agora,
@@ -103,7 +103,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   const patch = buildUsuarioMissingFieldsPatch(atual, {
     uid: usuario.uid,
     email,
-    userName: nome?.trim() || atual.userName || 'Guerreiro',
+    userName: nome?.trim() || atual.userName || DEFAULT_USER_DISPLAY_NAME,
     userAvatar: fotoUrl || avatar,
     status,
     now: agora,
@@ -111,7 +111,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
 
   await update(userRef, patch);
 
-  const nomePub = patch.userName || atual.userName || 'Guerreiro';
+  const nomePub = patch.userName || atual.userName || DEFAULT_USER_DISPLAY_NAME;
   const avatarPub = patch.userAvatar || atual.userAvatar || avatar;
   const accountPub = patch.accountType || atual.accountType || 'comum';
   const signupIntentPub = patch.signupIntent || atual.signupIntent || 'reader';
@@ -132,7 +132,7 @@ export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) 
   const fotoParaRegistro = persistedAvatar || fallbackAvatar;
   const perfil = await ensureUsuarioRecord(
     usuario,
-    usuario.displayName || 'Guerreiro',
+    usuario.displayName || DEFAULT_USER_DISPLAY_NAME,
     fotoParaRegistro,
     listaAvatares.length ? listaAvatares : [fallbackAvatar],
     'ativo'

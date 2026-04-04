@@ -54,12 +54,15 @@ function capTs(cap) {
   return 0;
 }
 
-/** Quantas missões cumprir neste nível para subir */
+/**
+ * Quantas missões cumprir neste nível para subir.
+ * ORIGINAL: L1→2, L2–L3→3, L4+→5 — reverter após teste.
+ */
 export function requiredMissionsForCycleLevel(level) {
   const lv = norm(level) || 1;
-  if (lv <= 1) return 2;
-  if (lv <= 3) return 3;
-  return 5;
+  if (lv <= 2) return 1;
+  if (lv <= 4) return 2;
+  return 2;
 }
 
 /**
@@ -71,42 +74,42 @@ export function getMissionPoolForLevel(level) {
   switch (lv) {
     case 1:
       return [
-        { id: 'ch_bonus', label: 'Postar 1 capítulo neste ciclo (bônus forte)', xp: 50, kind: 'chapter' },
-        { id: 'likes_20', label: 'Ganhar 20 likes a mais que no início do ciclo', xp: 25, kind: 'likes_delta', need: 20 },
-        { id: 'views_100', label: 'Ganhar 100 views a mais que no início do ciclo', xp: 20, kind: 'views_delta', need: 100 },
+        { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (vale como missão completa)', xp: 50, kind: 'chapter' },
+        { id: 'likes_20', label: 'Subir +1 like desde o início do ciclo (TESTE)', xp: 25, kind: 'likes_delta', need: 1 },
+        { id: 'views_100', label: 'Subir +5 views desde o início do ciclo (TESTE)', xp: 20, kind: 'views_delta', need: 5 },
       ];
     case 2:
       return [
-        { id: 'ch_bonus', label: 'Postar 1 capítulo neste ciclo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_40', label: 'Ganhar 40 likes no ciclo', xp: 30, kind: 'likes_delta', need: 40 },
-        { id: 'views_300', label: 'Ganhar 300 views no ciclo', xp: 25, kind: 'views_delta', need: 300 },
-        { id: 'fol_5', label: 'Ganhar 5 seguidores no ciclo', xp: 40, kind: 'followers_delta', need: 5 },
+        { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
+        { id: 'likes_40', label: 'Subir +2 likes desde o início do ciclo (TESTE)', xp: 30, kind: 'likes_delta', need: 2 },
+        { id: 'views_300', label: 'Subir +10 views desde o início do ciclo (TESTE)', xp: 25, kind: 'views_delta', need: 10 },
+        { id: 'fol_5', label: 'Subir +1 seguidor desde o início do ciclo (TESTE)', xp: 40, kind: 'followers_delta', need: 1 },
       ];
     case 3:
       return [
-        { id: 'ch_bonus', label: 'Postar 1 capítulo neste ciclo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_80', label: 'Ganhar 80 likes no ciclo', xp: 35, kind: 'likes_delta', need: 80 },
-        { id: 'views_800', label: 'Ganhar 800 views no ciclo', xp: 30, kind: 'views_delta', need: 800 },
-        { id: 'fol_10', label: 'Ganhar 10 seguidores no ciclo', xp: 45, kind: 'followers_delta', need: 10 },
+        { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
+        { id: 'likes_80', label: 'Subir +2 likes desde o início do ciclo (TESTE)', xp: 35, kind: 'likes_delta', need: 2 },
+        { id: 'views_800', label: 'Subir +15 views desde o início do ciclo (TESTE)', xp: 30, kind: 'views_delta', need: 15 },
+        { id: 'fol_10', label: 'Subir +1 seguidor desde o início do ciclo (TESTE)', xp: 45, kind: 'followers_delta', need: 1 },
       ];
     case 4:
       return [
-        { id: 'ch_bonus', label: 'Postar 1 capítulo neste ciclo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_150', label: 'Ganhar 150 likes no ciclo', xp: 40, kind: 'likes_delta', need: 150 },
-        { id: 'views_2000', label: 'Ganhar 2.000 views no ciclo', xp: 35, kind: 'views_delta', need: 2000 },
-        { id: 'fol_20', label: 'Ganhar 20 seguidores no ciclo', xp: 50, kind: 'followers_delta', need: 20 },
-        { id: 'rep_5', label: 'Responder 5 comentários nos seus capítulos', xp: 30, kind: 'replies', need: 5 },
-        { id: 'views_2500', label: 'Alternativa: ganhar 2.500 views no ciclo', xp: 35, kind: 'views_delta', need: 2500 },
+        { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
+        { id: 'likes_150', label: 'Subir +3 likes desde o início do ciclo (TESTE)', xp: 40, kind: 'likes_delta', need: 3 },
+        { id: 'views_2000', label: 'Subir +25 views desde o início do ciclo (TESTE)', xp: 35, kind: 'views_delta', need: 25 },
+        { id: 'fol_20', label: 'Subir +2 seguidores desde o início do ciclo (TESTE)', xp: 50, kind: 'followers_delta', need: 2 },
+        { id: 'rep_5', label: 'Responder 2 comentários nos seus capítulos (TESTE)', xp: 30, kind: 'replies', need: 2 },
+        { id: 'views_2500', label: 'Ou: subir +30 views desde o início do ciclo (TESTE)', xp: 35, kind: 'views_delta', need: 30 },
       ];
     case 5:
     default:
       return [
-        { id: 'ch_bonus', label: 'Postar 1 capítulo neste ciclo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_300', label: 'Ganhar 300 likes no ciclo', xp: 45, kind: 'likes_delta', need: 300 },
-        { id: 'views_5000', label: 'Ganhar 5.000 views no ciclo', xp: 40, kind: 'views_delta', need: 5000 },
-        { id: 'fol_40', label: 'Ganhar 40 seguidores no ciclo', xp: 55, kind: 'followers_delta', need: 40 },
-        { id: 'streak_7', label: '7 dias seguidos abrindo o painel do criador', xp: 35, kind: 'streak', need: 7 },
-        { id: 'likes_350', label: 'Alternativa: ganhar 350 likes no ciclo', xp: 45, kind: 'likes_delta', need: 350 },
+        { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
+        { id: 'likes_300', label: 'Subir +3 likes desde o início do ciclo (TESTE)', xp: 45, kind: 'likes_delta', need: 3 },
+        { id: 'views_5000', label: 'Subir +40 views desde o início do ciclo (TESTE)', xp: 40, kind: 'views_delta', need: 40 },
+        { id: 'fol_40', label: 'Subir +2 seguidores desde o início do ciclo (TESTE)', xp: 55, kind: 'followers_delta', need: 2 },
+        { id: 'streak_7', label: 'Entrar no painel do criador 2 dias seguidos (TESTE)', xp: 35, kind: 'streak', need: 2 },
+        { id: 'likes_350', label: 'Ou: subir +4 likes desde o início do ciclo (TESTE)', xp: 45, kind: 'likes_delta', need: 4 },
       ];
   }
 }
@@ -116,16 +119,16 @@ export function rewardLinesForCompletingCycleLevel(level) {
   const lv = Math.min(ENGAGEMENT_CYCLE_LEVEL_MAX, Math.max(ENGAGEMENT_CYCLE_LEVEL_MIN, norm(level) || 1));
   if (lv >= ENGAGEMENT_CYCLE_LEVEL_MAX) {
     return [
-      `Boost máximo (${BOOST_MUL_BY_LEVEL[5]}×) por ${formatBoostDurationPt(5)}`,
-      'Selo especial + prioridade forte temporária',
-      'Em seguida o ciclo volta ao nível 1 (boost ativo segue até expirar)',
+      `Boost forte no feed (${BOOST_MUL_BY_LEVEL[5]}×) por ${formatBoostDurationPt(5)}`,
+      'Selo especial e mais chance de aparecer para novos leitores',
+      'Depois a semana recomeça na fase 1 (seu boost atual segue até acabar)',
     ];
   }
   const lines = [
     `Boost no feed ${BOOST_MUL_BY_LEVEL[lv]}× por ${formatBoostDurationPt(lv)}`,
   ];
-  if (lv >= 3) lines.push('Badge / destaque visual no perfil');
-  if (lv >= 4) lines.push('Prioridade leve no ranking + vitrine “em alta”');
+  if (lv >= 3) lines.push('Selo / destaque no seu perfil');
+  if (lv >= 4) lines.push('Um empurrão leve no ranking e na vitrine “em alta”');
   return lines;
 }
 
@@ -401,15 +404,16 @@ export function buildEngagementCycleViewModel(state, metrics, caps, uid, now = D
     return { ...mission, done };
   });
   const doneCount = missions.filter((x) => x.done).length;
+  const poolSize = missions.length;
   const pct = need > 0 ? Math.min(100, Math.round((doneCount / need) * 100)) : 0;
 
   const remaining = Math.max(0, need - doneCount);
   const nudge =
     remaining === 0
-      ? 'Concluiu as missões — o nível sobe ao sincronizar com o servidor (automático ao abrir o painel).'
+      ? 'Meta desta fase cumprida. Em instantes o sistema atualiza sozinho (ao usar o painel).'
       : remaining === 1
-        ? 'Falta 1 missão para subir de nível'
-        : `Faltam ${remaining} missões para subir de nível`;
+        ? 'Falta só 1 missão para fechar esta fase — pode ser qualquer uma que ainda esteja em aberto.'
+        : `Faltam ${remaining} missões para fechar esta fase. Você escolhe quais fazer na lista abaixo.`;
 
   const boostUntil = Number(state.activeBoostUntil) || 0;
   const boostMul = Number(state.activeBoostMul) || 1;
@@ -422,6 +426,7 @@ export function buildEngagementCycleViewModel(state, metrics, caps, uid, now = D
     cycleLevel: level,
     missions,
     need,
+    poolSize,
     doneCount,
     pct,
     nudge,

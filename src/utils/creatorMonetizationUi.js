@@ -36,8 +36,8 @@ export function creatorMonetizationStatusLabel(preference, status) {
   const pref = normalizeCreatorMonetizationPreference(preference);
   const norm = effectiveCreatorMonetizationStatus(preference, status);
   if (pref !== 'monetize') return 'Apenas publicar';
-  if (norm === 'active') return 'Monetizacao ativa';
-  if (norm === 'pending_review') return 'Monetizacao em revisao';
-  if (norm === 'blocked_underage') return 'Monetizacao bloqueada por idade';
-  return 'Configuracao pendente';
+  if (norm === 'active') return 'Monetização ativa • recebendo repasses';
+  if (norm === 'pending_review') return 'Monetização em revisão';
+  if (norm === 'blocked_underage') return 'Monetização bloqueada por idade';
+  return 'Configuração pendente';
 }

@@ -1,0 +1,12 @@
+{
+  "_readme": "Chefes da plataforma. Sincronizar rules: npm run security:sync-staff-rules",
+  "uids": [
+    "n5JTPLsxpyQPeC5qQtraSrBa4rG3",
+    "QayqN0MpBTQK6je44JwAXWapoQU2",
+    "20kR47W8PfTGIvGxGOGRsB2JiFA3"
+  ],
+  "emails": [
+    "wilsonteofilosouza@live.com",
+    "drakenteofilo@gmail.com"
+  ]
+}

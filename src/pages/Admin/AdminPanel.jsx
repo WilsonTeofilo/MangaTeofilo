@@ -44,7 +44,7 @@ function normalizarCapaAjuste(raw, dims = null) {
 }
 
 function validarImagemUpload(file, label = 'arquivo') {
-  if (!file) return `${label} nao encontrado.`;
+  if (!file) return `${label} não encontrado.`;
   if (!IMAGE_TYPES.includes(file.type)) return `${label} invalido. Use JPG, PNG ou WEBP.`;
   if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 7MB.`;
   return '';
@@ -540,7 +540,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const [modalPreview, setModalPreview] = useState({ aberto: false, origem: 'novas', indice: 0 });
   const [erroModal, setErroModal] = useState('');
   const [publicReleaseAtInput, setPublicReleaseAtInput] = useState('');
-  const [antecipadoMembros, setAntecipadoMembros] = useState(false);
+  const [antecipadoMembros, setAntecipadoMembros] = useState(true);
+  const [capaFileLabel, setCapaFileLabel] = useState('');
 
   useEffect(() => {
     if (!adminAccess?.canAccessAdmin) {
@@ -922,6 +923,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       return;
     }
     setCapaCapitulo(file);
+    setCapaFileLabel(String(file.name || 'arquivo selecionado').trim() || 'arquivo selecionado');
     const ajustePadrao = normalizarCapaAjuste();
     setCapaAjuste(ajustePadrao);
     setCapaAjusteInicial(ajustePadrao);
@@ -1098,7 +1100,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       setCapaAjusteInicial(ajustePadrao);
       setEtapaAtiva(1);
       setPublicReleaseAtInput('');
-      setAntecipadoMembros(false);
+      setAntecipadoMembros(true);
+      setCapaFileLabel('');
       e.target.reset();
       setProgressoMsg('FORJADO COM SUCESSO!');
     } catch (err) { 
@@ -1115,6 +1118,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setNumeroCapitulo(cap.numero);
     setPaginasExistentes(cap.paginas || []);
     setCapaCapitulo(null);
+    setCapaFileLabel(cap.capaUrl ? 'Capa atual no servidor (selecione outra para substituir)' : '');
     const ajusteExistente = normalizarCapaAjuste(cap.capaAjuste);
     setCapaAjuste(ajusteExistente);
     setCapaAjusteInicial(ajusteExistente);
@@ -1136,7 +1140,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setCapaAjusteInicial(ajustePadrao);
     setEtapaAtiva(1);
     setPublicReleaseAtInput('');
-    setAntecipadoMembros(false);
+    setAntecipadoMembros(true);
+    setCapaFileLabel('');
     navigate(chaptersHubPath);
   };
 
@@ -1246,8 +1251,15 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                   <p>{isMangaka ? 'Arraste paginas aqui para montar seu capitulo.' : 'Arraste e solte imagens aqui, ou use o seletor abaixo.'}</p>
                 </div>
                 <div className="file-inputs">
-                  <label>
-                    Capa do capítulo
+                  <label className="admin-capa-file-label">
+                    <span className="admin-capa-file-label__text">Capa do capítulo</span>
+                    {capaFileLabel ? (
+                      <span className="admin-capa-file-name" title={capaFileLabel}>
+                        {capaFileLabel}
+                      </span>
+                    ) : (
+                      <span className="admin-capa-file-name admin-capa-file-name--empty">Nenhum arquivo selecionado</span>
+                    )}
                     <input
                       type="file"
                       accept="image/jpeg,image/jpg,image/png,image/webp"

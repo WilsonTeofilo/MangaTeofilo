@@ -27,6 +27,8 @@ export const BRAZILIAN_STATES = [
   { uf: 'SP', name: 'São Paulo' },
   { uf: 'SE', name: 'Sergipe' },
   { uf: 'TO', name: 'Tocantins' },
+  /** UF fictícia — só fluxo de teste (frete fixo R$ 0,50 em POD/loja). Não usar em produção real. */
+  { uf: 'WT', name: 'WT (teste checkout)' },
 ];
 
 /** Hash da rota /perfil para rolar até dados de compra da loja. */

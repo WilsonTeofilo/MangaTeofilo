@@ -1,20 +1,18 @@
 // src/constants.js
 // ============================================================
-// CONSTANTES GLOBAIS DO PROJETO SHITO
-// Altere aqui e reflete em todo o app automaticamente
+// Constantes globais — MangaTeofilo
 // ============================================================
+//
+// Chefes da plataforma: fonte única em shared/platformStaffAllowlist.json
+// (sincroniza RTDB + Storage rules com `npm run security:sync-staff-rules`).
+
+import platformStaffAllowlist from '../shared/platformStaffAllowlist.json';
 
 /** UIDs com acesso administrativo (Firebase Auth). */
-export const ADMIN_UIDS = [
-  "n5JTPLsxpyQPeC5qQtraSrBa4rG3",
-  "QayqN0MpBTQK6je44JwAXWapoQU2",
-  "20kR47W8PfTGIvGxGOGRsB2JiFA3",
-];
+export const ADMIN_UIDS = platformStaffAllowlist.uids;
 
-export const ADMIN_EMAILS = [
-  "wilsonteofilosouza@live.com",
-  "drakenteofilo@gmail.com",
-];
+/** E-mails tratados como chefes no cliente (alinhados ao allowlist). */
+export const ADMIN_EMAILS = platformStaffAllowlist.emails;
 
 export const isAdminUser = (user) => {
   if (!user) return false;
@@ -25,12 +23,18 @@ export const isAdminUser = (user) => {
 /** Dono legado de obras/capítulos sem `creatorId` no RTDB (primeiro super-admin). */
 export const PLATFORM_LEGACY_CREATOR_UID = ADMIN_UIDS[0];
 
+/** Nome público quando a obra usa o UID legado e não há perfil em `usuarios_publicos`. */
+export const PLATFORM_LEGACY_CREATOR_DISPLAY_NAME = 'MangaTeofilo';
+
 export const LISTA_AVATARES = Array.from(
   { length: 17 },
   (_, i) => `/assets/avatares/ava${i + 1}.webp`
 );
 
 export const AVATAR_FALLBACK = "/assets/avatares/ava1.webp";
+
+/** Apelido exibido quando o usuário ainda não definiu nome (substitui o legado «Guerreiro»). */
+export const DEFAULT_USER_DISPLAY_NAME = 'Leitor';
 
 /** Nome de exibição (cadastro / perfil). */
 export const DISPLAY_NAME_MAX_LENGTH = 60;

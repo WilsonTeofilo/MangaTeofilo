@@ -46,8 +46,15 @@ export default function MangaCatalogSearchBar({
 
   useEffect(() => {
     if (!showList) {
+      setListOpen(false);
       setActiveIndex(-1);
+      return;
     }
+    setListOpen(true);
+    setActiveIndex((prev) => {
+      if (prev >= 0 && prev < suggestions.length) return prev;
+      return 0;
+    });
   }, [showList, suggestions.length]);
 
   useEffect(() => () => clearBlurTimer(), [clearBlurTimer]);

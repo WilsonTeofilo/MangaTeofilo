@@ -104,7 +104,7 @@ export default function LojaProduto({ user, perfil }) {
     return (
       <main className="loja-page">
         <section className="loja-empty">
-          <h1>Produto nao encontrado</h1>
+          <h1>Produto nï¿½o encontrado</h1>
           <button type="button" onClick={() => navigate('/loja')}>
             Voltar para loja
           </button>
@@ -217,7 +217,8 @@ export default function LojaProduto({ user, perfil }) {
             {vip && product.isVIPDiscountEnabled && finalPrice < basePrice ? <span className="loja-price-vip">VIP</span> : null}
           </div>
           <p className="loja-shipping-hint">
-            Escolha PAC ou SEDEX. O valor segue a tabela fixa por UF + R$ 2 por unidade adicional; frete grátis quando o subtotal for R$ 150+ e o frete calculado for até R$ 60.
+            PAC ou SEDEX: tabela fixa por UF + R$ 2 por unidade extra. Em Sudeste, Sul e Centro-Oeste, com subtotal a partir de
+            R$ 165 ou 3+ unidades no pedido, atï¿½ 30% de desconto sï¿½ no frete (teto R$ 20).
           </p>
           <p className={`loja-stock ${stock > 0 && stock <= 12 ? 'loja-stock--low' : ''}`}>
             Estoque: {stock}

@@ -82,25 +82,25 @@ export function buildCreatorOnboardingSteps({
   const steps = [
     {
       id: 'publicProfile',
-      label: 'Perfil publico',
+      label: 'Perfil público',
       hint:
         monetizationPreference === 'monetize'
-          ? `Nome publico, foto de perfil, bio com pelo menos ${CREATOR_BIO_MIN_LENGTH} caracteres e pelo menos uma rede social valida.`
-          : `Nome publico, foto de perfil, bio com pelo menos ${CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY} caracteres e pelo menos uma rede social valida.`,
+          ? `Nome público, foto, bio com pelo menos ${CREATOR_BIO_MIN_LENGTH} caracteres e pelo menos uma rede social válida.`
+          : `Nome público, foto, bio com pelo menos ${CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY} caracteres e pelo menos uma rede social válida.`,
       done: publicOk,
       action: 'form',
     },
     {
       id: 'firstObra',
       label: 'Primeira obra',
-      hint: 'Cadastre uma obra com voce como criador.',
+      hint: 'Cadastre uma obra com você como criador.',
       done: minhasObras.length > 0,
       path: '/creator/obras',
     },
     {
       id: 'firstChapter',
-      label: 'Primeiro capitulo',
-      hint: 'Publique ao menos um capitulo vinculado a sua obra.',
+      label: 'Primeiro capítulo',
+      hint: 'Publique ao menos um capítulo vinculado à sua obra.',
       done: capsMeus.length > 0,
       path: '/creator/capitulos',
     },
@@ -108,19 +108,19 @@ export function buildCreatorOnboardingSteps({
       id: 'monetization',
       label: 'Apoio e membership',
       hint: monetizationPreference !== 'monetize'
-        ? 'Publicacao sem monetizacao escolhida. Esta etapa ja esta concluida.'
+        ? 'Você escolheu publicar sem monetização por aqui — esta etapa já vale como concluída.'
         : monetizationStatus === 'blocked_underage'
-          ? 'Monetizacao bloqueada por idade. A conta pode publicar normalmente, sem receber.'
+          ? 'Monetização indisponível por idade. Você segue publicando normalmente, sem repasse financeiro.'
           : monetizationConfigured
-            ? 'Configuracao enviada. Sua membership do criador esta pronta para validacao/liberacao.'
-            : `Ative a membership do criador e defina valores entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL}.`,
+            ? 'Tudo enviado. Sua membership está na fila para a equipe validar e liberar.'
+            : `Ative a membership do criador e escolha valores entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL}.`,
       done: monetOk,
       action: 'form',
     },
     {
       id: 'store',
       label: 'Loja (opcional)',
-      hint: 'Crie um produto seu na loja ou marque como nao aplicavel.',
+      hint: 'Crie um produto seu na loja ou marque como não aplicável.',
       done: lojaOk,
       path: '/creator/loja',
       optional: true,
@@ -145,7 +145,7 @@ export function creatorOnboardingIsRequiredComplete(steps) {
 
 export function creatorOnboardingPrimaryNextPath(steps) {
   const firstPending = steps.find((step) => !step.optional && !step.done);
-  if (!firstPending) return '/creator/dashboard';
+  if (!firstPending) return '/perfil';
   if (firstPending.path) return firstPending.path;
   return '/perfil?onboarding=creator';
 }

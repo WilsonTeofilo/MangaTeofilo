@@ -1,12 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { get, onValue, ref as dbRef, remove, set, update } from 'firebase/database';
+import { get, onValue, ref as dbRef, set, update } from 'firebase/database';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 
 import { auth, db, storage } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
-import { OBRA_PADRAO_ID, OBRA_SHITO_DEFAULT, ensureLegacyShitoObra, obraCreatorId } from '../../config/obras';
+import {
+  OBRA_PADRAO_ID,
+  OBRA_SHITO_DEFAULT,
+  ensureLegacyShitoObra,
+  normalizarObraId,
+  obterObraIdCapitulo,
+  obraCreatorId,
+} from '../../config/obras';
 import {
   DESCRIPTION_MAX,
   DESCRIPTION_MIN,
@@ -19,10 +26,12 @@ import {
   SEO_TITLE_MAX,
   TITULO_CURTO_MAX,
   buildSeoDescriptionFromDescription,
+  isValidCreatorUid,
   normalizeGenreList,
   normalizeStatusForForm,
   normalizeTagsFromInput,
   obraSlugFromTitle,
+  parseObraGenreIdsForForm,
   publicoAlvoFromMainGenre,
   tagsToSeoKeywords,
   validateObraWorkForm,
@@ -284,7 +293,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const capaEditorRef = useRef(null);
   const bannerEditorRef = useRef(null);
   const dragMediaRef = useRef(null);
-  const legacyShitoSeedRef = useRef(false);
   const saveInFlightRef = useRef(false);
   const saveToastTimerRef = useRef(null);
 
@@ -302,20 +310,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         return;
       }
       const raw = snapshot.val() || {};
-      if (!isMangaka && !raw?.[OBRA_PADRAO_ID] && !legacyShitoSeedRef.current) {
-        legacyShitoSeedRef.current = true;
-        set(dbRef(db, `obras/${OBRA_PADRAO_ID}`), {
-          ...OBRA_SHITO_DEFAULT,
-          id: OBRA_PADRAO_ID,
-          slug: OBRA_SHITO_DEFAULT.slug,
-          isPublished: true,
-          createdAt: Number(raw?.[OBRA_PADRAO_ID]?.createdAt || 0),
-          updatedAt: nowMs(),
-          creatorId: OBRA_SHITO_DEFAULT.creatorId,
-        }).catch(() => {
-          legacyShitoSeedRef.current = false;
-        });
-      }
       const lista = ensureLegacyShitoObra(
         Object.entries(raw).map(([id, data]) => ({
           id,
@@ -530,13 +524,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     }
     setEditandoId(obraId);
     setObraSelecionadaId(obraId);
-    const rawGenres = obra.genres;
-    const genresArr = Array.isArray(rawGenres)
-      ? rawGenres
-      : rawGenres && typeof rawGenres === 'object'
-        ? Object.values(rawGenres)
-        : [];
-    const genres = normalizeGenreList(genresArr);
+    const genres = parseObraGenreIdsForForm(obra);
     const rawTags = obra.tags;
     const tagsArr = Array.isArray(rawTags) ? rawTags : rawTags && typeof rawTags === 'object' ? Object.values(rawTags) : [];
     const tagsSanitized = normalizeTagsFromInput(tagsArr.join(', '));
@@ -557,7 +545,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       status: normalizeStatusForForm(obra.status),
       isPublished: obra.isPublished === true,
       archived: obraEstaArquivada(obra),
-      adminCreatorId: '',
+      adminCreatorId: !isMangaka ? obraCreatorId(obra) : '',
     });
     setCapaArquivo(null);
     setBannerArquivo(null);
@@ -610,12 +598,15 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       openSaveErrorModal(['Sem permissão para alterar esta obra.']);
       return;
     }
-    const creatorIdResolved =
-      editandoId && obrasMap.has(editandoId)
-        ? obraCreatorId(obrasMap.get(editandoId))
-        : isMangaka && user?.uid
-          ? user.uid
-          : String(form.adminCreatorId || '').trim();
+    let creatorIdResolved;
+    if (isMangaka && user?.uid) {
+      creatorIdResolved = user.uid;
+    } else if (editandoId && obrasMap.has(editandoId)) {
+      const fromForm = String(form.adminCreatorId || '').trim();
+      creatorIdResolved = isValidCreatorUid(fromForm) ? fromForm : obraCreatorId(obrasMap.get(editandoId));
+    } else {
+      creatorIdResolved = String(form.adminCreatorId || '').trim();
+    }
     const ownerUidStorage = segmentoStorageOwnerUid(creatorIdResolved);
     const obraStorageSegment = sanitizarSegmentoStorage(editandoId || slugNovo, 'obra');
     const tagsFinal = v.tags;
@@ -970,14 +961,33 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       return;
     }
     if (obra.id === OBRA_PADRAO_ID) {
-      setErro('A obra padrão (Kokuin) não pode ser apagada por segurança.');
+      if (isMangaka) {
+        setErro('A obra padrão (Kokuin) não pode ser apagada por segurança.');
+        return;
+      }
+      const typed = window.prompt(
+        'A obra Kokuin (shito) é legada. Para apagar do banco, digite exatamente: KOKUIN'
+      );
+      if (typed !== 'KOKUIN') {
+        if (typed !== null && typed !== '') setErro('Confirmação incorreta. Nada foi apagado.');
+        return;
+      }
+    } else if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) {
       return;
     }
-    if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) return;
     try {
-      await remove(dbRef(db, `obras/${obra.id}`));
+      const obraKey = normalizarObraId(obra.id);
+      const capsSnap = await get(dbRef(db, 'capitulos'));
+      const capsVal = capsSnap.val() && typeof capsSnap.val() === 'object' ? capsSnap.val() : {};
+      const patch = { [`obras/${obraKey}`]: null };
+      for (const [capId, cap] of Object.entries(capsVal)) {
+        if (obterObraIdCapitulo({ ...cap, id: capId }) === obraKey) {
+          patch[`capitulos/${capId}`] = null;
+        }
+      }
+      await update(dbRef(db), patch);
       if (editandoId === obra.id) iniciarNovo();
-      setOk('Obra apagada.');
+      setOk('Obra e capítulos vinculados removidos do site.');
     } catch (e) {
       setErro(`Falha ao apagar obra: ${mensagemErroFirebase(e)}`);
     }
@@ -1068,9 +1078,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                 ))}
               </ul>
             ) : null}
-            {!isMangaka && !editandoId ? (
+            {!isMangaka ? (
               <label className="obra-field-full">
-                Autor da obra (UID Firebase) *
+                Autor da obra (UID Firebase){!editandoId ? ' *' : ''}
                 <input
                   type="text"
                   list="obra-creator-uid-options"
@@ -1085,7 +1095,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                   ))}
                 </datalist>
                 <small className="field-help">
-                  Obrigatório: deve ser o UID real do criador no Firebase Auth (sugestões vêm de obras já cadastradas).
+                  {!editandoId
+                    ? 'Obrigatório: deve ser o UID real do criador no Firebase Auth (sugestões vêm de obras já cadastradas).'
+                    : 'Você pode reatribuir a obra a outro criador alterando o UID. Valor atual = dono gravado no banco (ou UID legado da plataforma).'}
                 </small>
               </label>
             ) : null}
@@ -1435,7 +1447,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               {saving ? 'Salvando...' : editandoId ? 'Salvar alterações' : 'Criar obra'}
             </button>
             <button type="button" className="btn-sec" onClick={iniciarNovo}>Limpar</button>
-            {editandoId && editandoId !== OBRA_PADRAO_ID ? (
+            {editandoId && (isMangaka ? editandoId !== OBRA_PADRAO_ID : true) ? (
               <button
                 type="button"
                 className="btn-inline danger"

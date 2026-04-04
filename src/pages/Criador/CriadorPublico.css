@@ -7,6 +7,12 @@
   color: #f3f0e8;
 }
 
+.criador-page--reader {
+  background:
+    radial-gradient(circle at top left, rgba(79, 193, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, #09111a 0%, #102030 100%);
+}
+
 .criador-hero {
   max-width: 1120px;
   margin: 0 auto 28px;
@@ -22,6 +28,10 @@
   overflow: hidden;
   background: rgba(6, 8, 14, 0.45);
   backdrop-filter: blur(12px);
+}
+
+.criador-hero--reader {
+  background: rgba(7, 15, 23, 0.52);
 }
 
 .criador-hero__backdrop {
@@ -79,6 +89,11 @@
   font-size: 0.85rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.criador-hero__pill--reader {
+  background: rgba(79, 193, 255, 0.16);
+  color: #8ad7ff;
 }
 
 .criador-hero__content h1 {
@@ -201,6 +216,15 @@
   background: transparent;
   color: #f3f0e8;
   border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.criador-hero__actions .is-reader-accent {
+  border-color: rgba(79, 193, 255, 0.4);
+  color: #8ad7ff;
+}
+
+.criador-stats-grid--reader {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .criador-section {
@@ -379,6 +403,88 @@
   text-align: center;
 }
 
+.criador-profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 1120px;
+  margin: 0 auto 24px;
+  padding: 0 20px;
+}
+
+.criador-profile-tabs button {
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 10, 16, 0.55);
+  color: #e8e4dc;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.criador-profile-tabs button:hover {
+  border-color: rgba(255, 204, 0, 0.35);
+}
+
+.criador-profile-tabs button.is-active {
+  border-color: rgba(255, 204, 0, 0.65);
+  background: rgba(255, 204, 0, 0.12);
+  color: #fff;
+}
+
+.criador-profile-tabs--reader button:hover {
+  border-color: rgba(79, 193, 255, 0.35);
+}
+
+.criador-profile-tabs--reader button.is-active {
+  border-color: rgba(79, 193, 255, 0.62);
+  background: rgba(79, 193, 255, 0.12);
+}
+
+.criador-favorites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.criador-favorite-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.criador-favorite-card__thumb {
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.criador-favorite-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.criador-favorite-card__title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #f3f0e8;
+}
+
 @media (max-width: 760px) {
   .criador-hero__foreground {
     grid-template-columns: 1fr;
@@ -396,5 +502,9 @@
 
   .criador-stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .criador-stats-grid--reader {
+    grid-template-columns: 1fr;
   }
 }

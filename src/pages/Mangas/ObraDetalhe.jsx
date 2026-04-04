@@ -25,6 +25,7 @@ import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada, obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './ObraDetalhe.css';
@@ -196,20 +197,10 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       setIsFavorito(false);
       return () => {};
     }
-    const base = `usuarios/${user.uid}`;
-    let leg = false;
-    let mod = false;
-    const sync = () => setIsFavorito(leg || mod);
-    const u1 = onValue(ref(db, `${base}/favoritosObras/${obraId}`), (s) => {
-      leg = s.exists();
-      sync();
-    });
-    const u2 = onValue(ref(db, `${base}/favorites/${obraId}`), (s) => {
-      mod = s.exists();
-      sync();
+    const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites/${obraId}`), (s) => {
+      setIsFavorito(s.exists());
     });
     return () => {
-      u1();
       u2();
     };
   }, [user?.uid, obraId]);
@@ -294,11 +285,16 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       return;
     }
     if (!obraId) return;
+    const capa =
+      String(obraParaExibir?.capaUrl || obra?.capaUrl || obraParaExibir?.coverUrl || obra?.coverUrl || '').trim();
+    const slug = String(obraParaExibir?.slug || obra?.slug || obraId || '').trim();
     const payload = {
       obraId,
       workId: obraId,
       creatorId: obraCreatorId(obraParaExibir || obra),
       titulo: obraParaExibir?.titulo || obra?.titulo || obraId,
+      slug,
+      coverUrl: capa,
       savedAt: Date.now(),
     };
     if (isFavorito) {
@@ -386,6 +382,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
   const creatorUidObra = obraCreatorId(obraParaExibir);
   const creatorHandle = String(creatorProfile?.userHandle || '').trim().toLowerCase();
+  const creatorPorLabel = formatUserDisplayWithHandle(creatorProfile);
   const obraViews = Number(obraParaExibir.viewsCount || obraParaExibir.visualizacoes || 0);
   const obraLikes = Number(obraParaExibir.likesCount || obraParaExibir.curtidas || 0);
 
@@ -446,17 +443,17 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
               <Link className="obra-creator-chip" to={`/@${creatorHandle}`}>
                 <img
                   src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
-                  alt={creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}
+                  alt={creatorPorLabel}
                 />
-                <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
+                <span>por {creatorPorLabel}</span>
               </Link>
             ) : (
               <button type="button" className="obra-creator-chip" onClick={abrirCriador}>
                 <img
                   src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
-                  alt={creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}
+                  alt={creatorPorLabel}
                 />
-                <span>por {creatorProfile?.creatorDisplayName || creatorProfile?.userName || 'Criador'}</span>
+                <span>por {creatorPorLabel}</span>
               </button>
             )}
             <p className="obra-sinopse-label">Sinopse</p>
@@ -483,7 +480,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
             {user?.uid ? (
               <div className="obra-notify-box">
                 <strong>Acompanhar esta obra</strong>
-                <p>Quando voce acompanha uma obra, os novos capitulos passam a cair automaticamente no sino.</p>
+                <p>Quando você acompanha uma obra, capítulos novos passam a aparecer no seu sino de notificações.</p>
                 <div className="obra-notify-box__options">
                   <button type="button" className="btn-obra-fav-page" onClick={salvarAvisosObra} disabled={workNotificationBusy}>
                     {workNotificationBusy ? 'Salvando...' : isSubscribedWork ? 'Parar de acompanhar' : 'Acompanhar obra'}

@@ -13,14 +13,15 @@ import {
 } from '../../config/obras';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { toRecordList } from '../../utils/firebaseRecordList';
-import { mergeWorkFavoriteMaps, removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
+import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
-import { resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
+import { resolveCreatorFeedLabel, resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
 import {
   filterAndRankMangaCatalogCards,
   searchQueryIsActive,
   suggestMangaCatalogCards,
 } from '../../utils/mangaCatalogSearch';
+import { OBRAS_WORK_GENRE_IDS, OBRAS_WORK_GENRE_LABELS } from '../../config/obraWorkForm';
 import MangaCatalogSearchBar from '../../components/MangaCatalogSearchBar';
 import './ListaMangas.css';
 
@@ -68,6 +69,30 @@ function formatarAtualizacaoRelativa(ts) {
   return `Atualizado há ${dias} dias`;
 }
 
+/** Evita tela preta se algo falhar no pipeline de busca (dados inesperados, regressão futura). */
+function safeFilterCatalogCards(cards, query, creatorsMap, capitulos) {
+  try {
+    return filterAndRankMangaCatalogCards(cards, query, (obra) =>
+      resolveCreatorNameFromObra(obra, creatorsMap, capitulos)
+    );
+  } catch (err) {
+    console.error('[ListaMangas] Erro ao filtrar catálogo:', err);
+    return Array.isArray(cards) ? cards : [];
+  }
+}
+
+function safeSuggestCatalogCards(cards, query, creatorsMap, capitulos, limit) {
+  try {
+    return suggestMangaCatalogCards(cards, query, (obra) =>
+      resolveCreatorNameFromObra(obra, creatorsMap, capitulos),
+      limit
+    );
+  } catch (err) {
+    console.error('[ListaMangas] Erro nas sugestões de busca:', err);
+    return [];
+  }
+}
+
 export default function ListaMangas({ user }) {
   const navigate = useNavigate();
   const [catalogSnapshotNow] = useState(() => Date.now());
@@ -76,9 +101,10 @@ export default function ListaMangas({ user }) {
   const [obras, setObras] = useState([]);
   const [capitulos, setCapitulos] = useState([]);
   const [creatorsMap, setCreatorsMap] = useState({});
-  const [favoritosLegacy, setFavoritosLegacy] = useState({});
   const [favoritosCanon, setFavoritosCanon] = useState({});
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [genreFilterOpen, setGenreFilterOpen] = useState(false);
+  const [selectedGenres, setSelectedGenres] = useState([]);
   const debouncedCatalogSearch = useDebouncedValue(catalogSearch, 280);
 
   useEffect(() => {
@@ -123,27 +149,17 @@ export default function ListaMangas({ user }) {
 
   useEffect(() => {
     if (!user?.uid) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFavoritosLegacy({});
       setFavoritosCanon({});
-      return () => {};
+      return undefined;
     }
-    const u1 = onValue(ref(db, `usuarios/${user.uid}/favoritosObras`), (snapshot) => {
-      setFavoritosLegacy(snapshot.exists() ? snapshot.val() || {} : {});
-    });
     const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
       setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
     });
     return () => {
-      u1();
       u2();
     };
   }, [user?.uid]);
-
-  const favoritosMap = useMemo(
-    () => mergeWorkFavoriteMaps(favoritosLegacy, favoritosCanon),
-    [favoritosLegacy, favoritosCanon]
-  );
+  const favoritosMap = favoritosCanon;
 
   const obrasCards = useMemo(() => {
     const NEW_BADGE_MS = 8 * 24 * 60 * 60 * 1000;
@@ -188,22 +204,20 @@ export default function ListaMangas({ user }) {
     });
   }, [obras, capitulos, favoritosMap, catalogSnapshotNow]);
 
-  const gridObrasCards = useMemo(
-    () =>
-      filterAndRankMangaCatalogCards(obrasCards, debouncedCatalogSearch, (obra) =>
-        resolveCreatorNameFromObra(obra, creatorsMap, capitulos)
-      ),
-    [obrasCards, debouncedCatalogSearch, creatorsMap, capitulos]
-  );
+  const gridObrasCards = useMemo(() => {
+    const filtered = safeFilterCatalogCards(obrasCards, debouncedCatalogSearch, creatorsMap, capitulos);
+    if (!selectedGenres.length) return filtered;
+    return filtered.filter((obra) => {
+      const genres = Array.isArray(obra?.genres)
+        ? obra.genres.map((g) => String(g || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+      return selectedGenres.every((genreId) => genres.includes(genreId));
+    });
+  }, [obrasCards, debouncedCatalogSearch, creatorsMap, capitulos, selectedGenres]);
 
   const catalogSearchSuggestions = useMemo(() => {
     if (!searchQueryIsActive(catalogSearch)) return [];
-    return suggestMangaCatalogCards(
-      obrasCards,
-      catalogSearch,
-      (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos),
-      10
-    );
+    return safeSuggestCatalogCards(obrasCards, catalogSearch, creatorsMap, capitulos, 10);
   }, [obrasCards, catalogSearch, creatorsMap, capitulos]);
 
   const discovery = useMemo(
@@ -212,7 +226,16 @@ export default function ListaMangas({ user }) {
   );
   const heroWork = discovery.trendingWorks[0] || obrasCards[0] || null;
 
-  const creatorName = (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos);
+  const creatorName = (obra) => resolveCreatorFeedLabel(obra, creatorsMap, capitulos);
+  const activeGenreLabels = selectedGenres.map((genreId) => OBRAS_WORK_GENRE_LABELS[genreId] || genreId);
+
+  const toggleGenreFilter = (genreId) => {
+    const gid = String(genreId || '').trim().toLowerCase();
+    if (!gid) return;
+    setSelectedGenres((current) =>
+      current.includes(gid) ? current.filter((item) => item !== gid) : [...current, gid]
+    );
+  };
 
   const toggleFavorito = async (obra) => {
     if (!user?.uid) {
@@ -229,6 +252,8 @@ export default function ListaMangas({ user }) {
       workId: wid,
       creatorId: obraCreatorId(obra),
       titulo: obra.titulo || wid,
+      slug: String(obra.slug || wid || '').trim(),
+      coverUrl: String(obra.capaUrl || obra.coverUrl || '').trim(),
       savedAt: Date.now(),
     });
   };
@@ -248,19 +273,40 @@ export default function ListaMangas({ user }) {
             </p>
           </div>
           {obrasCards.length > 0 ? (
-            <MangaCatalogSearchBar
-              value={catalogSearch}
-              onChange={setCatalogSearch}
-              suggestions={catalogSearchSuggestions}
-              onSelectWork={(obra) => {
-                navigate(pathObraPublica(obra));
-                setCatalogSearch('');
-              }}
-              resultCount={gridObrasCards.length}
-              totalCount={obrasCards.length}
-            />
+            <div className="lista-mangas-toolbar-controls">
+              <MangaCatalogSearchBar
+                value={catalogSearch}
+                onChange={setCatalogSearch}
+                suggestions={catalogSearchSuggestions}
+                onSelectWork={(obra) => {
+                  navigate(pathObraPublica(obra));
+                  setCatalogSearch('');
+                }}
+                resultCount={gridObrasCards.length}
+                totalCount={obrasCards.length}
+              />
+              <button
+                type="button"
+                className={`lista-mangas-filter-btn${selectedGenres.length ? ' is-active' : ''}`}
+                onClick={() => setGenreFilterOpen(true)}
+              >
+                Filter
+                {selectedGenres.length ? <span>{selectedGenres.length}</span> : null}
+              </button>
+            </div>
           ) : null}
         </header>
+
+        {activeGenreLabels.length ? (
+          <div className="lista-mangas-active-filters" aria-label="Filtros de gênero ativos">
+            {activeGenreLabels.map((label) => (
+              <span key={label} className="lista-mangas-active-chip">{label}</span>
+            ))}
+            <button type="button" className="lista-mangas-active-clear" onClick={() => setSelectedGenres([])}>
+              Limpar filtros
+            </button>
+          </div>
+        ) : null}
 
         {heroWork ? (
           <section
@@ -357,12 +403,11 @@ export default function ListaMangas({ user }) {
                   <span className="lista-discovery-rank">#{index + 1}</span>
                   <img
                     src={creator.avatarUrl || '/assets/fotos/shito.jpg'}
-                    alt={creator.displayName}
+                    alt={creator.publicLabel}
                     className="lista-discovery-cover"
                   />
                   <div className="lista-discovery-body">
-                    <strong>{creator.displayName}</strong>
-                    <span>@{creator.username || creator.creatorId}</span>
+                    <strong>{creator.publicLabel}</strong>
                     <span>{creator.followersCount} seguidores · {creator.worksCount} obra(s)</span>
                   </div>
                 </article>
@@ -454,8 +499,69 @@ export default function ListaMangas({ user }) {
               </article>
             ))}
           </section>
-        )}
+        )} 
       </div>
+      {genreFilterOpen ? (
+        <div
+          className="lista-mangas-filter-modal-backdrop"
+          role="presentation"
+          onClick={() => setGenreFilterOpen(false)}
+        >
+          <section
+            className="lista-mangas-filter-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="lista-mangas-filter-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="lista-mangas-filter-modal__head">
+              <div>
+                <span className="lista-mangas-filter-modal__eyebrow">Filter</span>
+                <h2 id="lista-mangas-filter-title">Filtrar por gênero</h2>
+              </div>
+              <button
+                type="button"
+                className="lista-mangas-filter-close"
+                onClick={() => setGenreFilterOpen(false)}
+                aria-label="Fechar filtro"
+              >
+                ×
+              </button>
+            </div>
+            <div className="lista-mangas-filter-grid">
+              {OBRAS_WORK_GENRE_IDS.map((genreId) => {
+                const isActive = selectedGenres.includes(genreId);
+                return (
+                  <button
+                    key={genreId}
+                    type="button"
+                    className={`lista-mangas-filter-chip${isActive ? ' is-active' : ''}`}
+                    onClick={() => toggleGenreFilter(genreId)}
+                  >
+                    {OBRAS_WORK_GENRE_LABELS[genreId] || genreId}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="lista-mangas-filter-actions">
+              <button
+                type="button"
+                className="lista-mangas-filter-secondary"
+                onClick={() => setSelectedGenres([])}
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                className="lista-mangas-filter-primary"
+                onClick={() => setGenreFilterOpen(false)}
+              >
+                Aplicar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

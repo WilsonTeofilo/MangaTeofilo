@@ -2,7 +2,8 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getDatabase } from 'firebase-admin/database';
-import { getAdminAuthContext, requireSuperAdmin } from './adminRbac.js';
+import { getAdminAuthContext, requireSuperAdmin, ADMIN_REGISTRY_PATH, SUPER_ADMIN_UIDS } from './adminRbac.js';
+import { pushUserNotification as pushStaffInAppNotification } from './notificationPush.js';
 import {
   BOOK_FORMAT,
   PERSONAL_QUANTITIES,
@@ -14,15 +15,27 @@ import {
   productionDays,
   POD_PENDING_PAYMENT_TTL_MS,
   computeFixedZoneShippingParts,
-  PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL,
-  FREE_SHIPPING_MAX_SHIPPING_BRL,
+  REGIONAL_FREIGHT_DISCOUNT_CAP_BRL,
+  REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY,
+  REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL,
+  REGIONAL_FREIGHT_DISCOUNT_RATE,
+  STORE_PROMO_THRESHOLDS,
 } from './printOnDemandPricing.js';
 
-/** Alinhado a `src/utils/creatorProgression.js` (Nível 1 / vitrine POD). */
-const STORE_PROMO_THRESHOLDS = { followers: 300, views: 5000, likes: 100 };
-
-/** Nível 2 — venda POD com repasse (espelho do cliente). */
+/**
+ * Nível 2 — venda POD com repasse (alinhado a `CREATOR_LEVEL_THRESHOLDS[2]` no app).
+ * ORIGINAL: { followers: 1000, views: 20000, likes: 500 } — reverter com o restante do teste.
+ */
 const CREATOR_LEVEL_2_THRESHOLDS = { followers: 1000, views: 20000, likes: 500 };
+function normalizePodStatus(value, fallback = 'pending') {
+  const raw = String(value || fallback).trim().toLowerCase().replace(/\s+/g, '_');
+  if (!raw) return fallback;
+  if (raw === 'pending_payment') return 'pending';
+  if (raw === 'processing') return 'in_production';
+  if (raw === 'ready_to_ship') return 'in_production';
+  if (raw === 'canceled') return 'cancelled';
+  return raw;
+}
 
 function creatorMeetsPlatformSaleLevel(userRow) {
   const row = userRow && typeof userRow === 'object' ? userRow : {};
@@ -105,7 +118,7 @@ async function verifyStorePromoEligibility(db, uid, workId) {
 }
 
 /**
- * Pipeline de POD: estados pending_payment → paid → … cobrem pagamento e produção.
+ * Pipeline de POD: estados pending → paid → … cobrem pagamento e produção.
  * Criar vitrine em loja/produtos (listed) a partir do pedido ainda é fluxo manual/admin — não automatizado aqui.
  */
 
@@ -187,10 +200,9 @@ function emptyChecklist() {
 }
 
 const STATUS_FLOW = new Set([
-  'pending_payment',
+  'pending',
   'paid',
   'in_production',
-  'ready_to_ship',
   'shipped',
   'delivered',
   'cancelled',
@@ -198,10 +210,9 @@ const STATUS_FLOW = new Set([
 
 /** Transições manuais (admin). «paid» só entra via webhook do Mercado Pago. */
 const ADMIN_NON_CANCEL_NEXT = {
-  pending_payment: new Set(['pending_payment']),
+  pending: new Set(['pending']),
   paid: new Set(['paid', 'in_production']),
-  in_production: new Set(['in_production', 'ready_to_ship', 'shipped']),
-  ready_to_ship: new Set(['ready_to_ship', 'shipped']),
+  in_production: new Set(['in_production', 'shipped']),
   shipped: new Set(['shipped', 'delivered']),
   delivered: new Set(['delivered']),
   cancelled: new Set(['cancelled']),
@@ -214,6 +225,72 @@ async function pushPodOrderEvent(db, orderId, evt) {
     at: Date.now(),
     ...evt,
   });
+}
+
+/** UIDs da equipe (super admins + registry exceto mangaka) — alinhado a `notifyCreatorRequestAdmins` em index.js */
+async function collectStaffAdminUids(db) {
+  const adminIds = new Set();
+  const superList =
+    SUPER_ADMIN_UIDS instanceof Set
+      ? [...SUPER_ADMIN_UIDS]
+      : Array.isArray(SUPER_ADMIN_UIDS)
+        ? [...SUPER_ADMIN_UIDS]
+        : SUPER_ADMIN_UIDS && typeof SUPER_ADMIN_UIDS[Symbol.iterator] === 'function'
+          ? [...SUPER_ADMIN_UIDS]
+          : [];
+  for (const id of superList) {
+    if (id) adminIds.add(String(id).trim());
+  }
+  const registrySnap = await db.ref(ADMIN_REGISTRY_PATH).get();
+  if (registrySnap.exists()) {
+    for (const [uid, row] of Object.entries(registrySnap.val() || {})) {
+      const role = String(row?.role || '').trim().toLowerCase();
+      if (role && role !== 'mangaka') adminIds.add(String(uid || '').trim());
+    }
+  }
+  return [...adminIds].filter(Boolean);
+}
+
+/**
+ * Espelha o aviso ao comprador quando o admin cancela: a equipe recebe o motivo quando o comprador cancela.
+ */
+async function notifyAdminsPodBuyerCancelled(db, { orderId, buyerUid, reason }) {
+  const oid = String(orderId || '').trim();
+  const uid = String(buyerUid || '').trim();
+  const r = String(reason || '').trim();
+  if (!oid || !uid || !r) return;
+  const shortId = oid.slice(-8).toUpperCase();
+  const excerpt = r.length > 280 ? `${r.slice(0, 277)}...` : r;
+  let buyerLabel = uid.slice(0, 8);
+  try {
+    const uSnap = await db.ref(`usuarios/${uid}`).get();
+    if (uSnap.exists()) {
+      const ur = uSnap.val() || {};
+      const name = String(ur.creatorDisplayName || ur.userName || '').trim();
+      if (name) buyerLabel = name;
+    }
+  } catch {
+    /* ignore */
+  }
+  const adminIds = await collectStaffAdminUids(db);
+  const targetPath = '/admin/pedidos?tab=producao';
+  await Promise.all(
+    adminIds
+      .filter((id) => id && id !== uid)
+      .map((adminUid) =>
+        pushStaffInAppNotification(db, adminUid, {
+          type: 'system',
+          title: 'POD: comprador cancelou pedido',
+          message: `${buyerLabel} cancelou o pedido #${shortId} (antes do pagamento). Motivo: ${excerpt}`,
+          targetPath,
+          priority: 2,
+          dedupeKey: `pod:admin:buyer_cancel:${oid}`,
+          dedupeWindowMs: 0,
+          allowGrouping: false,
+          data: { orderId: oid, buyerUid: uid, kind: 'pod_buyer_cancel', readPath: `/pedidos/fisico/${oid}` },
+        })
+      )
+  );
 }
 
 export async function notifyPrintOnDemandPaid(db, creatorUid, orderId) {
@@ -252,7 +329,7 @@ async function pushUserNotification(db, uid, payload) {
 }
 
 /**
- * Cria pedido POD (pending_payment). Sem notificação — o cliente deve redirecionar ao MP.
+ * Cria pedido POD (pending). Sem notificação — o cliente deve redirecionar ao MP.
  * @returns {{ orderId: string, order: object }}
  */
 export async function persistPrintOnDemandOrder(db, uid, body) {
@@ -427,8 +504,8 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
       const goods = Number(calc.goodsTotalBRL || 0);
       const parts = computeFixedZoneShippingParts({ state, quantity, cartTotal: goods });
       shippingBRL = parts.priceBrl;
-      shippingExtra = parts.freeApplied
-        ? ` Frete grátis: subtotal a partir de R$ ${PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL} e frete calculado até R$ ${FREE_SHIPPING_MAX_SHIPPING_BRL}.`
+      shippingExtra = parts.regionalFreightDiscountApplied
+        ? ` Desconto no frete (Sudeste/Sul/Centro-Oeste): pedido a partir de R$ ${REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL} ou ${REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY}+ un.; ate ${Math.round(REGIONAL_FREIGHT_DISCOUNT_RATE * 100)}% do frete (teto R$ ${REGIONAL_FREIGHT_DISCOUNT_CAP_BRL}). Frete final R$ ${shippingBRL.toFixed(2)}.`
         : ` Frete (${state}) via Correios: R$ ${shippingBRL.toFixed(2)}.`;
     }
     const amountDue = Math.round((Number(calc.goodsTotalBRL || 0) + shippingBRL) * 100) / 100;
@@ -439,8 +516,10 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
       ...calc,
       shippingBRL,
       shippingCarrierDefault: 'Correios',
-      personalSubtotalMinFreeShippingBRL: PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL,
-      personalMaxFreteForFreeRuleBRL: FREE_SHIPPING_MAX_SHIPPING_BRL,
+      personalFreightDiscountMinSubtotalBRL: REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL,
+      personalFreightDiscountMinQuantity: REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY,
+      personalFreightDiscountCapBRL: REGIONAL_FREIGHT_DISCOUNT_CAP_BRL,
+      personalFreightDiscountRate: REGIONAL_FREIGHT_DISCOUNT_RATE,
       amountDueBRL: amountDue,
       shippingNote: `${calc.freeShipping ? calc.shippingNote : calc.shippingNote}${shippingExtra} Peso estimado do lote: ~${calc.weightGramsTotal || 0} g.`,
       estimatedProductionDaysLow: pr.low,
@@ -458,7 +537,7 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
     id: orderId,
     creatorUid: uid,
     linkedWorkId: saleModel === SALE_MODEL.STORE_PROMO ? linkedWorkId : null,
-    status: 'pending_payment',
+    status: 'pending',
     pdfUrl,
     coverUrl,
     shippingAddress: needAddress
@@ -597,10 +676,9 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
   }
   const prev = snap.val() || {};
   const patch = { updatedAt: Date.now() };
-  const prevStatus = String(prev.status || '').trim().toLowerCase();
+  const prevStatus = normalizePodStatus(String(prev.status || '').trim().toLowerCase(), '');
 
-  let statusRaw = body.status != null ? String(body.status).trim().toLowerCase().replace(/\s+/g, '_') : '';
-  if (statusRaw === 'canceled') statusRaw = 'cancelled';
+  let statusRaw = body.status != null ? normalizePodStatus(body.status, '') : '';
   if (statusRaw) {
     if (!STATUS_FLOW.has(statusRaw)) {
       throw new HttpsError(
@@ -680,9 +758,6 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
     if (patch.status === 'in_production' && !prev.productionStartedAt) {
       patch.productionStartedAt = ts;
     }
-    if (patch.status === 'ready_to_ship') {
-      patch.readyToShipAt = prev.readyToShipAt || ts;
-    }
     if (patch.status === 'shipped') {
       patch.shippedAt = prev.shippedAt || ts;
       if (!patch.shippingCarrier && !prev.shippingCarrier) {
@@ -717,10 +792,9 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
     const titles = {
       paid: 'Pagamento confirmado',
       in_production: 'Pedido em producao',
-      ready_to_ship: 'Pronto para envio',
       shipped: 'Pedido enviado',
       delivered: 'Pedido entregue',
-      pending_payment: 'Aguardando pagamento',
+      pending: 'Aguardando pagamento',
       cancelled: 'Pedido cancelado',
     };
     const shortId = orderId.slice(-8).toUpperCase();
@@ -778,7 +852,7 @@ export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, asyn
   if (st === 'cancelled') {
     return { ok: true, alreadyCancelled: true };
   }
-  if (st !== 'pending_payment') {
+  if (normalizePodStatus(st, '') !== 'pending') {
     throw new HttpsError(
       'failed-precondition',
       'So e possivel cancelar pelo site enquanto o pagamento estiver pendente. Se ja pagou ou a producao comecou, fale com o suporte.'
@@ -800,6 +874,12 @@ export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, asyn
     actor: 'buyer',
     buyerUid: uid,
   });
+
+  try {
+    await notifyAdminsPodBuyerCancelled(db, { orderId, buyerUid: uid, reason });
+  } catch (err) {
+    logger.warn('notifyAdminsPodBuyerCancelled falhou', { orderId, err: err?.message || String(err) });
+  }
 
   await pushUserNotification(db, uid, {
     type: 'print_on_demand',
@@ -844,7 +924,7 @@ export const adminPatchPrintOnDemandOrderSuper = onCall({ region: 'us-central1' 
   return { ok: true };
 });
 
-/** Cancela reservas pending_payment após 3h sem pagamento (alinhado a `POD_PENDING_PAYMENT_TTL_MS`). */
+/** Cancela reservas pending após 3h sem pagamento (alinhado a `POD_PENDING_PAYMENT_TTL_MS`). */
 export const expirePrintOnDemandPendingPayments = onSchedule(
   {
     schedule: 'every 5 minutes',
@@ -861,7 +941,7 @@ export const expirePrintOnDemandPendingPayments = onSchedule(
     let cancelled = 0;
     for (const [id, row] of Object.entries(all)) {
       const r = row && typeof row === 'object' ? row : {};
-      if (String(r.status || '').toLowerCase() !== 'pending_payment') continue;
+      if (normalizePodStatus(String(r.status || '').toLowerCase(), '') !== 'pending') continue;
       const exp = Number(r.expiresAt || 0);
       if (!exp || now < exp) continue;
       const oref = db.ref(`loja/printOnDemandOrders/${id}`);

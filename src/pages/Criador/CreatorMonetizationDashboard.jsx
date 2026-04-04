@@ -172,7 +172,7 @@ export default function CreatorMonetizationDashboard({ user }) {
           ) : null}
         </div>
         <div className="creator-frame-actions">
-          <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/perfil')}>
+          <button type="button" className="creator-frame-btn" onClick={() => navigate('/perfil')}>
             Ajustar perfil
           </button>
         </div>

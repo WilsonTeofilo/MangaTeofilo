@@ -76,9 +76,204 @@
   min-width: 0;
 }
 
+.lista-mangas-toolbar-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex: 1 1 360px;
+  min-width: min(100%, 320px);
+}
+
 .lista-mangas-header--toolbar .manga-catalog-search {
   flex: 1 1 280px;
   max-width: min(440px, 100%);
+}
+
+.lista-mangas-filter-btn,
+.lista-mangas-filter-secondary,
+.lista-mangas-filter-primary,
+.lista-mangas-filter-close,
+.lista-mangas-filter-chip,
+.lista-mangas-active-clear {
+  font: inherit;
+}
+
+.lista-mangas-filter-btn {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(16, 16, 16, 0.96);
+  color: #f2f2f2;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.lista-mangas-filter-btn span {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 204, 0, 0.14);
+  border: 1px solid rgba(255, 204, 0, 0.38);
+  color: #ffe8a3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.lista-mangas-filter-btn:hover,
+.lista-mangas-filter-btn.is-active {
+  border-color: rgba(255, 204, 0, 0.4);
+  background: rgba(255, 204, 0, 0.08);
+}
+
+.lista-mangas-active-filters {
+  margin: -2px 0 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.lista-mangas-active-chip {
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 204, 0, 0.26);
+  background: rgba(255, 204, 0, 0.1);
+  color: #ffe7a0;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.lista-mangas-active-clear {
+  border: 0;
+  background: transparent;
+  color: #f5c84e;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lista-mangas-filter-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(5, 7, 12, 0.72);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.lista-mangas-filter-modal {
+  width: min(760px, 100%);
+  max-height: min(84vh, 820px);
+  overflow: auto;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    radial-gradient(circle at top right, rgba(255, 204, 0, 0.09), transparent 32%),
+    linear-gradient(180deg, rgba(20, 23, 31, 0.98), rgba(11, 14, 20, 0.98));
+  padding: 24px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.46);
+}
+
+.lista-mangas-filter-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.lista-mangas-filter-modal__eyebrow {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: #ffcf52;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.lista-mangas-filter-modal__head h2 {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.6vw, 1.75rem);
+}
+
+.lista-mangas-filter-close {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f4f4;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.lista-mangas-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lista-mangas-filter-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(14, 14, 14, 0.92);
+  color: #e8eef8;
+  padding: 12px 16px;
+  font-size: 0.92rem;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.16s ease, background 0.16s ease;
+}
+
+.lista-mangas-filter-chip:hover,
+.lista-mangas-filter-chip.is-active {
+  border-color: rgba(255, 204, 0, 0.5);
+  background: rgba(255, 204, 0, 0.12);
+  color: #fff0bf;
+}
+
+.lista-mangas-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.lista-mangas-filter-secondary,
+.lista-mangas-filter-primary {
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.lista-mangas-filter-secondary {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6e6e6;
+}
+
+.lista-mangas-filter-primary {
+  border: 1px solid rgba(255, 204, 0, 0.48);
+  background: rgba(255, 204, 0, 0.12);
+  color: #ffe7a0;
 }
 
 .lista-mangas-empty--search {
@@ -652,8 +847,20 @@
     align-items: stretch;
   }
 
+  .lista-mangas-toolbar-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+
   .lista-mangas-header--toolbar .manga-catalog-search {
     max-width: none;
+  }
+
+  .lista-mangas-filter-btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .hero-banner {
@@ -682,5 +889,29 @@
   .lista-discovery-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .lista-mangas-filter-modal-backdrop {
+    padding: 14px;
+  }
+
+  .lista-mangas-filter-modal {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .lista-mangas-filter-actions {
+    flex-direction: column-reverse;
+  }
+
+  .lista-mangas-filter-secondary,
+  .lista-mangas-filter-primary {
+    width: 100%;
+  }
+}
+
+@media (min-width: 1920px) {
+  .lista-mangas-inner {
+    max-width: min(1680px, 100%);
   }
 }

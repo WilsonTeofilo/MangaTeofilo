@@ -132,7 +132,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
               + Novo capítulo
             </button>
             <p className="capitulos-admin-hub__hint-create">
-              {isMangaka ? 'Ainda nao criou a obra base?' : 'Não encontrou a obra?'}
+              {isMangaka ? 'Ainda não criou a obra base?' : 'Não encontrou a obra?'}
               <button type="button" className="capitulos-admin-hub__create-work" onClick={() => navigate(obrasPath)}>
                 {isMangaka ? 'Criar minha obra' : 'Criar nova obra'}
               </button>

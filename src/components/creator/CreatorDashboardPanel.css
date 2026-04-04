@@ -195,6 +195,71 @@
   font-size: 0.9rem;
 }
 
+.creator-dash__mono-lead--tight {
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+}
+
+.creator-dash__next-level-bar-block {
+  margin: 0 0 18px;
+}
+
+.creator-dash__metric-bar--hero {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.95);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.creator-dash__next-level-bar-caption {
+  margin: 10px 0 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #fef9c3;
+}
+
+.creator-dash__mono-longterm {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.creator-dash__subhead {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(253, 224, 71, 0.85);
+}
+
+.creator-dash__mono-longterm-metrics {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  list-style: none;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 0.86rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(226, 232, 240, 0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.creator-dash__unlock-sub--inline {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+}
+
+.creator-dash__unlock-list--compact {
+  margin-top: 0;
+}
+
 .creator-dash__metric-line {
   margin: 0 0 10px;
   display: flex;
@@ -903,4 +968,113 @@
   padding-left: 1rem;
   font-size: 0.84rem;
   color: #e2e8f0;
+}
+
+/* —— Missões & XP (tema ciano, separado da monetização) —— */
+.creator-dash--missions {
+  --cd-accent: #22d3ee;
+}
+
+.creator-dash__intro--missions .creator-dash__intro-title {
+  color: rgba(34, 211, 238, 0.92);
+}
+
+.creator-dash__surface--missions {
+  border-color: rgba(34, 211, 238, 0.18);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(34, 211, 238, 0.06) inset;
+}
+
+.creator-dash__panel--missions-hero {
+  border-color: rgba(34, 211, 238, 0.35);
+  background: linear-gradient(155deg, rgba(6, 78, 95, 0.35), rgba(0, 0, 0, 0.52));
+}
+
+.creator-missions__kicker {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(103, 232, 249, 0.88);
+}
+
+.creator-dash__panel-title--missions {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ecfeff;
+}
+
+.creator-dash__panel--missions .creator-dash__panel-eyebrow {
+  color: rgba(103, 232, 249, 0.85);
+}
+
+.creator-dash--missions .creator-dash__hero-cycle {
+  color: #cffafe;
+}
+
+.creator-dash--missions .creator-dash__cycle-progress-pct {
+  color: #22d3ee;
+}
+
+.creator-dash__cycle-bar--cyan {
+  border-color: rgba(34, 211, 238, 0.25);
+}
+
+.creator-dash__cycle-fill--cyan {
+  background: linear-gradient(90deg, #0891b2, #22d3ee, #67e8f9);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.35);
+}
+
+.creator-dash--missions .creator-dash__cycle-nudge {
+  color: #a5f3fc;
+}
+
+.creator-dash__cta--cyan {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  color: #ecfeff;
+  box-shadow: 0 12px 32px rgba(6, 182, 212, 0.22);
+}
+
+.creator-dash__cta--cyan:hover {
+  box-shadow: 0 16px 40px rgba(6, 182, 212, 0.3);
+}
+
+.creator-dash__active-pill--cyan {
+  border-color: rgba(34, 211, 238, 0.35);
+}
+
+.creator-missions__rule {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: rgba(6, 78, 95, 0.22);
+}
+
+.creator-missions__rule strong:first-child {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 1.05rem;
+  color: #ecfeff;
+  letter-spacing: -0.02em;
+}
+
+.creator-missions__rule p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.creator-dash__missions-hint--muted {
+  margin-top: 0;
+  margin-bottom: 14px;
+  font-size: 0.84rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.creator-dash__missions-foot.is-complete {
+  color: #a5f3fc;
+  font-weight: 600;
 }

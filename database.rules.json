@@ -31,6 +31,7 @@
     "capitulos": {
       ".read": true,
       ".write": false,
+      ".indexOn": ["creatorId", "obraId", "workId"],
       "$capId": {
         ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
         "obraId": {
@@ -50,11 +51,11 @@
         },
         "visualizacoes": {
           ".read": true,
-          ".write": "newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+          ".write": false
         },
         "viewsCount": {
           ".read": true,
-          ".write": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() === data.val() + 1)"
+          ".write": false
         },
         "likesCount": {
           ".read": true,
@@ -85,6 +86,7 @@
     "obras": {
       ".read": true,
       ".write": false,
+      ".indexOn": ["creatorId"],
       "$obraId": {
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
         ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
@@ -133,19 +135,19 @@
         },
         "viewsCount": {
           ".read": true,
-          ".write": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() === data.val() + 1)"
+          ".write": false
         },
         "likesCount": {
           ".read": true,
-          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && newData.val() >= 0 && ((!data.exists() && newData.val() === 1) || (data.isNumber() && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)))"
+          ".write": false
         },
         "commentsCount": {
           ".read": true,
-          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && newData.val() >= 0 && ((!data.exists() && newData.val() === 1) || (data.isNumber() && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)))"
+          ".write": false
         },
         "visualizacoes": {
           ".read": true,
-          ".write": "newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+          ".write": false
         }
       }
     },
@@ -202,6 +204,7 @@
       "produtos": {
         ".read": true,
         ".write": false,
+        ".indexOn": ["creatorId"],
         "$productId": {
           ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
           "title": {
@@ -264,7 +267,7 @@
       "pedidos": {
         ".indexOn": ["uid", "createdAt"],
         "$pedidoId": {
-          ".read": "auth != null && (data.child('uid').val() === auth.uid || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+          ".read": "auth != null && (data.child('uid').val() === auth.uid || data.child('sellers').child(auth.uid).val() === true || auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
           ".write": "auth != null && (auth.uid === 'n5JTPLsxpyQPeC5qQtraSrBa4rG3' || auth.uid === 'QayqN0MpBTQK6je44JwAXWapoQU2' || auth.uid === '20kR47W8PfTGIvGxGOGRsB2JiFA3' || auth.token.email === 'wilsonteofilosouza@live.com' || auth.token.email === 'drakenteofilo@gmail.com' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
         }
       },
@@ -281,7 +284,7 @@
 
     "usuarios": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
+        ".read": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))",
         ".write": "auth != null && auth.uid === $uid",
         "userName":          { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userHandle":        { ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')" },
@@ -393,6 +396,8 @@
         "creatorBannerUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
         "creatorOnboardingChecklistHidden": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorOnboardingStoreSkipped": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "readerProfilePublic": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "readerProfileAvatarUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
         "creatorMemberships": {
           ".read": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
           ".write": "false"
@@ -410,18 +415,8 @@
           ".write": false
         },
         "engagementCycle": {
+          ".write": false,
           ".validate": "!newData.exists() || (newData.hasChild('cycleLevel') && newData.hasChild('cycleStartedAt') && newData.child('cycleLevel').isNumber() && newData.child('cycleLevel').val() >= 1 && newData.child('cycleLevel').val() <= 5 && newData.child('cycleStartedAt').isNumber() && newData.child('cycleStartedAt').val() > 0 && (!newData.hasChild('v') || newData.child('v').isNumber()) && (!newData.hasChild('repliesInCycle') || (newData.child('repliesInCycle').isNumber() && newData.child('repliesInCycle').val() >= 0 && newData.child('repliesInCycle').val() <= 500)) && (!newData.hasChild('streakCount') || (newData.child('streakCount').isNumber() && newData.child('streakCount').val() >= 0 && newData.child('streakCount').val() <= 400)) && (!newData.hasChild('badgeTier') || (newData.child('badgeTier').isNumber() && newData.child('badgeTier').val() >= 0 && newData.child('badgeTier').val() <= 3)) && (!newData.hasChild('activeBoostMul') || newData.child('activeBoostMul').val() === null || (newData.child('activeBoostMul').isNumber() && newData.child('activeBoostMul').val() >= 1 && newData.child('activeBoostMul').val() <= 3)) && (!newData.hasChild('activeBoostUntil') || newData.child('activeBoostUntil').val() === null || newData.child('activeBoostUntil').isNumber()) && (!newData.hasChild('spotlightUntil') || newData.child('spotlightUntil').val() === null || newData.child('spotlightUntil').isNumber()))",
-          "v": { ".write": false },
-          "cycleLevel": { ".write": false },
-          "cycleStartedAt": { ".write": false },
-          "baselines": { ".write": false },
-          "completedIds": { ".write": false },
-          "activeBoostMul": { ".write": false },
-          "activeBoostUntil": { ".write": false },
-          "badgeTier": { ".write": false },
-          "spotlightUntil": { ".write": false },
-          "streakCount": { ".write": false },
-          "lastStreakKey": { ".write": false },
           "repliesInCycle": {
             ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 500)"
           }
@@ -432,7 +427,7 @@
     "usuarios_publicos": {
       "$uid": {
         ".read": true,
-        ".write": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true))",
+        ".write": "auth != null && (auth.uid === $uid || (root.child('usuarios').child(auth.uid).child('role').val() === 'admin' || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))",
         "uid":         { ".validate": "newData.val() === $uid" },
         "userName":    { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userHandle":  { ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')" },
@@ -481,6 +476,14 @@
         "engagementBadgeTier": {
           ".write": false,
           ".validate": "!newData.exists() || newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 3)"
+        },
+        "readerProfilePublic": { ".validate": "!newData.exists() || newData.isBoolean()" },
+        "readerProfileAvatarUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
+        "readerSince": { ".validate": "!newData.exists() || newData.isNumber()" },
+        "readerFavorites": {
+          "$workId": {
+            ".validate": "$workId.matches(/^[a-z0-9_-]{2,40}$/) && newData.hasChildren(['workId','title','addedAt']) && newData.child('workId').isString() && newData.child('workId').val() === $workId && newData.child('title').isString() && newData.child('title').val().length > 0 && newData.child('title').val().length <= 120 && newData.child('addedAt').isNumber() && (!newData.hasChild('coverUrl') || (newData.child('coverUrl').isString() && newData.child('coverUrl').val().length <= 2048)) && (!newData.hasChild('slug') || (newData.child('slug').isString() && newData.child('slug').val().matches(/^[a-z0-9_-]{2,40}$/)))"
+          }
         }
       }
     },
@@ -544,52 +547,53 @@
 
     "workRetention": {
       "$workId": {
-        ".read": "auth != null && (auth.token.admin === true || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        ".read": "auth != null && (auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        ".write": false,
         "chapters": {
           "$chapterId": {
             "readersCount": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+              ".write": false
             },
             "chapterId": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString()"
+              ".write": false
             },
             "chapterNumber": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+              ".write": false
             },
             "chapterTitle": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString() && newData.val().length <= 200"
+              ".write": false
             }
           }
         },
         "updatedAt": {
           ".read": true,
-          ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+          ".write": false
         },
         "transitions": {
           "$transitionId": {
             "retainedReaders": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber() && (!data.exists() || newData.val() === data.val() + 1)"
+              ".write": false
             },
             "fromChapterId": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString()"
+              ".write": false
             },
             "toChapterId": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isString()"
+              ".write": false
             },
             "fromChapterNumber": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+              ".write": false
             },
             "toChapterNumber": {
               ".read": true,
-              ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && newData.isNumber()"
+              ".write": false
             }
           }
         }
@@ -598,26 +602,27 @@
 
     "workRetentionRaw": {
       "$workId": {
-        ".read": "auth != null && (auth.token.admin === true || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        ".read": "auth != null && (auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        ".write": false,
         "chapterReaders": {
           "$chapterId": {
             "$viewerUid": {
               ".read": "auth != null && auth.uid === $viewerUid",
-              ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+              ".write": false
             }
           }
         },
         "lastReadByUser": {
           "$viewerUid": {
             ".read": "auth != null && auth.uid === $viewerUid",
-            ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+            ".write": false
           }
         },
         "transitionsSeen": {
           "$transitionId": {
             "$viewerUid": {
               ".read": "auth != null && auth.uid === $viewerUid",
-              ".write": "auth != null && auth.uid === $viewerUid && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo'"
+              ".write": false
             }
           }
         }

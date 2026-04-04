@@ -9,8 +9,10 @@ import {
   SALE_MODEL,
   formatBRL,
   computePersonalOrderTotalWithShipping,
-  PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL,
-  FREE_SHIPPING_MAX_SHIPPING_BRL,
+  REGIONAL_FREIGHT_DISCOUNT_CAP_BRL,
+  REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY,
+  REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL,
+  REGIONAL_FREIGHT_DISCOUNT_RATE,
 } from '../../utils/printOnDemandPricingV2';
 import {
   describePodLeadTimePt,
@@ -489,14 +491,26 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                       <dt>Frete</dt>
                       <dd>Grátis (quantidade)</dd>
                     </div>
-                  ) : personalPricingPreview.freeShippingBySubtotal ? (
-                    <div className="pod-checkout-summary__row">
-                      <dt>Frete</dt>
-                      <dd>
-                        Grátis (subtotal {formatBRL(PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL)}+ e frete até{' '}
-                        {formatBRL(FREE_SHIPPING_MAX_SHIPPING_BRL)})
-                      </dd>
-                    </div>
+                  ) : personalPricingPreview.regionalFreightDiscountApplied ? (
+                    <>
+                      <div className="pod-checkout-summary__row">
+                        <dt>Frete ({addrState})</dt>
+                        <dd>{formatBRL(personalPricingPreview.shippingOriginalBRL ?? 0)}</dd>
+                      </div>
+                      <div className="pod-checkout-summary__row">
+                        <dt>Desconto no frete</dt>
+                        <dd>-{formatBRL(personalPricingPreview.shippingDiscountBRL ?? 0)}</dd>
+                      </div>
+                      <div className="pod-checkout-summary__row">
+                        <dt>Total frete</dt>
+                        <dd>{formatBRL(personalPricingPreview.shippingBRL ?? 0)}</dd>
+                      </div>
+                      <p className="pod-checkout-hint pod-checkout-hint--compact" style={{ marginTop: 8 }}>
+                        Sudeste, Sul e Centro-Oeste: com subtotal {formatBRL(REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL)}+ ou{' '}
+                        {REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY}+ un., até {Math.round(REGIONAL_FREIGHT_DISCOUNT_RATE * 100)}% de
+                        desconto no frete (máx. {formatBRL(REGIONAL_FREIGHT_DISCOUNT_CAP_BRL)}).
+                      </p>
+                    </>
                   ) : personalPricingPreview.shippingBRL != null ? (
                     <div className="pod-checkout-summary__row">
                       <dt>Frete ({addrState})</dt>

@@ -199,3 +199,20 @@
   color: #b8b8b8;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
+
+/* iOS/Android: 16px+ no input evita zoom automático ao focar */
+@media (max-width: 720px) {
+  .manga-catalog-search__input {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .manga-catalog-search__dropdown {
+    max-height: min(42dvh, 300px);
+  }
+
+  .manga-catalog-search__type {
+    display: none;
+  }
+}

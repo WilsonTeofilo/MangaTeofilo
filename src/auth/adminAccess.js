@@ -61,7 +61,7 @@ export async function resolveAdminAccess(user) {
 
   try {
     const { data } = await adminGetMyAdminProfile();
-    if (!data?.ok || !data.admin) {
+    if (!data?.ok) {
       return {
         ...base,
         profileLoaded: true,
@@ -78,18 +78,40 @@ export async function resolveAdminAccess(user) {
     } catch {
       /* JWT com panelRole para Storage/RTDB apos adminGetMyAdminProfile (inclui sync de claims no servidor) */
     }
-    const isMangaka = data.mangaka === true;
-    const panelRole = data.panelRole || (byAllowlist ? 'super_admin' : data.super ? 'super_admin' : 'admin');
+    if (data.mangaka === true) {
+      return {
+        byClaim: false,
+        byAllowlist,
+        canAccessAdmin: false,
+        claimChecked,
+        profileLoaded: true,
+        superAdmin: false,
+        legacyAdmin: false,
+        isChiefAdmin: false,
+        isMangaka: true,
+        panelRole: data.panelRole || 'mangaka',
+        permissions: {},
+      };
+    }
+    if (!data.admin) {
+      return {
+        ...base,
+        profileLoaded: true,
+        permissions: {},
+      };
+    }
+    const isStaffSuper = data.super === true;
+    const panelRole = data.panelRole || (byAllowlist ? 'super_admin' : isStaffSuper ? 'super_admin' : 'admin');
     return {
       byClaim: false,
       byAllowlist,
       canAccessAdmin: true,
       claimChecked,
       profileLoaded: true,
-      superAdmin: byAllowlist || data.super === true,
+      superAdmin: byAllowlist || isStaffSuper,
       legacyAdmin: false,
-      isChiefAdmin: (byAllowlist || data.super === true) && !isMangaka,
-      isMangaka,
+      isChiefAdmin: byAllowlist || isStaffSuper,
+      isMangaka: false,
       panelRole,
       permissions: data.permissions && typeof data.permissions === 'object' ? data.permissions : {},
     };

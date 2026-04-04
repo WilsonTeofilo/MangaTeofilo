@@ -3,9 +3,14 @@
  * Fonte: `usuarios/{uid}/creatorProfile/stats` (espelhada em `stats` no perfil).
  */
 
-/** Nível 1 = Em ascensão · Nível 2 = Monetizado (POD com repasse + vitrine metas) · Nível 3 = Destaque */
+import { STORE_PROMO_ELIGIBILITY_THRESHOLDS } from '../../shared/promoThresholds.js';
+
+/**
+ * Nível 1 = Em ascensão · Nível 2 = Monetizado · Nível 3 = Destaque.
+ * Só usa métricas acumuladas (seguidores, views totais, likes totais) — não exige cadência de capítulo.
+ */
 export const CREATOR_LEVEL_THRESHOLDS = {
-  1: { followers: 300, views: 5000, likes: 100 },
+  1: STORE_PROMO_ELIGIBILITY_THRESHOLDS,
   2: { followers: 1000, views: 20000, likes: 500 },
   3: { followers: 5000, views: 80000, likes: 2000 },
 };
@@ -162,6 +167,39 @@ export function getPrimaryMonetizationGapPhrase(metrics) {
   const g = gaps[0];
   const nf = new Intl.NumberFormat('pt-BR');
   return `Faltam ${nf.format(g.left)} ${g.label} para monetizar`;
+}
+
+/** % médio rumo ao próximo nível (1, 2 ou 3), 0–100 */
+export function getNextLevelProgressPercent(metrics) {
+  const prog = getProgressTowardsNextLevel(metrics);
+  if (prog.nextLevel == null) return 100;
+  const m = normalizeCreatorMetrics(metrics);
+  const t = CREATOR_LEVEL_THRESHOLDS[prog.nextLevel];
+  const pf = Math.min(1, m.followers / Math.max(1, t.followers));
+  const pv = Math.min(1, m.views / Math.max(1, t.views));
+  const pl = Math.min(1, m.likes / Math.max(1, t.likes));
+  return Math.min(100, Math.round(((pf + pv + pl) / 3) * 100));
+}
+
+/** Frase curta: o que mais falta para o próximo nível (não confundir com monetização). */
+export function getPrimaryNextLevelGapPhrase(metrics) {
+  const prog = getProgressTowardsNextLevel(metrics);
+  if (prog.nextLevel == null) {
+    return 'Você atingiu o nível máximo de metas da plataforma.';
+  }
+  const m = normalizeCreatorMetrics(metrics);
+  const t = CREATOR_LEVEL_THRESHOLDS[prog.nextLevel];
+  const rows = [
+    { key: 'followers', label: 'seguidores', left: Math.max(0, t.followers - m.followers) },
+    { key: 'views', label: 'views', left: Math.max(0, t.views - m.views) },
+    { key: 'likes', label: 'likes', left: Math.max(0, t.likes - m.likes) },
+  ];
+  const gaps = rows.filter((r) => r.left > 0);
+  if (!gaps.length) return null;
+  gaps.sort((a, b) => a.left - b.left);
+  const g = gaps[0];
+  const nf = new Intl.NumberFormat('pt-BR');
+  return `Faltam ${nf.format(g.left)} ${g.label} para o próximo nível`;
 }
 
 /**

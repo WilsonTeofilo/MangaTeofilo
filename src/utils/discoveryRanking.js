@@ -1,20 +1,36 @@
 import { obterObraIdCapitulo } from '../config/obras';
+import { OBRAS_WORK_GENRE_LABELS } from '../config/obraWorkForm';
 import { creatorDiscoveryLevelBoost } from './creatorProgression';
-import { resolvePublicCreatorName } from './publicCreatorName';
+import {
+  formatUserDisplayWithHandle,
+  normalizePublicHandle,
+  resolvePublicCreatorName,
+} from './publicCreatorName';
 import { resolveEffectiveWorkCreatorId } from './workCreatorResolution';
 
 function parseGenres(obra) {
-  if (Array.isArray(obra?.generos)) {
-    return obra.generos.map((g) => String(g || '').trim()).filter(Boolean);
+  const fromGenresField = () => {
+    const g = obra?.genres;
+    if (Array.isArray(g)) return g.map((x) => String(x || '').trim()).filter(Boolean);
+    if (g && typeof g === 'object') return Object.values(g).map((x) => String(x || '').trim()).filter(Boolean);
+    return [];
+  };
+  let out = fromGenresField();
+  if (out.length === 0) {
+    if (Array.isArray(obra?.generos)) {
+      out = obra.generos.map((x) => String(x || '').trim()).filter(Boolean);
+    } else if (typeof obra?.generos === 'string') {
+      out = obra.generos
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
+    } else if (typeof obra?.genero === 'string') {
+      out = [obra.genero.trim()].filter(Boolean);
+    }
   }
-  if (typeof obra?.generos === 'string') {
-    return obra.generos
-      .split(',')
-      .map((g) => g.trim())
-      .filter(Boolean);
-  }
-  if (typeof obra?.genero === 'string') return [obra.genero.trim()].filter(Boolean);
-  return [];
+  const main = String(obra?.mainGenre || '').trim();
+  if (out.length === 0 && main) return [main];
+  return out;
 }
 
 function capTimestamp(cap) {
@@ -263,12 +279,12 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
         obra: null,
         fallback: 'Autor',
       });
-      const username = String(
-        profile?.creatorProfile?.username || profile?.creatorUsername || profile?.username || creatorId
-      ).trim();
+      const publicLabel = formatUserDisplayWithHandle(profile);
+      const username = normalizePublicHandle(profile) || String(creatorId);
       return {
         creatorId,
         displayName,
+        publicLabel: publicLabel && publicLabel !== 'Usuário' ? publicLabel : displayName,
         username,
         avatarUrl:
           String(profile?.creatorProfile?.avatarUrl || profile?.userAvatar || '').trim() ||
@@ -300,7 +316,8 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
   const genreCounter = new Map();
   for (const obra of works) {
     for (const genre of obra.genres) {
-      const key = genre.toLowerCase();
+      const key = String(genre || '').trim().toLowerCase();
+      if (!key) continue;
       genreCounter.set(key, (genreCounter.get(key) || 0) + 1);
     }
   }
@@ -357,7 +374,7 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
       ...[...genreCounter.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8)
-        .map(([id]) => ({ id, label: id })),
+        .map(([id]) => ({ id, label: OBRAS_WORK_GENRE_LABELS[id] || id })),
     ],
   };
 }

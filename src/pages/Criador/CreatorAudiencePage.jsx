@@ -70,7 +70,7 @@ function AudienceLineChart({ rows }) {
   return (
     <div className="creator-audience-chart-shell">
       {!rows.length ? (
-        <p className="creator-empty-copy">Ainda nao ha historico suficiente para desenhar crescimento.</p>
+        <p className="creator-empty-copy">Ainda não há histórico suficiente para mostrar o crescimento.</p>
       ) : (
         <>
           <svg viewBox={`0 0 ${width} ${height}`} className="creator-audience-chart" role="img" aria-label="Grafico de crescimento">
@@ -442,8 +442,8 @@ export default function CreatorAudiencePage({ user, perfil }) {
             {creatorMonetizationIsActive ? <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/promocoes')}>
               Ver monetização
             </button> : null}
-            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/dashboard')}>
-              Voltar ao workspace
+            <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/perfil')}>
+              Meu perfil
             </button>
           </div>
         </header>

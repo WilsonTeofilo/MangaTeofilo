@@ -84,10 +84,11 @@ export default function Header({ usuario, perfil, adminAccess }) {
     AVATAR_FALLBACK;
 
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
+  const resolvedCreatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(perfil);
   const creatorMonetizationIsActive =
     effectiveCreatorMonetizationStatus(
       perfil?.creatorMonetizationPreference,
-      perfil?.creatorMonetizationStatus
+      resolvedCreatorMonetizationStatus
     ) === 'active';
 
   /** Candidatura publica: quem ja abre ADMIN (Criadores etc.) nao precisa do atalho CREATORS. */
@@ -145,13 +146,15 @@ export default function Header({ usuario, perfil, adminAccess }) {
         lojaMenuBits.push({ label: 'Loja', path: '/creator/loja' });
       }
 
-      const criadorMenuBits = [];
-      const obOk = canAccessCreatorPath('/creator/obras', creatorNavAccess);
-      const capOk = canAccessCreatorPath('/creator/capitulos', creatorNavAccess);
-      if (obOk || capOk) {
-        criadorMenuBits.push({ type: 'heading', label: 'Criador' });
-        if (obOk) criadorMenuBits.push({ label: 'Obras', path: '/creator/obras' });
-        if (capOk) criadorMenuBits.push({ label: 'Capitulos', path: '/creator/capitulos' });
+      const conteudoMenuBits = [];
+      const adminObrasOk = canAccessAdminPath('/admin/obras', adminAccess);
+      const adminCapitulosOk = canAccessAdminPath('/admin/capitulos', adminAccess);
+      const adminEditorOk = canAccessAdminPath('/admin/manga', adminAccess);
+      if (adminObrasOk || adminCapitulosOk || adminEditorOk) {
+        conteudoMenuBits.push({ type: 'heading', label: 'Conteudo global' });
+        if (adminObrasOk) conteudoMenuBits.push({ label: 'Obras', path: '/admin/obras' });
+        if (adminCapitulosOk) conteudoMenuBits.push({ label: 'Capitulos', path: '/admin/capitulos' });
+        if (adminEditorOk) conteudoMenuBits.push({ label: 'Editor global', path: '/admin/manga' });
       }
 
       menus.push({
@@ -167,8 +170,8 @@ export default function Header({ usuario, perfil, adminAccess }) {
           adminWorkspaceCreatorStrip || !canAccessAdminPath('/admin/financeiro', adminAccess)
             ? null
             : { label: 'Promocoes', path: '/admin/financeiro' },
+          ...conteudoMenuBits,
           ...lojaMenuBits,
-          ...criadorMenuBits,
         ].filter(Boolean),
       });
     }
@@ -369,12 +372,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
       const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
       const pending = rows.filter((item) => {
         const s = String(item?.creatorApplicationStatus || '').trim().toLowerCase();
-        const mon =
-          resolveCreatorMonetizationStatusFromDb(item) ||
-          String(item?.creatorMonetizationStatus || '').trim().toLowerCase();
-        const role = String(item?.role || '').trim().toLowerCase();
         if (s === 'requested') return true;
-        if (s === 'approved' && mon !== 'active' && role === 'mangaka' && Number(item?.creatorMonetizationReviewRequestedAt || 0) > 0) return true;
         return false;
       }).length;
       setAdminCreatorQueueCount(pending);

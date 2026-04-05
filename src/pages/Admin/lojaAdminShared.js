@@ -39,7 +39,7 @@ export const EMPTY_PRODUCT = {
   freeShippingThresholdBrl: 150,
   regionShippingText: 'sudeste: 25\nsul: 30\ncentro-oeste: 35\nnordeste: 45\nnorte: 60',
   inventoryMode: INVENTORY_MODE.ON_DEMAND,
-  mioloPdfUrl: '',
+  mioloPdfPath: '',
   coverSourceUrl: '',
 };
 
@@ -140,7 +140,7 @@ export function buildProductPayload(form, { isMangaka, creatorUid, config }) {
     inventoryMode:
       form.inventoryMode === INVENTORY_MODE.FIXED ? INVENTORY_MODE.FIXED : INVENTORY_MODE.ON_DEMAND,
     internalFiles: {
-      mioloPdfUrl: String(form.mioloPdfUrl || '').trim(),
+      mioloPdfPath: String(form.mioloPdfPath || '').trim(),
       coverSourceUrl: String(form.coverSourceUrl || '').trim(),
     },
     updatedAt: now,
@@ -178,7 +178,7 @@ export function productToFormState(p, config, { isMangaka, creatorUid }) {
       String(p.inventoryMode || '').toLowerCase() === INVENTORY_MODE.FIXED
         ? INVENTORY_MODE.FIXED
         : INVENTORY_MODE.ON_DEMAND,
-    mioloPdfUrl: String(p.internalFiles?.mioloPdfUrl || ''),
+    mioloPdfPath: String(p.internalFiles?.mioloPdfPath || p.internalFiles?.mioloPdfUrl || ''),
     coverSourceUrl: String(p.internalFiles?.coverSourceUrl || ''),
   };
 }

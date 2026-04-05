@@ -58,7 +58,6 @@ export default function CreatorMonetizationDashboard({ user }) {
       ? monetizationStatusResolved
       : String(perfil?.creatorMonetizationStatus || 'disabled').trim().toLowerCase()
   );
-  const monetizationReviewReason = String(perfil?.creatorMonetizationReviewReason || '').trim();
   const modeLabel = monetizationModeLabel(monetizationPreference, monetizationStatus);
 
   const paymentSummary = useMemo(() => {
@@ -164,9 +163,6 @@ export default function CreatorMonetizationDashboard({ user }) {
                   ? 'Sua conta pode publicar normalmente, mas a monetizacao fica bloqueada por idade.'
                   : 'Sua conta esta em modo publicacao. Quando quiser monetizar, basta concluir a liberacao uma unica vez e ativar o toggle no perfil.'}
             </p>
-          {monetizationReviewReason ? (
-            <p className="creator-state-card__reason">Motivo registrado: {monetizationReviewReason}</p>
-          ) : null}
         </div>
         <div className="creator-frame-actions">
           <button type="button" className="creator-frame-btn" onClick={() => navigate('/perfil')}>

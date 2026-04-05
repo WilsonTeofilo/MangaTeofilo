@@ -21,12 +21,13 @@ import {
   REGIONAL_FREIGHT_DISCOUNT_RATE,
   STORE_PROMO_THRESHOLDS,
 } from './printOnDemandPricing.js';
+import { resolveCreatorMonetizationStatusFromDb } from './creatorRecord.js';
 
 /**
  * Nível 2 — venda POD com repasse (alinhado a `CREATOR_LEVEL_THRESHOLDS[2]` no app).
  * ORIGINAL: { followers: 1000, views: 20000, likes: 500 } — reverter com o restante do teste.
  */
-const CREATOR_LEVEL_2_THRESHOLDS = { followers: 1000, views: 20000, likes: 500 };
+const CREATOR_LEVEL_2_THRESHOLDS = { followers: 200, views: 10000, likes: 80 };
 function normalizePodStatus(value, fallback = 'pending') {
   const raw = String(value || fallback).trim().toLowerCase().replace(/\s+/g, '_');
   if (!raw) return fallback;
@@ -184,7 +185,7 @@ function usuarioIsMangaka(row) {
 function usuarioMonetizacaoAtiva(row) {
   const pref = String(row?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
   if (pref !== 'monetize') return false;
-  return String(row?.creatorMonetizationStatus || 'disabled').trim().toLowerCase() === 'active';
+  return resolveCreatorMonetizationStatusFromDb(row) === 'active';
 }
 
 function emptyChecklist() {

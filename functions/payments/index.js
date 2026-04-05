@@ -1,6 +1,7 @@
 export {
   criarCheckoutApoio,
   criarCheckoutLoja,
+  resumeStoreCheckout,
   createPrintOnDemandCheckout,
   resumePrintOnDemandCheckout,
   criarCheckoutPremium,

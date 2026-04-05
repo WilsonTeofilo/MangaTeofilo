@@ -7,7 +7,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 
-import platformStaffAllowlist from '../shared/platformStaffAllowlist.json' with { type: 'json' };
+import platformStaffAllowlist from './shared/platformStaffAllowlist.json' with { type: 'json' };
 
 export const ADMIN_REGISTRY_PATH = 'admins/registry';
 
@@ -19,7 +19,6 @@ export const SUPER_ADMIN_EMAILS = new Set(platformStaffAllowlist.emails);
 /** Chaves logicas -> campo em permissions no registry. */
 export const PERM = {
   capitulos: 'canAccessCapitulos',
-  mangaLegacy: 'canAccessMangaLegacy',
   obras: 'canAccessObras',
   avatares: 'canAccessAvatares',
   dashboard: 'canAccessDashboard',
@@ -52,7 +51,6 @@ export function defaultPermissionsAllTrue() {
 export function defaultMangakaPermissions() {
   const base = defaultPermissionsAllFalse();
   base[PERM.capitulos] = true;
-  base[PERM.mangaLegacy] = true;
   base[PERM.obras] = true;
   base[PERM.financeiro] = true;
   return base;

@@ -1,7 +1,8 @@
 /**
  * Legado isolado apenas para consulta manual durante refatoracao.
  *
- * Nao reexportamos `legacyIndex.js` aqui para evitar que imports acidentais
- * voltem a carregar o monolito no runtime ativo.
+ * O runtime ativo nao depende mais deste diretório.
+ * Qualquer artefato mantido aqui deve ser tratado como snapshot arquivado,
+ * nunca como fonte para novas features.
  */
 export {};

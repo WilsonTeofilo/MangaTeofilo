@@ -34,6 +34,7 @@ export default function LojaProduto({ user, perfil }) {
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [imgIdx, setImgIdx] = useState(0);
   const [shippingQuote, setShippingQuote] = useState(null);
+  const [serverPricing, setServerPricing] = useState(null);
   const [shippingService, setShippingService] = useState('PAC');
 
   const vip = descontoVipLojaAtivo(perfil, user);
@@ -42,6 +43,14 @@ export default function LojaProduto({ user, perfil }) {
     [perfil?.buyerProfile]
   );
   const id = useMemo(() => decodeURIComponent(String(productId || '')), [productId]);
+  const type = String(product?.type || 'manga').toLowerCase();
+  const inventoryMode = String(product?.inventoryMode || 'stock').trim().toLowerCase();
+  const sizes = Array.isArray(product?.sizes)
+    ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean)
+    : [];
+  const managedStock = inventoryMode !== 'on_demand';
+  const stock = Math.max(0, Number(product?.stock || 0));
+  const maxQty = managedStock ? Math.max(1, stock) : 99;
 
   useEffect(() => {
     const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {
@@ -59,7 +68,6 @@ export default function LojaProduto({ user, perfil }) {
 
   useEffect(() => {
     if (!product) return;
-    const sizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
     if (sizes.length && !sizes.includes(size)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSize(sizes[0]);
@@ -81,24 +89,37 @@ export default function LojaProduto({ user, perfil }) {
     async function loadQuote() {
       if (!user?.uid || !product || buyerMissingFields.length) {
         setShippingQuote(null);
+        setServerPricing(null);
         return;
       }
       try {
         const items = [{ productId: product.id, quantity: qty }];
+        if (type === 'roupa' && size) items[0].size = size;
         const { data } = await quoteStoreShipping({ items });
         if (!active) return;
         const quote = data?.quote || null;
         setShippingQuote(quote);
         setShippingService(quote?.defaultServiceCode || 'PAC');
+        if (data?.subtotal != null && Array.isArray(data?.pricedLines)) {
+          setServerPricing({
+            subtotal: Number(data.subtotal),
+            pricedLine: data.pricedLines[0] || null,
+          });
+        } else {
+          setServerPricing(null);
+        }
       } catch {
-        if (active) setShippingQuote(null);
+        if (active) {
+          setShippingQuote(null);
+          setServerPricing(null);
+        }
       }
     }
     loadQuote();
     return () => {
       active = false;
     };
-  }, [buyerMissingFields.length, product, qty, quoteStoreShipping, user?.uid]);
+  }, [buyerMissingFields.length, product, qty, quoteStoreShipping, size, type, user?.uid]);
 
   if (!product) {
     return (
@@ -114,15 +135,19 @@ export default function LojaProduto({ user, perfil }) {
   }
 
   const basePrice = Number(product.isOnSale && Number(product.promoPrice) > 0 ? product.promoPrice : product.price || 0);
-  const finalPrice = applyVipDiscount(basePrice, product, config.vipDiscountPct, vip);
-  const stock = Math.max(0, Number(product.stock || 0));
-  const type = String(product.type || 'manga').toLowerCase();
-  const sizes = Array.isArray(product.sizes) ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
+  const finalPriceClient = applyVipDiscount(basePrice, product, config.vipDiscountPct, vip);
+  const finalPrice = serverPricing?.pricedLine?.unitPrice ?? finalPriceClient;
+  const finalSubtotal = serverPricing?.subtotal ?? Math.round(finalPrice * qty * 100) / 100;
   const badges = getStoreProductBadges(product);
   const mainImg = images.length ? images[Math.min(imgIdx, images.length - 1)] : '/assets/fotos/shito.jpg';
   const collectionLine = getProductCollectionKey(product);
   const dropLine = getProductDropLabel(product);
   const selectedShippingOption = shippingQuote?.options?.find((option) => option.serviceCode === shippingService) || null;
+  const canBuyNow =
+    config.acceptingOrders &&
+    !loadingCheckout &&
+    Boolean(selectedShippingOption) &&
+    (!managedStock || stock > 0);
 
   async function handleComprarAgora() {
     setErr('');
@@ -148,7 +173,7 @@ export default function LojaProduto({ user, perfil }) {
     }
     setLoadingCheckout(true);
     try {
-      const item = { productId: product.id, quantity: Math.min(qty, stock) };
+      const item = { productId: product.id, quantity: managedStock ? Math.min(qty, stock) : qty };
       if (type === 'roupa' && size) item.size = size;
       const url = await openStoreCheckout(functions, [item], shippingService);
       window.location.assign(url);
@@ -200,9 +225,10 @@ export default function LojaProduto({ user, perfil }) {
           <ul className="loja-product-trust" aria-label="Informacoes do produto">
             <li>Edicao artesanal ? producao limitada</li>
             <li>Envio pelos Correios apos confirmacao do pagamento</li>
-            {stock > 0 && stock <= 12 ? (
+            {managedStock && stock > 0 && stock <= 12 ? (
               <li className="loja-product-trust--scarcity">Restam poucas unidades - {stock} em estoque</li>
             ) : null}
+            {!managedStock ? <li className="loja-product-trust--scarcity">Produto sob demanda - sem limite por estoque local</li> : null}
           </ul>
           {product.obra ? (
             <p className="loja-product-meta">
@@ -216,12 +242,13 @@ export default function LojaProduto({ user, perfil }) {
             <strong>R$ {finalPrice.toFixed(2)}</strong>
             {vip && product.isVIPDiscountEnabled && finalPrice < basePrice ? <span className="loja-price-vip">VIP</span> : null}
           </div>
+          <p className="loja-shipping-hint">Subtotal atual: R$ {finalSubtotal.toFixed(2)}</p>
           <p className="loja-shipping-hint">
             PAC ou SEDEX: tabela fixa por UF + R$ 2 por unidade extra. Em Sudeste, Sul e Centro-Oeste, com subtotal a partir de
             R$ 165 ou 3+ unidades no pedido, at� 30% de desconto s� no frete (teto R$ 20).
           </p>
-          <p className={`loja-stock ${stock > 0 && stock <= 12 ? 'loja-stock--low' : ''}`}>
-            Estoque: {stock}
+          <p className={`loja-stock ${managedStock && stock > 0 && stock <= 12 ? 'loja-stock--low' : ''}`}>
+            {managedStock ? `Estoque: ${stock}` : 'Disponibilidade: sob demanda'}
           </p>
 
           {type === 'roupa' && sizes.length ? (
@@ -274,15 +301,15 @@ export default function LojaProduto({ user, perfil }) {
               <input
                 type="number"
                 min={1}
-                max={Math.max(1, stock)}
+                max={maxQty}
                 value={qty}
-                onChange={(e) => setQty(Math.max(1, Math.min(stock, Number(e.target.value || 1))))}
+                onChange={(e) => setQty(Math.max(1, Math.min(maxQty, Number(e.target.value || 1))))}
               />
             </label>
             <button
               type="button"
               className="loja-btn-buy"
-              disabled={stock <= 0 || !config.acceptingOrders || loadingCheckout || !selectedShippingOption}
+              disabled={!canBuyNow}
               onClick={handleComprarAgora}
             >
               Comprar agora
@@ -290,7 +317,7 @@ export default function LojaProduto({ user, perfil }) {
             <button
               type="button"
               className="loja-btn-ghost"
-              disabled={stock <= 0 || !config.acceptingOrders}
+              disabled={!config.acceptingOrders || (managedStock && stock <= 0)}
               onClick={() => {
                 const next = addToCart(product.id, qty, { size: type === 'roupa' && size ? size : '' });
                 setCartItems(next);

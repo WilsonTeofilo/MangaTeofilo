@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, onValue, ref as dbRef, set, update } from 'firebase/database';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
@@ -11,7 +11,6 @@ import {
   obterObraIdCapitulo,
   obraCreatorId,
 } from '../../config/obras';
-import { isInstitutionalFeaturedWork } from '../../config/institutionalFeaturedWork';
 import {
   DESCRIPTION_MAX,
   DESCRIPTION_MIN,
@@ -35,6 +34,11 @@ import {
   validateObraWorkForm,
 } from '../../config/obraWorkForm';
 import { obraEstaArquivada } from '../../utils/obraCatalogo';
+import {
+  safeDeleteStorageObject,
+  safeDeleteStorageFolder,
+  safeDeleteStorageObjects,
+} from '../../utils/storageCleanup';
 import {
   applyResponsiveDragDelta,
   buildResponsiveCropStyle,
@@ -637,6 +641,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     saveInFlightRef.current = true;
     setSaving(true);
     try {
+      const obraAnterior = editandoId ? obrasMap.get(editandoId) || null : null;
+      const previousCoverStorageTarget = String(
+        obraAnterior?.capaStoragePath || obraAnterior?.capaUrl || ''
+      ).trim();
+      const previousBannerStorageTarget = String(
+        obraAnterior?.bannerStoragePath || obraAnterior?.bannerUrl || ''
+      ).trim();
       if (auth.currentUser) {
         await auth.currentUser.getIdToken(true);
       }
@@ -649,6 +660,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           cacheControl: 'public,max-age=31536000,immutable',
         });
         payload.capaUrl = await getDownloadURL(fileRef);
+        payload.capaStoragePath = path;
       }
       if (bannerArquivo) {
         const file = await processarImagemObra(bannerArquivo, bannerAjuste, BANNER_EDITOR_CONFIG);
@@ -659,6 +671,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           cacheControl: 'public,max-age=31536000,immutable',
         });
         payload.bannerUrl = await getDownloadURL(fileRef);
+        payload.bannerStoragePath = path;
       }
 
       if (!editandoId) {
@@ -678,6 +691,26 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       }
 
       await update(dbRef(db, `obras/${editandoId}`), payload);
+      const cleanupTasks = [];
+      if (
+        capaArquivo &&
+        previousCoverStorageTarget &&
+        previousCoverStorageTarget !== payload.capaStoragePath &&
+        previousCoverStorageTarget !== payload.capaUrl
+      ) {
+        cleanupTasks.push(safeDeleteStorageObject(storage, previousCoverStorageTarget));
+      }
+      if (
+        bannerArquivo &&
+        previousBannerStorageTarget &&
+        previousBannerStorageTarget !== payload.bannerStoragePath &&
+        previousBannerStorageTarget !== payload.bannerUrl
+      ) {
+        cleanupTasks.push(safeDeleteStorageObject(storage, previousBannerStorageTarget));
+      }
+      if (cleanupTasks.length) {
+        await Promise.allSettled(cleanupTasks);
+      }
       const okMsg = 'Obra atualizada com sucesso.';
       setOk(okMsg);
       showSaveToast(okMsg);
@@ -956,19 +989,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       setErro('Sem permissão para apagar esta obra.');
       return;
     }
-    if (isInstitutionalFeaturedWork(obra)) {
-      if (isMangaka) {
-        setErro('A obra institucional em destaque não pode ser apagada por segurança.');
-        return;
-      }
-      const typed = window.prompt(
-        'Kokuin está marcada como obra institucional em destaque. Para apagar do banco, digite exatamente: KOKUIN'
-      );
-      if (typed !== 'KOKUIN') {
-        if (typed !== null && typed !== '') setErro('Confirmação incorreta. Nada foi apagado.');
-        return;
-      }
-    } else if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) {
+    if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) {
       return;
     }
     try {
@@ -976,12 +997,38 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       const capsSnap = await get(dbRef(db, 'capitulos'));
       const capsVal = capsSnap.val() && typeof capsSnap.val() === 'object' ? capsSnap.val() : {};
       const patch = { [`obras/${obraKey}`]: null };
+      const ownerUidStorage = segmentoStorageOwnerUid(obraCreatorId(obra));
+      const chapterRows = [];
       for (const [capId, cap] of Object.entries(capsVal)) {
         if (obterObraIdCapitulo({ ...cap, id: capId }) === obraKey) {
           patch[`capitulos/${capId}`] = null;
+          chapterRows.push({ id: capId, ...(cap || {}) });
         }
       }
+
+      const chapterFileCandidates = chapterRows.flatMap((cap) => {
+        const pages = Array.isArray(cap.paginas) ? cap.paginas : [];
+        const pagePaths = Array.isArray(cap.paginasStoragePaths) ? cap.paginasStoragePaths : [];
+        return [
+          cap.capaStoragePath,
+          cap.capaUrl,
+          ...pagePaths,
+          ...pages,
+        ];
+      });
+
       await update(dbRef(db), patch);
+      await Promise.allSettled([
+        safeDeleteStorageObjects(storage, [
+          obra.capaStoragePath,
+          obra.capaUrl,
+          obra.bannerStoragePath,
+          obra.bannerUrl,
+          ...chapterFileCandidates,
+        ]),
+        safeDeleteStorageFolder(storage, `obras/${ownerUidStorage}/${obraKey}`),
+        safeDeleteStorageFolder(storage, `manga/${ownerUidStorage}/${obraKey}`),
+      ]);
       if (editandoId === obra.id) iniciarNovo();
       setOk('Obra e capítulos vinculados removidos do site.');
     } catch (e) {
@@ -1327,7 +1374,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               <aside className="obra-preview obra-preview--in-media">
                 <header className="obra-block-head">
                   <h2>Preview em tempo real</h2>
-                  <p>{isMangaka ? 'Veja como os leitores vao encontrar sua obra no site.' : 'Simulação de exibição da obra no site.'}</p>
+                  <p>{isMangaka ? 'Veja como os leitores vão encontrar sua obra no site.' : 'Simulação de exibição da obra no site.'}</p>
                 </header>
                 <div
                   className="obra-preview-banner"
@@ -1400,7 +1447,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           <section className="obra-block">
             <header className="obra-block-head">
               <h2>Status e visibilidade</h2>
-              <p>{isMangaka ? 'Controle quando sua obra fica pronta para aparecer no catalogo.' : 'Controle estágio editorial e publicação para o catálogo.'}</p>
+              <p>{isMangaka ? 'Controle quando sua obra fica pronta para aparecer no catálogo.' : 'Controle estágio editorial e publicação para o catálogo.'}</p>
             </header>
             <div className="obra-grid">
               <label>
@@ -1443,23 +1490,25 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               {saving ? 'Salvando...' : editandoId ? 'Salvar alterações' : 'Criar obra'}
             </button>
             <button type="button" className="btn-sec" onClick={iniciarNovo}>Limpar</button>
-            {editandoId && !isInstitutionalFeaturedWork({ id: editandoId, slug: editandoId, titulo: form.titulo }) ? (
+            {editandoId ? (
               <button
                 type="button"
                 className="btn-inline danger"
-                onClick={() => apagarObra({ id: editandoId, titulo: form.titulo || editandoId })}
+                onClick={() => apagarObra(
+                  obras.find((obra) => normalizarObraId(obra.id) === normalizarObraId(editandoId))
+                  || { id: editandoId, titulo: form.titulo || editandoId, creatorId: form.creatorId || user?.uid || '' }
+                )}
               >
                 Apagar obra
               </button>
             ) : null}
           </div>
         </div>
-      </section>
 
       <section className="obras-admin-list">
         <header className="obra-block-head">
           <h2>{isMangaka ? 'Seu catalogo' : 'Obras cadastradas'}</h2>
-          <p>{isMangaka ? 'Edite, publique e acompanhe a evolucao de cada obra sua.' : 'Edite, alterne visibilidade e acompanhe atualização por obra.'}</p>
+          <p>{isMangaka ? 'Edite, publique e acompanhe a evolução de cada obra sua.' : 'Edite, alterne visibilidade e acompanhe atualização por obra.'}</p>
         </header>
         <div className="obra-list-grid">
           {obras.map((obra) => (
@@ -1487,6 +1536,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
             </article>
           ))}
         </div>
+      </section>
       </section>
       {createPortal(
         saveErrorModal.open ? (

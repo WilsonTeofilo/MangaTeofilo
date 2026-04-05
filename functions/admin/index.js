@@ -21,10 +21,11 @@ export {
   adminDashboardRebuildRollup,
 } from './dashboard.js';
 export {
-  adminMigrateDeprecatedUserFields,
   adminBackfillUserProfileSchema,
   adminCleanupOrphanUserProfiles,
-  adminNormalizeLegacyCreatorMonetizationStates,
+  adminBackfillCanonicalCreatorMonetization,
+  adminDiagnosticarConsistenciaIdentificadores,
+  adminBackfillCanonicalIdentifiers,
   adminBackfillObraCreatorIds,
   adminDiagnosticarObrasAutorInconsistente,
   adminBackfillChapterCreatorIds,

@@ -16,6 +16,7 @@ const commitCreatorEngagementCycleTick = httpsCallable(functions, 'commitCreator
 export function useCreatorWorkspaceData(user, perfil) {
   const { obrasVal, capsVal, produtosVal } = useCreatorScopedCatalog(db, user?.uid);
   const [usuarioLive, setUsuarioLive] = useState(null);
+  const [creatorStatsLive, setCreatorStatsLive] = useState(null);
   const lastVisitCommitRef = useRef('');
 
   useEffect(() => {
@@ -23,15 +24,22 @@ export function useCreatorWorkspaceData(user, perfil) {
     const unsubMe = onValue(ref(db, `usuarios/${user.uid}`), (snap) => {
       setUsuarioLive(snap.exists() ? snap.val() : null);
     });
+    const unsubCreatorStats = onValue(ref(db, `creators/${user.uid}/stats`), (snap) => {
+      setCreatorStatsLive(snap.exists() ? snap.val() : null);
+    });
     return () => {
       unsubMe();
+      unsubCreatorStats();
     };
   }, [user?.uid]);
 
   const dashMetrics = useMemo(() => {
     const row = usuarioLive && typeof usuarioLive === 'object' ? usuarioLive : perfil;
-    return metricsFromUsuarioRow(row);
-  }, [usuarioLive, perfil]);
+    return metricsFromUsuarioRow({
+      ...(row || {}),
+      creatorsStats: creatorStatsLive || null,
+    });
+  }, [usuarioLive, perfil, creatorStatsLive]);
 
   const creatorLevelDash = useMemo(() => computeCreatorLevel(dashMetrics), [dashMetrics]);
 

@@ -1,1 +1,1 @@
-export * from '../shared/printOnDemandPricing.js';
+export * from './shared/printOnDemandPricing.js';

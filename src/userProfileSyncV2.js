@@ -29,9 +29,11 @@ export async function cleanupDeprecatedUsuarioFields(uid) {
       const data = snap.val() || {};
       const patch = {};
       for (const key of USUARIOS_DEPRECATED_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) patch[key] = null;
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          patch[`usuarios/${uid}/${key}`] = null;
+        }
       }
-      if (Object.keys(patch).length) await update(userRef, patch);
+      if (Object.keys(patch).length) await update(ref(db), patch);
     }
   }
 
@@ -42,9 +44,11 @@ export async function cleanupDeprecatedUsuarioFields(uid) {
       const pubData = pubSnap.val() || {};
       const pubPatch = {};
       for (const key of USUARIOS_PUBLICOS_DEPRECATED_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(pubData, key)) pubPatch[key] = null;
+        if (Object.prototype.hasOwnProperty.call(pubData, key)) {
+          pubPatch[`usuarios_publicos/${uid}/${key}`] = null;
+        }
       }
-      if (Object.keys(pubPatch).length) await update(pubRef, pubPatch);
+      if (Object.keys(pubPatch).length) await update(ref(db), pubPatch);
     }
   }
 }
@@ -62,7 +66,11 @@ async function sincronizarPublico(uid, userName, userAvatar, accountType, signup
     now: Date.now(),
   });
   if (Object.keys(patch).length) {
-    await update(publicoRef, patch);
+    const rootPatch = {};
+    for (const [key, value] of Object.entries(patch)) {
+      rootPatch[`usuarios_publicos/${uid}/${key}`] = value;
+    }
+    await update(ref(db), rootPatch);
   }
 }
 
@@ -94,7 +102,10 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
     );
 
     if (status === 'ativo') {
-      await update(userRef, { status: 'ativo', lastLogin: agora });
+      await update(ref(db), {
+        [`usuarios/${usuario.uid}/status`]: 'ativo',
+        [`usuarios/${usuario.uid}/lastLogin`]: agora,
+      });
     }
     return { ...record, status };
   }
@@ -109,7 +120,13 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
     now: agora,
   });
 
-  await update(userRef, patch);
+  if (Object.keys(patch).length) {
+    const rootPatch = {};
+    for (const [key, value] of Object.entries(patch)) {
+      rootPatch[`usuarios/${usuario.uid}/${key}`] = value;
+    }
+    await update(ref(db), rootPatch);
+  }
 
   const nomePub = patch.userName || atual.userName || DEFAULT_USER_DISPLAY_NAME;
   const avatarPub = patch.userAvatar || atual.userAvatar || avatar;
@@ -142,30 +159,44 @@ export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) 
 }
 
 export async function ativarContaUsuario(uid) {
-  const userRef = ref(db, `usuarios/${uid}`);
   const statusRef = ref(db, `usuarios/${uid}/status`);
   const snap = await get(statusRef);
   const now = Date.now();
 
   if (!snap.exists()) {
-    await update(userRef, { status: 'pendente', lastLogin: now });
-    await update(userRef, { status: 'ativo', lastLogin: now });
+    await update(ref(db), {
+      [`usuarios/${uid}/status`]: 'pendente',
+      [`usuarios/${uid}/lastLogin`]: now,
+    });
+    await update(ref(db), {
+      [`usuarios/${uid}/status`]: 'ativo',
+      [`usuarios/${uid}/lastLogin`]: now,
+    });
     return;
   }
 
   const status = snap.val();
   if (status === 'ativo') {
-    await update(userRef, { lastLogin: now });
+    await update(ref(db), { [`usuarios/${uid}/lastLogin`]: now });
     return;
   }
   if (status === 'banido') {
     throw new Error('Conta bloqueada.');
   }
   if (status === 'pendente') {
-    await update(userRef, { status: 'ativo', lastLogin: now });
+    await update(ref(db), {
+      [`usuarios/${uid}/status`]: 'ativo',
+      [`usuarios/${uid}/lastLogin`]: now,
+    });
     return;
   }
 
-  await update(userRef, { status: 'pendente', lastLogin: now });
-  await update(userRef, { status: 'ativo', lastLogin: now });
+  await update(ref(db), {
+    [`usuarios/${uid}/status`]: 'pendente',
+    [`usuarios/${uid}/lastLogin`]: now,
+  });
+  await update(ref(db), {
+    [`usuarios/${uid}/status`]: 'ativo',
+    [`usuarios/${uid}/lastLogin`]: now,
+  });
 }

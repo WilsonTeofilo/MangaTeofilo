@@ -124,11 +124,6 @@ function CreatorDetailDrawer({
 }) {
   const uid = item.uid;
   const isPending = item.creatorApplicationStatus === 'requested';
-  const monetizationPending =
-    item.creatorApplicationStatus === 'approved' &&
-    item.role === 'mangaka' &&
-    item.creatorMonetizationStatus !== 'active' &&
-    Number(item.creatorMonetizationReviewRequestedAt || 0) > 0;
   const displayNameRaw = formatUserDisplayFromMixed(item);
   const displayName = displayNameRaw === 'Usuário' ? '—' : displayNameRaw;
   const bio = String(item.creatorBio || item.creatorBioShort || '').trim() || '—';
@@ -421,12 +416,6 @@ function CreatorDetailDrawer({
                   <dd>{item.creatorReviewReason}</dd>
                 </div>
               ) : null}
-              {item.creatorMonetizationReviewReason ? (
-                <div>
-                  <dt>Motivo monetização</dt>
-                  <dd>{item.creatorMonetizationReviewReason}</dd>
-                </div>
-              ) : null}
             </dl>
           </section>
 
@@ -668,18 +657,11 @@ export default function CriadoresAdmin() {
     const pending = applications.filter((item) => item.creatorApplicationStatus === 'requested').length;
     const approved = applications.filter((item) => item.creatorApplicationStatus === 'approved').length;
     const onboarding = applications.filter((item) => item.creatorStatus === 'onboarding').length;
-    const monetizationReview = applications.filter(
-      (item) =>
-        item.creatorApplicationStatus === 'approved' &&
-        item.role === 'mangaka' &&
-        item.creatorMonetizationStatus !== 'active' &&
-        Number(item.creatorMonetizationReviewRequestedAt || 0) > 0
-    ).length;
     const availablePayout = applications.reduce(
       (acc, item) => acc + Number(item?.creatorBalanceAdmin?.availableBRL || 0),
       0
     );
-    return { pending, approved, onboarding, monetizationReview, availablePayout };
+    return { pending, approved, onboarding, availablePayout };
   }, [applications]);
 
   const detailItem = useMemo(

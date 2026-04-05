@@ -5,7 +5,7 @@ import {
   buildPublicReaderFavoritesMap,
   buildReaderSourceMap,
   isReaderPublicProfileEffective,
-} from '../../shared/readerPublicProfile.js';
+} from '../shared/readerPublicProfile.js';
 
 async function buildReaderLikedWorkPayload(db, workIdRaw) {
   const workId = String(workIdRaw || '').trim();
@@ -76,7 +76,7 @@ export async function syncReaderLikedWorkStateForUser(db, uidRaw, workIdRaw) {
   await db.ref(`usuarios/${uid}/likedWorks/${workId}`).set(payload);
 }
 
-export const onReaderFavoriteCanonChanged = onValueWritten(
+export const onReaderFavoriteCanonWritten = onValueWritten(
   {
     ref: '/usuarios/{uid}/favorites/{workId}',
     region: 'us-central1',
@@ -88,7 +88,7 @@ export const onReaderFavoriteCanonChanged = onValueWritten(
   }
 );
 
-export const onReaderFavoriteLegacyChanged = onValueWritten(
+export const onReaderFavoriteLegacyWritten = onValueWritten(
   {
     ref: '/usuarios/{uid}/favoritosObras/{workId}',
     region: 'us-central1',
@@ -100,7 +100,7 @@ export const onReaderFavoriteLegacyChanged = onValueWritten(
   }
 );
 
-export const onReaderLikedWorkChanged = onValueWritten(
+export const onReaderLikedWorkWritten = onValueWritten(
   {
     ref: '/usuarios/{uid}/likedWorks/{workId}',
     region: 'us-central1',
@@ -112,7 +112,7 @@ export const onReaderLikedWorkChanged = onValueWritten(
   }
 );
 
-export const onReaderPublicProfileSettingsChanged = onValueWritten(
+export const onReaderPublicProfileSettingsWritten = onValueWritten(
   {
     ref: '/usuarios/{uid}',
     region: 'us-central1',
@@ -131,7 +131,7 @@ export const onReaderPublicProfileSettingsChanged = onValueWritten(
   }
 );
 
-export const onChapterReaderLikeMirrorChanged = onValueWritten(
+export const onChapterReaderLikeMirrorWritten = onValueWritten(
   {
     ref: '/capitulos/{chapterId}',
     region: 'us-central1',

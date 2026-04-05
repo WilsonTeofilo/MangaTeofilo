@@ -1,1 +1,1 @@
-export * from '../shared/storeShipping.js';
+export * from './shared/storeShipping.js';

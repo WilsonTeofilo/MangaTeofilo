@@ -23,6 +23,37 @@ export async function incrementCreatorAudienceDaily(db, creatorId, field, amount
   await db.ref(`creatorStatsDaily/${creatorId}/${key}/updatedAt`).set(Date.now());
 }
 
+export async function syncCreatorStatsMirrorsFromCanonical(db, creatorId) {
+  const cid = sanitizeCreatorId(creatorId);
+  if (!cid) return;
+  const statsSnap = await db.ref(`creators/${cid}/stats`).get();
+  const stats = statsSnap.exists() ? statsSnap.val() || {} : {};
+  const followersCount = Math.max(0, Number(stats?.followersCount || 0));
+  const totalViews = Math.max(0, Number(stats?.totalViews || 0));
+  const likesTotal = Math.max(0, Number(stats?.likesTotal || 0));
+  const commentsTotal = Math.max(0, Number(stats?.commentsTotal || 0));
+  const membersCount = Math.max(0, Number(stats?.membersCount || 0));
+  const revenueTotal = Math.round(Math.max(0, Number(stats?.revenueTotal || 0)) * 100) / 100;
+  const uniqueReaders = Math.max(0, Number(stats?.uniqueReaders || 0));
+  const updatedAt = Number(stats?.updatedAt || Date.now());
+  await db.ref().update({
+    [`usuarios_publicos/${cid}/stats/followersCount`]: followersCount,
+    [`usuarios_publicos/${cid}/stats/totalViews`]: totalViews,
+    [`usuarios_publicos/${cid}/stats/totalLikes`]: likesTotal,
+    [`usuarios_publicos/${cid}/stats/totalComments`]: commentsTotal,
+    [`usuarios_publicos/${cid}/followersCount`]: followersCount,
+    [`usuarios/${cid}/creatorProfile/stats/followersCount`]: followersCount,
+    [`usuarios/${cid}/creatorProfile/stats/totalViews`]: totalViews,
+    [`usuarios/${cid}/creatorProfile/stats/totalLikes`]: likesTotal,
+    [`usuarios/${cid}/creatorProfile/stats/totalComments`]: commentsTotal,
+    [`usuarios/${cid}/creatorProfile/stats/membersCount`]: membersCount,
+    [`usuarios/${cid}/creatorProfile/stats/revenueTotal`]: revenueTotal,
+    [`usuarios/${cid}/creatorProfile/stats/uniqueReaders`]: uniqueReaders,
+    [`usuarios/${cid}/creatorProfile/stats/updatedAt`]: updatedAt,
+    [`usuarios_publicos/${cid}/updatedAt`]: Date.now(),
+  });
+}
+
 export async function rebuildCreatorAudienceBackfill(db, creatorId) {
   const cid = sanitizeCreatorId(creatorId);
   if (!cid) {
@@ -261,10 +292,6 @@ export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (requ
 
   const followingRef = db.ref(`usuarios/${followerUid}/followingCreators/${creatorId}`);
   const followerRef = db.ref(`usuarios_publicos/${creatorId}/followers/${followerUid}`);
-  const statsRef = db.ref(`usuarios_publicos/${creatorId}/stats/followersCount`);
-  const publicCountRef = db.ref(`usuarios_publicos/${creatorId}/followersCount`);
-  const creatorProfileCountRef = db.ref(`usuarios/${creatorId}/creatorProfile/stats/followersCount`);
-
   const currentSnap = await followingRef.get();
   const isFollowing = currentSnap.exists();
   const now = Date.now();
@@ -273,11 +300,9 @@ export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (requ
     await Promise.all([
       followingRef.remove(),
       followerRef.remove(),
-      statsRef.transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
-      publicCountRef.transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
-      creatorProfileCountRef.transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
       db.ref(`creators/${creatorId}/stats/followersCount`).transaction((curr) => Math.max(0, Number(curr || 0) - 1)),
     ]);
+    await syncCreatorStatsMirrorsFromCanonical(db, creatorId);
     return { ok: true, isFollowing: false };
   }
 
@@ -291,11 +316,9 @@ export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (requ
       followerCreatorId: followerIsCreator ? followerUid : null,
       followedAt: now,
     }),
-    statsRef.transaction((curr) => Number(curr || 0) + 1),
-    publicCountRef.transaction((curr) => Number(curr || 0) + 1),
-    creatorProfileCountRef.transaction((curr) => Number(curr || 0) + 1),
     db.ref(`creators/${creatorId}/stats/followersCount`).transaction((curr) => Number(curr || 0) + 1),
   ]);
+  await syncCreatorStatsMirrorsFromCanonical(db, creatorId);
   await incrementCreatorAudienceDaily(db, creatorId, 'followersAdded', 1, now);
 
   return { ok: true, isFollowing: true };

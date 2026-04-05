@@ -30,10 +30,10 @@ export async function syncReaderPublicFavoritesMirror(db, uid) {
     } catch {
       /* ignore */
     }
-    await update(pubRef, {
-      readerProfilePublic: false,
-      readerProfileAvatarUrl: null,
-      updatedAt: Date.now(),
+    await update(ref(db), {
+      [`usuarios_publicos/${u}/readerProfilePublic`]: false,
+      [`usuarios_publicos/${u}/readerProfileAvatarUrl`]: null,
+      [`usuarios_publicos/${u}/updatedAt`]: Date.now(),
     });
     return;
   }
@@ -52,7 +52,11 @@ export async function syncReaderPublicFavoritesMirror(db, uid) {
   if (readerProfileAvatarUrl) patch.readerProfileAvatarUrl = readerProfileAvatarUrl;
   else patch.readerProfileAvatarUrl = null;
 
-  await update(pubRef, patch);
+  const rootPatch = {};
+  for (const [key, value] of Object.entries(patch)) {
+    rootPatch[`usuarios_publicos/${u}/${key}`] = value;
+  }
+  await update(ref(db), rootPatch);
 }
 
 export async function setReaderProfilePublicState(db, uid, enabled, options = {}) {
@@ -64,7 +68,11 @@ export async function setReaderProfilePublicState(db, uid, enabled, options = {}
   if (readerProfileAvatarUrl) privPatch.readerProfileAvatarUrl = readerProfileAvatarUrl;
   else if (!enabled) privPatch.readerProfileAvatarUrl = null;
 
-  await update(ref(db, `usuarios/${u}`), privPatch);
+  const privateRootPatch = {};
+  for (const [key, value] of Object.entries(privPatch)) {
+    privateRootPatch[`usuarios/${u}/${key}`] = value;
+  }
+  await update(ref(db), privateRootPatch);
 
   if (!enabled) {
     try {
@@ -72,10 +80,10 @@ export async function setReaderProfilePublicState(db, uid, enabled, options = {}
     } catch {
       /* ignore */
     }
-    await update(ref(db, `usuarios_publicos/${u}`), {
-      readerProfilePublic: false,
-      readerProfileAvatarUrl: null,
-      updatedAt: Date.now(),
+    await update(ref(db), {
+      [`usuarios_publicos/${u}/readerProfilePublic`]: false,
+      [`usuarios_publicos/${u}/readerProfileAvatarUrl`]: null,
+      [`usuarios_publicos/${u}/updatedAt`]: Date.now(),
     });
     return;
   }

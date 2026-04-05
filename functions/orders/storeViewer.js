@@ -1,4 +1,5 @@
 import { getDatabase } from 'firebase-admin/database';
+import { getStorage } from 'firebase-admin/storage';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { getAdminAuthContext, isCreatorAccountAuth } from '../adminRbac.js';
 import {
@@ -8,6 +9,24 @@ import {
   orderItemsForCreator,
   sanitizeStoreOrderForViewer,
 } from './storeCommon.js';
+
+function extractStoragePathFromDownloadUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/\/o\/([^?]+)/i);
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return '';
+  }
+}
+
+function resolveStoreInternalPdfPath(product) {
+  const path = String(product?.internalFiles?.mioloPdfPath || '').trim();
+  if (path) return path;
+  return extractStoragePathFromDownloadUrl(product?.internalFiles?.mioloPdfUrl);
+}
 
 export const quoteStoreShipping = onCall(
   {
@@ -125,6 +144,70 @@ export const getStoreOrderForViewer = onCall({ region: 'us-central1' }, async (r
     };
   }
   throw new HttpsError('permission-denied', 'Sem permissao para ver este pedido.');
+});
+
+export const getStoreProductFileAccessUrl = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const orderId = String(body.orderId || '').trim();
+  const productId = String(body.productId || '').trim();
+  if (!productId) {
+    throw new HttpsError('invalid-argument', 'productId obrigatorio.');
+  }
+
+  const db = getDatabase();
+  const productSnap = await db.ref(`loja/produtos/${productId}`).get();
+  if (!productSnap.exists()) {
+    throw new HttpsError('not-found', 'Produto nao encontrado.');
+  }
+  const product = productSnap.val() || {};
+  const filePath = resolveStoreInternalPdfPath(product);
+  if (!filePath) {
+    throw new HttpsError('failed-precondition', 'Este produto nao possui arquivo interno disponivel.');
+  }
+
+  const uid = request.auth.uid;
+  const ctx = await getAdminAuthContext(request.auth);
+  const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
+  const isAdmin =
+    ctx?.super === true ||
+    ctx?.legacy === true ||
+    ctx?.permissions?.canAccessLojaAdmin === true ||
+    ctx?.permissions?.canAccessPedidos === true;
+
+  let allowed = false;
+  if (isAdmin) {
+    allowed = true;
+  } else if (isCreator && String(product.creatorId || '').trim() === uid) {
+    allowed = true;
+  } else if (orderId) {
+    const orderSnap = await db.ref(`loja/pedidos/${orderId}`).get();
+    if (!orderSnap.exists()) {
+      throw new HttpsError('not-found', 'Pedido nao encontrado.');
+    }
+    const order = orderSnap.val() || {};
+    const status = normalizeStoreOrderStatusInput(String(order.status || ''), '');
+    const buyerOwnsOrder = String(order.uid || '').trim() === uid;
+    const containsProduct = (Array.isArray(order.items) ? order.items : []).some(
+      (item) => String(item?.productId || '').trim() === productId
+    );
+    const paidEnough = ['paid', 'in_production', 'shipped', 'delivered'].includes(status);
+    if (buyerOwnsOrder && containsProduct && paidEnough) {
+      allowed = true;
+    }
+  }
+
+  if (!allowed) {
+    throw new HttpsError('permission-denied', 'Sem permissao para acessar este arquivo.');
+  }
+
+  const [url] = await getStorage().bucket().file(filePath).getSignedUrl({
+    action: 'read',
+    expires: Date.now() + 5 * 60 * 1000,
+  });
+  return { ok: true, url };
 });
 
 export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, async (request) => {

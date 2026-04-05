@@ -22,7 +22,7 @@ import {
   getDefaultAdminRedirect,
   getDefaultCreatorRedirect,
 } from './auth/adminPermissions';
-import { APP_ROLE, resolveAppRole } from './auth/appRoles';
+import { APP_ROLE, resolveAppRole, resolveCreatorRoleBootstrap } from './auth/appRoles';
 import { syncAuthenticatedUserProfile } from './userProfileSyncV2';
 import {
   buildCreatorOnboardingSteps,
@@ -232,13 +232,11 @@ function AppRoutes() {
   }
 
   const isAdmin = adminAccess.canAccessAdmin;
-  /** Fallback curto: perfil RTDB pode afirmar creator antes do callable responder. */
-  const creatorRoleFromRtdb =
+  const creatorRoleFromResolvedBootstrap =
     Boolean(usuario?.uid) &&
     perfilLoadedUid === usuario.uid &&
-    String(perfilUsuario?.role || '').toLowerCase() === 'mangaka' &&
-    !adminAccess.canAccessAdmin;
-  const roleBootstrapIsCreator = adminAccess.isMangaka === true || creatorRoleFromRtdb;
+    resolveCreatorRoleBootstrap(perfilUsuario, adminAccess);
+  const roleBootstrapIsCreator = creatorRoleFromResolvedBootstrap;
   const resolvedAppRole = resolveAppRole(perfilUsuario, adminAccess, roleBootstrapIsCreator);
   const isMangakaEffective = resolvedAppRole === APP_ROLE.CREATOR;
   const accessForCreatorRouting =
@@ -246,7 +244,7 @@ function AppRoutes() {
       ? { ...adminAccess, isMangaka: true, canAccessAdmin: false, panelRole: 'mangaka' }
       : { ...adminAccess, isMangaka: false };
   const routeShellReady =
-    !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist || creatorRoleFromRtdb;
+    !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist || creatorRoleFromResolvedBootstrap;
   const canAccessAdminWorkspace = isAdmin && resolvedAppRole === APP_ROLE.ADMIN;
   const canAccessCreator = canAccessCreatorPath('/creator', accessForCreatorRouting);
   const creatorOnboardingSteps = buildCreatorOnboardingSteps({
@@ -728,7 +726,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/dashboard') ? (
-                <Navigate to="/perfil" replace />
+                <Navigate to={getDefaultCreatorRedirect(accessForCreatorRouting)} replace />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -787,10 +785,10 @@ function AppRoutes() {
             element={
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
-              ) : adminPathOk('/admin/avatares') ? (
-                <Navigate to="/admin/avatares" replace />
+              ) : creatorPathOk('/creator') ? (
+                <Navigate to={getDefaultCreatorRedirect(accessForCreatorRouting)} replace />
               ) : (
-                <Navigate to="/perfil" replace />
+                <Navigate to="/" replace />
               )
             }
           />

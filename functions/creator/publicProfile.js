@@ -1,5 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';
+import { resolveCreatorMonetizationStatusFromDb } from '../creatorRecord.js';
 
 export async function getMonetizableCreatorPublicProfile(
   db,
@@ -19,25 +20,26 @@ export async function getMonetizableCreatorPublicProfile(
   }
   const creatorPublic = publicSnap.val() || {};
   const creatorPrivate = privateSnap.exists() ? privateSnap.val() || {} : {};
-  const creatorMonetizationPreference = String(
+  const creatorMonetizationPreferenceRaw =
     creatorPrivate.creatorMonetizationPreference ||
-      creatorPublic.creatorMonetizationPreference ||
-      'publish_only'
-  )
+    (creatorPrivate?.creator?.monetization?.requested === true ? 'monetize' : '') ||
+    creatorPublic.creatorMonetizationPreference ||
+    'publish_only';
+  const creatorMonetizationPreference = String(creatorMonetizationPreferenceRaw)
     .trim()
     .toLowerCase();
   const creatorMonetizationStatus =
     creatorMonetizationPreference === 'monetize'
-      ? String(
-          creatorPrivate.creatorMonetizationStatus || creatorPublic.creatorMonetizationStatus || ''
-        )
-          .trim()
-          .toLowerCase()
+      ? resolveCreatorMonetizationStatusFromDb(creatorPrivate)
       : 'disabled';
-  const creatorMonetizationApprovedOnce =
-    creatorPrivate.creatorMonetizationApprovedOnce === true ||
-    creatorPrivate?.creator?.monetization?.approved === true;
-  if (creatorMonetizationStatus !== 'active' || creatorMonetizationApprovedOnce !== true) {
+  const creatorMonetizationApproved =
+    creatorPrivate?.creator?.monetization?.approved === true ||
+    creatorPrivate?.creator?.monetization?.isApproved === true;
+  const creatorMonetizationActive =
+    creatorPrivate?.creator?.monetization?.isMonetizationActive === true ||
+    creatorPrivate?.creator?.monetization?.enabled === true ||
+    creatorMonetizationStatus === 'active';
+  if (creatorMonetizationActive !== true || creatorMonetizationApproved !== true) {
     throw new HttpsError(
       'failed-precondition',
       'Este criador esta em modo apenas publicar e nao pode receber agora.'
@@ -55,6 +57,7 @@ export async function getMonetizableCreatorPublicProfile(
       creatorPrivate.creatorDonationSuggestedBRL ?? creatorPublic.creatorDonationSuggestedBRL,
     creatorMonetizationPreference,
     creatorMonetizationStatus,
-    creatorMonetizationApprovedOnce,
+    isApproved: creatorMonetizationApproved,
+    isMonetizationActive: creatorMonetizationActive,
   };
 }

@@ -31,6 +31,8 @@ import {
   maskCpf,
   normalizeStoreOrderStatusInput,
   parseStoreCartLineItem,
+  releaseStoreInventoryReservation,
+  reserveStoreInventoryForOrderItems,
   round2,
 } from '../orders/storeCommon.js';
 import { getMonetizableCreatorPublicProfile } from '../creator/publicProfile.js';
@@ -339,6 +341,9 @@ export const criarCheckoutLoja = onCall(
       uid: request.auth.uid,
       status: 'pending',
       expiresAt: now + STORE_ORDER_EXPIRY_MS,
+      inventoryReserved: true,
+      inventoryReservedAt: now,
+      inventoryReleasedAt: null,
       buyer: {
         fullName: buyerProfile.fullName,
         phone: buyerProfile.phone,
@@ -378,6 +383,7 @@ export const criarCheckoutLoja = onCall(
       updatedAt: now,
       source: 'checkout_store',
     };
+    await reserveStoreInventoryForOrderItems(db, orderItems);
     await orderRef.set(order);
 
     const notificationUrl = notificationUrlForWebhook();
@@ -413,6 +419,108 @@ export const criarCheckoutLoja = onCall(
     });
 
     return { ok: true, orderId, url };
+  }
+);
+
+export const resumeStoreCheckout = onCall(
+  {
+    region: 'us-central1',
+    secrets: [MP_ACCESS_TOKEN],
+    cors: true,
+  },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError('unauthenticated', 'Faca login para pagar.');
+    }
+    const body = request.data && typeof request.data === 'object' ? request.data : {};
+    const orderId = String(body.orderId || '').trim();
+    if (!orderId) {
+      throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+    }
+    const token = getMercadoPagoTokenOrHttpsError();
+    const db = getDatabase();
+    const orderRef = db.ref(`loja/pedidos/${orderId}`);
+    const snap = await orderRef.get();
+    if (!snap.exists()) {
+      throw new HttpsError('not-found', 'Pedido nao encontrado.');
+    }
+    const row = snap.val() || {};
+    if (String(row.uid || '') !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Sem permissao.');
+    }
+    const status = normalizeStoreOrderStatusInput(String(row.status || '').trim().toLowerCase(), '');
+    if (status !== 'pending') {
+      throw new HttpsError(
+        'failed-precondition',
+        'So e possivel gerar pagamento para pedidos aguardando pagamento.'
+      );
+    }
+    const now = Date.now();
+    const exp = Number(row.expiresAt || 0);
+    if (exp && now > exp) {
+      if (await releaseStoreInventoryReservation(db, row)) {
+        await orderRef.update({
+          inventoryReleasedAt: now,
+          status: 'cancelled',
+          cancelReason: 'expired_unpaid',
+          updatedAt: now,
+        });
+      } else {
+        await orderRef.update({
+          status: 'cancelled',
+          cancelReason: 'expired_unpaid',
+          updatedAt: now,
+        });
+      }
+      throw new HttpsError(
+        'failed-precondition',
+        'Este pedido expirou (3 horas sem pagamento). Monte um novo carrinho.'
+      );
+    }
+
+    const checkoutUrl = String(row.checkoutUrl || '').trim();
+    if (checkoutUrl) {
+      return { ok: true, url: checkoutUrl, reused: true };
+    }
+
+    const notificationUrl = notificationUrlForWebhook();
+    const orderItems = Array.isArray(row.items) ? row.items : [];
+    const shippingBrl = round2(Number(row.shippingBrl || 0));
+    const total = round2(Number(row.total || 0));
+    if (total <= 0) {
+      throw new HttpsError('failed-precondition', 'Total invalido para checkout.');
+    }
+    const mpOrder = {
+      ...row,
+      orderId,
+      uid: request.auth.uid,
+      items: [
+        ...orderItems.map((item) => ({
+          title: item.title,
+          description: item.description || '',
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        })),
+        ...(shippingBrl > 0
+          ? [
+              {
+                title: 'Frete',
+                description: 'Envio',
+                quantity: 1,
+                unitPrice: shippingBrl,
+              },
+            ]
+          : []),
+      ],
+      total,
+    };
+    const url = await criarPreferenciaLoja(token, mpOrder, APP_BASE_URL.value(), notificationUrl);
+    await orderRef.update({
+      checkoutUrl: url,
+      checkoutStartedAt: now,
+      updatedAt: now,
+    });
+    return { ok: true, url, reused: false };
   }
 );
 

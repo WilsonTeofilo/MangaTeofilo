@@ -22,6 +22,8 @@ import { STORE_INTERNAL_PREP_DAYS_MAX, STORE_INTERNAL_PREP_DAYS_MIN } from '../.
 import './Loja.css';
 
 const getStoreOrderForViewer = httpsCallable(functions, 'getStoreOrderForViewer');
+const resumeStoreCheckout = httpsCallable(functions, 'resumeStoreCheckout');
+const getStoreProductFileAccessUrl = httpsCallable(functions, 'getStoreProductFileAccessUrl');
 
 const CHECKLIST_LABELS = {
   printing: 'Impressão',
@@ -42,6 +44,10 @@ export default function StoreOrderDetailPage({ user }) {
   const [viewerRole, setViewerRole] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const [resumeError, setResumeError] = useState('');
+  const [assetLoadingKey, setAssetLoadingKey] = useState('');
+  const [assetError, setAssetError] = useState('');
 
   const storeDeliveryEta = useMemo(() => {
     if (!order) return '';
@@ -114,6 +120,13 @@ export default function StoreOrderDetailPage({ user }) {
   const items = Array.isArray(order?.items) ? order.items : [];
   const creatorId = String(items[0]?.creatorId || '').trim();
   const isBuyer = viewerRole === 'buyer';
+  const canViewShippingAddress = isBuyer || viewerRole === 'admin';
+  const isPendingPayment = String(order?.status || '').trim().toLowerCase() === 'pending';
+  const expiresAt = Number(order?.expiresAt || 0);
+  const orderExpired = isPendingPayment && expiresAt > 0 && Date.now() > expiresAt;
+  const canAccessPaidFiles = ['paid', 'in_production', 'shipped', 'delivered'].includes(
+    String(order?.status || '').trim().toLowerCase()
+  );
 
   const checklistEntries = useMemo(() => {
     const c = order?.productionChecklist && typeof order.productionChecklist === 'object' ? order.productionChecklist : {};
@@ -123,6 +136,43 @@ export default function StoreOrderDetailPage({ user }) {
       on: c[key] === true,
     }));
   }, [order?.productionChecklist]);
+
+  async function handleResumeCheckout() {
+    if (!id || resumeLoading) return;
+    setResumeLoading(true);
+    setResumeError('');
+    try {
+      const { data } = await resumeStoreCheckout({ orderId: id });
+      const url = String(data?.url || '').trim();
+      if (!url) {
+        throw new Error('Nao foi possivel gerar o link de pagamento.');
+      }
+      window.location.assign(url);
+    } catch (e) {
+      setResumeError(e?.message || 'Nao foi possivel retomar o pagamento.');
+    } finally {
+      setResumeLoading(false);
+    }
+  }
+
+  async function handleOpenProductFile(productId) {
+    const pid = String(productId || '').trim();
+    if (!pid || !id || assetLoadingKey) return;
+    setAssetLoadingKey(pid);
+    setAssetError('');
+    try {
+      const { data } = await getStoreProductFileAccessUrl({ orderId: id, productId: pid });
+      const url = String(data?.url || '').trim();
+      if (!url) {
+        throw new Error('Nao foi possivel liberar o arquivo deste produto.');
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      setAssetError(e?.message || 'Nao foi possivel acessar o arquivo deste produto.');
+    } finally {
+      setAssetLoadingKey('');
+    }
+  }
 
   if (!user?.uid) {
     return (
@@ -178,6 +228,12 @@ export default function StoreOrderDetailPage({ user }) {
           </p>
         ) : null}
         {problem && problemHint ? <p className="ot-card__hint" style={{ marginTop: '12px' }}>{problemHint}</p> : null}
+        {isBuyer && isPendingPayment && orderExpired ? (
+          <p className="ot-card__hint" style={{ marginTop: '12px' }}>
+            Este pedido expirou após 3 horas sem pagamento. Monte um novo carrinho para tentar novamente.
+          </p>
+        ) : null}
+        {resumeError ? <p className="ot-card__hint" style={{ marginTop: '12px' }}>{resumeError}</p> : null}
       </header>
 
       <section className="ot-detail-block" aria-label="Linha do tempo do pedido">
@@ -186,6 +242,16 @@ export default function StoreOrderDetailPage({ user }) {
       </section>
 
       <div className="ot-detail-actions" style={{ marginBottom: '16px' }}>
+        {isBuyer && isPendingPayment && !orderExpired ? (
+          <button
+            className="ot-btn ot-btn--primary"
+            type="button"
+            onClick={handleResumeCheckout}
+            disabled={resumeLoading}
+          >
+            {resumeLoading ? 'Gerando link...' : 'Retomar pagamento'}
+          </button>
+        ) : null}
         {track && trackUrl ? (
           <a className="ot-btn ot-btn--primary" href={trackUrl} target="_blank" rel="noopener noreferrer">
             Rastrear envio
@@ -201,7 +267,7 @@ export default function StoreOrderDetailPage({ user }) {
         ) : null}
       </div>
 
-      {order.shippingAddress && typeof order.shippingAddress === 'object' ? (
+      {canViewShippingAddress && order.shippingAddress && typeof order.shippingAddress === 'object' ? (
         <section className="ot-detail-block">
           <h2>Envio</h2>
           <p>
@@ -287,9 +353,24 @@ export default function StoreOrderDetailPage({ user }) {
               {it.title || it.productId} × {it.quantity}
               {it.size ? ` (${it.size})` : ''} —{' '}
               {Number(it.lineTotal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              {canAccessPaidFiles && it.productId ? (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="ot-btn ot-btn--ghost"
+                    style={{ marginLeft: '10px' }}
+                    onClick={() => handleOpenProductFile(it.productId)}
+                    disabled={assetLoadingKey === String(it.productId)}
+                  >
+                    {assetLoadingKey === String(it.productId) ? 'Liberando arquivo...' : 'Abrir arquivo'}
+                  </button>
+                </>
+              ) : null}
             </li>
           ))}
         </ul>
+        {assetError ? <p className="ot-card__hint" style={{ marginTop: '10px' }}>{assetError}</p> : null}
       </section>
 
       {creatorId ? (

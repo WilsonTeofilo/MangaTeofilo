@@ -1,9 +1,8 @@
-import { getAuth } from 'firebase-admin/auth';
+﻿import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
-  SUPER_ADMIN_UIDS,
   isTargetSuperAdmin,
   requireAdminAuth,
   requirePermission,
@@ -11,12 +10,9 @@ import {
   resolveTargetUidByEmail,
 } from '../adminRbac.js';
 import { sanitizeCreatorId, recordCreatorManualPixPayout } from '../creatorDataLedger.js';
-import { USUARIOS_DEPRECATED_KEYS, USUARIOS_PUBLICOS_DEPRECATED_KEYS } from '../deprecatedUserFields.js';
 import { buildUserEntitlementsPatch } from '../userEntitlements.js';
 
 const USER_AVATAR_FALLBACK = '/assets/avatares/ava1.webp';
-const PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS = Array.from(SUPER_ADMIN_UIDS)[0] || null;
-
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
@@ -33,7 +29,7 @@ function dominantCreatorIdFromChaptersAdmin(chapters = []) {
   const counts = new Map();
   for (const chapter of chapters) {
     const creatorId = sanitizeCreatorId(chapter?.creatorId);
-    if (!creatorId || creatorId === PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS) continue;
+    if (!creatorId) continue;
     counts.set(creatorId, (counts.get(creatorId) || 0) + 1);
   }
   let best = '';
@@ -45,15 +41,6 @@ function dominantCreatorIdFromChaptersAdmin(chapters = []) {
     }
   }
   return best;
-}
-
-function normalizeLegacyMonetizationStatusForAdmin(row = {}) {
-  const current = String(row?.creatorMonetizationStatus || '').trim().toLowerCase();
-  if (current !== 'pending_review') return current || '';
-  const approvedOnce =
-    row?.creatorMonetizationApprovedOnce === true ||
-    row?.creator?.monetization?.approved === true;
-  return approvedOnce ? 'active' : 'disabled';
 }
 
 function buildAdminUserSchemaPatch(uid, row = {}, authUser = null) {
@@ -139,65 +126,6 @@ function buildAdminPublicUserSchemaPatch(uid, row = {}, privateRow = {}, authUse
   }
   return patch;
 }
-
-export const adminMigrateDeprecatedUserFields = onCall({ region: 'us-central1' }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-  const ctx = await requireAdminAuth(request.auth);
-  requirePermission(ctx, 'migrateUsers');
-
-  const hasPriv = USUARIOS_DEPRECATED_KEYS.length > 0;
-  const hasPub = USUARIOS_PUBLICOS_DEPRECATED_KEYS.length > 0;
-  if (!hasPriv && !hasPub) {
-    return {
-      ok: true,
-      message: 'Nenhuma chave obsoleta configurada em functions/deprecatedUserFields.js',
-      usuariosComPatch: 0,
-      publicosComPatch: 0,
-    };
-  }
-
-  const db = getDatabase();
-  let usuariosComPatch = 0;
-  let publicosComPatch = 0;
-
-  if (hasPriv) {
-    const snap = await db.ref('usuarios').get();
-    if (snap.exists()) {
-      const data = snap.val() || {};
-      for (const uid of Object.keys(data)) {
-        const row = data[uid] || {};
-        const patch = {};
-        for (const key of USUARIOS_DEPRECATED_KEYS) {
-          if (Object.prototype.hasOwnProperty.call(row, key)) patch[key] = null;
-        }
-        if (Object.keys(patch).length) {
-          await db.ref(`usuarios/${uid}`).update(patch);
-          usuariosComPatch += 1;
-        }
-      }
-    }
-  }
-
-  if (hasPub) {
-    const snap = await db.ref('usuarios_publicos').get();
-    if (snap.exists()) {
-      const data = snap.val() || {};
-      for (const uid of Object.keys(data)) {
-        const row = data[uid] || {};
-        const patch = {};
-        for (const key of USUARIOS_PUBLICOS_DEPRECATED_KEYS) {
-          if (Object.prototype.hasOwnProperty.call(row, key)) patch[key] = null;
-        }
-        if (Object.keys(patch).length) {
-          await db.ref(`usuarios_publicos/${uid}`).update(patch);
-          publicosComPatch += 1;
-        }
-      }
-    }
-  }
-
-  return { ok: true, usuariosComPatch, publicosComPatch };
-});
 
 export const adminBackfillUserProfileSchema = onCall(
   { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
@@ -313,17 +241,42 @@ export const adminBackfillObraCreatorIds = onCall({ region: 'us-central1', cors:
   if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
   requireSuperAdmin(request.auth);
   const db = getDatabase();
-  const legacy = Array.from(SUPER_ADMIN_UIDS)[0];
+  const [worksSnap, chaptersSnap, creatorsSnap] = await Promise.all([
+    db.ref('obras').get(),
+    db.ref('capitulos').get(),
+    db.ref('creators').get(),
+  ]);
+  const works = worksSnap.val() || {};
+  const chapters = chaptersSnap.val() || {};
+  const creators = creatorsSnap.val() || {};
+  const creatorIds = new Set(Object.keys(creators).map((id) => sanitizeCreatorId(id)).filter(Boolean));
+  const chaptersByWork = new Map();
+  for (const [chapterId, chapterRow] of Object.entries(chapters)) {
+    const workId = normalizeAdminWorkId(chapterRow?.workId || chapterRow?.obraId || chapterRow?.mangaId || '');
+    if (!workId) continue;
+    const list = chaptersByWork.get(workId) || [];
+    list.push({ chapterId, ...(chapterRow || {}) });
+    chaptersByWork.set(workId, list);
+  }
   const snap = await db.ref('obras').get();
   let updated = 0;
+  let skippedWithoutSafeInference = 0;
   for (const [id, row] of Object.entries(snap.val() || {})) {
     if (row && !row.creatorId && id) {
-      await db.ref(`obras/${id}/creatorId`).set(legacy);
+      const normalizedId = normalizeAdminWorkId(id);
+      const dominantCreatorId = sanitizeCreatorId(
+        dominantCreatorIdFromChaptersAdmin(chaptersByWork.get(normalizedId) || [])
+      );
+      if (!dominantCreatorId || !creatorIds.has(dominantCreatorId)) {
+        skippedWithoutSafeInference += 1;
+        continue;
+      }
+      await db.ref(`obras/${id}/creatorId`).set(dominantCreatorId);
       updated += 1;
     }
   }
-  logger.info('adminBackfillObraCreatorIds', { updated });
-  return { ok: true, updated };
+  logger.info('adminBackfillObraCreatorIds', { updated, skippedWithoutSafeInference });
+  return { ok: true, updated, skippedWithoutSafeInference };
 });
 
 export const adminDiagnosticarObrasAutorInconsistente = onCall({ region: 'us-central1' }, async (request) => {
@@ -370,17 +323,9 @@ export const adminDiagnosticarObrasAutorInconsistente = onCall({ region: 'us-cen
     if (
       workCreatorId &&
       dominantChapterCreatorId &&
-      workCreatorId !== dominantChapterCreatorId &&
-      workCreatorId !== PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS
+      workCreatorId !== dominantChapterCreatorId
     ) {
       issueCodes.push('work_creator_differs_from_chapters');
-    }
-    if (
-      workCreatorId === PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS &&
-      dominantChapterCreatorId &&
-      dominantChapterCreatorId !== PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS
-    ) {
-      issueCodes.push('legacy_work_creator_should_be_replaced');
     }
     if (!issueCodes.length) continue;
 
@@ -399,17 +344,16 @@ export const adminDiagnosticarObrasAutorInconsistente = onCall({ region: 'us-cen
     ok: true,
     totalWorks: Object.keys(works).length,
     inconsistentWorks: issues.length,
-    issueSummary: {
-      missingWorkCreatorId: issues.filter((item) => item.issueCodes.includes('missing_work_creator_id')).length,
-      missingPublicProfile: issues.filter((item) => item.issueCodes.includes('missing_public_profile')).length,
-      creatorMismatch: issues.filter((item) => item.issueCodes.includes('work_creator_differs_from_chapters')).length,
-      legacyShouldBeReplaced: issues.filter((item) => item.issueCodes.includes('legacy_work_creator_should_be_replaced')).length,
-    },
-    sample: issues.slice(0, 100),
-  };
+      issueSummary: {
+        missingWorkCreatorId: issues.filter((item) => item.issueCodes.includes('missing_work_creator_id')).length,
+        missingPublicProfile: issues.filter((item) => item.issueCodes.includes('missing_public_profile')).length,
+        creatorMismatch: issues.filter((item) => item.issueCodes.includes('work_creator_differs_from_chapters')).length,
+      },
+      sample: issues.slice(0, 100),
+    };
 });
 
-export const adminNormalizeLegacyCreatorMonetizationStates = onCall(
+export const adminBackfillCanonicalCreatorMonetization = onCall(
   { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
@@ -418,80 +362,323 @@ export const adminNormalizeLegacyCreatorMonetizationStates = onCall(
 
     const dryRun = request.data?.dryRun !== false;
     const db = getDatabase();
-    const [usuariosSnap, publicosSnap] = await Promise.all([
-      db.ref('usuarios').get(),
-      db.ref('usuarios_publicos').get(),
-    ]);
+    const usuariosSnap = await db.ref('usuarios').get();
     const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
-    const publicos = publicosSnap.exists() ? publicosSnap.val() || {} : {};
-    const allUids = new Set([...Object.keys(usuarios), ...Object.keys(publicos)]);
+    const patch = {};
     const sample = [];
-    let scanned = 0;
-    let normalizedUsers = 0;
-    let normalizedPublic = 0;
+    let updated = 0;
 
-    for (const uid of allUids) {
-      scanned += 1;
-      const userRow = usuarios[uid] || {};
-      const publicRow = publicos[uid] || {};
-      const nextUserStatus = normalizeLegacyMonetizationStatusForAdmin(userRow);
-      const nextPublicStatus = normalizeLegacyMonetizationStatusForAdmin({
-        ...publicRow,
-        creatorMonetizationApprovedOnce: userRow?.creatorMonetizationApprovedOnce,
-        creator: userRow?.creator,
-      });
-      const userNeedsPatch =
-        String(userRow?.creatorMonetizationStatus || '').trim().toLowerCase() === 'pending_review' &&
-        nextUserStatus &&
-        nextUserStatus !== 'pending_review';
-      const publicNeedsPatch =
-        String(publicRow?.creatorMonetizationStatus || '').trim().toLowerCase() === 'pending_review' &&
-        nextPublicStatus &&
-        nextPublicStatus !== 'pending_review';
+    for (const [uid, row] of Object.entries(usuarios)) {
+      const current = row && typeof row === 'object' ? row : {};
+      const approved =
+        current?.creator?.monetization?.approved === true ||
+        current?.creator?.monetization?.isApproved === true;
+      const active =
+        current?.creator?.monetization?.enabled === true ||
+        current?.creator?.monetization?.isMonetizationActive === true;
+      const nextRequested =
+        current?.creator?.monetization?.requested === true ||
+        String(current?.creatorMonetizationPreference || '').trim().toLowerCase() === 'monetize';
 
-      if (!userNeedsPatch && !publicNeedsPatch) continue;
+      const needsCreatorDoc =
+        current?.creator?.monetization?.isApproved !== approved ||
+        current?.creator?.monetization?.approved !== approved ||
+        current?.creator?.monetization?.isMonetizationActive !== active ||
+        current?.creator?.monetization?.enabled !== active ||
+        current?.creator?.monetization?.requested !== nextRequested;
+      const needsProfileDoc =
+        current?.creatorProfile?.isApproved !== approved ||
+        current?.creatorProfile?.isMonetizationActive !== active;
+      const hasLegacyFields =
+        current?.creatorMonetizationApprovedOnce != null ||
+        String(current?.creatorMonetizationStatus || '').trim().length > 0 ||
+        current?.creatorMonetizationReviewRequestedAt != null ||
+        String(current?.creatorMonetizationReviewReason || '').trim().length > 0;
 
+      if (!needsCreatorDoc && !needsProfileDoc && !hasLegacyFields) continue;
+
+      if (needsCreatorDoc) {
+        patch[`usuarios/${uid}/creator/monetization/approved`] = approved;
+        patch[`usuarios/${uid}/creator/monetization/isApproved`] = approved;
+        patch[`usuarios/${uid}/creator/monetization/enabled`] = active;
+        patch[`usuarios/${uid}/creator/monetization/isMonetizationActive`] = active;
+        patch[`usuarios/${uid}/creator/monetization/requested`] = nextRequested;
+      }
+      if (needsProfileDoc) {
+        patch[`usuarios/${uid}/creatorProfile/isApproved`] = approved;
+        patch[`usuarios/${uid}/creatorProfile/isMonetizationActive`] = active;
+      }
+      if (hasLegacyFields) {
+        patch[`usuarios/${uid}/creatorMonetizationApprovedOnce`] = null;
+        patch[`usuarios/${uid}/creatorMonetizationStatus`] = null;
+        patch[`usuarios/${uid}/creatorMonetizationReviewRequestedAt`] = null;
+        patch[`usuarios/${uid}/creatorMonetizationReviewReason`] = null;
+      }
+      updated += 1;
       if (sample.length < 100) {
-        sample.push({
-          uid,
-          fromUserStatus: String(userRow?.creatorMonetizationStatus || '').trim().toLowerCase() || null,
-          toUserStatus: userNeedsPatch ? nextUserStatus : null,
-          fromPublicStatus: String(publicRow?.creatorMonetizationStatus || '').trim().toLowerCase() || null,
-          toPublicStatus: publicNeedsPatch ? nextPublicStatus : null,
-          approvedOnce: userRow?.creatorMonetizationApprovedOnce === true || userRow?.creator?.monetization?.approved === true,
+        sample.push({ uid, approved, active, clearedLegacyFields: hasLegacyFields });
+      }
+    }
+
+    if (!dryRun && Object.keys(patch).length) {
+      await db.ref().update(patch);
+    }
+
+    return { ok: true, dryRun, updated, sample };
+  }
+);
+
+export const adminDiagnosticarConsistenciaIdentificadores = onCall(
+  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+    const ctx = await requireAdminAuth(request.auth);
+    requirePermission(ctx, 'migrateUsers');
+
+    const db = getDatabase();
+    const [worksSnap, chaptersSnap, productsSnap, storeOrdersSnap, creatorsSnap] = await Promise.all([
+      db.ref('obras').get(),
+      db.ref('capitulos').get(),
+      db.ref('loja/produtos').get(),
+      db.ref('loja/pedidos').get(),
+      db.ref('creators').get(),
+    ]);
+
+    const works = worksSnap.exists() ? worksSnap.val() || {} : {};
+    const chapters = chaptersSnap.exists() ? chaptersSnap.val() || {} : {};
+    const products = productsSnap.exists() ? productsSnap.val() || {} : {};
+    const storeOrders = storeOrdersSnap.exists() ? storeOrdersSnap.val() || {} : {};
+    const creators = creatorsSnap.exists() ? creatorsSnap.val() || {} : {};
+
+    const workIds = new Set(Object.keys(works).map((id) => normalizeAdminWorkId(id)).filter(Boolean));
+    const creatorIds = new Set(Object.keys(creators).map((id) => sanitizeCreatorId(id)).filter(Boolean));
+    const issues = [];
+
+    for (const [workIdRaw, row] of Object.entries(works)) {
+      const workId = normalizeAdminWorkId(workIdRaw);
+      const creatorId = sanitizeCreatorId(row?.creatorId);
+      const issueCodes = [];
+      if (!workId) issueCodes.push('invalid_work_id');
+      if (!creatorId) issueCodes.push('missing_creator_id');
+      if (creatorId && !creatorIds.has(creatorId)) issueCodes.push('creator_not_found');
+      if (issueCodes.length) {
+        issues.push({
+          entity: 'obra',
+          id: String(workIdRaw || ''),
+          issueCodes,
+          creatorId: creatorId || null,
         });
       }
+    }
 
-      if (!dryRun) {
-        const patch = {};
-        if (userNeedsPatch) {
-          patch[`usuarios/${uid}/creatorMonetizationStatus`] = nextUserStatus;
-          normalizedUsers += 1;
-        }
-        if (publicNeedsPatch) {
-          patch[`usuarios_publicos/${uid}/creatorMonetizationStatus`] = nextPublicStatus;
-          normalizedPublic += 1;
-        }
-        if (Object.keys(patch).length) {
-          await db.ref().update(patch);
+    for (const [chapterId, row] of Object.entries(chapters)) {
+      const workId = normalizeAdminWorkId(row?.workId || row?.obraId || row?.mangaId);
+      const creatorId = sanitizeCreatorId(row?.creatorId);
+      const issueCodes = [];
+      if (!workId) issueCodes.push('missing_work_id');
+      if (workId && !workIds.has(workId)) issueCodes.push('work_id_not_found');
+      if (!creatorId) issueCodes.push('missing_creator_id');
+      if (creatorId && !creatorIds.has(creatorId)) issueCodes.push('creator_not_found');
+      if (issueCodes.length) {
+        issues.push({
+          entity: 'capitulo',
+          id: String(chapterId || ''),
+          issueCodes,
+          workId: workId || null,
+          creatorId: creatorId || null,
+        });
+      }
+    }
+
+    for (const [productId, row] of Object.entries(products)) {
+      const creatorId = sanitizeCreatorId(row?.creatorId);
+      const workId = normalizeAdminWorkId(row?.workId || row?.obraId || row?.obra);
+      const issueCodes = [];
+      if (!creatorId) issueCodes.push('missing_creator_id');
+      if (creatorId && !creatorIds.has(creatorId)) issueCodes.push('creator_not_found');
+      if (workId && !workIds.has(workId)) issueCodes.push('referenced_work_not_found');
+      if (issueCodes.length) {
+        issues.push({
+          entity: 'produto_loja',
+          id: String(productId || ''),
+          issueCodes,
+          workId: workId || null,
+          creatorId: creatorId || null,
+        });
+      }
+    }
+
+    for (const [orderId, row] of Object.entries(storeOrders)) {
+      const items = Array.isArray(row?.items) ? row.items : [];
+      const missingCreatorItems = items.filter((item) => !sanitizeCreatorId(item?.creatorId)).length;
+      const missingProductItems = items.filter((item) => !String(item?.productId || '').trim()).length;
+      const badProductRefs = items.filter((item) => {
+        const productId = String(item?.productId || '').trim();
+        return productId && !products[productId];
+      }).length;
+      const issueCodes = [];
+      if (missingCreatorItems > 0) issueCodes.push('items_missing_creator_id');
+      if (missingProductItems > 0) issueCodes.push('items_missing_product_id');
+      if (badProductRefs > 0) issueCodes.push('items_product_not_found');
+      if (issueCodes.length) {
+        issues.push({
+          entity: 'pedido_loja',
+          id: String(orderId || ''),
+          issueCodes,
+          missingCreatorItems,
+          missingProductItems,
+          badProductRefs,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      totals: {
+        obras: Object.keys(works).length,
+        capitulos: Object.keys(chapters).length,
+        produtosLoja: Object.keys(products).length,
+        pedidosLoja: Object.keys(storeOrders).length,
+      },
+      issueSummary: {
+        obras: issues.filter((item) => item.entity === 'obra').length,
+        capitulos: issues.filter((item) => item.entity === 'capitulo').length,
+        produtosLoja: issues.filter((item) => item.entity === 'produto_loja').length,
+        pedidosLoja: issues.filter((item) => item.entity === 'pedido_loja').length,
+      },
+      findingsCount: issues.length,
+      sample: issues.slice(0, 200),
+    };
+  }
+);
+
+export const adminBackfillCanonicalIdentifiers = onCall(
+  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
+    const ctx = await requireAdminAuth(request.auth);
+    requirePermission(ctx, 'migrateUsers');
+
+    const dryRun = request.data?.dryRun !== false;
+    const db = getDatabase();
+    const [worksSnap, chaptersSnap, productsSnap, storeOrdersSnap, creatorsSnap] = await Promise.all([
+      db.ref('obras').get(),
+      db.ref('capitulos').get(),
+      db.ref('loja/produtos').get(),
+      db.ref('loja/pedidos').get(),
+      db.ref('creators').get(),
+    ]);
+
+    const works = worksSnap.exists() ? worksSnap.val() || {} : {};
+    const chapters = chaptersSnap.exists() ? chaptersSnap.val() || {} : {};
+    const products = productsSnap.exists() ? productsSnap.val() || {} : {};
+    const storeOrders = storeOrdersSnap.exists() ? storeOrdersSnap.val() || {} : {};
+    const creators = creatorsSnap.exists() ? creatorsSnap.val() || {} : {};
+
+    const creatorIds = new Set(Object.keys(creators).map((id) => sanitizeCreatorId(id)).filter(Boolean));
+    const patch = {};
+    const sample = [];
+    let updates = 0;
+
+    const normalizedWorkById = new Map();
+    for (const [workIdRaw, row] of Object.entries(works)) {
+      const workId = normalizeAdminWorkId(workIdRaw);
+      if (!workId) continue;
+      normalizedWorkById.set(workId, { id: workIdRaw, row: row || {} });
+    }
+
+    const dominantChapterCreatorByWork = new Map();
+    const chapterRowsByWork = new Map();
+    for (const [chapterId, row] of Object.entries(chapters)) {
+      const chapter = row && typeof row === 'object' ? row : {};
+      const workId = normalizeAdminWorkId(chapter.workId || chapter.obraId || chapter.mangaId);
+      if (!workId) continue;
+      const list = chapterRowsByWork.get(workId) || [];
+      list.push({ chapterId, ...chapter });
+      chapterRowsByWork.set(workId, list);
+    }
+    for (const [workId, list] of chapterRowsByWork.entries()) {
+      dominantChapterCreatorByWork.set(workId, dominantCreatorIdFromChaptersAdmin(list));
+    }
+
+    for (const [workIdRaw, row] of Object.entries(works)) {
+      const workId = normalizeAdminWorkId(workIdRaw);
+      if (!workId) continue;
+      const creatorId = sanitizeCreatorId(row?.creatorId);
+      if (!creatorId) {
+        const inferred = sanitizeCreatorId(dominantChapterCreatorByWork.get(workId));
+        if (inferred && creatorIds.has(inferred)) {
+          patch[`obras/${workIdRaw}/creatorId`] = inferred;
+          updates += 1;
+          if (sample.length < 100) sample.push({ entity: 'obra', id: workIdRaw, field: 'creatorId', value: inferred });
         }
       }
     }
 
-    logger.info('adminNormalizeLegacyCreatorMonetizationStates', {
-      dryRun,
-      scanned,
-      normalizedUsers,
-      normalizedPublic,
-      sampleCount: sample.length,
-    });
+    for (const [chapterId, row] of Object.entries(chapters)) {
+      const chapter = row && typeof row === 'object' ? row : {};
+      const workId = normalizeAdminWorkId(chapter.workId || chapter.obraId || chapter.mangaId);
+      if (!String(chapter.workId || '').trim() && workId && normalizedWorkById.has(workId)) {
+        patch[`capitulos/${chapterId}/workId`] = workId;
+        updates += 1;
+        if (sample.length < 100) sample.push({ entity: 'capitulo', id: chapterId, field: 'workId', value: workId });
+      }
+      const creatorId = sanitizeCreatorId(chapter.creatorId);
+      if (!creatorId && workId && normalizedWorkById.has(workId)) {
+        const inferred = sanitizeCreatorId(normalizedWorkById.get(workId)?.row?.creatorId);
+        if (inferred && creatorIds.has(inferred)) {
+          patch[`capitulos/${chapterId}/creatorId`] = inferred;
+          updates += 1;
+          if (sample.length < 100) sample.push({ entity: 'capitulo', id: chapterId, field: 'creatorId', value: inferred });
+        }
+      }
+    }
+
+    for (const [productId, row] of Object.entries(products)) {
+      const product = row && typeof row === 'object' ? row : {};
+      const workId = normalizeAdminWorkId(product.workId || product.obraId || product.obra);
+      if (!String(product.workId || '').trim() && workId && normalizedWorkById.has(workId)) {
+        patch[`loja/produtos/${productId}/workId`] = workId;
+        updates += 1;
+        if (sample.length < 100) sample.push({ entity: 'produto_loja', id: productId, field: 'workId', value: workId });
+      }
+      const creatorId = sanitizeCreatorId(product.creatorId);
+      if (!creatorId && workId && normalizedWorkById.has(workId)) {
+        const inferred = sanitizeCreatorId(normalizedWorkById.get(workId)?.row?.creatorId);
+        if (inferred && creatorIds.has(inferred)) {
+          patch[`loja/produtos/${productId}/creatorId`] = inferred;
+          updates += 1;
+          if (sample.length < 100) sample.push({ entity: 'produto_loja', id: productId, field: 'creatorId', value: inferred });
+        }
+      }
+    }
+
+    for (const [orderId, row] of Object.entries(storeOrders)) {
+      const items = Array.isArray(row?.items) ? row.items : [];
+      items.forEach((item, index) => {
+        const productId = String(item?.productId || '').trim();
+        if (!productId || !products[productId]) return;
+        const product = products[productId] || {};
+        const creatorId = sanitizeCreatorId(item?.creatorId);
+        if (!creatorId) {
+          const inferred = sanitizeCreatorId(product.creatorId);
+          if (inferred && creatorIds.has(inferred)) {
+            patch[`loja/pedidos/${orderId}/items/${index}/creatorId`] = inferred;
+            updates += 1;
+            if (sample.length < 100) sample.push({ entity: 'pedido_loja', id: orderId, field: `items[${index}].creatorId`, value: inferred });
+          }
+        }
+      });
+    }
+
+    if (!dryRun && Object.keys(patch).length) {
+      await db.ref().update(patch);
+    }
 
     return {
       ok: true,
       dryRun,
-      scanned,
-      normalizedUsers,
-      normalizedPublic,
+      updates,
       sample,
     };
   }
@@ -501,24 +688,33 @@ export const adminBackfillChapterCreatorIds = onCall({ region: 'us-central1', co
   if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
   requireSuperAdmin(request.auth);
   const db = getDatabase();
-  const legacy = Array.from(SUPER_ADMIN_UIDS)[0];
   const [capsSnap, obrasSnap] = await Promise.all([db.ref('capitulos').get(), db.ref('obras').get()]);
   const obras = obrasSnap.val() || {};
   let updated = 0;
+  let skippedWithoutWork = 0;
+  let skippedWithoutCreator = 0;
   for (const [id, cap] of Object.entries(capsSnap.val() || {})) {
     if (!cap || cap.creatorId || !id) continue;
-    const raw = String(cap.workId || cap.obraId || 'shito')
+    const raw = String(cap.workId || cap.obraId || '')
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, '')
       .slice(0, 40);
-    const obra = obras[raw || 'shito'] || {};
-    const creatorId = obra.creatorId || legacy;
+    if (!raw) {
+      skippedWithoutWork += 1;
+      continue;
+    }
+    const obra = obras[raw] || {};
+    const creatorId = sanitizeCreatorId(obra.creatorId);
+    if (!creatorId) {
+      skippedWithoutCreator += 1;
+      continue;
+    }
     await db.ref(`capitulos/${id}/creatorId`).set(String(creatorId));
     updated += 1;
   }
-  logger.info('adminBackfillChapterCreatorIds', { updated });
-  return { ok: true, updated };
+  logger.info('adminBackfillChapterCreatorIds', { updated, skippedWithoutWork, skippedWithoutCreator });
+  return { ok: true, updated, skippedWithoutWork, skippedWithoutCreator };
 });
 
 export const adminBackfillChapterWorkIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
@@ -528,18 +724,23 @@ export const adminBackfillChapterWorkIds = onCall({ region: 'us-central1', cors:
   const snap = await db.ref('capitulos').get();
   const caps = snap.val() || {};
   let updated = 0;
+  let skippedWithoutHint = 0;
   for (const [id, cap] of Object.entries(caps)) {
     if (!cap || !id || String(cap.workId || '').trim()) continue;
-    const workId = String(cap?.obraId || cap?.workId || 'shito')
+    const workId = String(cap?.obraId || cap?.workId || '')
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9_-]/g, '')
-      .slice(0, 40) || 'shito';
+      .slice(0, 40);
+    if (!workId) {
+      skippedWithoutHint += 1;
+      continue;
+    }
     await db.ref(`capitulos/${id}/workId`).set(workId);
     updated += 1;
   }
-  logger.info('adminBackfillChapterWorkIds', { updated });
-  return { ok: true, updated };
+  logger.info('adminBackfillChapterWorkIds', { updated, skippedWithoutHint });
+  return { ok: true, updated, skippedWithoutHint };
 });
 
 export const adminBackfillStoreProductCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
@@ -550,8 +751,8 @@ export const adminBackfillStoreProductCreatorIds = onCall({ region: 'us-central1
   const products = productsSnap.val() || {};
   const obras = obrasSnap.val() || {};
   let updated = 0;
-  let legacyFallback = 0;
   let skippedWithoutHint = 0;
+  let skippedWithoutCreator = 0;
   for (const [id, row] of Object.entries(products)) {
     if (!row || row.creatorId || !id) continue;
     const obraHint = String(row.obra || row.workId || row.obraId || '').trim().toLowerCase();
@@ -560,19 +761,20 @@ export const adminBackfillStoreProductCreatorIds = onCall({ region: 'us-central1
       continue;
     }
     const obra = obras[obraHint] || null;
-    const creatorId = sanitizeCreatorId(obra?.creatorId) || PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS;
-    if (!creatorId) continue;
-    if (!sanitizeCreatorId(obra?.creatorId)) legacyFallback += 1;
+    const creatorId = sanitizeCreatorId(obra?.creatorId);
+    if (!creatorId) {
+      skippedWithoutCreator += 1;
+      continue;
+    }
     await db.ref(`loja/produtos/${id}/creatorId`).set(creatorId);
     updated += 1;
   }
-  logger.info('adminBackfillStoreProductCreatorIds', { updated, legacyFallback, skippedWithoutHint });
+  logger.info('adminBackfillStoreProductCreatorIds', { updated, skippedWithoutHint, skippedWithoutCreator });
   return {
     ok: true,
     updated,
-    legacyFallback,
     skippedWithoutHint,
-    legacyCreatorUid: PLATFORM_LEGACY_CREATOR_UID_FUNCTIONS,
+    skippedWithoutCreator,
   };
 });
 
@@ -684,3 +886,4 @@ export const adminRevokeAllSessions = onCall(
     return { ok: true, revoked };
   }
 );
+

@@ -530,15 +530,13 @@ export default function Login() {
         await ativarContaUsuario(cred.user.uid);
       }
 
-      await update(ref(db, `usuarios/${cred.user.uid}`), {
-        signupIntent,
-        creatorApplicationStatus: signupIntent === 'creator' ? 'draft' : null,
-        creatorRequestedAt: null,
-      });
-
-      await update(ref(db, `usuarios_publicos/${cred.user.uid}`), {
-        signupIntent,
-        updatedAt: agora,
+      await update(ref(db), {
+        [`usuarios/${cred.user.uid}/signupIntent`]: signupIntent,
+        [`usuarios/${cred.user.uid}/creatorApplicationStatus`]:
+          signupIntent === 'creator' ? 'draft' : null,
+        [`usuarios/${cred.user.uid}/creatorRequestedAt`]: null,
+        [`usuarios_publicos/${cred.user.uid}/signupIntent`]: signupIntent,
+        [`usuarios_publicos/${cred.user.uid}/updatedAt`]: agora,
       });
 
       registerAttemptResult('registerPassword', true);

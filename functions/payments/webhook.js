@@ -33,7 +33,7 @@ import { validPromoPrice } from '../promoUtils.js';
 import { buildUserEntitlementsPatch } from '../userEntitlements.js';
 import {
   normalizeStoreOrderStatusInput,
-  storeProductIsOnDemand,
+  releaseStoreInventoryReservation,
 } from '../orders/storeCommon.js';
 import { APP_BASE_URL, MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET } from './config.js';
 import {
@@ -623,11 +623,15 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     const amount = Number(pay.transaction_amount);
     if (isRefundLikeStatus(status)) {
       const orderItemsRefund = Array.isArray(orderPre.items) ? orderPre.items : [];
+      const refundNow = Date.now();
+      const releasedInventory =
+        orderPre.status === 'delivered' ? false : await releaseStoreInventoryReservation(db, orderPre);
       await db.ref(`loja/pedidos/${storeRef.orderId}`).update({
         paymentStatus: status,
         refundStatus: status,
-        refundedAt: Date.now(),
-        updatedAt: Date.now(),
+        refundedAt: refundNow,
+        updatedAt: refundNow,
+        inventoryReleasedAt: releasedInventory ? refundNow : orderPre.inventoryReleasedAt ?? null,
         status: orderPre.status === 'delivered' ? orderPre.status : 'cancelled',
       });
       const wrote = await appendUniqueFinanceEvent(db, `store_refund_${paymentId}_${status}`, {
@@ -697,10 +701,12 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
         paymentId,
         expiresAt: expAt,
       });
+      const releasedInventory = await releaseStoreInventoryReservation(db, orderPre);
       await db.ref(`loja/pedidos/${storeRef.orderId}`).update({
         status: 'cancelled',
         cancelReason: 'expired_unpaid',
         paymentStatus: String(pay?.status || 'approved'),
+        inventoryReleasedAt: releasedInventory ? expiredAt : orderPre.inventoryReleasedAt ?? null,
         updatedAt: expiredAt,
       });
       return;
@@ -745,19 +751,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     });
 
     const orderItems = Array.isArray(order.items) ? order.items : [];
-    for (const item of orderItems) {
-      const productId = String(item?.productId || '').trim();
-      const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
-      if (!productId) continue;
-      if (String(item?.inventoryMode || '').toLowerCase() === 'on_demand') continue;
-      const prodSnap = await db.ref(`loja/produtos/${productId}`).get();
-      const prod = prodSnap.exists() ? prodSnap.val() || {} : {};
-      if (storeProductIsOnDemand(prod)) continue;
-      await db.ref(`loja/produtos/${productId}/stock`).transaction((curr) => {
-        const stock = Math.max(0, Number(curr || 0));
-        return Math.max(0, stock - quantity);
-      });
-    }
 
     await db.ref('financas/eventos').push({
       tipo: 'loja_pedido_pago',

@@ -200,6 +200,14 @@ export function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
   const items = orderItemsForCreator(row, viewerUid);
   const containsForeignItems = (Array.isArray(row?.items) ? row.items : []).length > items.length;
   const creatorSubtotal = items.reduce((sum, item) => sum + Number(item?.lineTotal || 0), 0);
+  const rawShippingAddress =
+    row?.shippingAddress && typeof row.shippingAddress === 'object' ? row.shippingAddress : null;
+  const sellerSafeShippingAddress = rawShippingAddress
+    ? {
+        state: String(rawShippingAddress.state || '').trim(),
+        city: String(rawShippingAddress.city || '').trim(),
+      }
+    : null;
   return {
     id: orderId,
     uid: String(row?.uid || ''),
@@ -212,7 +220,7 @@ export function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
     paymentId: row?.paymentId ?? null,
     payoutStatus: String(row?.payoutStatus || ''),
     trackingCode: String(row?.trackingCode || row?.codigoRastreio || ''),
-    shippingAddress: row?.shippingAddress && typeof row.shippingAddress === 'object' ? row.shippingAddress : null,
+    shippingAddress: sellerSafeShippingAddress,
     productionChecklist:
       row?.productionChecklist && typeof row.productionChecklist === 'object'
         ? row.productionChecklist
@@ -224,4 +232,57 @@ export function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
     containsForeignItems,
     items,
   };
+}
+
+export async function reserveStoreInventoryForOrderItems(db, orderItems) {
+  const reserved = [];
+  try {
+    for (const item of Array.isArray(orderItems) ? orderItems : []) {
+      const productId = String(item?.productId || '').trim();
+      const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
+      if (!productId) continue;
+      if (String(item?.inventoryMode || '').toLowerCase() === 'on_demand') continue;
+      const stockRef = db.ref(`loja/produtos/${productId}/stock`);
+      const tx = await stockRef.transaction((curr) => {
+        const stock = Math.max(0, Number(curr || 0));
+        if (stock < quantity) return;
+        return stock - quantity;
+      });
+      if (!tx.committed) {
+        throw new HttpsError(
+          'failed-precondition',
+          `Estoque insuficiente para o produto ${productId}.`
+        );
+      }
+      reserved.push({ productId, quantity });
+    }
+    return reserved;
+  } catch (error) {
+    for (const item of reserved) {
+      await db.ref(`loja/produtos/${item.productId}/stock`).transaction((curr) => {
+        const stock = Math.max(0, Number(curr || 0));
+        return stock + item.quantity;
+      });
+    }
+    throw error;
+  }
+}
+
+export async function releaseStoreInventoryReservation(db, order) {
+  if (!order || typeof order !== 'object') return false;
+  if (order.inventoryReserved !== true) return false;
+  if (Number(order.inventoryReleasedAt || 0) > 0) return false;
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  for (const item of items) {
+    const productId = String(item?.productId || '').trim();
+    const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
+    if (!productId) continue;
+    if (String(item?.inventoryMode || '').toLowerCase() === 'on_demand') continue;
+    await db.ref(`loja/produtos/${productId}/stock`).transaction((curr) => {
+      const stock = Math.max(0, Number(curr || 0));
+      return stock + quantity;
+    });
+  }
+  return true;
 }

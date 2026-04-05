@@ -4,7 +4,7 @@ export {
   notifyNewWorkPublished,
 } from './releaseNotifications.js';
 
-export { onChapterCommentWrittenV2 } from '../chapterCommentSocial.js';
+export { onChapterCommentSocialWritten } from '../chapterCommentSocial.js';
 export {
   markUserNotificationRead,
   deleteUserNotification,

@@ -506,16 +506,12 @@ export const adminBackfillEventosLegados = onCall({ region: 'us-central1' }, asy
   requirePermission(ctx, 'dashboard');
 
   const db = getDatabase();
-  const includeCompat = request.data?.includeCompat === true;
-  const [processedSnap, compatSnap, eventsSnap] = await Promise.all([
+  const [processedSnap, eventsSnap] = await Promise.all([
     db.ref('financas/mp_webhook_payments').get(),
-    includeCompat ? db.ref('financas/mp_processed').get() : Promise.resolve({ exists: () => false, val: () => ({}) }),
     db.ref('financas/eventos').get(),
   ]);
 
-  const processedCanonical = processedSnap.exists() ? processedSnap.val() || {} : {};
-  const processedCompat = compatSnap.exists() ? compatSnap.val() || {} : {};
-  const processed = { ...processedCompat, ...processedCanonical };
+  const processed = processedSnap.exists() ? processedSnap.val() || {} : {};
   const events = eventsSnap.exists() ? eventsSnap.val() || {} : {};
   const existingPaymentIds = new Set();
   for (const event of Object.values(events)) {
@@ -571,7 +567,6 @@ export const adminBackfillEventosLegados = onCall({ region: 'us-central1' }, asy
     createdPremium,
     createdApoio,
     createdWithZeroAmount,
-    includeCompat,
     totalProcessedRows: Object.keys(processed).length,
   };
 });

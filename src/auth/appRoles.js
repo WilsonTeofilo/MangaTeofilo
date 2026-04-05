@@ -24,12 +24,18 @@ export function rtdbRoleIsCreator(perfilRow) {
   return String(perfilRow?.role || '').trim().toLowerCase() === 'mangaka';
 }
 
+export function resolveCreatorRoleBootstrap(perfilRow, adminAccess) {
+  if (adminAccess?.canAccessAdmin === true) return false;
+  if (adminAccess?.isMangaka === true) return true;
+  return rtdbRoleIsCreator(perfilRow);
+}
+
 /**
  * @param {import('./adminAccess').AdminAccessState} adminAccess
  * @param {boolean} isMangakaEffective mesmo cálculo que App.jsx (perfil + token)
  */
 export function resolveAppRole(perfilRow, adminAccess, isMangakaEffective) {
   if (isStaffEquipeWithoutCreator(adminAccess)) return APP_ROLE.ADMIN;
-  if (isMangakaEffective || rtdbRoleIsCreator(perfilRow)) return APP_ROLE.CREATOR;
+  if (isMangakaEffective || resolveCreatorRoleBootstrap(perfilRow, adminAccess)) return APP_ROLE.CREATOR;
   return APP_ROLE.USER;
 }

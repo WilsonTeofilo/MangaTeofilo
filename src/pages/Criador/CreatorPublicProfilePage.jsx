@@ -266,7 +266,7 @@ export default function CreatorPublicProfilePage({ user }) {
   }, [perfilPublico]);
 
   const rawTab = String(searchParams.get('tab') || '').toLowerCase();
-  const availableTabs = profileMode === 'writer' ? ['works', 'likes', 'comments'] : ['likes', 'comments'];
+  const availableTabs = profileMode === 'writer' ? ['works', 'likes'] : ['likes'];
   const profileTab = availableTabs.includes(rawTab) ? rawTab : availableTabs[0];
   const readerSinceLabel = formatarDataLeitor(perfilPublico?.readerSince || perfilPublico?.createdAt);
 
@@ -530,13 +530,6 @@ export default function CreatorPublicProfilePage({ user }) {
         >
           {profileMode === 'writer' ? 'Curtidas' : 'Biblioteca'}
         </button>
-        <button
-          type="button"
-          className={profileTab === 'comments' ? 'is-active' : ''}
-          onClick={() => setSearchParams({ tab: 'comments' })}
-        >
-          Comentários
-        </button>
       </nav>
 
       {profileMode === 'writer' && membershipEnabled ? (
@@ -650,17 +643,6 @@ export default function CreatorPublicProfilePage({ user }) {
         </section>
       ) : null}
 
-      {profileTab === 'comments' ? (
-        <section className="criador-section" aria-labelledby="criador-comentarios-title">
-          <div className="criador-section__head">
-            <h2 id="criador-comentarios-title">Comentários</h2>
-          </div>
-          <p className="criador-section__empty">
-            A lista de comentários por perfil ainda não está centralizada aqui. Os comentários continuam visíveis nas
-            páginas dos capítulos.
-          </p>
-        </section>
-      ) : null}
     </main>
   );
 }

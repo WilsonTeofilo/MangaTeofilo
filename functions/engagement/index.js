@@ -1,21 +1,21 @@
 export {
-  mirrorEngagementCycleToPublicProfile,
-  onCreatorStatsForEngagementChanged,
-  onLegacyCreatorStatsForEngagementChanged,
+  mirrorCreatorEngagementCycleToPublicProfile,
+  onCreatorEngagementStatsWritten,
   commitCreatorEngagementCycleTick,
   adminBackfillEngagementPublicProfiles,
-  onChapterEngagementSourceChanged,
+  onChapterEngagementSourceWritten,
 } from './cycle.js';
 
 export { recordDiscoveryCreatorMetrics } from '../recordDiscoveryCreatorMetrics.js';
 export {
-  seedUserEntitlementsOnUsuarioCreate,
-  syncCanonicalUserEntitlementsOnUsuarioWrite,
+  seedUserEntitlementsOnUsuarioWritten,
+  syncCanonicalUserEntitlementsOnUsuarioWritten,
 } from './entitlements.js';
 export {
-  onReaderFavoriteCanonChanged,
-  onReaderFavoriteLegacyChanged,
-  onReaderLikedWorkChanged,
-  onReaderPublicProfileSettingsChanged,
+  onReaderFavoriteCanonWritten,
+  onReaderFavoriteLegacyWritten,
+  onReaderLikedWorkWritten,
+  onReaderPublicProfileSettingsWritten,
+  onChapterReaderLikeMirrorWritten,
 } from './readerProfiles.js';
 export { toggleChapterLike } from './chapterLikes.js';

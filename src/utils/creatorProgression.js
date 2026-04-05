@@ -4,6 +4,7 @@
  */
 
 import { STORE_PROMO_ELIGIBILITY_THRESHOLDS } from '../../shared/promoThresholds.js';
+import { normalizeCreatorEngagementMetrics, resolveCreatorEngagementMetrics } from '../../shared/creatorEngagementMetrics.js';
 
 /**
  * Nível 1 = Em ascensão · Nível 2 = Monetizado · Nível 3 = Destaque.
@@ -11,8 +12,8 @@ import { STORE_PROMO_ELIGIBILITY_THRESHOLDS } from '../../shared/promoThresholds
  */
 export const CREATOR_LEVEL_THRESHOLDS = {
   1: STORE_PROMO_ELIGIBILITY_THRESHOLDS,
-  2: { followers: 1000, views: 20000, likes: 500 },
-  3: { followers: 5000, views: 80000, likes: 2000 },
+  2: { followers: 200, views: 10000, likes: 80 },
+  3: { followers: 400, views: 80000, likes: 80 },
 };
 
 /** Metas modo vitrine POD = Nível 1 */
@@ -75,25 +76,17 @@ function norm(n) {
  * @param {object | null | undefined} row — nó `usuarios/{uid}`
  */
 export function metricsFromUsuarioRow(row) {
-  if (!row || typeof row !== 'object') {
-    return { followers: 0, views: 0, likes: 0 };
-  }
-  return {
-    followers: norm(row?.creatorProfile?.stats?.followersCount ?? row?.stats?.followersCount),
-    views: norm(row?.creatorProfile?.stats?.totalViews ?? row?.stats?.totalViews),
-    likes: norm(row?.creatorProfile?.stats?.totalLikes ?? row?.stats?.totalLikes),
-  };
+  return resolveCreatorEngagementMetrics({
+    creatorStats: row?.creatorsStats,
+    userRow: row,
+  });
 }
 
 /**
  * @param {{ followers?: number, views?: number, likes?: number }} m
  */
 export function normalizeCreatorMetrics(m) {
-  return {
-    followers: norm(m?.followers),
-    views: norm(m?.views),
-    likes: norm(m?.likes),
-  };
+  return normalizeCreatorEngagementMetrics(m);
 }
 
 /**

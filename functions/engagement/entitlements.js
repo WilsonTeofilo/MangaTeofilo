@@ -11,7 +11,7 @@ function sameJsonShape(a, b) {
   }
 }
 
-export const seedUserEntitlementsOnUsuarioCreate = onValueWritten(
+export const seedUserEntitlementsOnUsuarioWritten = onValueWritten(
   {
     ref: '/usuarios/{uid}',
     region: 'us-central1',
@@ -43,7 +43,7 @@ export const seedUserEntitlementsOnUsuarioCreate = onValueWritten(
   }
 );
 
-export const syncCanonicalUserEntitlementsOnUsuarioWrite = onValueWritten(
+export const syncCanonicalUserEntitlementsOnUsuarioWritten = onValueWritten(
   {
     ref: '/usuarios/{uid}',
     region: 'us-central1',

@@ -66,6 +66,15 @@ function normalizeReviewReason(raw, fallback = '') {
   return String(raw || fallback || '').trim().slice(0, 500);
 }
 
+function resolveCreatorMonetizationPreference(row, app = null) {
+  if (row?.creator?.monetization?.requested === true) return 'monetize';
+  return String(row?.creatorMonetizationPreference || app?.monetizationPreference || 'publish_only')
+    .trim()
+    .toLowerCase() === 'monetize'
+    ? 'monetize'
+    : 'publish_only';
+}
+
 function maskPixKeyForAdminSnapshot(rawPixKey) {
   const value = String(rawPixKey || '').trim();
   if (!value) return null;
@@ -108,9 +117,7 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
     creatorApplication: app,
     creatorStatus: String(row?.creatorStatus || ''),
     creatorOnboardingCompleted: row?.creatorOnboardingCompleted === true,
-    creatorMonetizationPreference: String(
-      row?.creatorMonetizationPreference || app?.monetizationPreference || ''
-    ),
+    creatorMonetizationPreference: resolveCreatorMonetizationPreference(row, app),
     creatorMonetizationStatus: resolveCreatorMonetizationStatusFromDb(row),
     birthYear: Number(row?.birthYear || 0) || null,
     birthDate: String(row?.birthDate || '').trim() || null,
@@ -143,7 +150,9 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
         return {
           requested: m.requested === true,
           enabled: m.enabled === true,
+          isMonetizationActive: m.isMonetizationActive === true || m.enabled === true,
           approved: m.approved === true,
+          isApproved: m.isApproved === true || m.approved === true,
           hasLegal: Boolean(m.legal?.fullName && m.legal?.cpf),
           hasPixKey: Boolean(m.payout?.type === 'pix' && String(m.payout?.key || '').trim()),
         };
@@ -165,8 +174,6 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
     creatorModerationAction: String(row?.creatorModerationAction || ''),
     creatorModerationBy: String(row?.creatorModerationBy || ''),
     creatorModeratedAt: Number(row?.creatorModeratedAt || 0),
-    creatorMonetizationReviewReason: String(row?.creatorMonetizationReviewReason || ''),
-    creatorMonetizationReviewRequestedAt: Number(row?.creatorMonetizationReviewRequestedAt || 0),
     creatorBalanceAdmin: balance
       ? {
           availableBRL: round2(Number(balance.availableBRL || 0)),
@@ -211,12 +218,7 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
   const bioShort = String(row?.creatorBio || application.bioShort || '').trim();
   const instagramUrl = String(row?.instagramUrl || application?.socialLinks?.instagramUrl || '').trim();
   const youtubeUrl = String(row?.youtubeUrl || application?.socialLinks?.youtubeUrl || '').trim();
-  const monetizationPreference =
-    String(row?.creatorMonetizationPreference || application?.monetizationPreference || 'publish_only')
-      .trim()
-      .toLowerCase() === 'monetize'
-      ? 'monetize'
-      : 'publish_only';
+  const monetizationPreference = resolveCreatorMonetizationPreference(row, application);
   const age = resolveCreatorAgeYears(row);
   const isUnderage = age != null && age < 18;
   const monetizationStatus =
@@ -239,8 +241,10 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
       youtubeUrl: youtubeUrl || null,
     },
     monetizationEnabled: monetizationStatus === 'active',
+    isMonetizationActive: monetizationStatus === 'active',
     monetizationPreference,
     monetizationStatus,
+    isApproved: monetizationStatus === 'active',
     ageVerified: age != null,
     status: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
     createdAt: row?.creatorProfile?.createdAt || now,
@@ -297,7 +301,6 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
       row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
     [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
     [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
-    [`usuarios/${uid}/creatorMonetizationApprovedOnce`]: monetizationPreference === 'monetize' && monetizationStatus === 'active',
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
@@ -417,10 +420,9 @@ export const adminListCreatorApplications = onCall({ region: 'us-central1' }, as
   rows.sort((a, b) => {
     const queueScore = (r) => {
       const s = String(r?.creatorApplicationStatus || '').trim().toLowerCase();
-      const mon = String(r?.creatorMonetizationStatus || '').trim().toLowerCase();
+      const mon = resolveCreatorMonetizationStatusFromDb(r);
       const role = String(r?.role || '').trim().toLowerCase();
       if (s === 'requested') return 2;
-      if (s === 'approved' && mon !== 'active' && role === 'mangaka' && Number(r?.creatorMonetizationReviewRequestedAt || 0) > 0) return 1;
       return 0;
     };
     const diff = queueScore(b) - queueScore(a);
@@ -601,12 +603,13 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
     [`usuarios/${uid}/creator`]: creatorDocMonApprove,
     [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
     [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
-    [`usuarios/${uid}/creatorMonetizationApprovedOnce`]: monetizationStatus === 'active',
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
     [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
     [`usuarios/${uid}/creatorProfile/monetizationStatus`]: monetizationStatus,
     [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: monetizationStatus === 'active',
+    [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: monetizationStatus === 'active',
+    [`usuarios/${uid}/creatorProfile/isApproved`]: monetizationStatus === 'active',
     [`usuarios/${uid}/creatorProfile/ageVerified`]: age != null,
     [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
     [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: canPublishMembership,
@@ -677,25 +680,33 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
     bio: String(row?.creatorBio || '').trim(),
     instagramUrl: row?.instagramUrl,
     youtubeUrl: row?.youtubeUrl,
-    monetizationPreference: 'publish_only',
+    monetizationPreference: String(row?.creatorMonetizationPreference || 'monetize').trim().toLowerCase() === 'publish_only' ? 'publish_only' : 'monetize',
     creatorMonetizationStatus: 'disabled',
-    compliance: null,
+    compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
     now,
   });
 
   await db.ref().update({
     [`usuarios/${uid}/creator`]: creatorDocMonReject,
-    [`usuarios/${uid}/creatorMonetizationPreference`]: 'publish_only',
+    [`usuarios/${uid}/creatorMonetizationPreference`]:
+      String(row?.creatorMonetizationPreference || 'monetize').trim().toLowerCase() === 'publish_only'
+        ? 'publish_only'
+        : 'monetize',
     [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
-    [`usuarios/${uid}/creatorMonetizationApprovedOnce`]: false,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: reason,
     [`usuarios/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'publish_only',
+    [`usuarios/${uid}/creatorProfile/monetizationPreference`]:
+      String(row?.creatorMonetizationPreference || 'monetize').trim().toLowerCase() === 'publish_only'
+        ? 'publish_only'
+        : 'monetize',
     [`usuarios/${uid}/creatorProfile/monetizationStatus`]: 'disabled',
     [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: false,
+    [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: false,
+    [`usuarios/${uid}/creatorProfile/isApproved`]:
+      row?.creator?.monetization?.approved === true || row?.creator?.monetization?.isApproved === true,
     [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
     [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: null,

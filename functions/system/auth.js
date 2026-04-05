@@ -1,5 +1,6 @@
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
+import { getStorage } from 'firebase-admin/storage';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
@@ -69,7 +70,6 @@ function profileHasRetainedHistory(profile) {
     profile?.role === 'mangaka' ||
       profile?.creator ||
       profile?.creatorApplication ||
-      profile?.creatorMonetizationStatus ||
       profile?.premiumUntil ||
       profile?.premiumActive === true ||
       profile?.membership ||
@@ -188,8 +188,54 @@ function parseBody(req) {
   return req.body || {};
 }
 
-async function deleteUserEverywhere(uid) {
+function extractStoragePathFromDownloadUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/\/o\/([^?]+)/i);
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return '';
+  }
+}
+
+function resolveStoragePathFromPathOrUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) {
+    return extractStoragePathFromDownloadUrl(raw);
+  }
+  return raw.replace(/^\/+/, '');
+}
+
+function collectOwnedCreatorProfileStoragePaths(uid, profile = {}, publicProfile = {}) {
+  const candidates = [
+    profile?.userAvatar,
+    profile?.readerProfileAvatarUrl,
+    profile?.creatorProfile?.avatarUrl,
+    publicProfile?.userAvatar,
+    publicProfile?.readerProfileAvatarUrl,
+    publicProfile?.creatorProfile?.avatarUrl,
+  ];
+
+  return [...new Set(
+    candidates
+      .map(resolveStoragePathFromPathOrUrl)
+      .filter((path) => path.startsWith(`creator_profile/${uid}/`))
+  )];
+}
+
+async function deleteCreatorProfileStorageArtifacts(uid, profile = {}, publicProfile = {}) {
+  const bucket = getStorage().bucket();
+  const explicitPaths = collectOwnedCreatorProfileStoragePaths(uid, profile, publicProfile);
+  await Promise.allSettled(explicitPaths.map((path) => bucket.file(path).delete({ ignoreNotFound: true })));
+  await bucket.deleteFiles({ prefix: `creator_profile/${uid}/`, force: true });
+}
+
+async function deleteUserEverywhere(uid, profile = null, publicProfile = null) {
   const db = getDatabase();
+  await deleteCreatorProfileStorageArtifacts(uid, profile || {}, publicProfile || {});
   try {
     await getAuth().deleteUser(uid);
   } catch (err) {
@@ -264,11 +310,11 @@ export const cleanupUsers = onSchedule(
     let removedExpired = 0;
     let removedInactive = 0;
 
-    for (const [uid, profile] of Object.entries(users)) {
-      scanned += 1;
-      const status = profile?.status || 'ativo';
-      const createdAt = Number(profile?.createdAt || 0);
-      const lastLogin = Number(profile?.lastLogin || createdAt || 0);
+  for (const [uid, profile] of Object.entries(users)) {
+    scanned += 1;
+    const status = profile?.status || 'ativo';
+    const createdAt = Number(profile?.createdAt || 0);
+    const lastLogin = Number(profile?.lastLogin || createdAt || 0);
 
       if (status === 'pendente' && createdAt > 0 && now - createdAt > PENDING_TTL_MS) {
         await db.ref(`usuarios/${uid}/status`).set('inativo');
@@ -276,7 +322,8 @@ export const cleanupUsers = onSchedule(
         continue;
       }
       if (status === 'inativo' && createdAt > 0 && now - createdAt > PENDING_TTL_MS + INATIVO_TTL_MS) {
-        await deleteUserEverywhere(uid);
+        const publicProfileSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+        await deleteUserEverywhere(uid, profile, publicProfileSnap.val() || {});
         removedExpired += 1;
         continue;
       }
@@ -290,7 +337,8 @@ export const cleanupUsers = onSchedule(
           markedInactive += 1;
           continue;
         }
-        await deleteUserEverywhere(uid);
+        const publicProfileSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+        await deleteUserEverywhere(uid, profile, publicProfileSnap.val() || {});
         removedInactive += 1;
       }
     }

@@ -8,7 +8,6 @@ export * from '../claimsConsistency.js';
 export * from '../creatorApplicationGate.js';
 export * from '../creatorCompliance.js';
 export * from '../creatorMembershipPricing.js';
-export * from '../deprecatedUserFields.js';
 export * from '../fixedZoneShipping.js';
 export * from '../mercadoPagoApoio.js';
 export * from '../mercadoPagoPremium.js';

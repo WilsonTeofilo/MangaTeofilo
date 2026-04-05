@@ -36,6 +36,10 @@ import {
 } from '../../utils/birthDateAge';
 import { buildCreatorRecordForProfileSave } from '../../utils/creatorRecord';
 import {
+  resolveStoragePathFromPathOrUrl,
+  safeDeleteStorageObject,
+} from '../../utils/storageCleanup';
+import {
   creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
   normalizeCreatorMonetizationPreference,
@@ -52,6 +56,12 @@ import {
   suggestUsernameFromDisplayName,
 } from '../../utils/usernameValidation';
 import './Perfil.css';
+
+function isCreatorProfileStorageAssetForUser(uid, pathOrUrl) {
+  const path = resolveStoragePathFromPathOrUrl(pathOrUrl);
+  if (!path) return false;
+  return path.startsWith(`creator_profile/${uid}/`);
+}
 
 // Recebe `user` via prop (consistente com App.jsx)
 // Nao usa mais auth.currentUser diretamente para evitar dessincronizacao
@@ -276,12 +286,11 @@ export default function Perfil({
   );
   /** Já aprovado pela equipe (ou equivalente) — religar monetização não pede formulário de novo. */
   const hasMonetizationClearance = useMemo(() => {
-    if (perfilDb?.creatorMonetizationApprovedOnce === true) return true;
+    if (perfilDb?.creator?.monetization?.isApproved === true) return true;
     if (String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved') return true;
     return creatorMonetizationStatus === 'active';
   }, [perfilDb, creatorMonetizationStatus]);
   const creatorReviewReason = String(perfilDb?.creatorReviewReason || '').trim();
-  const creatorMonetizationReviewReason = String(perfilDb?.creatorMonetizationReviewReason || '').trim();
   const creatorModerationAction = String(perfilDb?.creatorModerationAction || '').trim().toLowerCase();
   const creatorSignupIntent = String(perfilDb?.signupIntent || '').trim().toLowerCase();
   const birthIsoEffective = parseBirthDateFlexible(birthDateDraft, birthDate);
@@ -497,6 +506,11 @@ export default function Perfil({
     let claimedNewHandle = null;
     try {
       let finalAvatar = avatarSelecionado;
+      const previousAvatar = String(perfilDb?.userAvatar || user?.photoURL || '').trim();
+      const previousCreatorProfileAvatar =
+        adminAccess.isMangaka && isCreatorProfileStorageAssetForUser(user.uid, previousAvatar)
+          ? previousAvatar
+          : '';
       if (adminAccess.isMangaka && mangakaAvatarFile) {
         try {
           const blob = await processCreatorProfileImageToWebp(mangakaAvatarFile);
@@ -561,7 +575,7 @@ export default function Perfil({
       const creatorStatusNext = adminAccess.isMangaka ? 'active' : null;
       const ageForMonet = birthIsoForSave ? ageFromBirthDateLocal(birthIsoForSave) : null;
       const clearanceNow =
-        perfilDb?.creatorMonetizationApprovedOnce === true ||
+        perfilDb?.creator?.monetization?.isApproved === true ||
         String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved' ||
         creatorMonetizationStatus === 'active';
       const creatorMonetizationPreferenceNext = !adminAccess.isMangaka
@@ -669,132 +683,90 @@ export default function Perfil({
       }
 
       // 2. Atualiza no Realtime Database (Leitor.jsx escuta daqui)
-      await update(ref(db, `usuarios/${user.uid}`), {
-        userName: accountDisplayName,
-        ...(persistedHandle ? { userHandle: persistedHandle } : {}),
-        userAvatar: finalAvatar,
-        uid:        user.uid,
-        notifyPromotions: notifyPromotions === true,
-        notificationPrefs,
-        gender,
-        birthDate: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : null,
-        birthYear: birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? ano : null,
-        creatorDisplayName: creatorPublicName,
-        creatorTermsAccepted: creatorTermsAccepted === true,
-        creatorMonetizationPreference: creatorMonetizationPreferenceNext,
-        creatorMonetizationStatus: creatorMonetizationStatusNext,
-        ...(creatorMonetizationStatusNext === 'active' ? { creatorMonetizationApprovedOnce: true } : {}),
-        creatorBio: String(creatorBio || '').trim(),
-        buyerProfile,
-        readerProfilePublic: readerPub,
-        readerProfileAvatarUrl: readerAvatarSave,
-        creatorBannerUrl: null,
-        instagramUrl: String(instagramUrl || '').trim(),
-        youtubeUrl: String(youtubeUrl || '').trim(),
-        creatorMembershipEnabled:
+      const nowTs = Date.now();
+      const privatePatch = {
+        [`usuarios/${user.uid}/userName`]: accountDisplayName,
+        [`usuarios/${user.uid}/userAvatar`]: finalAvatar,
+        [`usuarios/${user.uid}/uid`]: user.uid,
+        [`usuarios/${user.uid}/notifyPromotions`]: notifyPromotions === true,
+        [`usuarios/${user.uid}/notificationPrefs`]: notificationPrefs,
+        [`usuarios/${user.uid}/gender`]: gender,
+        [`usuarios/${user.uid}/birthDate`]:
+          birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : null,
+        [`usuarios/${user.uid}/birthYear`]:
+          birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? ano : null,
+        [`usuarios/${user.uid}/creatorDisplayName`]: creatorPublicName,
+        [`usuarios/${user.uid}/creatorTermsAccepted`]: creatorTermsAccepted === true,
+        [`usuarios/${user.uid}/creatorMonetizationPreference`]: creatorMonetizationPreferenceNext,
+        [`usuarios/${user.uid}/creatorMonetizationStatus`]: creatorMonetizationStatusNext,
+        [`usuarios/${user.uid}/creatorBio`]: String(creatorBio || '').trim(),
+        [`usuarios/${user.uid}/buyerProfile`]: buyerProfile,
+        [`usuarios/${user.uid}/readerProfilePublic`]: readerPub,
+        [`usuarios/${user.uid}/readerProfileAvatarUrl`]: readerAvatarSave,
+        [`usuarios/${user.uid}/creatorBannerUrl`]: null,
+        [`usuarios/${user.uid}/instagramUrl`]: String(instagramUrl || '').trim(),
+        [`usuarios/${user.uid}/youtubeUrl`]: String(youtubeUrl || '').trim(),
+        [`usuarios/${user.uid}/creatorMembershipEnabled`]:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
           creatorMonetizationStatusNext === 'active'
             ? creatorMembershipEnabled
             : false,
-        creatorMembershipPriceBRL:
+        [`usuarios/${user.uid}/creatorMembershipPriceBRL`]:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
           creatorMonetizationStatusNext === 'active'
             ? Math.round(membershipPrice * 100) / 100
             : null,
-        creatorDonationSuggestedBRL:
+        [`usuarios/${user.uid}/creatorDonationSuggestedBRL`]:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
           creatorMonetizationStatusNext === 'active'
             ? Math.round(suggestedDonation * 100) / 100
             : null,
-        creatorOnboardingCompleted: adminAccess.isMangaka ? true : null,
-        creatorOnboardingCompletedAt: adminAccess.isMangaka ? Number(perfilDb?.creatorOnboardingCompletedAt || Date.now()) : null,
-        creatorStatus: creatorStatusNext,
-        ...(creatorCanonicalDoc ? { creator: creatorCanonicalDoc } : {}),
-        creatorProfile: adminAccess.isMangaka ? {
-          ...(perfilDb?.creatorProfile && typeof perfilDb.creatorProfile === 'object' ? perfilDb.creatorProfile : {}),
-          creatorId: user.uid,
-          userId: user.uid,
-          displayName: creatorPublicName,
-          username: persistedHandle || perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
-          bioShort: String(creatorBio || '').trim(),
-          bioFull: String(creatorBio || '').trim(),
-          avatarUrl: finalAvatar,
-          bannerUrl: '',
-          socialLinks: {
-            instagramUrl: String(instagramUrl || '').trim() || null,
-            youtubeUrl: String(youtubeUrl || '').trim() || null,
-          },
-          monetizationEnabled: creatorMonetizationStatusNext === 'active',
-          monetizationPreference: creatorMonetizationPreferenceNext,
-          monetizationStatus: creatorMonetizationStatusNext,
-          ageVerified: Boolean(birthIsoForSave && parseBirthDateLocal(birthIsoForSave)),
-          status: creatorStatusNext,
-          stats: {
-            followersCount: Number(perfilDb?.creatorProfile?.stats?.followersCount || perfilDb?.stats?.followersCount || 0),
-            totalLikes: Number(perfilDb?.creatorProfile?.stats?.totalLikes || perfilDb?.stats?.totalLikes || 0),
-            totalViews: Number(perfilDb?.creatorProfile?.stats?.totalViews || perfilDb?.stats?.totalViews || 0),
-            totalComments: Number(perfilDb?.creatorProfile?.stats?.totalComments || perfilDb?.stats?.totalComments || 0),
-          },
-          updatedAt: Date.now(),
-        } : null,
-        lastLogin: Date.now(),
-      });
+        [`usuarios/${user.uid}/lastLogin`]: nowTs,
+      };
+      if (persistedHandle) {
+        privatePatch[`usuarios/${user.uid}/userHandle`] = persistedHandle;
+      }
+      if (creatorCanonicalDoc) {
+        privatePatch[`usuarios/${user.uid}/creator/profile`] = creatorCanonicalDoc.profile;
+        privatePatch[`usuarios/${user.uid}/creator/social`] = creatorCanonicalDoc.social;
+        privatePatch[`usuarios/${user.uid}/creator/meta`] = creatorCanonicalDoc.meta;
+      }
+      await update(ref(db), privatePatch);
 
-      await update(ref(db, `usuarios_publicos/${user.uid}`), {
-        uid: user.uid,
-        userName: accountDisplayName,
-        ...(persistedHandle ? { userHandle: persistedHandle } : {}),
-        userAvatar: finalAvatar,
-        accountType,
-        creatorDisplayName: creatorPublicName,
-        creatorBio: String(creatorBio || '').trim(),
-        creatorBannerUrl: null,
-        instagramUrl: String(instagramUrl || '').trim(),
-        youtubeUrl: String(youtubeUrl || '').trim(),
-        creatorMonetizationPreference: creatorMonetizationPreferenceNext,
-        creatorMonetizationStatus: creatorMonetizationStatusNext,
-        creatorMembershipEnabled: creatorMonetizationStatusNext === 'active' && creatorMembershipEnabled === true,
-        creatorMembershipPriceBRL: creatorMonetizationStatusNext === 'active' ? Math.round(membershipPrice * 100) / 100 : null,
-        creatorDonationSuggestedBRL: creatorMonetizationStatusNext === 'active' ? Math.round(suggestedDonation * 100) / 100 : null,
-        creatorStatus: creatorStatusNext,
-        creatorProfile: adminAccess.isMangaka ? {
-          creatorId: user.uid,
-          userId: user.uid,
-          displayName: creatorPublicName,
-          username: persistedHandle || perfilDb?.creatorProfile?.username || perfilDb?.creatorUsername || user.uid,
-          bioShort: String(creatorBio || '').trim(),
-          bioFull: String(creatorBio || '').trim(),
-          avatarUrl: finalAvatar,
-          bannerUrl: '',
-          socialLinks: {
-            instagramUrl: String(instagramUrl || '').trim() || null,
-            youtubeUrl: String(youtubeUrl || '').trim() || null,
-          },
-          stats: {
-            followersCount: Number(perfilDb?.creatorProfile?.stats?.followersCount || perfilDb?.stats?.followersCount || 0),
-            totalLikes: Number(perfilDb?.creatorProfile?.stats?.totalLikes || perfilDb?.stats?.totalLikes || 0),
-            totalViews: Number(perfilDb?.creatorProfile?.stats?.totalViews || perfilDb?.stats?.totalViews || 0),
-            totalComments: Number(perfilDb?.creatorProfile?.stats?.totalComments || perfilDb?.stats?.totalComments || 0),
-          },
-          updatedAt: Date.now(),
-        } : null,
-        stats: adminAccess.isMangaka ? {
-          followersCount: Number(perfilDb?.creatorProfile?.stats?.followersCount || perfilDb?.stats?.followersCount || 0),
-          totalLikes: Number(perfilDb?.creatorProfile?.stats?.totalLikes || perfilDb?.stats?.totalLikes || 0),
-          totalViews: Number(perfilDb?.creatorProfile?.stats?.totalViews || perfilDb?.stats?.totalViews || 0),
-          totalComments: Number(perfilDb?.creatorProfile?.stats?.totalComments || perfilDb?.stats?.totalComments || 0),
-        } : null,
-        followersCount: adminAccess.isMangaka
-          ? Number(perfilDb?.creatorProfile?.stats?.followersCount || perfilDb?.stats?.followersCount || 0)
-          : null,
-        notificationPrefs,
-        updatedAt: Date.now(),
-      });
+      const publicPatch = {
+        [`usuarios_publicos/${user.uid}/uid`]: user.uid,
+        [`usuarios_publicos/${user.uid}/userName`]: accountDisplayName,
+        [`usuarios_publicos/${user.uid}/userAvatar`]: finalAvatar,
+        [`usuarios_publicos/${user.uid}/accountType`]: accountType,
+        [`usuarios_publicos/${user.uid}/creatorDisplayName`]: creatorPublicName,
+        [`usuarios_publicos/${user.uid}/creatorBio`]: String(creatorBio || '').trim(),
+        [`usuarios_publicos/${user.uid}/creatorBannerUrl`]: null,
+        [`usuarios_publicos/${user.uid}/instagramUrl`]: String(instagramUrl || '').trim(),
+        [`usuarios_publicos/${user.uid}/youtubeUrl`]: String(youtubeUrl || '').trim(),
+        [`usuarios_publicos/${user.uid}/readerProfilePublic`]: readerPub,
+        [`usuarios_publicos/${user.uid}/readerProfileAvatarUrl`]: readerAvatarSave,
+        [`usuarios_publicos/${user.uid}/updatedAt`]: nowTs,
+      };
+      if (persistedHandle) {
+        publicPatch[`usuarios_publicos/${user.uid}/userHandle`] = persistedHandle;
+      }
+      await update(ref(db), publicPatch);
 
       await syncReaderPublicFavoritesMirror(db, user.uid);
+
+      if (
+        previousCreatorProfileAvatar &&
+        previousCreatorProfileAvatar !== String(finalAvatar || '').trim()
+      ) {
+        try {
+          await safeDeleteStorageObject(storage, previousCreatorProfileAvatar);
+        } catch (cleanupError) {
+          console.warn('[Perfil] falha ao limpar avatar antigo do creator:', cleanupError);
+        }
+      }
 
       savedUserAvatarRef.current = String(finalAvatar || '').trim();
       setAvatarSelecionado(finalAvatar);
@@ -1033,9 +1005,6 @@ export default function Perfil({
                     </button>
                   </div>
                 </div>
-                {creatorMonetizationReviewReason ? (
-                  <p className="perfil-creator-hero__note">{creatorMonetizationReviewReason}</p>
-                ) : null}
               </div>
             </div>
           </section>

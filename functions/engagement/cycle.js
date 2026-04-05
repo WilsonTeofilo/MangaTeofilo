@@ -18,12 +18,14 @@ async function runCommitCreatorEngagementTickForUid(db, uidRaw) {
   const uid = String(uidRaw || '').trim();
   if (!uid) return { ok: false, error: 'uid_invalido' };
   const now = Date.now();
-  const [userSnap, obrasSnap, capsSnap] = await Promise.all([
+  const [userSnap, creatorStatsSnap, obrasSnap, capsSnap] = await Promise.all([
     db.ref(`usuarios/${uid}`).get(),
+    db.ref(`creators/${uid}/stats`).get(),
     db.ref('obras').get(),
     db.ref('capitulos').get(),
   ]);
   const usuario = userSnap.val() || {};
+  const creatorStatsRow = creatorStatsSnap.val() || {};
   const obras = toRecordListServer(obrasSnap.val() || {}).filter((o) => String(o?.creatorId || '').trim() === uid);
   const obraIds = new Set(obras.map((o) => String(o.id || '').trim().toLowerCase()));
   const caps = toRecordListServer(capsSnap.val() || {}).filter((cap) => {
@@ -33,7 +35,7 @@ async function runCommitCreatorEngagementTickForUid(db, uidRaw) {
   });
   const tick = processEngagementCycleTickServer({
     engagementCycle: usuario.engagementCycle,
-    metrics: metricsFromUsuarioRowServer(usuario),
+    metrics: metricsFromUsuarioRowServer(usuario, creatorStatsRow),
     caps,
     uid,
     now,
@@ -55,7 +57,7 @@ async function queueCommitCreatorEngagementForUid(uidRaw) {
   }
 }
 
-export const mirrorEngagementCycleToPublicProfile = onValueWritten(
+export const mirrorCreatorEngagementCycleToPublicProfile = onValueWritten(
   {
     ref: '/usuarios/{uid}/engagementCycle',
     region: 'us-central1',
@@ -75,9 +77,9 @@ export const mirrorEngagementCycleToPublicProfile = onValueWritten(
   }
 );
 
-export const onCreatorStatsForEngagementChanged = onValueWritten(
+export const onCreatorEngagementStatsWritten = onValueWritten(
   {
-    ref: '/usuarios/{uid}/creatorProfile/stats',
+    ref: '/creators/{uid}/stats',
     region: 'us-central1',
     memory: '256MiB',
     timeoutSeconds: 30,
@@ -87,19 +89,7 @@ export const onCreatorStatsForEngagementChanged = onValueWritten(
   }
 );
 
-export const onLegacyCreatorStatsForEngagementChanged = onValueWritten(
-  {
-    ref: '/usuarios/{uid}/stats',
-    region: 'us-central1',
-    memory: '256MiB',
-    timeoutSeconds: 30,
-  },
-  async (event) => {
-    await queueCommitCreatorEngagementForUid(event.params?.uid);
-  }
-);
-
-export const onChapterEngagementSourceChanged = onValueWritten(
+export const onChapterEngagementSourceWritten = onValueWritten(
   {
     ref: '/capitulos/{chapterId}',
     region: 'us-central1',

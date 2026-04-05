@@ -8,7 +8,12 @@ import {
   normalizeAndValidateCpf,
   parseBirthDateStrict,
 } from '../creatorCompliance.js';
-import { assembleCreatorRecordForRtdb, legalFullNameHasMinThreeWords, legalFullNameHasNoDigits } from '../creatorRecord.js';
+import {
+  assembleCreatorRecordForRtdb,
+  legalFullNameHasMinThreeWords,
+  legalFullNameHasNoDigits,
+  resolveCreatorMonetizationStatusFromDb,
+} from '../creatorRecord.js';
 import { coercePayoutPixType, normalizePixPayoutKey, validatePixPayout } from '../pixKey.js';
 import { finalizeCreatorApplicationApproval } from './admin.js';
 
@@ -250,13 +255,13 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     if (monetizationPreference !== 'monetize') {
       return { ok: true, status: 'approved', alreadyMangaka: true };
     }
-    const monStatus = String(row?.creatorMonetizationStatus || '').trim().toLowerCase();
+    const monStatus = resolveCreatorMonetizationStatusFromDb(row);
     if (monStatus === 'active') {
       return { ok: true, status: 'approved', alreadyMangaka: true, monetizationAlreadyActive: true };
     }
     const alreadyApprovedOnce =
-      row?.creatorMonetizationApprovedOnce === true ||
-      row?.creator?.monetization?.approved === true;
+      row?.creator?.monetization?.approved === true ||
+      row?.creator?.monetization?.isApproved === true;
     if (alreadyApprovedOnce) {
       const nextMonetizationStatus = isAdult ? 'active' : 'blocked_underage';
       const creatorDocM = assembleCreatorRecordForRtdb({
@@ -277,7 +282,6 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
         [`usuarios/${uid}/creatorBio`]: bioShort,
         [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
         [`usuarios/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
-        [`usuarios/${uid}/creatorMonetizationApprovedOnce`]: true,
         [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
         [`usuarios/${uid}/creatorCompliance`]: compliance,
         [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
@@ -287,6 +291,8 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
         [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
         [`usuarios/${uid}/creatorProfile/monetizationStatus`]: nextMonetizationStatus,
         [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: nextMonetizationStatus === 'active',
+        [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: nextMonetizationStatus === 'active',
+        [`usuarios/${uid}/creatorProfile/isApproved`]: true,
         [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
         [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
         [`usuarios_publicos/${uid}/updatedAt`]: now,
@@ -299,27 +305,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
         monetizationStatus: nextMonetizationStatus,
       };
     }
-    const creatorApplicationMangaka = {
-      ...(row?.creatorApplication && typeof row.creatorApplication === 'object' ? row.creatorApplication : {}),
-      userId: uid,
-      displayName,
-      bioShort,
-      profileImageUrl,
-      profileImageCrop,
-      bannerUrl: null,
-      monetizationPreference: 'monetize',
-      monetizationRequested: true,
-      birthDate: birthDateRaw,
-      isAdult,
-      socialLinks: {
-        instagramUrl: instagramUrl || null,
-        youtubeUrl: youtubeUrl || null,
-      },
-      status: 'approved',
-      acceptTerms: true,
-      createdAt: row?.creatorApplication?.createdAt || now,
-      updatedAt: now,
-    };
+    const nextMonetizationStatus = isAdult ? 'active' : 'blocked_underage';
     const creatorDocM = assembleCreatorRecordForRtdb({
       row,
       birthDateIso: birthDateRaw,
@@ -328,53 +314,51 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
       instagramUrl,
       youtubeUrl,
       monetizationPreference: 'monetize',
-      creatorMonetizationStatus: 'disabled',
+      creatorMonetizationStatus: nextMonetizationStatus,
       compliance,
       now,
     });
-    const monetReviewPatch = {
+    const monetizationPatch = {
       [`usuarios/${uid}/creator`]: creatorDocM,
-      [`usuarios/${uid}/creatorApplication`]: creatorApplicationMangaka,
       [`usuarios/${uid}/creatorDisplayName`]: displayName,
       [`usuarios/${uid}/creatorBio`]: bioShort,
       [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
-      [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
-      [`usuarios/${uid}/creatorMonetizationApprovedOnce`]: false,
-      [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: now,
+      [`usuarios/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
+      [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
+      [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
       [`usuarios/${uid}/creatorCompliance`]: compliance,
       [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
       [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
       [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
       [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
       [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
-      [`usuarios/${uid}/creatorProfile/monetizationStatus`]: 'disabled',
-      [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: false,
+      [`usuarios/${uid}/creatorProfile/monetizationStatus`]: nextMonetizationStatus,
+      [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: nextMonetizationStatus === 'active',
+      [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: nextMonetizationStatus === 'active',
+      [`usuarios/${uid}/creatorProfile/isApproved`]: nextMonetizationStatus === 'active',
       [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
-      [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: 'disabled',
+      [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
       [`usuarios_publicos/${uid}/updatedAt`]: now,
     };
     if (!Number(row?.creatorRequestedAt || 0)) {
-      monetReviewPatch[`usuarios/${uid}/creatorRequestedAt`] = now;
+      monetizationPatch[`usuarios/${uid}/creatorRequestedAt`] = now;
     }
-    await db.ref().update(monetReviewPatch);
+    await db.ref().update(monetizationPatch);
     await pushUserNotification(db, uid, {
       type: 'creator_monetization',
-      title: 'Monetizacao solicitada',
+      title: nextMonetizationStatus === 'active' ? 'Monetizacao ativada' : 'Monetizacao bloqueada por idade',
       message:
-        'Seus dados para monetizacao foram enviados. Voce continua publicando normalmente; a primeira liberacao depende da equipe.',
-      data: { monetizationStatus: 'disabled', readPath: '/perfil' },
-    });
-    await notifyCreatorRequestAdmins(db, {
-      applicantUid: uid,
-      displayName,
-      monetizationPreference: 'monetize',
-      monetizationOnly: true,
+        nextMonetizationStatus === 'active'
+          ? 'Seus dados financeiros foram validados e a monetizacao foi ativada. Agora voce pode ligar ou desligar no perfil quando quiser.'
+          : 'Sua conta continua liberada para publicar, mas a monetizacao segue bloqueada por idade.',
+      data: { monetizationStatus: nextMonetizationStatus, readPath: '/perfil' },
     });
     return {
       ok: true,
       status: 'approved',
       alreadyMangaka: true,
-      monetizationApprovalRequested: true,
+      monetizationReactivated: nextMonetizationStatus === 'active',
+      monetizationStatus: nextMonetizationStatus,
     };
   }
 
@@ -469,8 +453,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     [`usuarios/${uid}/creatorBio`]: bioShort,
     [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
     [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
-    [`usuarios/${uid}/creatorMonetizationApprovedOnce`]: false,
-    [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: monetizationPreference === 'monetize' ? now : null,
+    [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
     [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
     [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
@@ -500,7 +483,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     title: 'Solicitacao enviada',
     message:
       monetizationPreference === 'monetize'
-        ? 'Seu pedido de criador com monetizacao foi enviado. A primeira liberacao financeira depende da equipe.'
+        ? 'Seu pedido de criador com monetizacao foi enviado. Se aprovado como creator, a monetizacao ja nasce pronta para uso.'
         : 'Seu pedido de criador foi enviado para analise.',
     data: { status: 'requested', monetizationPreference, monetizationRequested, isAdult },
   });

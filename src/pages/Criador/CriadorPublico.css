@@ -301,7 +301,6 @@
   cursor: pointer;
 }
 
-/* Lista horizontal compacta (referencia: perfis tipo MANGA Plus Creators) */
 .criador-obras-grid {
   display: flex;
   flex-direction: column;

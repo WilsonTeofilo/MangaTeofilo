@@ -113,7 +113,7 @@ async function maybePushCommentSocial(db, recipientUid, payload) {
   });
 }
 
-export const onChapterCommentWrittenV2 = onValueWritten(
+export const onChapterCommentSocialWritten = onValueWritten(
   {
     ref: '/capitulos/{capId}/comentarios/{commentId}',
     region: 'us-central1',

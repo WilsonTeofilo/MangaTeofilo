@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
@@ -19,6 +19,10 @@ import {
   getResponsiveCropZoomBounds,
   normalizeResponsiveCropAdjustment,
 } from '../../utils/responsiveCrop';
+import {
+  safeDeleteStorageObject,
+  safeDeleteStorageObjects,
+} from '../../utils/storageCleanup';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -92,7 +96,7 @@ function carregarImagem(file) {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('Nao foi possivel ler a imagem enviada.'));
+      reject(new Error('Não foi possível ler a imagem enviada.'));
     };
     img.src = url;
   });
@@ -162,7 +166,7 @@ async function comprimirImagemParaUpload(file) {
   }
 
   if (!melhorBlob || melhorBlob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-    throw new Error('Nao foi possivel otimizar a imagem para ate 5MB. Tente outra imagem.');
+    throw new Error('Não foi possível otimizar a imagem para até 5 MB. Tente outra imagem.');
   }
 
   return new File(
@@ -197,7 +201,7 @@ async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
   }
 
   if (!blob || blob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-    throw new Error('Nao foi possivel otimizar a capa para ate 5MB. Tente outra imagem.');
+    throw new Error('Não foi possível otimizar a capa para até 5 MB. Tente outra imagem.');
   }
 
   return new File([blob], nomeArquivoComExtensao(file.name, '.webp'), {
@@ -268,7 +272,7 @@ function ModalErro({ mensagem, aoFechar }) {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <div className="modal-header">⚠️ OPERAÇÃO BLOQUEADA</div>
+        <div className="modal-header">OPERAÇÃO BLOQUEADA</div>
         <div className="modal-body">
           <p>{mensagem}</p>
         </div>
@@ -527,7 +531,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
   const [capitulos, setCapitulos] = useState([]);
   const [obras, setObras] = useState([]);
-  /** Evita redirect falso: antes do 1º snapshot, o fallback da obra copiava creatorId legado (Shito). */
+  /** Evita redirect falso: antes do 1Âº snapshot, o fallback da obra copiava creatorId legado (Shito). */
   const [obrasSnapshotReady, setObrasSnapshotReady] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -609,7 +613,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       return {
         id: obraIdSelecionada,
         slug: obraIdSelecionada,
-        titulo: 'Carregando obra…',
+        titulo: 'Carregando obra...',
         tituloCurto: '',
         creatorId: user.uid,
       };
@@ -865,11 +869,23 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       const fileRef = storageRef(storage, pathStorage);
       await uploadBytes(fileRef, arquivoOtimizado);
       const urlNova = await getDownloadURL(fileRef);
+      const paginasStoragePathsExistentes = Array.isArray(capituloEditando?.paginasStoragePaths)
+        ? [...capituloEditando.paginasStoragePaths]
+        : Array.from({ length: paginasExistentes.length }, (_, pathIndex) => (
+          Array.isArray(capituloEditando?.paginas) ? capituloEditando.paginas[pathIndex] : ''
+        ));
+      const arquivoAnterior = paginasStoragePathsExistentes[index]
+        || (Array.isArray(capituloEditando?.paginas) ? capituloEditando.paginas[index] : '');
 
       const novasPaginas = [...paginasExistentes];
       novasPaginas[index] = urlNova;
-      
-      await dbUpdate(dbRef(db, `capitulos/${editandoId}`), { paginas: novasPaginas });
+      paginasStoragePathsExistentes[index] = pathStorage;
+
+      await dbUpdate(dbRef(db, `capitulos/${editandoId}`), {
+        paginas: novasPaginas,
+        paginasStoragePaths: paginasStoragePathsExistentes,
+      });
+      await safeDeleteStorageObject(storage, arquivoAnterior);
       setPaginasExistentes(novasPaginas);
     } catch (err) {
       setErroModal("Erro no Upload: " + err.message);
@@ -880,7 +896,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   };
 
   const handleUploadManga = async (arquivos) => {
-    const urls = [];
+    const uploads = [];
     for (let i = 0; i < arquivos.length; i++) {
       const erroArquivo = validarImagemUpload(arquivos[i], `Pagina ${i + 1}`);
       if (erroArquivo) {
@@ -901,9 +917,12 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
           rej, res
         );
       });
-      urls.push(await getDownloadURL(uploadTask.snapshot.ref));
+      uploads.push({
+        url: await getDownloadURL(uploadTask.snapshot.ref),
+        path: pathStorage,
+      });
     }
-    return urls;
+    return uploads;
   };
 
   const handleSelecionarArquivosPaginas = (fileList) => {
@@ -1036,8 +1055,10 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
 
       let urlCapa = null;
-      let urlsPaginas = [];
+      let capaStoragePath = null;
+      let paginasUpload = [];
       const ajusteNormalizado = normalizarCapaAjuste(capaAjuste);
+      const capaAnterior = capituloEditando?.capaStoragePath || capituloEditando?.capaUrl || '';
 
       if (capaCapitulo) {
         const erroCapa = validarImagemUpload(capaCapitulo, 'Capa');
@@ -1052,6 +1073,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         );
         await uploadBytes(capaRef, capaOtimizada);
         urlCapa = await getDownloadURL(capaRef);
+        capaStoragePath = capaRef.fullPath;
       }
 
       if (arquivosPaginas.length > 0) {
@@ -1059,7 +1081,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
           const erro = validarImagemUpload(file, `Pagina ${idx + 1}`);
           if (erro) throw new Error(erro);
         });
-        urlsPaginas = await handleUploadManga(arquivosPaginas);
+        paginasUpload = await handleUploadManga(arquivosPaginas);
       }
 
       const dados = {
@@ -1084,13 +1106,20 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       dados.antecipadoMembros = Boolean(antecipadoMembros);
 
       if (urlCapa) dados.capaUrl = urlCapa;
+      if (capaStoragePath) dados.capaStoragePath = capaStoragePath;
       if (urlCapa || capaEditavel) dados.capaAjuste = ajusteNormalizado;
-      if (urlsPaginas.length > 0) dados.paginas = urlsPaginas;
+      if (paginasUpload.length > 0) {
+        dados.paginas = paginasUpload.map((item) => item.url);
+        dados.paginasStoragePaths = paginasUpload.map((item) => item.path);
+      }
 
       if (editandoId) {
         await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
+        if (capaStoragePath) {
+          await safeDeleteStorageObject(storage, capaAnterior);
+        }
       } else {
-        if (!urlCapa || (urlsPaginas.length === 0 && arquivosPaginas.length === 0)) {
+        if (!urlCapa || (paginasUpload.length === 0 && arquivosPaginas.length === 0)) {
             throw new Error("Obrigatório: Capa + Arquivos.");
         }
         await set(push(dbRef(db, 'capitulos')), dados);
@@ -1152,6 +1181,33 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     navigate(chaptersHubPath);
   };
 
+  const apagarCapitulo = async (cap) => {
+    if (!cap?.id) return;
+    if (!window.confirm(`Apagar fragmento ${cap.numero}?`)) return;
+    setLoading(true);
+    setProgressoMsg(`Apagando fragmento ${cap.numero}...`);
+    try {
+      const arquivos = [
+        cap.capaStoragePath,
+        cap.capaUrl,
+        ...(Array.isArray(cap.paginasStoragePaths) ? cap.paginasStoragePaths : []),
+        ...(Array.isArray(cap.paginas) ? cap.paginas : []),
+      ];
+      await Promise.allSettled([
+        safeDeleteStorageObjects(storage, arquivos),
+        remove(dbRef(db, `capitulos/${cap.id}`)),
+      ]);
+      if (editandoId === cap.id) {
+        cancelarEdicao();
+      }
+    } catch (err) {
+      setErroModal(`Erro ao apagar: ${err.message || 'Falha ao remover capítulo.'}`);
+    } finally {
+      setLoading(false);
+      setProgressoMsg('');
+    }
+  };
+
   return (
     <div className="admin-panel">
       <ModalErro mensagem={erroModal} aoFechar={() => setErroModal('')} />
@@ -1184,13 +1240,13 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         <section className="form-section">
           <h2>
             {editandoId
-              ? `${isMangaka ? 'Editar meu capitulo' : 'Editar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`
-              : `${isMangaka ? 'Criar capitulo' : 'Criar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}
+              ? `${isMangaka ? 'Editar meu capítulo' : 'Editar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`
+              : `${isMangaka ? 'Criar capítulo' : 'Criar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}
           </h2>
           
           <form onSubmit={handleSubmit} className="admin-form">
             <div className="input-row">
-              <input type="number" placeholder="Nº" value={numeroCapitulo} onChange={(e) => setNumeroCapitulo(e.target.value)} required />
+              <input type="number" placeholder="NÂº" value={numeroCapitulo} onChange={(e) => setNumeroCapitulo(e.target.value)} required />
               <input type="text" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} required />
             </div>
 
@@ -1208,8 +1264,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
               </label>
               <p className="lancamento-help">
                {isMangaka
-                 ? 'Deixe vazio para publicar agora. Com data futura, o capitulo fica em breve ate a abertura publica.'
-                 : 'Data vazia = ja publico. Com data futura, o capitulo fica em breve ate o horario. Se a opcao abaixo estiver marcada, membros ativos do criador podem ler antes da abertura publica.'}
+                 ? 'Deixe vazio para publicar agora. Com data futura, o capítulo fica em breve até a abertura pública.'
+                 : 'Data vazia = já público. Com data futura, o capítulo fica em breve até o horário. Se a opção abaixo estiver marcada, membros ativos do criador podem ler antes da abertura pública.'}
               </p>
               <label className="lancamento-check">
                 <input
@@ -1255,7 +1311,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                   }}
                 >
                   <h3>Envie as páginas do capítulo</h3>
-                  <p>{isMangaka ? 'Arraste paginas aqui para montar seu capitulo.' : 'Arraste e solte imagens aqui, ou use o seletor abaixo.'}</p>
+                  <p>{isMangaka ? 'Arraste páginas aqui para montar seu capítulo.' : 'Arraste e solte imagens aqui, ou use o seletor abaixo.'}</p>
                 </div>
                 <div className="file-inputs">
                   <label className="admin-capa-file-label">
@@ -1351,7 +1407,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 <div className="cirurgia-header">
                   <div className="cirurgia-info">
                     <h3>Ajuste da capa (16:9)</h3>
-                    <p>{isMangaka ? 'Ajuste a capa que vai aparecer no catalogo e no leitor.' : 'Arraste na imagem e use sliders de ajuste fino. A prévia final replica o resultado real.'}</p>
+                    <p>{isMangaka ? 'Ajuste a capa que vai aparecer no catálogo e no leitor.' : 'Arraste na imagem e use sliders de ajuste fino. A prévia final replica o resultado real.'}</p>
                   </div>
                 </div>
 
@@ -1466,11 +1522,11 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
             {etapaAtiva === 4 && (
               <div className="editor-step-panel review-panel">
-                <h3>{isMangaka ? 'Revisao final do capitulo' : 'Revisão final'}</h3>
+                <h3>{isMangaka ? 'Revisão final do capítulo' : 'Revisão final'}</h3>
                 <div className="review-checklist">
                   {checklistPublicacao.map((item) => (
                     <div key={item.id} className={`review-check-item ${item.ok ? 'ok' : 'pendente'}`}>
-                      <span>{item.ok ? '✓' : '•'}</span>
+                      <span>{item.ok ? 'âœ“' : 'â€¢'}</span>
                       <p>Etapa {item.id}: {item.label}</p>
                     </div>
                   ))}
@@ -1510,7 +1566,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
             {etapaAtiva === 5 && (
               <div className="editor-step-panel review-panel">
-                <h3>{isMangaka ? 'Publicar capitulo' : 'Publicar capítulo'}</h3>
+                <h3>{isMangaka ? 'Publicar capítulo' : 'Publicar capítulo'}</h3>
                 <p className="editor-empty">
                   {isMangaka ? 'Confira tudo e publique sem depender do admin.' : 'Confira os dados e clique em publicar. O botão ficará fixo ao final para facilitar.'}
                 </p>
@@ -1565,7 +1621,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
           <div className="capitulos-grid">
             {capitulosDaObra.length === 0 ? (
               <p className="editor-empty">
-                {isMangaka ? 'Nenhum capitulo cadastrado para esta obra ainda.' : 'Nenhum capítulo cadastrado para esta obra.'}
+                {isMangaka ? 'Nenhum capítulo cadastrado para esta obra ainda.' : 'Nenhum capítulo cadastrado para esta obra.'}
               </p>
             ) : capitulosDaObra.map((cap) => {
               const ehAgendado = cap.publicReleaseAt && Number(cap.publicReleaseAt) > Date.now();
@@ -1584,16 +1640,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                     <span className={`cap-status-pill ${status.toLowerCase()}`}>{status}</span>
                   </div>
                   <div className="cap-meta-row">
-                    <span>📅 {dataLabel}</span>
-                    <span>👁 {views} views</span>
-                    {cap.antecipadoMembros ? <span>👑 Membership antecipada</span> : <span>Membership off</span>}
+                    <span>{`Data: ${dataLabel}`}</span>
+                    <span>{`${views} views`}</span>
+                    {cap.antecipadoMembros ? <span>Membership antecipada</span> : <span>Membership off</span>}
                   </div>
                 </div>
                 <div className="cap-actions">
                   <button className="btn-edit" onClick={() => prepararEdicao(cap)}>Editar</button>
-                  <button className="btn-delete" onClick={() => {
-                    if (window.confirm(`Apagar fragmento ${cap.numero}?`)) remove(dbRef(db, `capitulos/${cap.id}`));
-                  }}>Apagar</button>
+                  <button className="btn-delete" onClick={() => apagarCapitulo(cap)}>Apagar</button>
                 </div>
               </div>
             );
@@ -1604,3 +1658,6 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     </div>
   );
 }
+
+
+

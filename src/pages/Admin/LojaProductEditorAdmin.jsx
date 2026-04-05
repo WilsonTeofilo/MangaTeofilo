@@ -21,6 +21,7 @@ import {
   productToFormState,
   SHIPPING_MODE,
 } from './lojaAdminShared';
+import { safeDeleteStorageObject } from '../../utils/storageCleanup';
 import './LojaAdmin.css';
 import './StoreAdminLayout.css';
 
@@ -40,6 +41,9 @@ async function uploadLojaFile(file, ownerUid, kind) {
       ? 'application/pdf'
       : String(file.type || 'image/jpeg').split(';')[0] || 'image/jpeg';
   await uploadBytes(r, file, { contentType });
+  if (kind === 'pdf' || kind === 'miolo') {
+    return r.fullPath;
+  }
   return getDownloadURL(r);
 }
 
@@ -136,8 +140,10 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
     setMsg('');
     try {
       let imagesText = form.imagesText;
-      let mioloPdfUrl = form.mioloPdfUrl;
+      let mioloPdfPath = form.mioloPdfPath;
       let coverSourceUrl = form.coverSourceUrl;
+      const previousMioloPdfPath = String(form.mioloPdfPath || '').trim();
+      const previousCoverSourceUrl = String(form.coverSourceUrl || '').trim();
 
       if (coverFile) {
         const url = await uploadLojaFile(coverFile, storageTargetUid, 'cover');
@@ -146,10 +152,10 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
         coverSourceUrl = url;
       }
       if (pdfFile) {
-        mioloPdfUrl = await uploadLojaFile(pdfFile, storageTargetUid, 'miolo');
+        mioloPdfPath = await uploadLojaFile(pdfFile, storageTargetUid, 'miolo');
       }
 
-      const formReady = { ...form, imagesText, mioloPdfUrl, coverSourceUrl };
+      const formReady = { ...form, imagesText, mioloPdfPath, coverSourceUrl };
       const payload = buildProductPayload(formReady, { isMangaka, creatorUid, config });
 
       if (!payload.title || payload.price <= 0) {
@@ -164,6 +170,18 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
         const newRef = push(ref(db, 'loja/produtos'));
         await set(newRef, { ...payload, createdAt: now });
       }
+
+      const storageCleanupTasks = [];
+      if (coverFile && previousCoverSourceUrl && previousCoverSourceUrl !== coverSourceUrl) {
+        storageCleanupTasks.push(safeDeleteStorageObject(storage, previousCoverSourceUrl));
+      }
+      if (pdfFile && previousMioloPdfPath && previousMioloPdfPath !== mioloPdfPath) {
+        storageCleanupTasks.push(safeDeleteStorageObject(storage, previousMioloPdfPath));
+      }
+      if (storageCleanupTasks.length) {
+        await Promise.allSettled(storageCleanupTasks);
+      }
+
       setMsg('Produto salvo.');
       setCoverFile(null);
       setPdfFile(null);
@@ -453,7 +471,7 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
                 Enviar PDF
               </label>
               {pdfFile ? <p className="loja-admin-hint">{pdfFile.name}</p> : null}
-              {!pdfFile && form.mioloPdfUrl ? (
+              {!pdfFile && form.mioloPdfPath ? (
                 <p className="loja-admin-hint">
                   Arquivo atual ligado. Envie outro PDF para substituir.
                 </p>

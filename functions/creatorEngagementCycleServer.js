@@ -1,7 +1,12 @@
-/**
+﻿/**
  * Espelho da lógica em `src/utils/creatorEngagementCycle.js` (processamento no servidor).
  * Manter alinhado ao alterar missões, boosts ou validações.
  */
+
+import {
+  normalizeCreatorEngagementMetrics,
+  resolveCreatorEngagementMetrics,
+} from './shared/creatorEngagementMetrics.js';
 
 export const ENGAGEMENT_CYCLE_LEVEL_MIN = 1;
 export const ENGAGEMENT_CYCLE_LEVEL_MAX = 5;
@@ -36,11 +41,12 @@ function capTs(cap) {
   return 0;
 }
 
-/** ORIGINAL: L1→2, L2–L3→3, L4+→5 — alinhar a `src/utils/creatorEngagementCycle.js` após teste. */
+/** Missões necessárias para subir de fase: 2 (fase 1), 3 (fases 2–3), 5 (fases 4–5). */
 export function requiredMissionsForCycleLevel(level) {
   const lv = norm(level) || 1;
-  if (lv <= 2) return 1;
-  return 2;
+  if (lv <= 1) return 2;
+  if (lv <= 3) return 3;
+  return 5;
 }
 
 export function getMissionPoolForLevel(level) {
@@ -49,41 +55,41 @@ export function getMissionPoolForLevel(level) {
     case 1:
       return [
         { id: 'ch_bonus', label: '', xp: 50, kind: 'chapter' },
-        { id: 'likes_20', label: '', xp: 25, kind: 'likes_delta', need: 1 },
-        { id: 'views_100', label: '', xp: 20, kind: 'views_delta', need: 5 },
+        { id: 'likes_20', label: '', xp: 25, kind: 'likes_delta', need: 20 },
+        { id: 'views_100', label: '', xp: 20, kind: 'views_delta', need: 100 },
       ];
     case 2:
       return [
         { id: 'ch_bonus', label: '', xp: 50, kind: 'chapter' },
-        { id: 'likes_40', label: '', xp: 30, kind: 'likes_delta', need: 2 },
-        { id: 'views_300', label: '', xp: 25, kind: 'views_delta', need: 10 },
-        { id: 'fol_5', label: '', xp: 40, kind: 'followers_delta', need: 1 },
+        { id: 'likes_40', label: '', xp: 30, kind: 'likes_delta', need: 40 },
+        { id: 'views_300', label: '', xp: 25, kind: 'views_delta', need: 300 },
+        { id: 'fol_5', label: '', xp: 40, kind: 'followers_delta', need: 5 },
       ];
     case 3:
       return [
         { id: 'ch_bonus', label: '', xp: 50, kind: 'chapter' },
-        { id: 'likes_80', label: '', xp: 35, kind: 'likes_delta', need: 2 },
-        { id: 'views_800', label: '', xp: 30, kind: 'views_delta', need: 15 },
-        { id: 'fol_10', label: '', xp: 45, kind: 'followers_delta', need: 1 },
+        { id: 'likes_80', label: '', xp: 35, kind: 'likes_delta', need: 80 },
+        { id: 'views_800', label: '', xp: 30, kind: 'views_delta', need: 800 },
+        { id: 'fol_10', label: '', xp: 45, kind: 'followers_delta', need: 10 },
       ];
     case 4:
       return [
         { id: 'ch_bonus', label: '', xp: 50, kind: 'chapter' },
-        { id: 'likes_150', label: '', xp: 40, kind: 'likes_delta', need: 3 },
-        { id: 'views_2000', label: '', xp: 35, kind: 'views_delta', need: 25 },
-        { id: 'fol_20', label: '', xp: 50, kind: 'followers_delta', need: 2 },
-        { id: 'rep_5', label: '', xp: 30, kind: 'replies', need: 2 },
-        { id: 'views_2500', label: '', xp: 35, kind: 'views_delta', need: 30 },
+        { id: 'likes_150', label: '', xp: 40, kind: 'likes_delta', need: 150 },
+        { id: 'views_2000', label: '', xp: 35, kind: 'views_delta', need: 2000 },
+        { id: 'fol_20', label: '', xp: 50, kind: 'followers_delta', need: 20 },
+        { id: 'rep_5', label: '', xp: 30, kind: 'replies', need: 5 },
+        { id: 'views_2500', label: '', xp: 35, kind: 'views_delta', need: 2500 },
       ];
     case 5:
     default:
       return [
         { id: 'ch_bonus', label: '', xp: 50, kind: 'chapter' },
-        { id: 'likes_300', label: '', xp: 45, kind: 'likes_delta', need: 3 },
-        { id: 'views_5000', label: '', xp: 40, kind: 'views_delta', need: 40 },
-        { id: 'fol_40', label: '', xp: 55, kind: 'followers_delta', need: 2 },
-        { id: 'streak_7', label: '', xp: 35, kind: 'streak', need: 2 },
-        { id: 'likes_350', label: '', xp: 45, kind: 'likes_delta', need: 4 },
+        { id: 'likes_300', label: '', xp: 45, kind: 'likes_delta', need: 300 },
+        { id: 'views_5000', label: '', xp: 40, kind: 'views_delta', need: 5000 },
+        { id: 'fol_40', label: '', xp: 55, kind: 'followers_delta', need: 40 },
+        { id: 'streak_7', label: '', xp: 35, kind: 'streak', need: 7 },
+        { id: 'likes_350', label: '', xp: 45, kind: 'likes_delta', need: 350 },
       ];
   }
 }
@@ -107,11 +113,7 @@ function defaultCycleState(metrics, now = Date.now()) {
 }
 
 function normalizeCreatorMetrics(m) {
-  return {
-    followers: norm(m?.followers),
-    views: norm(m?.views),
-    likes: norm(m?.likes),
-  };
+  return normalizeCreatorEngagementMetrics(m);
 }
 
 function chapterPublishedSince(caps, cycleStartedAt, uid) {
@@ -321,18 +323,15 @@ export function processEngagementCycleTick({
   return { state, changed, leveled };
 }
 
-export function metricsFromUsuarioRow(row) {
-  if (!row || typeof row !== 'object') {
-    return { followers: 0, views: 0, likes: 0 };
-  }
-  return {
-    followers: norm(row?.creatorProfile?.stats?.followersCount ?? row?.stats?.followersCount),
-    views: norm(row?.creatorProfile?.stats?.totalViews ?? row?.stats?.totalViews),
-    likes: norm(row?.creatorProfile?.stats?.totalLikes ?? row?.stats?.totalLikes),
-  };
+export function metricsFromUsuarioRow(row, creatorStats = null) {
+  return resolveCreatorEngagementMetrics({
+    creatorStats,
+    userRow: row,
+  });
 }
 
 export function toRecordList(value) {
   if (!value || typeof value !== 'object') return [];
   return Object.entries(value).map(([id, row]) => ({ id, ...(row || {}) }));
 }
+

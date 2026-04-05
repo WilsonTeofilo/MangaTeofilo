@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ciclo de engajamento (temporada) — níveis 1→5, reset infinito.
  * Progressão por missões completadas (não por XP). XP só visual.
  * Boost espelhado em usuarios_publicos para o feed (Cloud Function mirrorEngagementCycleToPublicProfile).
@@ -56,13 +56,13 @@ function capTs(cap) {
 
 /**
  * Quantas missões cumprir neste nível para subir.
- * ORIGINAL: L1→2, L2–L3→3, L4+→5 — reverter após teste.
+ * Missões necessárias para subir de fase: 2 (fase 1), 3 (fases 2–3), 5 (fases 4–5).
  */
 export function requiredMissionsForCycleLevel(level) {
   const lv = norm(level) || 1;
-  if (lv <= 2) return 1;
-  if (lv <= 4) return 2;
-  return 2;
+  if (lv <= 1) return 2;
+  if (lv <= 3) return 3;
+  return 5;
 }
 
 /**
@@ -75,41 +75,41 @@ export function getMissionPoolForLevel(level) {
     case 1:
       return [
         { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (vale como missão completa)', xp: 50, kind: 'chapter' },
-        { id: 'likes_20', label: 'Subir +1 like desde o início do ciclo (TESTE)', xp: 25, kind: 'likes_delta', need: 1 },
-        { id: 'views_100', label: 'Subir +5 views desde o início do ciclo (TESTE)', xp: 20, kind: 'views_delta', need: 5 },
+        { id: 'likes_20', label: 'Subir +20 likes desde o inicio do ciclo', xp: 25, kind: 'likes_delta', need: 20 },
+        { id: 'views_100', label: 'Subir +100 views desde o inicio do ciclo', xp: 20, kind: 'views_delta', need: 100 },
       ];
     case 2:
       return [
         { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_40', label: 'Subir +2 likes desde o início do ciclo (TESTE)', xp: 30, kind: 'likes_delta', need: 2 },
-        { id: 'views_300', label: 'Subir +10 views desde o início do ciclo (TESTE)', xp: 25, kind: 'views_delta', need: 10 },
-        { id: 'fol_5', label: 'Subir +1 seguidor desde o início do ciclo (TESTE)', xp: 40, kind: 'followers_delta', need: 1 },
+        { id: 'likes_40', label: 'Subir +40 likes desde o inicio do ciclo', xp: 30, kind: 'likes_delta', need: 40 },
+        { id: 'views_300', label: 'Subir +300 views desde o inicio do ciclo', xp: 25, kind: 'views_delta', need: 300 },
+        { id: 'fol_5', label: 'Subir +5 seguidores desde o inicio do ciclo', xp: 40, kind: 'followers_delta', need: 5 },
       ];
     case 3:
       return [
         { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_80', label: 'Subir +2 likes desde o início do ciclo (TESTE)', xp: 35, kind: 'likes_delta', need: 2 },
-        { id: 'views_800', label: 'Subir +15 views desde o início do ciclo (TESTE)', xp: 30, kind: 'views_delta', need: 15 },
-        { id: 'fol_10', label: 'Subir +1 seguidor desde o início do ciclo (TESTE)', xp: 45, kind: 'followers_delta', need: 1 },
+        { id: 'likes_80', label: 'Subir +80 likes desde o inicio do ciclo', xp: 35, kind: 'likes_delta', need: 80 },
+        { id: 'views_800', label: 'Subir +800 views desde o inicio do ciclo', xp: 30, kind: 'views_delta', need: 800 },
+        { id: 'fol_10', label: 'Subir +10 seguidores desde o inicio do ciclo', xp: 45, kind: 'followers_delta', need: 10 },
       ];
     case 4:
       return [
         { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_150', label: 'Subir +3 likes desde o início do ciclo (TESTE)', xp: 40, kind: 'likes_delta', need: 3 },
-        { id: 'views_2000', label: 'Subir +25 views desde o início do ciclo (TESTE)', xp: 35, kind: 'views_delta', need: 25 },
-        { id: 'fol_20', label: 'Subir +2 seguidores desde o início do ciclo (TESTE)', xp: 50, kind: 'followers_delta', need: 2 },
-        { id: 'rep_5', label: 'Responder 2 comentários nos seus capítulos (TESTE)', xp: 30, kind: 'replies', need: 2 },
-        { id: 'views_2500', label: 'Ou: subir +30 views desde o início do ciclo (TESTE)', xp: 35, kind: 'views_delta', need: 30 },
+        { id: 'likes_150', label: 'Subir +150 likes desde o inicio do ciclo', xp: 40, kind: 'likes_delta', need: 150 },
+        { id: 'views_2000', label: 'Subir +2.000 views desde o inicio do ciclo', xp: 35, kind: 'views_delta', need: 2000 },
+        { id: 'fol_20', label: 'Subir +20 seguidores desde o inicio do ciclo', xp: 50, kind: 'followers_delta', need: 20 },
+        { id: 'rep_5', label: 'Responder 5 comentarios nos seus capitulos', xp: 30, kind: 'replies', need: 5 },
+        { id: 'views_2500', label: 'Ou: subir +2.500 views desde o inicio do ciclo', xp: 35, kind: 'views_delta', need: 2500 },
       ];
     case 5:
     default:
       return [
         { id: 'ch_bonus', label: 'Publicar 1 capítulo novo (+50 XP)', xp: 50, kind: 'chapter' },
-        { id: 'likes_300', label: 'Subir +3 likes desde o início do ciclo (TESTE)', xp: 45, kind: 'likes_delta', need: 3 },
-        { id: 'views_5000', label: 'Subir +40 views desde o início do ciclo (TESTE)', xp: 40, kind: 'views_delta', need: 40 },
-        { id: 'fol_40', label: 'Subir +2 seguidores desde o início do ciclo (TESTE)', xp: 55, kind: 'followers_delta', need: 2 },
-        { id: 'streak_7', label: 'Entrar no painel do criador 2 dias seguidos (TESTE)', xp: 35, kind: 'streak', need: 2 },
-        { id: 'likes_350', label: 'Ou: subir +4 likes desde o início do ciclo (TESTE)', xp: 45, kind: 'likes_delta', need: 4 },
+        { id: 'likes_300', label: 'Subir +300 likes desde o inicio do ciclo', xp: 45, kind: 'likes_delta', need: 300 },
+        { id: 'views_5000', label: 'Subir +5.000 views desde o inicio do ciclo', xp: 40, kind: 'views_delta', need: 5000 },
+        { id: 'fol_40', label: 'Subir +40 seguidores desde o inicio do ciclo', xp: 55, kind: 'followers_delta', need: 40 },
+        { id: 'streak_7', label: 'Entrar no painel do criador 7 dias seguidos', xp: 35, kind: 'streak', need: 7 },
+        { id: 'likes_350', label: 'Ou: subir +350 likes desde o inicio do ciclo', xp: 45, kind: 'likes_delta', need: 350 },
       ];
   }
 }
@@ -119,16 +119,16 @@ export function rewardLinesForCompletingCycleLevel(level) {
   const lv = Math.min(ENGAGEMENT_CYCLE_LEVEL_MAX, Math.max(ENGAGEMENT_CYCLE_LEVEL_MIN, norm(level) || 1));
   if (lv >= ENGAGEMENT_CYCLE_LEVEL_MAX) {
     return [
-      `Boost forte no feed (${BOOST_MUL_BY_LEVEL[5]}×) por ${formatBoostDurationPt(5)}`,
+      `Boost forte no feed (${BOOST_MUL_BY_LEVEL[5]}Ã—) por ${formatBoostDurationPt(5)}`,
       'Selo especial e mais chance de aparecer para novos leitores',
       'Depois a semana recomeça na fase 1 (seu boost atual segue até acabar)',
     ];
   }
   const lines = [
-    `Boost no feed ${BOOST_MUL_BY_LEVEL[lv]}× por ${formatBoostDurationPt(lv)}`,
+    `Boost no feed ${BOOST_MUL_BY_LEVEL[lv]}Ã— por ${formatBoostDurationPt(lv)}`,
   ];
   if (lv >= 3) lines.push('Selo / destaque no seu perfil');
-  if (lv >= 4) lines.push('Um empurrão leve no ranking e na vitrine “em alta”');
+  if (lv >= 4) lines.push('Um empurrão leve no ranking e na vitrine â€œem altaâ€');
   return lines;
 }
 
@@ -450,3 +450,4 @@ export function formatRemainingShort(ms) {
   if (h >= 1) return `${h}h ${m}min`;
   return `${m}min`;
 }
+

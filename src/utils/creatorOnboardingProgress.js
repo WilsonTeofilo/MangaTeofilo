@@ -6,6 +6,7 @@ import {
   CREATOR_MEMBERSHIP_PRICE_MAX_BRL,
   CREATOR_MEMBERSHIP_PRICE_MIN_BRL,
 } from '../constants';
+import { resolveCreatorMonetizationFlags } from './creatorMonetizationUi';
 import { validateCreatorSocialLinks } from './creatorSocialLinks';
 import { toRecordList } from './firebaseRecordList';
 
@@ -54,11 +55,8 @@ export function buildCreatorOnboardingSteps({
   const price = Number(perfilDb.creatorMembershipPriceBRL);
   const donation = Number(perfilDb.creatorDonationSuggestedBRL);
   const membershipEnabled = perfilDb.creatorMembershipEnabled !== false;
-  const monetizationResolved = resolveCreatorMonetizationStatusFromDb(perfilDb);
-  const monetizationStatus =
-    monetizationResolved !== ''
-      ? monetizationResolved
-      : String(perfilDb.creatorMonetizationStatus || '').trim().toLowerCase();
+  const monetizationStatus = resolveCreatorMonetizationStatusFromDb(perfilDb);
+  const monetizationFlags = resolveCreatorMonetizationFlags(perfilDb);
   const monetizationActive = monetizationStatus === 'active';
   const monetizationConfigured =
     Number.isFinite(price) &&
@@ -72,7 +70,7 @@ export function buildCreatorOnboardingSteps({
     ? true
     : (
       monetizationStatus === 'blocked_underage' ||
-      (monetizationConfigured && (monetizationStatus === 'active' || perfilDb.creatorMonetizationApprovedOnce === true))
+      (monetizationConfigured && (monetizationStatus === 'active' || monetizationFlags.isApproved === true))
     );
 
   const produtos = toRecordList(produtosVal);

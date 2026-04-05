@@ -6,6 +6,7 @@ import {
   processCreatorProfileImageToWebp,
   serializeCreatorProfileCrop,
 } from './creatorProfileImage';
+import { resolveStoragePathFromPathOrUrl, safeDeleteStorageObject } from './storageCleanup';
 
 /**
  * Envia candidatura a criador (sem banner: o hero público usa a foto de perfil).
@@ -30,6 +31,8 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
     payoutPixType: payload.payoutPixType,
     acceptFinancialTerms: payload.acceptFinancialTerms,
   };
+  let uploadedProfileImageTarget = '';
+  const previousProfileImageTarget = String(payload?.profileImageUrl || '').trim();
 
   if (payload?.creatorProfileImageFile && uid) {
     const blob = await processCreatorProfileImageToWebp(
@@ -42,6 +45,7 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
       contentType: 'image/webp',
       cacheControl: 'public,max-age=31536000,immutable',
     });
+    uploadedProfileImageTarget = fileRef.fullPath;
     callablePayload.profileImageUrl = await getDownloadURL(fileRef);
     callablePayload.profileImageCrop = serializeCreatorProfileCrop(
       payload.creatorProfileImageAdjustment
@@ -61,15 +65,23 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
     }
   }
 
-  const { data } = await creatorSubmitApplication(callablePayload);
+  let data;
+  try {
+    ({ data } = await creatorSubmitApplication(callablePayload));
+  } catch (error) {
+    if (uploadedProfileImageTarget) {
+      await Promise.allSettled([safeDeleteStorageObject(storage, uploadedProfileImageTarget)]);
+    }
+    throw error;
+  }
 
   const iso = String(payload?.birthDate || '').trim();
   if (uid && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
     const y = parseInt(iso.slice(0, 4), 10);
     try {
-      await update(ref(db, `usuarios/${uid}`), {
-        birthDate: iso,
-        birthYear: Number.isFinite(y) && y >= 1900 ? y : null,
+      await update(ref(db), {
+        [`usuarios/${uid}/birthDate`]: iso,
+        [`usuarios/${uid}/birthYear`]: Number.isFinite(y) && y >= 1900 ? y : null,
       });
     } catch (e) {
       console.warn('[creatorApplication] Não foi possível sincronizar birthDate no perfil:', e);
@@ -78,6 +90,19 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
 
   const profileImageUrl =
     String(callablePayload.profileImageUrl || data?.application?.profileImageUrl || '').trim() || '';
+
+  const previousProfileImagePath = resolveStoragePathFromPathOrUrl(previousProfileImageTarget);
+  const nextProfileImagePath = resolveStoragePathFromPathOrUrl(profileImageUrl);
+  const ownedPrefix = uid ? `creator_profile/${uid}/` : '';
+  if (
+    payload?.creatorProfileImageFile &&
+    ownedPrefix &&
+    previousProfileImagePath &&
+    previousProfileImagePath.startsWith(ownedPrefix) &&
+    previousProfileImagePath !== nextProfileImagePath
+  ) {
+    await Promise.allSettled([safeDeleteStorageObject(storage, previousProfileImagePath)]);
+  }
 
   return { data, profileImageUrl };
 }

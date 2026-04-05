@@ -631,7 +631,11 @@ export default function Leitor({ user, perfil }) {
         updatedAt: Date.now(),
       };
       if (handlePub) pubPatch.userHandle = handlePub;
-      await update(ref(db, `usuarios_publicos/${usuario.uid}`), pubPatch);
+      const rootPatch = {};
+      for (const [key, value] of Object.entries(pubPatch)) {
+        rootPatch[`usuarios_publicos/${usuario.uid}/${key}`] = value;
+      }
+      await update(ref(db), rootPatch);
     } catch (err) {
       console.warn('Aviso: não foi possível sincronizar perfil público.', err.message);
     }

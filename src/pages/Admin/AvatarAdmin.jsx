@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { onValue, push, ref as dbRef, remove, set, update } from 'firebase/database';
-import { deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
+import { get, onValue, push, ref as dbRef, remove, set, update } from 'firebase/database';
+import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { auth, db, storage } from '../../services/firebase';
-import { isAdminUser } from '../../constants';
+import { AVATAR_FALLBACK, isAdminUser } from '../../constants';
 import { normalizarAcessoAvatar } from '../../utils/avatarAccess';
+import { safeDeleteStorageObject } from '../../utils/storageCleanup';
 import './AdminPanel.css';
 import './AvatarAdmin.css';
 
@@ -276,8 +277,47 @@ export default function AvatarAdmin() {
     if (!window.confirm('Remover este avatar da lista?')) return;
     try {
       const avatar = avatares.find((a) => a.id === avatarId);
-      if (avatar?.storagePath) {
-        await deleteObject(storageRef(storage, avatar.storagePath));
+      const avatarUrl = String(avatar?.url || '').trim();
+      const fallbackAvatarUrl =
+        String(avatares.find((item) => item.id !== avatarId)?.url || '').trim() || AVATAR_FALLBACK;
+      const updates = {};
+
+      if (avatarUrl) {
+        const [usuariosSnap, publicosSnap] = await Promise.all([
+          get(dbRef(db, 'usuarios')),
+          get(dbRef(db, 'usuarios_publicos')),
+        ]);
+        const usuarios = usuariosSnap.val() || {};
+        const publicos = publicosSnap.val() || {};
+
+        Object.entries(usuarios).forEach(([uid, row]) => {
+          if (!row || typeof row !== 'object') return;
+          if (String(row.userAvatar || '').trim() === avatarUrl) {
+            updates[`usuarios/${uid}/userAvatar`] = fallbackAvatarUrl;
+          }
+          if (String(row.readerProfileAvatarUrl || '').trim() === avatarUrl) {
+            updates[`usuarios/${uid}/readerProfileAvatarUrl`] = fallbackAvatarUrl;
+          }
+        });
+
+        Object.entries(publicos).forEach(([uid, row]) => {
+          if (!row || typeof row !== 'object') return;
+          if (String(row.userAvatar || '').trim() === avatarUrl) {
+            updates[`usuarios_publicos/${uid}/userAvatar`] = fallbackAvatarUrl;
+          }
+          if (String(row.readerProfileAvatarUrl || '').trim() === avatarUrl) {
+            updates[`usuarios_publicos/${uid}/readerProfileAvatarUrl`] = fallbackAvatarUrl;
+          }
+        });
+      }
+
+      if (Object.keys(updates).length) {
+        await update(dbRef(db), updates);
+      }
+
+      const storageTarget = String(avatar?.storagePath || avatar?.url || '').trim();
+      if (storageTarget) {
+        await safeDeleteStorageObject(storage, storageTarget);
       }
       await remove(dbRef(db, `avatares/${avatarId}`));
     } catch (err) {

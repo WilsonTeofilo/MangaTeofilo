@@ -1,7 +1,8 @@
 /**
  * Documento canônico `usuarios/{uid}/creator` (Realtime Database).
  * Espelha a estrutura lógica pedida (perfil / social / monetização PIX / meta).
- * Campos legados (creatorMonetizationStatus, creatorCompliance, etc.) continuam sincronizados nos callables.
+ * O fluxo vivo deve ler deste documento canônico; campos legados restantes existem
+ * apenas para saneamento administrativo durante a migração.
  */
 
 import {
@@ -74,8 +75,8 @@ export function assembleCreatorRecordForRtdb({
   const pref = monetizationPreference === 'monetize' ? 'monetize' : 'publish_only';
   const st = String(creatorMonetizationStatus || 'disabled').trim().toLowerCase();
   const approvedOnce =
-    row?.creatorMonetizationApprovedOnce === true ||
     row?.creator?.monetization?.approved === true ||
+    row?.creator?.monetization?.isApproved === true ||
     st === 'active';
 
   const prev = row?.creator && typeof row.creator === 'object' ? row.creator : {};
@@ -112,8 +113,10 @@ export function assembleCreatorRecordForRtdb({
 
     monetization = {
       enabled: st === 'active',
+      isMonetizationActive: st === 'active',
       requested: true,
       approved: approvedOnce,
+      isApproved: approvedOnce,
       legal: hasCompliance ? { fullName, cpf: cpfDigits } : null,
       payout: hasCompliance
         ? { type: 'pix', key: pixKey.slice(0, 2000), pixType }
@@ -147,16 +150,15 @@ export function assembleCreatorRecordForRtdb({
  */
 export function resolveCreatorMonetizationStatusFromDb(row) {
   if (!row || typeof row !== 'object') return '';
-  const top = String(row.creatorMonetizationStatus || '').trim().toLowerCase();
-  const prof = String(row.creatorProfile?.monetizationStatus || '').trim().toLowerCase();
   const mon = row.creator?.monetization;
-  const nestedActive =
-    mon && typeof mon === 'object' && mon.enabled === true && mon.approved === true;
-  if (nestedActive) return 'active';
-  const pool = [top, prof].filter(Boolean);
-  if (pool.includes('active')) return 'active';
-  if (pool.includes('blocked_underage')) return 'blocked_underage';
-  if (pool.includes('disabled')) return 'disabled';
-  if (pool.includes('pending_review')) return row?.creatorMonetizationApprovedOnce === true ? 'active' : 'disabled';
-  return top || prof || '';
+  if (row?.creator?.meta?.isAdult === false) return 'blocked_underage';
+  if (
+    mon &&
+    typeof mon === 'object' &&
+    mon.enabled === true &&
+    (mon.approved === true || mon.isApproved === true)
+  ) {
+    return 'active';
+  }
+  return 'disabled';
 }

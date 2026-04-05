@@ -7,21 +7,12 @@ import { functions } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { buildTimelineStepsState, podOrderTimelineMeta, shortOrderPublicId } from '../../utils/orderTrackingUi';
 import { correiosRastreamentoUrl } from '../../config/store';
+import { isPodStatusPendingPayment, normalizePodStatus, podStatusBadgeClass } from '../../utils/podStatus';
 import OrderTimeline from './OrderTimeline';
 import './OrderTracking.css';
 
 const resumeCheckoutFn = httpsCallable(functions, 'resumePrintOnDemandCheckout');
 const cancelMyPrintOnDemandOrderFn = httpsCallable(functions, 'cancelMyPrintOnDemandOrder');
-
-function podBadgeClass(status) {
-  const s = String(status || '').trim().toLowerCase();
-  if (s === 'cancelled') return 'ot-badge ot-badge--cancel';
-  if (s === 'pending_payment') return 'ot-badge ot-badge--payment';
-  if (s === 'in_production' || s === 'paid') return 'ot-badge ot-badge--production';
-  if (s === 'ready_to_ship' || s === 'shipped') return 'ot-badge ot-badge--transit';
-  if (s === 'delivered') return 'ot-badge ot-badge--done';
-  return 'ot-badge ot-badge--neutral';
-}
 
 /**
  * @param {object} props
@@ -59,9 +50,9 @@ export default function PodOrderCard({
     [snap.saleModel, snap.format, snap.quantity]
   );
 
-  const st = String(order?.status || '').trim().toLowerCase();
+  const st = normalizePodStatus(order?.status);
   const checkoutUrl = String(order?.checkoutUrl || '').trim();
-  const needsPayment = st === 'pending_payment';
+  const needsPayment = isPodStatusPendingPayment(st);
   const canPayNow = needsPayment && Boolean(checkoutUrl);
   const canResumeCheckout = needsPayment && !checkoutUrl;
   const paymentExpired = Boolean(

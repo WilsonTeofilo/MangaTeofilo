@@ -72,7 +72,7 @@ export function buildCreatorOnboardingSteps({
     ? true
     : (
       monetizationStatus === 'blocked_underage' ||
-      (monetizationConfigured && (monetizationStatus === 'pending_review' || monetizationStatus === 'active'))
+      (monetizationConfigured && (monetizationStatus === 'active' || perfilDb.creatorMonetizationApprovedOnce === true))
     );
 
   const produtos = toRecordList(produtosVal);
@@ -112,7 +112,7 @@ export function buildCreatorOnboardingSteps({
         : monetizationStatus === 'blocked_underage'
           ? 'Monetização indisponível por idade. Você segue publicando normalmente, sem repasse financeiro.'
           : monetizationConfigured
-            ? 'Tudo enviado. Sua membership está na fila para a equipe validar e liberar.'
+            ? 'Tudo pronto. Sua membership pode ser ligada assim que a monetização estiver liberada na conta.'
             : `Ative a membership do criador e escolha valores entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL}.`,
       done: monetOk,
       action: 'form',

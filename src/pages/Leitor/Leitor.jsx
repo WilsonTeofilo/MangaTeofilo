@@ -7,11 +7,10 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../services/firebase';
 import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
-import { applyChapterCommentDelta, applyChapterLikeDelta, applyChapterReadDelta } from '../../utils/discoveryStats';
+import { applyChapterCommentDelta, applyChapterReadDelta } from '../../utils/discoveryStats';
 import { getLastRead, recordReadingProgress } from '../../utils/readingProgressLocal';
 import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
 import {
-  OBRA_PADRAO_ID,
   buildChapterCampaignId,
   normalizarObraId,
   obterObraIdCapitulo,
@@ -25,6 +24,7 @@ import { toRecordList } from '../../utils/firebaseRecordList';
 import { formatUserDisplayWithHandle, normalizePublicHandle } from '../../utils/publicCreatorName';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
 import { normalizeUsernameInput } from '../../utils/usernameValidation';
+import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../config/site';
 import LoadingScreen from '../../components/LoadingScreen';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import ChapterShareBar, { ogImageMimeHint } from '../../components/ChapterShareBar.jsx';
@@ -32,6 +32,7 @@ import './Leitor.css';
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 const upsertNotificationSubscription = httpsCallable(functions, 'upsertNotificationSubscription');
+const toggleChapterLikeCallable = httpsCallable(functions, 'toggleChapterLike');
 
 function commentSortTs(c) {
   if (typeof c.data === 'number' && Number.isFinite(c.data)) return c.data;
@@ -250,10 +251,10 @@ export default function Leitor({ user, perfil }) {
   const chapterSeo = useMemo(() => {
     if (!capitulo || !id) return null;
     const SITE = 'MangaTeofilo';
-    const SITE_W = 'https://mangateofilo.com';
+    const SITE_W = SITE_ORIGIN;
     const absShareUrl = (u) => {
       const s = String(u || '').trim();
-      if (!s) return `${SITE_W}/assets/fotos/shito.jpg`;
+      if (!s) return SITE_DEFAULT_IMAGE;
       if (/^https?:\/\//i.test(s)) return s;
       return `${SITE_W}${s.startsWith('/') ? '' : '/'}${s}`;
     };
@@ -413,7 +414,8 @@ export default function Leitor({ user, perfil }) {
       return;
     }
     const cached = getAttribution(2 * 24 * 60 * 60 * 1000);
-    const chapterCampaignId = buildChapterCampaignId(id, OBRA_PADRAO_ID);
+    const chapterWorkId = capitulo ? obterObraIdCapitulo(capitulo) : '';
+    const chapterCampaignId = buildChapterCampaignId(id, chapterWorkId || 'work');
     const isSameChapterCampaign =
       cached?.source === 'chapter_email' &&
       (!cached?.campaignId || cached.campaignId === chapterCampaignId);
@@ -422,7 +424,7 @@ export default function Leitor({ user, perfil }) {
       campaignId: isSameChapterCampaign ? cached?.campaignId || chapterCampaignId : null,
       clickId: isSameChapterCampaign ? cached?.clickId || null : null,
     };
-  }, [searchParams, id]);
+  }, [searchParams, id, capitulo]);
 
   useEffect(() => {
     if (!id) {
@@ -823,46 +825,8 @@ export default function Leitor({ user, perfil }) {
       return;
     }
     if (!capitulo) return;
-
-    const capRef = ref(db, `capitulos/${id}`);
-    let snap;
     try {
-      snap = await get(capRef);
-    } catch (e) {
-      console.error('Erro ao ler capítulo para curtir:', e);
-      return;
-    }
-    if (!snap.exists()) return;
-    const chapter = snap.val() || {};
-    const alreadyLiked = Boolean(chapter.usuariosQueCurtiram?.[user.uid]);
-    const currentLikes = Number(chapter.likesCount || 0);
-    const workId = obterObraIdCapitulo(capitulo);
-    const creatorId = creatorUidApoio || obraCreatorId({ creatorId: capitulo?.creatorId || '' });
-
-    try {
-      if (alreadyLiked) {
-        await update(capRef, {
-          likesCount: Math.max(0, currentLikes - 1),
-          [`usuariosQueCurtiram/${user.uid}`]: null,
-        });
-        await applyChapterLikeDelta(db, {
-          chapterId: id,
-          workId,
-          creatorId,
-          amount: -1,
-        });
-      } else {
-        await update(capRef, {
-          likesCount: currentLikes + 1,
-          [`usuariosQueCurtiram/${user.uid}`]: true,
-        });
-        await applyChapterLikeDelta(db, {
-          chapterId: id,
-          workId,
-          creatorId,
-          amount: 1,
-        });
-      }
+      await toggleChapterLikeCallable({ chapterId: id });
     } catch (e) {
       console.error('Erro ao curtir capítulo:', e);
     }

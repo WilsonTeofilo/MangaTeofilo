@@ -15,7 +15,13 @@ export const UNIFIED_TIMELINE_STEPS = Object.freeze([
 
 /** @param {string} [status] */
 export function normalizeStoreStatus(status) {
-  return String(status || '').trim().toLowerCase();
+  const raw = String(status || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'pending_payment') return 'pending';
+  if (raw === 'order_received') return 'paid';
+  if (raw === 'processing') return 'in_production';
+  if (raw === 'ready_to_ship') return 'shipped';
+  return raw;
 }
 
 /**
@@ -45,16 +51,16 @@ export function storeOrderTimelineMeta(status, paymentStatus) {
       paymentPending: true,
     };
   }
-  if (s === 'pending' || s === 'pending_payment') {
+  if (s === 'pending') {
     return { activeStep: 0, cancelled: false, problem: false, paymentPending: true };
   }
-  if (s === 'paid' || s === 'order_received') {
+  if (s === 'paid') {
     return { activeStep: 1, cancelled: false, problem: false, paymentPending: false };
   }
-  if (s === 'processing' || s === 'in_production') {
+  if (s === 'in_production') {
     return { activeStep: 2, cancelled: false, problem: false, paymentPending: false };
   }
-  if (s === 'ready_to_ship' || s === 'shipped') {
+  if (s === 'shipped') {
     return { activeStep: 3, cancelled: false, problem: false, paymentPending: false };
   }
   if (s === 'delivered') {
@@ -68,7 +74,7 @@ export function storeOrderTimelineMeta(status, paymentStatus) {
  * @returns {{ activeStep: number, cancelled: boolean, problem: boolean, productionHint?: string }}
  */
 export function podOrderTimelineMeta(status) {
-  const s = String(status || '').trim().toLowerCase();
+  const s = normalizePodStatus(status);
   if (!s) return { activeStep: 0, cancelled: false, problem: false };
   if (s === 'cancelled') {
     return { activeStep: -1, cancelled: true, problem: false };
@@ -120,16 +126,16 @@ export function storeOrderFilterBucket(order) {
   const ps = String(order?.paymentStatus || '').trim().toLowerCase();
   if (s === 'cancelled') return 'cancelled';
   if (ps === 'rejected' || ps === 'cancelled' || (s === 'pending' && ps && ps !== 'approved')) return 'problem';
-  if (s === 'pending' || s === 'pending_payment') return 'payment_pending';
-  if (s === 'processing' || s === 'in_production' || s === 'paid' || s === 'order_received') return 'production';
-  if (s === 'ready_to_ship' || s === 'shipped') return 'transit';
+  if (s === 'pending') return 'payment_pending';
+  if (s === 'in_production' || s === 'paid') return 'production';
+  if (s === 'shipped') return 'transit';
   if (s === 'delivered') return 'delivered';
   return 'production';
 }
 
 /** @param {object} order */
 export function podOrderFilterBucket(order) {
-  const s = String(order?.status || '').trim().toLowerCase();
+  const s = normalizePodStatus(order?.status);
   if (s === 'cancelled') return 'cancelled';
   if (s === 'pending_payment') return 'payment_pending';
   if (s === 'paid' || s === 'in_production') return 'production';
@@ -200,13 +206,13 @@ export function enrichStoreTimelineSteps(order, steps, formatDate) {
       return { ...step, detail: paidTs ? `Confirmado em ${fmt(paidTs)}` : 'Pagamento confirmado.' };
     }
     if (step.key === 'production') {
-      if (s === 'processing' || s === 'in_production' || s === 'paid' || s === 'order_received') {
+      if (s === 'in_production' || s === 'paid') {
         return { ...step, detail: `Última movimentação: ${fmt(order?.updatedAt || order?.createdAt)}` };
       }
       return { ...step, detail: 'Preparação e produção do pedido.' };
     }
     if (step.key === 'transit') {
-      if (s === 'ready_to_ship' || s === 'shipped') {
+      if (s === 'shipped') {
         const tr = String(order?.trackingCode || order?.codigoRastreio || '').trim();
         return {
           ...step,
@@ -276,3 +282,4 @@ export function enrichPodTimelineSteps(order, steps, formatDate, nowMs = Date.no
     return { ...step, detail: '' };
   });
 }
+import { normalizePodStatus } from './podStatus';

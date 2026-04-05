@@ -45,7 +45,7 @@ function payoutPixTypeFromCompliance(c, pixKey) {
  * @param {string} params.instagramUrl
  * @param {string} params.youtubeUrl
  * @param {'monetize'|'publish_only'} params.monetizationPreference
- * @param {string} params.creatorMonetizationStatus - disabled | pending_review | active | blocked_underage
+ * @param {string} params.creatorMonetizationStatus - disabled | active | blocked_underage
  * @param {{ legalFullName?: string, taxId?: string, payoutInstructions?: string } | null} params.compliance
  * @param {number} params.now
  */
@@ -73,6 +73,10 @@ export function assembleCreatorRecordForRtdb({
   const isAdult = age != null && age >= 18;
   const pref = monetizationPreference === 'monetize' ? 'monetize' : 'publish_only';
   const st = String(creatorMonetizationStatus || 'disabled').trim().toLowerCase();
+  const approvedOnce =
+    row?.creatorMonetizationApprovedOnce === true ||
+    row?.creator?.monetization?.approved === true ||
+    st === 'active';
 
   const prev = row?.creator && typeof row.creator === 'object' ? row.creator : {};
   const createdAt = Number(prev.meta?.createdAt) || now;
@@ -109,7 +113,7 @@ export function assembleCreatorRecordForRtdb({
     monetization = {
       enabled: st === 'active',
       requested: true,
-      approved: st === 'active',
+      approved: approvedOnce,
       legal: hasCompliance ? { fullName, cpf: cpfDigits } : null,
       payout: hasCompliance
         ? { type: 'pix', key: pixKey.slice(0, 2000), pixType }
@@ -153,6 +157,6 @@ export function resolveCreatorMonetizationStatusFromDb(row) {
   if (pool.includes('active')) return 'active';
   if (pool.includes('blocked_underage')) return 'blocked_underage';
   if (pool.includes('disabled')) return 'disabled';
-  if (pool.includes('pending_review')) return 'pending_review';
+  if (pool.includes('pending_review')) return row?.creatorMonetizationApprovedOnce === true ? 'active' : 'disabled';
   return top || prof || '';
 }

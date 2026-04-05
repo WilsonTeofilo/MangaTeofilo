@@ -8,6 +8,7 @@ import {
   normalizeProductCategory,
   STORE_CATEGORY_LABELS,
 } from '../../config/store';
+import { normalizeStoreStatus } from '../../utils/orderTrackingUi';
 import {
   creatorOrderTotal,
   formatBRL,
@@ -68,18 +69,17 @@ export default function LojaProductsListAdmin({ user, adminAccess, workspace = '
     return visibleOrders.reduce(
       (acc, order) => {
         const totalBase = isMangaka ? creatorOrderTotal(order, creatorUid) : Number(order.total || 0);
+        const status = normalizeStoreStatus(order.status);
         acc.total += totalBase;
         if (
-          order.status === 'paid' ||
-          order.status === 'order_received' ||
-          order.status === 'processing' ||
-          order.status === 'in_production' ||
-          order.status === 'shipped' ||
-          order.status === 'delivered'
+          status === 'paid' ||
+          status === 'in_production' ||
+          status === 'shipped' ||
+          status === 'delivered'
         ) {
           acc.paid += totalBase;
         }
-        if (order.status === 'pending' || order.status === 'pending_payment') acc.pending += 1;
+        if (status === 'pending') acc.pending += 1;
         return acc;
       },
       { total: 0, paid: 0, pending: 0 }

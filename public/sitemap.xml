@@ -1,117 +1,81 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://mangateofilo.com/</loc>
-    <lastmod>2026-04-04T23:13:59.128Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/works</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/works</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/mangas</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/mangas</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/sobre-autor</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/sobre-autor</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/apoie</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/apoie</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/loja</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/loja</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/print-on-demand</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/print-on-demand</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/creators</loc>
-    <lastmod>2026-04-04T23:13:59.129Z</lastmod>
+    <loc>https://shitoproject-ed649.web.app/creators</loc>
+    <lastmod>2026-04-05T07:07:58.289Z</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/work/bleach</loc>
+    <loc>https://shitoproject-ed649.web.app/work/bleach</loc>
     <lastmod>2026-04-02T20:55:00.970Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/work/dias-de-sakamoto</loc>
+    <loc>https://shitoproject-ed649.web.app/work/dias-de-sakamoto</loc>
     <lastmod>2026-04-04T02:14:15.392Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/work/hatsumi-no-miko</loc>
+    <loc>https://shitoproject-ed649.web.app/work/hatsumi-no-miko</loc>
     <lastmod>2026-04-03T04:41:15.804Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/work/me-ve-um-kilo-de-queijo</loc>
+    <loc>https://shitoproject-ed649.web.app/work/me-ve-um-kilo-de-queijo</loc>
     <lastmod>2026-04-03T04:01:03.950Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://mangateofilo.com/work/kokuin-heranca-do-abismo</loc>
+    <loc>https://shitoproject-ed649.web.app/work/kokuin-heranca-do-abismo</loc>
     <lastmod>2026-04-02T07:17:02.893Z</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://mangateofilo.com/ler/-OpB3HSRiS3mSfavsJv3</loc>
-    <lastmod>2026-04-02T02:41:27.137Z</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://mangateofilo.com/ler/-OpF1NuVOs3KYaOh53bV</loc>
-    <lastmod>2026-04-02T21:14:00.000Z</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://mangateofilo.com/ler/-OpGXK6IDwwU4P__bf71</loc>
-    <lastmod>2026-04-03T04:12:00.000Z</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://mangateofilo.com/ler/-OpGd9ZtxerbCkqQyeCi</loc>
-    <lastmod>2026-04-03T04:40:39.044Z</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://mangateofilo.com/ler/-OpLGYA9jqwZZ31gamUj</loc>
-    <lastmod>2026-04-03T14:17:00.000Z</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://mangateofilo.com/ler/-OpOsz8NCzoDx-Yll2Zy</loc>
-    <lastmod>2026-04-04T19:06:44.455Z</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
   </url>
 </urlset>

@@ -1,8 +1,8 @@
 import { obraSegmentoUrlPublica } from '../config/obras';
+import { SITE_DEFAULT_IMAGE, SITE_NAME, SITE_ORIGIN } from '../config/site';
 
-const SITE_NAME = 'MangaTeofilo';
-const SITE_URL = 'https://mangateofilo.com';
-const DEFAULT_IMAGE = '/assets/fotos/shito.jpg';
+const SITE_URL = SITE_ORIGIN;
+const DEFAULT_IMAGE = SITE_DEFAULT_IMAGE;
 
 function absolutizeUrl(pathOrUrl) {
   const raw = String(pathOrUrl || DEFAULT_IMAGE).trim();

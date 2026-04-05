@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import './SobreAutorV2.css';
@@ -24,7 +24,7 @@ const STORY_BLOCKS = [
   {
     title: 'O que a plataforma entrega',
     text:
-      'Hoje a proposta é juntar descoberta, leitura, acompanhamento de autores, publicação de obras e produtos ligados a essas histórias no mesmo lugar. Em vez de espalhar o criador em ferramentas soltas, a MangaTeofilo organiza a jornada com identidade, vitrine, ranking e caminhos para monetização — sempre com o autor no centro do que construiu.',
+      'Hoje a proposta é juntar descoberta, leitura, acompanhamento de autores, publicação de obras e produtos ligados a essas histórias no mesmo lugar. Em vez de espalhar o criador em ferramentas soltas, a MangaTeofilo organiza a jornada com identidade, vitrine, ranking e caminhos para monetização, sempre com o autor no centro do que construiu.',
   },
 ];
 
@@ -43,7 +43,7 @@ export default function SobreAutorV2() {
 
   const handleFotoClick = useCallback(() => {
     if (!revelarPorToque) return;
-    setIsPhotoHovered((v) => !v);
+    setIsPhotoHovered((value) => !value);
   }, [revelarPorToque]);
 
   return (
@@ -54,7 +54,7 @@ export default function SobreAutorV2() {
             <span className="sobre-eyebrow">SOBRE NÓS</span>
             <h1 className="sobre-title">Uma plataforma para transformar ideia em obra viva.</h1>
             <p className="sobre-lead">
-              A MangaTeofilo conecta criação autoral, leitura, descoberta e identidade visual num único
+              A MangaTeofilo conecta criação autoral, leitura, descoberta e identidade visual em um único
               ecossistema. O objetivo não é só publicar mangá: é dar um lugar onde histórias independentes
               nasçam, cresçam e encontrem leitores de verdade.
             </p>
@@ -81,11 +81,11 @@ export default function SobreAutorV2() {
               onClick={handleFotoClick}
               role={revelarPorToque ? 'button' : 'presentation'}
               tabIndex={revelarPorToque ? 0 : undefined}
-              onKeyDown={(e) => {
+              onKeyDown={(event) => {
                 if (!revelarPorToque) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setIsPhotoHovered((v) => !v);
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setIsPhotoHovered((value) => !value);
                 }
               }}
             >
@@ -95,17 +95,17 @@ export default function SobreAutorV2() {
                   className="sobre-portrait sobre-portrait--real"
                   alt="Wilson Teofilo"
                   loading="lazy"
-                  onError={(e) => {
-                    e.target.src = '/assets/avatares/ava1.webp';
+                  onError={(event) => {
+                    event.target.src = '/assets/avatares/ava1.webp';
                   }}
                 />
                 <img
                   src="/assets/fotos/teofilomangá.jpg"
                   className="sobre-portrait sobre-portrait--manga"
-                  alt="Wilson Teofilo em estilo manga"
+                  alt="Wilson Teofilo em estilo mangá"
                   loading="lazy"
-                  onError={(e) => {
-                    e.target.src = '/assets/avatares/ava2.webp';
+                  onError={(event) => {
+                    event.target.src = '/assets/avatares/ava2.webp';
                   }}
                 />
                 <div className="sobre-portrait-overlay" />
@@ -124,8 +124,8 @@ export default function SobreAutorV2() {
             {revelarPorToque && (
               <p className="sobre-touch-hint" aria-live="polite">
                 {isPhotoHovered
-                  ? 'Toque de novo para voltar à foto original'
-                  : 'Toque na foto para revelar a versão mangá'}
+                  ? 'Toque de novo para voltar à foto original.'
+                  : 'Toque na foto para revelar a versão mangá.'}
               </p>
             )}
           </aside>
@@ -163,11 +163,17 @@ export default function SobreAutorV2() {
             <h2 className="sobre-cta-title">A melhor forma de sentir a proposta ainda é entrando no universo.</h2>
             <p className="sobre-cta-text">
               Kokuin: Herança do Abismo é a obra-base dessa visão. Ler e ver o projeto em movimento ajuda a
-              entender o que a plataforma quer construir daqui pra frente.
+              entender o que a plataforma quer construir daqui para frente.
             </p>
           </div>
 
-          <div className="bio-cta">
+          <div className="bio-cta bio-cta--stacked">
+            <button
+              className="hn-cta hn-cta--ghost"
+              onClick={() => navigate('/kokuin', { state: { from: '/sobre-autor' } })}
+            >
+              DETALHES DA OBRA
+            </button>
             <button className="hn-cta" onClick={() => navigate('/works')}>
               LER KOKUIN AGORA
             </button>

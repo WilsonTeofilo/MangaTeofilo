@@ -4,7 +4,11 @@ import {
 } from '../constants';
 import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
 import { normalizeUsernameInput, validateUsernameHandle } from './usernameValidation';
-import { resolveEffectiveWorkCreatorId } from './workCreatorResolution';
+import {
+  resolveCanonicalWorkCreator,
+  resolveCreatorPublicProfileById,
+  resolveEffectiveWorkCreatorId,
+} from './workCreatorResolution';
 
 /** Nomes de teste / legado tipo "Criador1", "criador 10", "user3" — não usar como nome público. */
 export function isPlaceholderCreatorLabel(raw) {
@@ -31,8 +35,12 @@ function extractCreatorNameCandidatesFromChapters(chapters) {
   chapters.forEach((cap) => {
     values.push(
       cap?.creatorProfile?.displayName,
+      cap?.creatorProfile?.username,
       cap?.creatorDisplayName,
+      cap?.creatorUsername,
       cap?.creatorName,
+      cap?.creatorHandle,
+      cap?.userHandle,
       cap?.authorName,
       cap?.authorDisplayName,
       cap?.autor,
@@ -109,7 +117,13 @@ export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = n
     p?.creatorProfile?.displayName,
     p?.creatorDisplayName,
     typeof p?.displayName === 'string' ? p.displayName : null,
+    p?.userHandle,
+    p?.creatorUsername,
+    p?.username,
     o?.creatorDisplayName,
+    o?.creatorUsername,
+    o?.creatorHandle,
+    o?.userHandle,
     o?.creatorName,
     o?.authorName,
     o?.authorDisplayName,
@@ -136,19 +150,33 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
     allCapitulos && Array.isArray(allCapitulos)
       ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
       : [];
-  const creatorId =
-    matchingCaps.length
-      ? resolveEffectiveWorkCreatorId(
-          obra,
-          matchingCaps
-        )
-      : String(obra?.creatorId || '').trim() || obraCreatorId(obra);
-  const profile =
-    creatorsMap && creatorId ? creatorsMap[creatorId] || creatorsMap[String(creatorId).trim()] || null : null;
+  const { creatorId, profile } = matchingCaps.length
+    ? resolveCanonicalWorkCreator(obra, matchingCaps, creatorsMap)
+    : {
+        creatorId: String(obra?.creatorId || '').trim() || obraCreatorId(obra),
+        profile: resolveCreatorPublicProfileById(
+          creatorsMap,
+          String(obra?.creatorId || '').trim() || obraCreatorId(obra)
+        ),
+      };
   const name = resolvePublicCreatorName({ creatorPublicProfile: profile, obra, fallback: '' });
   if (name) return name;
   const chapterName = firstNonPlaceholder(extractCreatorNameCandidatesFromChapters(matchingCaps));
   if (chapterName) return chapterName;
+  const obraName = firstNonPlaceholder([
+    obra?.creatorDisplayName,
+    obra?.creatorUsername,
+    obra?.creatorHandle,
+    obra?.userHandle,
+    obra?.creatorName,
+    obra?.authorName,
+    obra?.authorDisplayName,
+    obra?.autor,
+    obra?.autorNome,
+    obra?.writerName,
+    obra?.userName,
+  ]);
+  if (obraName) return obraName;
   if (String(creatorId) === PLATFORM_LEGACY_CREATOR_UID) return PLATFORM_LEGACY_CREATOR_DISPLAY_NAME;
   return 'Autor';
 }
@@ -158,18 +186,18 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
  */
 export function resolveCreatorFeedLabel(obra, creatorsMap, allCapitulos = null) {
   const obraId = String(obra?.id || '').toLowerCase();
-  const creatorId =
+  const matchingCaps =
     allCapitulos && Array.isArray(allCapitulos)
-      ? resolveEffectiveWorkCreatorId(
-          obra,
-          allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
-        )
+      ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
+      : [];
+  const creatorId =
+    matchingCaps.length
+      ? resolveEffectiveWorkCreatorId(obra, matchingCaps, creatorsMap)
       : String(obra?.creatorId || '').trim() || obraCreatorId(obra);
-  const profile =
-    creatorsMap && creatorId ? creatorsMap[creatorId] || creatorsMap[String(creatorId).trim()] || null : null;
+  const profile = resolveCreatorPublicProfileById(creatorsMap, creatorId);
   if (profile) {
     const line = formatUserDisplayWithHandle(profile);
-    if (line && line !== 'Usuário') return line;
+    if (line && line !== 'Leitor') return line;
   }
   return resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos);
 }

@@ -8,7 +8,8 @@
     "node": "20"
   },
   "scripts": {
-    "lint": "echo \"No lint configured for functions\"",
+    "serve": "firebase emulators:start --only functions",
+    "lint": "node --check index.js",
     "test": "node --test",
     "deploy": "firebase deploy --only functions"
   },

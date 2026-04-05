@@ -7,7 +7,7 @@ import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
 import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
-import { ensureLegacyShitoObra, obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
+import { obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
@@ -137,7 +137,7 @@ export default function CreatorPublicProfilePage({ user }) {
     const unsub = onValue(
       ref(db, 'obras'),
       (snapshot) => {
-        const lista = snapshot.exists() ? ensureLegacyShitoObra(toRecordList(snapshot.val())) : [];
+        const lista = snapshot.exists() ? toRecordList(snapshot.val()) : [];
         setObras(
           lista
             .filter((obra) => obraVisivelNoCatalogoPublico(obra) && obraCreatorId(obra) === creatorUid)

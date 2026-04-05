@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db, storage } from '../../services/firebase';
+import { SITE_ORIGIN } from '../../config/site';
 import { processCreatorProfileImageToWebp } from '../../utils/creatorProfileImage';
 import {
   LISTA_AVATARES,
@@ -277,7 +278,7 @@ export default function Perfil({
   const hasMonetizationClearance = useMemo(() => {
     if (perfilDb?.creatorMonetizationApprovedOnce === true) return true;
     if (String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved') return true;
-    return creatorMonetizationStatus === 'active' || creatorMonetizationStatus === 'pending_review';
+    return creatorMonetizationStatus === 'active';
   }, [perfilDb, creatorMonetizationStatus]);
   const creatorReviewReason = String(perfilDb?.creatorReviewReason || '').trim();
   const creatorMonetizationReviewReason = String(perfilDb?.creatorMonetizationReviewReason || '').trim();
@@ -562,26 +563,23 @@ export default function Perfil({
       const clearanceNow =
         perfilDb?.creatorMonetizationApprovedOnce === true ||
         String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved' ||
-        creatorMonetizationStatus === 'active' ||
-        creatorMonetizationStatus === 'pending_review';
+        creatorMonetizationStatus === 'active';
       const creatorMonetizationPreferenceNext = !adminAccess.isMangaka
         ? creatorMonetizationPreference
         : normalizeCreatorMonetizationPreference(creatorMonetizationPreference);
       const creatorMonetizationStatusNext = !adminAccess.isMangaka
         ? null
         : creatorMonetizationPreferenceNext !== 'monetize'
-          ? ['active', 'pending_review', 'blocked_underage'].includes(creatorMonetizationStatus)
+          ? ['active', 'blocked_underage'].includes(creatorMonetizationStatus)
             ? creatorMonetizationStatus
             : 'disabled'
           : ageForMonet != null && ageForMonet < 18
             ? 'blocked_underage'
-            : creatorMonetizationStatus === 'pending_review'
-              ? 'pending_review'
-              : creatorMonetizationStatus === 'blocked_underage'
-                ? 'blocked_underage'
-                : clearanceNow
-                  ? 'active'
-                  : 'disabled';
+            : creatorMonetizationStatus === 'blocked_underage'
+              ? 'blocked_underage'
+              : clearanceNow
+                ? 'active'
+                : 'disabled';
       const creatorMonetizationRequestNeedsModal =
         adminAccess.isMangaka &&
         creatorMonetizationPreferenceNext === 'monetize' &&
@@ -696,19 +694,19 @@ export default function Perfil({
         creatorMembershipEnabled:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
-          (creatorMonetizationStatusNext === 'active' || creatorMonetizationStatusNext === 'pending_review')
+          creatorMonetizationStatusNext === 'active'
             ? creatorMembershipEnabled
             : false,
         creatorMembershipPriceBRL:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
-          (creatorMonetizationStatusNext === 'active' || creatorMonetizationStatusNext === 'pending_review')
+          creatorMonetizationStatusNext === 'active'
             ? Math.round(membershipPrice * 100) / 100
             : null,
         creatorDonationSuggestedBRL:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
-          (creatorMonetizationStatusNext === 'active' || creatorMonetizationStatusNext === 'pending_review')
+          creatorMonetizationStatusNext === 'active'
             ? Math.round(suggestedDonation * 100) / 100
             : null,
         creatorOnboardingCompleted: adminAccess.isMangaka ? true : null,
@@ -1263,7 +1261,7 @@ export default function Perfil({
                 <label>USERNAME (@)</label>
                 <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
                   Único na plataforma. Depois de salvo, não altera. URL:{' '}
-                  <strong>mangateofilo.com/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
+                  <strong>{SITE_ORIGIN.replace(/^https?:\/\//, '')}/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
                 </p>
                 <input
                   type="text"
@@ -1363,11 +1361,7 @@ export default function Perfil({
               </header>
 
               <div className="perfil-creator-monetization-card">
-                {creatorMonetizationStatus === 'pending_review' ? (
-                  <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--pending">
-                    <strong>Status:</strong> em revisão pela equipe.
-                  </p>
-                ) : creatorMonetizationStatus === 'blocked_underage' || monetizacaoBloqueadaPorIdade ? (
+                {creatorMonetizationStatus === 'blocked_underage' || monetizacaoBloqueadaPorIdade ? (
                   <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--warn">
                     <strong>Status:</strong> indisponível por idade (18+ para repasse).
                   </p>
@@ -1395,14 +1389,6 @@ export default function Perfil({
                     >
                       Desativar monetização
                     </button>
-                  ) : creatorMonetizationStatus === 'pending_review' ? (
-                    <button
-                      type="button"
-                      className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--ghost"
-                      onClick={handleDesativarMonetizacaoClick}
-                    >
-                      Voltar a só publicar enquanto aguardo
-                    </button>
                   ) : (
                     <button
                       type="button"
@@ -1424,7 +1410,7 @@ export default function Perfil({
               </div>
 
               {creatorMonetizationPreference === 'monetize' &&
-              (creatorMonetizationStatusEffective === 'active' || creatorMonetizationStatus === 'pending_review') ? (
+              creatorMonetizationStatusEffective === 'active' ? (
                 <>
                   <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 12 }}>
                     Membership nas suas obras (não é Premium do site). Valores entre R$ {CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e
@@ -1674,7 +1660,7 @@ export default function Perfil({
             <label>USERNAME (@)</label>
             <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
               Identificador único. Não pode ser alterado depois de salvo. Link:{' '}
-              <strong>mangateofilo.com/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
+              <strong>{SITE_ORIGIN.replace(/^https?:\/\//, '')}/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
             </p>
             <input
               type="text"

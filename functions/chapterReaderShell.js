@@ -6,13 +6,15 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getDatabase } from 'firebase-admin/database';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
+import { getAppBaseUrl } from './payments/config.js';
 
 const DATABASE_URL = 'https://shitoproject-ed649-default-rtdb.firebaseio.com';
-const APP_ORIGIN = 'https://mangateofilo.com';
-const DEFAULT_OG_IMAGE = `${APP_ORIGIN}/assets/fotos/shito.jpg`;
-
 if (!getApps().length) {
   initializeApp({ databaseURL: DATABASE_URL });
+}
+
+function getAppOrigin() {
+  return String(getAppBaseUrl() || 'https://shitoproject-ed649.web.app').replace(/\/+$/, '');
 }
 
 function escapeAttr(s) {
@@ -31,7 +33,7 @@ async function fetchIndexHtml() {
   if (indexHtmlCache.html && now - indexHtmlCache.at < INDEX_TTL_MS) {
     return indexHtmlCache.html;
   }
-  const res = await fetch(`${APP_ORIGIN}/index.html`, {
+  const res = await fetch(`${getAppOrigin()}/index.html`, {
     headers: { Accept: 'text/html' },
   });
   if (!res.ok) {
@@ -48,28 +50,30 @@ const MAX_CACHE = 400;
 
 function absolutizeImageUrl(url) {
   const u = String(url || '').trim();
-  if (!u) return DEFAULT_OG_IMAGE;
+  if (!u) return `${getAppOrigin()}/assets/fotos/shito.jpg`;
   if (/^https?:\/\//i.test(u)) return u;
-  return `${APP_ORIGIN}${u.startsWith('/') ? '' : '/'}${u}`;
+  return `${getAppOrigin()}${u.startsWith('/') ? '' : '/'}${u}`;
 }
 
 function pickChapterImage(ch) {
-  if (!ch || typeof ch !== 'object') return DEFAULT_OG_IMAGE;
+  const defaultOgImage = `${getAppOrigin()}/assets/fotos/shito.jpg`;
+  if (!ch || typeof ch !== 'object') return defaultOgImage;
   const capa = String(ch.capaUrl || '').trim();
   if (capa) return absolutizeImageUrl(capa);
   const p0 = Array.isArray(ch.paginas) && ch.paginas.length ? String(ch.paginas[0] || '').trim() : '';
   if (p0) return absolutizeImageUrl(p0);
-  return DEFAULT_OG_IMAGE;
+  return defaultOgImage;
 }
 
 function buildChapterMeta(id, ch) {
   const SITE = 'MangaTeofilo';
+  const appOrigin = getAppOrigin();
   const obraNome = String(ch?.obraTitulo || ch?.obraName || '').trim() || 'Mangá autoral';
   const num = Number(ch?.numero || 0);
   const capTitulo =
     String(ch?.titulo || '').trim() || (num ? `Capítulo ${num}` : 'Capítulo');
   const numLabel = num > 0 ? String(num) : '?';
-  const canonical = `${APP_ORIGIN}/ler/${encodeURIComponent(id)}`;
+  const canonical = `${appOrigin}/ler/${encodeURIComponent(id)}`;
   const title = `${obraNome} · Cap. ${numLabel}: ${capTitulo} | ${SITE}`;
   const description = `Leia ${capTitulo} de ${obraNome} — mangá em português no ${SITE}. Toque para abrir o leitor.`;
   const image = pickChapterImage(ch);
@@ -158,7 +162,7 @@ export const chapterReaderShell = onRequest(
     }
     const id = pathChapterId(req);
     if (!id) {
-      res.redirect(302, `${APP_ORIGIN}/works`);
+      res.redirect(302, `${getAppOrigin()}/works`);
       return;
     }
 
@@ -182,18 +186,19 @@ export const chapterReaderShell = onRequest(
         baseHtml = await fetchIndexHtml();
       } catch (e) {
         logger.error('chapterReaderShell fetchIndexHtml', e);
-        res.redirect(302, `${APP_ORIGIN}/`);
+        res.redirect(302, `${getAppOrigin()}/`);
         return;
       }
 
       const snap = await getDatabase().ref(`capitulos/${id}`).get();
       const ch = snap.exists() ? snap.val() : null;
+      const defaultOgImage = `${getAppOrigin()}/assets/fotos/shito.jpg`;
 
       const notFoundMeta = {
         title: 'Capítulo não encontrado | MangaTeofilo',
         description: 'Este capítulo não está disponível no MangaTeofilo.',
-        canonical: `${APP_ORIGIN}/ler/${encodeURIComponent(id)}`,
-        image: DEFAULT_OG_IMAGE,
+        canonical: `${getAppOrigin()}/ler/${encodeURIComponent(id)}`,
+        image: defaultOgImage,
         imgAlt: 'MangaTeofilo',
         robots: 'noindex,follow',
         articleModifiedTime: null,
@@ -216,7 +221,7 @@ export const chapterReaderShell = onRequest(
       res.status(200).send(finalHtml);
     } catch (e) {
       logger.error('chapterReaderShell', e);
-      res.redirect(302, `${APP_ORIGIN}/`);
+      res.redirect(302, `${getAppOrigin()}/`);
     }
   }
 );

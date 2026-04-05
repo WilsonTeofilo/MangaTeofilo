@@ -67,21 +67,6 @@ export function obterUserEntitlements(perfil) {
     }
   }
 
-  const legacyCreators = perfil?.creatorMemberships;
-  if (legacyCreators && typeof legacyCreators === 'object') {
-    for (const [creatorId, row] of Object.entries(legacyCreators)) {
-      const normalized = normalizeCreatorMembershipRow(creatorId, row);
-      if (!normalized) continue;
-      const current = mergedCreators[normalized.creatorId];
-      if (!current || normalized.memberUntil >= current.memberUntil) {
-        mergedCreators[normalized.creatorId] = {
-          ...current,
-          ...normalized,
-        };
-      }
-    }
-  }
-
   return {
     global,
     creators: mergedCreators,
@@ -103,4 +88,3 @@ export function listarEntitlementsDeCriador(perfil) {
     .filter((row) => row?.creatorId)
     .sort((a, b) => toMs(b?.memberUntil) - toMs(a?.memberUntil));
 }
-

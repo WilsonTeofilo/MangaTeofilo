@@ -1,6 +1,6 @@
-rules_version = '2';
+﻿rules_version = '2';
 service firebase.storage {
-  function isShitoAdmin() {
+  function isPlatformAdmin() {
     return request.auth != null
       && (request.auth.uid == "n5JTPLsxpyQPeC5qQtraSrBa4rG3" || request.auth.uid == "QayqN0MpBTQK6je44JwAXWapoQU2" || request.auth.uid == "20kR47W8PfTGIvGxGOGRsB2JiFA3" || request.auth.token.email == "wilsonteofilosouza@live.com" || request.auth.token.email == "drakenteofilo@gmail.com" || request.auth.token.admin == true);
   }
@@ -17,11 +17,11 @@ service firebase.storage {
   }
 
   /**
-   * Dono do path (uid no segmento) pode escrever na própria pasta sem depender de custom claim
-   * `panelRole` (muitos criadores só têm role no RTDB). Staff continua com override.
+   * Dono do path (uid no segmento) pode escrever na prÃ³pria pasta sem depender de custom claim
+   * `panelRole` (muitos criadores sÃ³ tÃªm role no RTDB). Staff continua com override.
    */
   function canWriteOwnerPath(ownerUid) {
-    return isShitoAdmin()
+    return isPlatformAdmin()
       || hasAdminPanelAccess()
       || (request.auth != null
           && request.auth.uid == ownerUid
@@ -30,9 +30,9 @@ service firebase.storage {
 
   match /b/{bucket}/o {
     /**
-     * URLs públicas enumeráveis: capas/{uid}/*, manga/{uid}/{obra}/*, obras/{uid}/{obra}/*
+     * URLs pÃºblicas enumerÃ¡veis: capas/{uid}/*, manga/{uid}/{obra}/*, obras/{uid}/{obra}/*
      * Qualquer pessoa pode tentar varrer uid/obra (segmentos validados por isSafeSegment).
-     * Conteúdo sensível não deve depender do segredo do path — use nomes de ficheiro imprevisíveis
+     * ConteÃºdo sensÃ­vel nÃ£o deve depender do segredo do path â€” use nomes de ficheiro imprevisÃ­veis
      * e regras de leitura acima. Ver docs/firebase-public-surface.md.
      */
     match /capas/{ownerUid}/{fileName} {
@@ -46,8 +46,8 @@ service firebase.storage {
     }
 
     /**
-     * Páginas de capítulo (AdminPanel → manga/…) e capas/banners por obra (ObrasAdmin → obras/…).
-     * Mesma política: imagens até 5MB, sem SVG; dono do segmento ou staff.
+     * PÃ¡ginas de capÃ­tulo (AdminPanel â†’ manga/â€¦) e capas/banners por obra (ObrasAdmin â†’ obras/â€¦).
+     * Mesma polÃ­tica: imagens atÃ© 5MB, sem SVG; dono do segmento ou staff.
      */
     match /{workImageRoot}/{ownerUid}/{obra}/{fileName} {
       allow read: if workImageRoot == "manga" || workImageRoot == "obras";
@@ -63,13 +63,13 @@ service firebase.storage {
 
     match /avatares/{fileName} {
       allow read: if true;
-      allow write: if isShitoAdmin()
+      allow write: if isPlatformAdmin()
                    && (request.resource == null || (request.resource.size < 1024 * 1024
                    && request.resource.contentType == "image/webp"
                    && fileName.matches('.*\\.webp$')));
     }
 
-    /** Banner de perfil público do criador (upload antes de virar mangaka). WebP comprimido no cliente (~400KB). */
+    /** Banner de perfil pÃºblico do criador (upload antes de virar mangaka). WebP comprimido no cliente (~400KB). */
     match /creator_profile/{ownerUid}/{fileName} {
       allow read: if true;
       allow write: if isSafeSegment(ownerUid)
@@ -82,7 +82,7 @@ service firebase.storage {
 
     /**
      * Assets da loja (imagens de vitrine + PDF digital).
-     * Imagens: leitura pública (URLs no catálogo). PDF: só com Firebase Auth (evita hotlink anônimo);
+     * Imagens: leitura pÃºblica (URLs no catÃ¡logo). PDF: sÃ³ com Firebase Auth (evita hotlink anÃ´nimo);
      * upload continua restrito ao dono do segmento / staff.
      */
     match /loja_produtos/{ownerUid}/{fileName} {
@@ -91,7 +91,7 @@ service firebase.storage {
                   && (
                     (resource.contentType.matches('image/.*')
                      && !resource.contentType.matches('.*svg.*'))
-                    || (resource.contentType == "application/pdf" && request.auth != null)
+                    || (resource.contentType == "application/pdf" && canWriteOwnerPath(ownerUid))
                   );
       allow write: if isSafeSegment(ownerUid)
                    && canWriteOwnerPath(ownerUid)
@@ -105,7 +105,7 @@ service firebase.storage {
     }
 
     match /print_on_demand/{ownerUid}/{fileName} {
-      allow read: if isShitoAdmin()
+      allow read: if isPlatformAdmin()
                    || hasAdminPanelAccess()
                    || (request.auth != null && request.auth.uid == ownerUid);
       /** Mesmo limite do cliente: PDF ate 55 MB na UI; capa ate 8 MB. */
@@ -128,3 +128,4 @@ service firebase.storage {
     }
   }
 }
+

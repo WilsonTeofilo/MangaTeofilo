@@ -5,9 +5,6 @@ import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } 
 
 import { db, storage, auth } from '../../services/firebase';
 import {
-  OBRA_PADRAO_ID,
-  OBRA_SHITO_DEFAULT,
-  ensureLegacyShitoObra,
   normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
@@ -512,7 +509,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const chaptersHubPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
   const isCreatorWorkspace = workspace === 'creator';
   const isMangaka = Boolean(adminAccess?.isMangaka);
-  const obraIdSelecionada = normalizarObraId(searchParams.get('obra') || OBRA_PADRAO_ID);
+  const obraQueryId = String(searchParams.get('obra') || '').trim();
+  const obraIdSelecionada = obraQueryId ? normalizarObraId(obraQueryId) : '';
   const capituloEditQueryId = String(searchParams.get('edit') || '').trim();
 
   const [titulo, setTitulo] = useState('');
@@ -566,17 +564,15 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       dbRef(db, 'obras'),
       (snapshot) => {
         if (!snapshot.exists()) {
-          setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+          setObras([]);
         } else {
-          const lista = ensureLegacyShitoObra(
-            Object.entries(snapshot.val() || {}).map(([id, valores]) => ({ id, ...(valores || {}) }))
-          );
+          const lista = Object.entries(snapshot.val() || {}).map(([id, valores]) => ({ id, ...(valores || {}) }));
           setObras(lista);
         }
         setObrasSnapshotReady(true);
       },
       () => {
-        setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        setObras([]);
         setObrasSnapshotReady(true);
       }
     );
@@ -606,6 +602,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     [capitulos, editandoId]
   );
   const obraSelecionada = useMemo(() => {
+    if (!obraIdSelecionada) return null;
     const obra = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
     if (obra) return obra;
     if (isMangaka && !obrasSnapshotReady && user?.uid) {
@@ -617,7 +614,13 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         creatorId: user.uid,
       };
     }
-    return { ...OBRA_SHITO_DEFAULT, id: obraIdSelecionada, slug: obraIdSelecionada };
+    return {
+      id: obraIdSelecionada,
+      slug: obraIdSelecionada,
+      titulo: 'Obra nao encontrada',
+      tituloCurto: '',
+      creatorId: '',
+    };
   }, [obras, obraIdSelecionada, isMangaka, obrasSnapshotReady, user?.uid]);
   const ownerUidStorage = useMemo(
     () => segmentoStorageOwnerUid(obraCreatorId(obraSelecionada) || user?.uid),
@@ -633,6 +636,10 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
   useEffect(() => {
     if (!adminAccess?.isMangaka || !user?.uid || !obrasSnapshotReady) return;
+    if (!obraIdSelecionada) {
+      navigate(chaptersHubPath);
+      return;
+    }
     const match = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
     if (!match) {
       navigate(chaptersHubPath);

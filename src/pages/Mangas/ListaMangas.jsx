@@ -4,9 +4,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import {
-  OBRA_PADRAO_ID,
-  OBRA_SHITO_DEFAULT,
-  ensureLegacyShitoObra,
   obterObraIdCapitulo,
   obraCreatorId,
   obraSegmentoUrlPublica,
@@ -111,17 +108,17 @@ export default function ListaMangas({ user }) {
     const obrasRef = ref(db, 'obras');
     const unsub = onValue(obrasRef, (snapshot) => {
       if (!snapshot.exists()) {
-        setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        setObras([]);
         setLoadingObras(false);
         return;
       }
-      const lista = ensureLegacyShitoObra(toRecordList(snapshot.val()))
+      const lista = toRecordList(snapshot.val())
         .filter((obra) => obraVisivelNoCatalogoPublico(obra))
         .sort((a, b) => Number(b?.updatedAt || 0) - Number(a?.updatedAt || 0));
       setObras(lista);
       setLoadingObras(false);
     }, () => {
-      setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+      setObras([]);
       setLoadingObras(false);
     });
     return () => unsub();
@@ -149,7 +146,6 @@ export default function ListaMangas({ user }) {
 
   useEffect(() => {
     if (!user?.uid) {
-      setFavoritosCanon({});
       return undefined;
     }
     const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
@@ -159,9 +155,9 @@ export default function ListaMangas({ user }) {
       u2();
     };
   }, [user?.uid]);
-  const favoritosMap = favoritosCanon;
 
   const obrasCards = useMemo(() => {
+    const favoritosMap = user?.uid ? favoritosCanon : {};
     const NEW_BADGE_MS = 8 * 24 * 60 * 60 * 1000;
     const LATEST_24H_MS = 24 * 60 * 60 * 1000;
     const agrupado = new Map();
@@ -202,7 +198,7 @@ export default function ListaMangas({ user }) {
         status,
       };
     });
-  }, [obras, capitulos, favoritosMap, catalogSnapshotNow]);
+  }, [obras, capitulos, favoritosCanon, catalogSnapshotNow, user?.uid]);
 
   const gridObrasCards = useMemo(() => {
     const filtered = safeFilterCatalogCards(obrasCards, debouncedCatalogSearch, creatorsMap, capitulos);
@@ -419,7 +415,15 @@ export default function ListaMangas({ user }) {
         {obrasCards.length === 0 ? (
           <section className="lista-mangas-empty">
             <h2>Nenhuma obra publicada</h2>
-            <p>Quando uma obra estiver com <code>isPublished=true</code>, ela aparecerá aqui.</p>
+            <p>O catalogo esta vazio agora. Enquanto novas obras nao entram no ar, voce ainda pode explorar Kokuin ou conhecer a proposta da plataforma.</p>
+            <div className="biblioteca-actions">
+              <button type="button" className="btn-biblioteca-cta" onClick={() => navigate('/kokuin')}>
+                Abrir Kokuin
+              </button>
+              <button type="button" className="btn-biblioteca-sec" onClick={() => navigate('/sobre-autor')}>
+                Sobre a plataforma
+              </button>
+            </div>
           </section>
         ) : searchQueryIsActive(debouncedCatalogSearch) && gridObrasCards.length === 0 ? (
           <section className="lista-mangas-empty lista-mangas-empty--search" aria-live="polite">

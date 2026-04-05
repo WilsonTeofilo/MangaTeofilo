@@ -7,7 +7,7 @@
  * - Nao libera conteudo antecipado de criadores.
  *
  * MEMBERSHIP DO CRIADOR (por autor)
- * - `usuarios/{uid}/creatorMemberships/{creatorId}`: status, memberUntil
+ * - `usuarios/{uid}/userEntitlements/creators/{creatorId}`: status, memberUntil
  * - Beneficios: acesso antecipado somente aos capitulos daquele creatorId.
  * - Nao herda perks globais do Premium da plataforma.
  *

@@ -19,6 +19,7 @@ import {
   isAdminUser,
   DISPLAY_NAME_MAX_LENGTH,
 } from '../../constants';
+import { buildPublicFunctionUrl } from '../../config/functions';
 import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSyncV2';
 import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
 import { avatarEhPublicoNoCadastro } from '../../utils/avatarAccess';
@@ -33,11 +34,23 @@ const ATTEMPT_RULES = {
   loginPassword:    { max: 8, windowMs: 10 * 60 * 1000, blockMs: 10 * 60 * 1000 },
   registerPassword: { max: 4, windowMs: 60 * 60 * 1000, blockMs: 45 * 60 * 1000 },
 };
+const SEND_LOGIN_CODE_URL = buildPublicFunctionUrl('sendLoginCode');
+const VERIFY_LOGIN_CODE_URL = buildPublicFunctionUrl('verifyLoginCode');
+const AUTH_REQUEST_TIMEOUT_MS = 15_000;
 
 // --- Rate limiting ──────────────────────────────────────────────────────────
+function readAttemptStore() {
+  try {
+    const raw = localStorage.getItem(ATTEMPT_LIMITS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 function getAttemptState(action) {
   const now    = Date.now();
-  const parsed = JSON.parse(localStorage.getItem(ATTEMPT_LIMITS_KEY) || '{}');
+  const parsed = readAttemptStore();
   const entry  = parsed[action] || { count: 0, windowStart: now, blockedUntil: 0 };
   if (entry.blockedUntil && entry.blockedUntil > now)
     return { blocked: true, retryInSec: Math.ceil((entry.blockedUntil - now) / 1000) };
@@ -46,7 +59,7 @@ function getAttemptState(action) {
 
 function registerAttemptResult(action, success) {
   const now    = Date.now();
-  const parsed = JSON.parse(localStorage.getItem(ATTEMPT_LIMITS_KEY) || '{}');
+  const parsed = readAttemptStore();
   const entry  = { ...(parsed[action] || { count: 0, windowStart: now, blockedUntil: 0 }) };
   if (success) {
     entry.count = 0; entry.windowStart = now; entry.blockedUntil = 0;
@@ -60,6 +73,39 @@ function registerAttemptResult(action, success) {
   }
   parsed[action] = entry;
   localStorage.setItem(ATTEMPT_LIMITS_KEY, JSON.stringify(parsed));
+}
+
+async function parseAuthJsonResponse(resp) {
+  const text = await resp.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (!resp.ok) throw new Error('Resposta inesperada do servidor de login.');
+    return {};
+  }
+}
+
+async function postAuthJson(url, payload) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), AUTH_REQUEST_TIMEOUT_MS);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const data = await parseAuthJsonResponse(resp);
+    return { resp, data };
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('A requisicao demorou demais. Tente novamente em instantes.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function carregarStatusConta(uid) {
@@ -201,6 +247,7 @@ export default function Login() {
 
   // --- LOGIN COM GOOGLE ───────────────────────────────────────────────────
   const handleGoogleSignIn = async () => {
+    if (loading) return;
     setLoading(true);
     setError('');
     setInfo('');
@@ -250,6 +297,7 @@ export default function Login() {
    * Retorna true se ok.
    */
   const enviarCodigoLogin = async (signupExplicit = false) => {
+    if (loading) return false;
     const attempt = getAttemptState('sendCode');
     if (attempt.blocked) {
       setError(`Muitas tentativas. Tente novamente em ${attempt.retryInSec}s.`);
@@ -307,13 +355,10 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      const resp = await fetch('https://sendlogincode-4oan3cdrua-uc.a.run.app', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailNorm, signup: signupExplicit === true }),
+      const { resp, data } = await postAuthJson(SEND_LOGIN_CODE_URL, {
+        email: emailNorm,
+        signup: signupExplicit === true,
       });
-
-      const data = await resp.json();
       if (!resp.ok || !data.ok) {
         const msg =
           data?.code === 'NO_AUTH_USER'
@@ -339,6 +384,7 @@ export default function Login() {
 
   const handleSendCode = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setInfo('');
     const ok = await enviarCodigoLogin(false);
     if (ok) setStep('code');
@@ -346,6 +392,7 @@ export default function Login() {
 
   const handleSendCodeSignup = async (e) => {
     e?.preventDefault?.();
+    if (loading) return;
     setInfo('');
     const ok = await enviarCodigoLogin(true);
     if (ok) setStep('code');
@@ -360,6 +407,7 @@ export default function Login() {
   // --- FLUXO: 2) VALIDAR CÓDIGO ────────────────────────────────────────────
   const handleVerifyCode = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
     setInfo('');
 
@@ -369,20 +417,20 @@ export default function Login() {
       return;
     }
 
-    if (!email.trim() || code.trim().length !== 6) {
+    const validacao = validarEmailComDica(email);
+    if (!validacao.ok || code.trim().length !== 6) {
       setError('Digite o e-mail e o código de 6 dígitos.');
       return;
     }
+    const emailNorm = validacao.email;
+    setEmail(emailNorm);
 
     setLoading(true);
     try {
-      const resp = await fetch('https://verifylogincode-4oan3cdrua-uc.a.run.app', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+      const { resp, data } = await postAuthJson(VERIFY_LOGIN_CODE_URL, {
+        email: emailNorm,
+        code: code.trim(),
       });
-
-      const data = await resp.json();
       if (!resp.ok || !data.ok) {
         throw new Error(data.error || 'Código inválido.');
       }
@@ -398,7 +446,7 @@ export default function Login() {
 
       let methods = [];
       try {
-        methods = await fetchSignInMethodsForEmail(auth, email.trim());
+        methods = await fetchSignInMethodsForEmail(auth, emailNorm);
       } catch {
         methods = [];
       }
@@ -441,6 +489,7 @@ export default function Login() {
   // --- FLUXO: 3) NOVO USUÁRIO (NOME + AVATAR + SENHA) ──────────────────────
   const handleRegisterWithPassword = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
     setInfo('');
 
@@ -519,6 +568,7 @@ export default function Login() {
   // --- FLUXO: 4) USUÁRIO EXISTENTE (SENHA) ─────────────────────────────────
   const handleExistingPasswordLogin = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
     setInfo('');
 
@@ -596,13 +646,17 @@ export default function Login() {
 
   // --- ESQUECI A SENHA ────────────────────────────────────────────────────
   const handleForgotPassword = async () => {
+    if (loading) return;
     setError(''); setInfo('');
     if (forgotCooldown > 0) { setError(`Aguarde ${forgotCooldown}s.`); return; }
-    if (!email.trim())      { setError('Digite seu e-mail para recuperar a senha.'); return; }
+    const validacao = validarEmailComDica(email);
+    if (!validacao.ok) { setError(validacao.message); return; }
+    const emailNorm = validacao.email;
+    setEmail(emailNorm);
 
     setLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email.trim());
+      await sendPasswordResetEmail(auth, emailNorm);
       sessionStorage.setItem(FORGOT_KEY, String(Date.now() + 45_000));
       setForgotCooldown(45);
       setInfo('Link de redefinição enviado para seu e-mail.');

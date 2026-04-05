@@ -162,11 +162,6 @@
   box-shadow: 0 14px 30px rgba(22, 163, 74, 0.12);
 }
 
-.creator-state-card.is-pending_review {
-  border-color: rgba(250, 204, 21, 0.28);
-  box-shadow: 0 14px 30px rgba(245, 158, 11, 0.12);
-}
-
 .creator-state-card.is-blocked_underage,
 .creator-state-card.is-disabled {
   border-color: rgba(148, 163, 184, 0.18);

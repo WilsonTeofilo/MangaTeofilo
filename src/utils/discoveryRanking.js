@@ -6,7 +6,7 @@ import {
   normalizePublicHandle,
   resolvePublicCreatorName,
 } from './publicCreatorName';
-import { resolveEffectiveWorkCreatorId } from './workCreatorResolution';
+import { resolveCanonicalWorkCreator } from './workCreatorResolution';
 
 function parseGenres(obra) {
   const fromGenresField = () => {
@@ -211,7 +211,7 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
   const works = obras.map((obra) => {
     const obraId = String(obra?.id || '').toLowerCase();
     const caps = chaptersByWork.get(obraId) || [];
-    const creatorId = resolveEffectiveWorkCreatorId(obra, caps);
+    const { creatorId, profile: creatorProfile } = resolveCanonicalWorkCreator(obra, caps, creatorsMap);
     const publicCaps = publicChaptersByWork.get(obraId) || [];
     const ultimoCap = publicCaps[0] || null;
     const chapterViews = caps.reduce((sum, cap) => sum + chapterViewsCount(cap), 0);
@@ -235,7 +235,6 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
     const comments = Math.max(chapterComments, rawWorkComments);
     const lastUpdateTs = ultimoCap?._ts || numeric(obra?.updatedAt);
     const chaptersCount = caps.length;
-    const creatorProfile = creatorsMap?.[creatorId];
     return {
       ...obra,
       obraId,

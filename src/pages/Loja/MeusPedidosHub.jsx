@@ -12,6 +12,7 @@ import {
   podOrderMatchesSearch,
   storeOrderFilterBucket,
   storeOrderMatchesSearch,
+  normalizeStoreStatus,
 } from '../../utils/orderTrackingUi';
 import { normalizeStoreConfig, STORE_DEFAULT_CONFIG } from '../../config/store';
 import './Loja.css';
@@ -210,7 +211,10 @@ export default function MeusPedidosHub({ user, showCreatorSalesTab = false }) {
   const totalSpent = useMemo(
     () =>
       storeOrders
-        .filter((o) => o.status !== 'cancelled' && o.status !== 'pending' && o.status !== 'pending_payment')
+        .filter((o) => {
+          const status = normalizeStoreStatus(o?.status);
+          return status !== 'cancelled' && status !== 'pending';
+        })
         .reduce((sum, o) => sum + Number(o.total || 0), 0),
     [storeOrders]
   );

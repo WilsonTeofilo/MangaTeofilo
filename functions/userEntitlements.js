@@ -51,32 +51,44 @@ function normalizeCreatorMembershipRow(creatorId, row) {
   };
 }
 
+function mergeCreatorEntitlementRow(target, normalized) {
+  if (!normalized) return target;
+  const current = target[normalized.creatorId];
+  if (!current || normalized.memberUntil >= current.memberUntil) {
+    target[normalized.creatorId] = current
+      ? {
+          ...current,
+          ...normalized,
+        }
+      : normalized;
+  }
+  return target;
+}
+
+function applyCanonicalCreatorEntitlements(target, entCreators) {
+  if (!entCreators || typeof entCreators !== 'object') return target;
+  for (const [creatorId, row] of Object.entries(entCreators)) {
+    mergeCreatorEntitlementRow(target, normalizeCreatorMembershipRow(creatorId, row));
+  }
+  return target;
+}
+
+/**
+ * Compatibilidade temporária com o legado.
+ *
+ * Fonte canônica atual:
+ * - `usuarios/{uid}/userEntitlements/creators`
+ *
+ * Fonte legada:
+ * - `usuarios/{uid}/creatorMemberships`
+ *
+ * Enquanto ainda houver perfis antigos não migrados, o backend continua
+ * lendo essa árvore apenas para consolidar o espelho canônico.
+ */
 export function buildUserEntitlements(profile = {}) {
   const global = normalizeGlobalEntitlement(profile);
   const creators = {};
-
-  const entCreators = profile?.userEntitlements?.creators;
-  if (entCreators && typeof entCreators === 'object') {
-    for (const [creatorId, row] of Object.entries(entCreators)) {
-      const normalized = normalizeCreatorMembershipRow(creatorId, row);
-      if (normalized) creators[normalized.creatorId] = normalized;
-    }
-  }
-
-  const legacyCreators = profile?.creatorMemberships;
-  if (legacyCreators && typeof legacyCreators === 'object') {
-    for (const [creatorId, row] of Object.entries(legacyCreators)) {
-      const normalized = normalizeCreatorMembershipRow(creatorId, row);
-      if (!normalized) continue;
-      const current = creators[normalized.creatorId];
-      if (!current || normalized.memberUntil >= current.memberUntil) {
-        creators[normalized.creatorId] = {
-          ...current,
-          ...normalized,
-        };
-      }
-    }
-  }
+  applyCanonicalCreatorEntitlements(creators, profile?.userEntitlements?.creators);
 
   return {
     global,
@@ -115,4 +127,3 @@ export function buildUserEntitlementsPatch(profile = {}) {
 
   return patch;
 }
-

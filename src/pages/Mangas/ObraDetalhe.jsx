@@ -8,15 +8,11 @@ import { db, functions } from '../../services/firebase';
 import { isAdminUser } from '../../constants';
 import { emptyAdminAccess } from '../../auth/adminAccess';
 import {
-  OBRA_PADRAO_ID,
-  OBRA_SHITO_DEFAULT,
-  ensureLegacyShitoObra,
   normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
   obraSegmentoUrlPublica,
   resolverObraIdPorSlugOuId,
-  slugifyObraSlug,
 } from '../../config/obras';
 import { getLastRead, subscribeReadingProgress } from '../../utils/readingProgressLocal';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
@@ -68,7 +64,6 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   const [workBrowserPushModalOpen, setWorkBrowserPushModalOpen] = useState(false);
   const [workBrowserPushPermission, setWorkBrowserPushPermission] = useState('default');
   const [lastReadLocal, setLastReadLocal] = useState(() => getLastRead());
-  const [catalogoObras, setCatalogoObras] = useState([]);
   const upsertNotificationSubscription = useMemo(
     () => httpsCallable(functions, 'upsertNotificationSubscription'),
     []
@@ -126,7 +121,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       setIdResolvido(false);
       const raw = decodeURIComponent(String(routeSlug || ''));
       const unsub = onValue(ref(db, 'obras'), (snapshot) => {
-        const list = snapshot.exists() ? ensureLegacyShitoObra(toRecordList(snapshot.val())) : [];
+        const list = snapshot.exists() ? toRecordList(snapshot.val()) : [];
         const resolved = resolverObraIdPorSlugOuId(list, raw);
         setObraId(resolved);
         setIdResolvido(true);
@@ -154,19 +149,13 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     const unsubObra = onValue(obraRef, (snapshot) => {
       if (snapshot.exists()) {
         setObra({ id: obraId, ...snapshot.val() });
-      } else if (obraId === OBRA_PADRAO_ID) {
-        setObra({ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID });
       } else {
         setObra(null);
       }
       loadingObra = false;
       concluir();
     }, () => {
-      if (obraId === OBRA_PADRAO_ID) {
-        setObra({ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID });
-      } else {
-        setObra(null);
-      }
+      setObra(null);
       loadingObra = false;
       concluir();
     });

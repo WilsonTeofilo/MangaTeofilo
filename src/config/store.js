@@ -1,4 +1,5 @@
 import { normalizeShippingRegions } from '../../shared/storeShipping.js';
+import { normalizeStoreStatus } from '../utils/orderTrackingUi';
 
 /** Chaves de categoria na loja (UI + RTDB `product.category`) */
 export const STORE_CATEGORY_KEYS = {
@@ -158,14 +159,13 @@ export function getStoreProductBadges(product, now = Date.now()) {
 
 /** Status do pedido para o leitor (envio manual / Correios). */
 export function formatLojaOrderStatusPt(status) {
-  const v = String(status || '').toLowerCase();
-  if (v === 'pending' || v === 'pending_payment') return 'Aguardando pagamento';
-  if (v === 'paid' || v === 'order_received') return 'Pedido confirmado';
-  if (v === 'processing' || v === 'in_production') return 'Em produção';
-  if (v === 'ready_to_ship') return 'Pronto para envio';
-  if (v === 'shipped') return 'Enviado · em trânsito';
-  if (v === 'delivered') return 'Entregue';
-  if (v === 'cancelled') return 'Cancelado';
+  const normalized = normalizeStoreStatus(status);
+  if (normalized === 'pending') return 'Aguardando pagamento';
+  if (normalized === 'paid') return 'Pedido confirmado';
+  if (normalized === 'in_production') return 'Em produÃ§Ã£o';
+  if (normalized === 'shipped') return 'Enviado Â· em trÃ¢nsito';
+  if (normalized === 'delivered') return 'Entregue';
+  if (normalized === 'cancelled') return 'Cancelado';
   return 'Em andamento';
 }
 

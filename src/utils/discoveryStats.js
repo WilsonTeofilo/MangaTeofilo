@@ -1,5 +1,9 @@
 import { get, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
+import {
+  WORK_FAVORITES_CANON_KEY,
+  WORK_FAVORITES_LEGACY_KEY,
+} from '../../shared/readerPublicProfile.js';
 
 import { functions } from '../services/firebase';
 
@@ -77,8 +81,8 @@ export async function applyChapterLikeDelta(db, { chapterId, workId, creatorId: 
 export async function alreadyFavorited(db, uid, workId) {
   if (!uid || !workId) return false;
   const [legacy, canon] = await Promise.all([
-    get(ref(db, `usuarios/${uid}/favoritosObras/${workId}`)),
-    get(ref(db, `usuarios/${uid}/favorites/${workId}`)),
+    get(ref(db, `usuarios/${uid}/${WORK_FAVORITES_LEGACY_KEY}/${workId}`)),
+    get(ref(db, `usuarios/${uid}/${WORK_FAVORITES_CANON_KEY}/${workId}`)),
   ]);
   return legacy.exists() || canon.exists();
 }

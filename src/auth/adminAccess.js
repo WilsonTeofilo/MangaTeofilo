@@ -3,7 +3,7 @@ import { httpsCallable } from 'firebase/functions';
 import { isAdminUser } from '../constants';
 import { functions } from '../services/firebase';
 
-/** @typedef {{ byClaim: boolean, byAllowlist: boolean, canAccessAdmin: boolean, claimChecked: boolean, profileLoaded: boolean, superAdmin: boolean, legacyAdmin: boolean, isChiefAdmin: boolean, isMangaka: boolean, panelRole: string | null, permissions: Record<string, boolean> | null }} AdminAccessState */
+/** @typedef {{ byClaim: boolean, byAllowlist: boolean, canAccessAdmin: boolean, claimChecked: boolean, profileLoaded: boolean, superAdmin: boolean, isChiefAdmin: boolean, isMangaka: boolean, panelRole: string | null, permissions: Record<string, boolean> | null }} AdminAccessState */
 
 /** @returns {AdminAccessState} */
 export function emptyAdminAccess() {
@@ -14,7 +14,6 @@ export function emptyAdminAccess() {
     claimChecked: false,
     profileLoaded: false,
     superAdmin: false,
-    legacyAdmin: false,
     isChiefAdmin: false,
     isMangaka: false,
     panelRole: null,
@@ -52,7 +51,6 @@ export async function resolveAdminAccess(user) {
     claimChecked,
     profileLoaded: false,
     superAdmin: byAllowlist,
-    legacyAdmin: false,
     isChiefAdmin: byAllowlist,
     isMangaka: false,
     panelRole: byAllowlist ? 'super_admin' : null,
@@ -66,7 +64,6 @@ export async function resolveAdminAccess(user) {
         ...base,
         profileLoaded: true,
         superAdmin: byAllowlist,
-        legacyAdmin: false,
         isChiefAdmin: byAllowlist,
         isMangaka: false,
         panelRole: byAllowlist ? 'super_admin' : null,
@@ -86,7 +83,6 @@ export async function resolveAdminAccess(user) {
         claimChecked,
         profileLoaded: true,
         superAdmin: false,
-        legacyAdmin: false,
         isChiefAdmin: false,
         isMangaka: true,
         panelRole: data.panelRole || 'mangaka',
@@ -109,7 +105,6 @@ export async function resolveAdminAccess(user) {
       claimChecked,
       profileLoaded: true,
       superAdmin: byAllowlist || isStaffSuper,
-      legacyAdmin: false,
       isChiefAdmin: byAllowlist || isStaffSuper,
       isMangaka: false,
       panelRole,
@@ -120,7 +115,6 @@ export async function resolveAdminAccess(user) {
       ...base,
       profileLoaded: true,
       superAdmin: byAllowlist,
-      legacyAdmin: false,
       isChiefAdmin: byAllowlist,
       isMangaka: false,
       panelRole: byAllowlist ? 'super_admin' : null,

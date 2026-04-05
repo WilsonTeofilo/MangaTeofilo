@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
+import { normalizeStoreStatus } from '../../utils/orderTrackingUi';
 import './CreatorFrame.css';
 
 function toList(val) {
@@ -20,9 +21,9 @@ function formatCurrency(value) {
 }
 
 function statusLabel(status) {
-  const norm = String(status || 'pending').trim().toLowerCase();
+  const norm = normalizeStoreStatus(status || 'pending');
   if (norm === 'paid') return 'Pago';
-  if (norm === 'processing') return 'Em preparo';
+  if (norm === 'in_production') return 'Em preparo';
   if (norm === 'shipped') return 'Enviado';
   if (norm === 'delivered') return 'Entregue';
   if (norm === 'cancelled') return 'Cancelado';
@@ -32,7 +33,7 @@ function statusLabel(status) {
 const ORDER_STATUS_OPTIONS = [
   { id: 'pending', label: 'Aguardando pagamento' },
   { id: 'paid', label: 'Pago' },
-  { id: 'processing', label: 'Em preparo' },
+  { id: 'in_production', label: 'Em preparo' },
   { id: 'shipped', label: 'Enviado' },
   { id: 'delivered', label: 'Entregue' },
   { id: 'cancelled', label: 'Cancelado' },
@@ -78,7 +79,7 @@ export default function CreatorStoreOperations({ user }) {
         );
         setStatusDrafts(
           sorted.reduce((acc, row) => {
-            acc[row.id] = String(row?.status || 'pending');
+            acc[row.id] = normalizeStoreStatus(row?.status || 'pending');
             return acc;
           }, {})
         );
@@ -99,10 +100,10 @@ export default function CreatorStoreOperations({ user }) {
       inactiveProducts: products.filter((row) => row?.isActive === false).length,
       lowStock: products.filter((row) => Number(row?.stock || 0) > 0 && Number(row?.stock || 0) <= 3).length,
       noStock: products.filter((row) => Number(row?.stock || 0) <= 0).length,
-      openOrders: orders.filter((row) => ['pending', 'paid', 'processing', 'shipped'].includes(String(row?.status || 'pending'))).length,
+      openOrders: orders.filter((row) => ['pending', 'paid', 'in_production', 'shipped'].includes(normalizeStoreStatus(row?.status || 'pending'))).length,
       paidVolume: orders.reduce((sum, row) => {
-        const status = String(row?.status || 'pending');
-        if (!['paid', 'processing', 'shipped', 'delivered'].includes(status)) return sum;
+        const status = normalizeStoreStatus(row?.status || 'pending');
+        if (!['paid', 'in_production', 'shipped', 'delivered'].includes(status)) return sum;
         return sum + Number(row?.creatorSubtotal || row?.total || 0);
       }, 0),
     };
@@ -160,7 +161,7 @@ export default function CreatorStoreOperations({ user }) {
           row.id === id
             ? {
                 ...row,
-                status: String(statusDrafts[id] || row.status || 'pending'),
+                status: normalizeStoreStatus(statusDrafts[id] || row.status || 'pending'),
                 trackingCode: String(trackingDrafts[id] || '').trim(),
                 updatedAt: Date.now(),
               }

@@ -1,0 +1,17 @@
+firebase-debug.log
+database-debug.log
+storage-debug.log
+.git
+.git/**
+node_modules
+node_modules/**
+dist
+dist/**
+
+# Functions runtime does not need archived migration notes or the old monolith.
+functions/deprecated/**
+functions/docs/**
+functions/**/*.test.js
+
+# Local docs are not part of deployable artifacts.
+docs/**

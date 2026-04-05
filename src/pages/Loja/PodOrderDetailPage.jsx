@@ -14,10 +14,15 @@ import {
   shortOrderPublicId,
 } from '../../utils/orderTrackingUi';
 import {
+  formatPodStatusLabel,
+  isPodStatusPaidLike,
+  isPodStatusPendingPayment,
+  podStatusBadgeClass,
+} from '../../utils/podStatus';
+import {
   describePodLeadTimePt,
   formatPodBookFormatPt,
   formatPodOrderAmountDue,
-  formatPodOrderStatusPt,
   formatPodSaleModelPt,
 } from '../../utils/printOnDemandOrderUi';
 import './Loja.css';
@@ -25,21 +30,6 @@ import './Loja.css';
 const getMyPrintOnDemandOrder = httpsCallable(functions, 'getMyPrintOnDemandOrder');
 const resumePrintOnDemandCheckout = httpsCallable(functions, 'resumePrintOnDemandCheckout');
 const cancelMyPrintOnDemandOrder = httpsCallable(functions, 'cancelMyPrintOnDemandOrder');
-
-function podPaidishStatus(st) {
-  const s = String(st || '').trim().toLowerCase();
-  return ['paid', 'in_production', 'ready_to_ship', 'shipped', 'delivered'].includes(s);
-}
-
-function podBadgeClass(status) {
-  const s = String(status || '').trim().toLowerCase();
-  if (s === 'cancelled') return 'ot-badge ot-badge--cancel';
-  if (s === 'pending_payment') return 'ot-badge ot-badge--payment';
-  if (s === 'in_production' || s === 'paid') return 'ot-badge ot-badge--production';
-  if (s === 'ready_to_ship' || s === 'shipped') return 'ot-badge ot-badge--transit';
-  if (s === 'delivered') return 'ot-badge ot-badge--done';
-  return 'ot-badge ot-badge--neutral';
-}
 
 /**
  * @param {{ user: import('firebase/auth').User | null }} props
@@ -61,7 +51,7 @@ export default function PodOrderDetailPage({ user }) {
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!order || String(order.status || '').toLowerCase() !== 'pending_payment') return undefined;
+    if (!order || !isPodStatusPendingPayment(order.status)) return undefined;
     if (!Number(order.expiresAt || 0)) return undefined;
     const t = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(t);
@@ -174,7 +164,7 @@ export default function PodOrderDetailPage({ user }) {
   const { steps, cancelled, productionHint } = timeline;
   const paymentExpired = Boolean(
     order &&
-      String(order.status || '').toLowerCase() === 'pending_payment' &&
+      isPodStatusPendingPayment(order.status) &&
       Number(order.expiresAt || 0) > 0 &&
       nowTick > Number(order.expiresAt)
   );
@@ -196,7 +186,7 @@ export default function PodOrderDetailPage({ user }) {
     const st = String(order.status || '').trim().toLowerCase();
     const publicId = shortOrderPublicId(order.id);
     const eta = describePodLeadTimePt(snap.saleModel, snap.format, snap.quantity);
-    if (st === 'pending_payment') {
+    if (isPodStatusPendingPayment(st)) {
       return {
         variant: 'ot-mp-return-banner--pending',
         title: 'Confirmando pagamento',
@@ -208,7 +198,7 @@ export default function PodOrderDetailPage({ user }) {
         eta,
       };
     }
-    if (podPaidishStatus(order.status)) {
+    if (isPodStatusPaidLike(order.status)) {
       return {
         variant: '',
         title: 'Pedido confirmado ✓',
@@ -286,7 +276,7 @@ export default function PodOrderDetailPage({ user }) {
       ) : null}
 
       {order &&
-      String(order.status || '').toLowerCase() === 'pending_payment' &&
+      isPodStatusPendingPayment(order.status) &&
       Number(order.expiresAt || 0) > 0 &&
       !cancelled ? (
         <div
@@ -325,9 +315,9 @@ export default function PodOrderDetailPage({ user }) {
         <p className="ot-detail-hero__id">Mangá físico #{shortOrderPublicId(order.id)}</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
           <h1 className="ot-detail-hero__status" style={{ margin: 0 }}>
-            {formatPodOrderStatusPt(order.status)}
+            {formatPodStatusLabel(order.status)}
           </h1>
-          <span className={podBadgeClass(order.status)}>{formatPodOrderStatusPt(order.status)}</span>
+          <span className={podStatusBadgeClass(order.status)}>{formatPodStatusLabel(order.status)}</span>
         </div>
         <p className="ot-detail-hero__eta">
           {formatPodSaleModelPt(snap.saleModel)} · {formatPodBookFormatPt(snap.format)}
@@ -371,7 +361,7 @@ export default function PodOrderDetailPage({ user }) {
       ) : null}
 
       <div className="ot-detail-actions" style={{ marginBottom: '16px' }}>
-        {String(order.status || '').toLowerCase() === 'pending_payment' && String(order.checkoutUrl || '').trim() ? (
+        {isPodStatusPendingPayment(order.status) && String(order.checkoutUrl || '').trim() ? (
           paymentExpired ? (
             <span className="ot-btn ot-btn--primary ot-btn--disabled" style={{ opacity: 0.55, cursor: 'not-allowed' }}>
               Prazo de pagamento expirado
@@ -382,7 +372,7 @@ export default function PodOrderDetailPage({ user }) {
             </a>
           )
         ) : null}
-        {String(order.status || '').toLowerCase() === 'pending_payment' && !String(order.checkoutUrl || '').trim() ? (
+        {isPodStatusPendingPayment(order.status) && !String(order.checkoutUrl || '').trim() ? (
           <button
             type="button"
             className="ot-btn ot-btn--primary"
@@ -403,7 +393,7 @@ export default function PodOrderDetailPage({ user }) {
         <Link className="ot-btn ot-btn--ghost" to="/print-on-demand?ctx=creator">
           Novo pedido físico
         </Link>
-        {String(order.status || '').toLowerCase() === 'pending_payment' && !cancelled && !paymentExpired ? (
+        {isPodStatusPendingPayment(order.status) && !cancelled && !paymentExpired ? (
           <button type="button" className="ot-btn ot-btn--ghost" onClick={() => setCancelModalOpen(true)}>
             Cancelar pedido
           </button>

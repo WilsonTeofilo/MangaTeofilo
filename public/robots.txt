@@ -8,4 +8,4 @@ Disallow: /biblioteca
 Disallow: /loja/carrinho
 Disallow: /loja/pedidos
 Disallow: /pedidos
-Sitemap: https://mangateofilo.com/sitemap.xml
+Sitemap: https://shitoproject-ed649.web.app/sitemap.xml

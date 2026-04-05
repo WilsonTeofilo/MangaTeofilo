@@ -5,11 +5,12 @@
  */
 
 import { ref, remove, set } from 'firebase/database';
+import {
+  WORK_FAVORITES_CANON_KEY,
+  WORK_FAVORITES_LEGACY_KEY,
+} from '../../shared/readerPublicProfile.js';
 import { alreadyFavorited, applyWorkFavoriteDelta } from './discoveryStats';
 import { syncReaderPublicFavoritesMirror } from './readerPublicProfile';
-
-export const WORK_FAVORITES_LEGACY_KEY = 'favoritosObras';
-export const WORK_FAVORITES_CANON_KEY = 'favorites';
 
 export function mergeWorkFavoriteMaps(legacyVal, modernVal) {
   const a = legacyVal && typeof legacyVal === 'object' ? legacyVal : {};

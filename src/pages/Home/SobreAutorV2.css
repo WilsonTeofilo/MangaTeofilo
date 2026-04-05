@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --charcoal-dark: #0a0a0a;
   --surface-card: #141414;
   --text-pure: #ffffff;
@@ -67,7 +67,7 @@
   max-width: 12ch;
   font-size: clamp(2.7rem, 4.8vw, 5rem);
   line-height: 1.02;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
   font-weight: 900;
 }
 
@@ -112,6 +112,7 @@
   top: 110px;
   border-radius: 28px;
   overflow: hidden;
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
 }
 
 .sobre-portrait-frame {
@@ -132,13 +133,19 @@
 
 .sobre-portrait--real {
   z-index: 1;
+  clip-path: circle(150% at 50% 50%);
 }
 
 .sobre-portrait--manga {
   z-index: 2;
   opacity: 0;
-  transform: scale(1.04);
-  transition: opacity 0.45s ease, transform 0.55s ease;
+  transform: scale(1.03);
+  clip-path: circle(0% at 50% 50%);
+  filter: brightness(1.05) contrast(1.1);
+  transition:
+    clip-path 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.6s ease,
+    transform 0.55s ease;
 }
 
 .sobre-portrait-overlay {
@@ -150,12 +157,24 @@
 }
 
 .sobre-portrait-shell.is-hovered {
+  transform: scale(1.03);
   box-shadow: var(--shadow-heavy), var(--shadow-gold);
+  animation: sobrePortraitShake 0.5s infinite alternate ease-in-out;
 }
 
 .sobre-portrait-shell.is-hovered .sobre-portrait--manga {
   opacity: 1;
   transform: scale(1.01);
+  clip-path: circle(150% at 50% 50%);
+}
+
+@keyframes sobrePortraitShake {
+  0% { transform: translate(0, 0) scale(1.03); }
+  20% { transform: translate(-2.5px, 2.5px) scale(1.03); }
+  40% { transform: translate(3px, -2px) scale(1.03); }
+  60% { transform: translate(-1.5px, 3px) scale(1.03); }
+  80% { transform: translate(2.5px, -1.5px) scale(1.03); }
+  100% { transform: translate(0, 0) scale(1.03); }
 }
 
 .sobre-visual-copy {
@@ -294,6 +313,14 @@
   flex-shrink: 0;
 }
 
+.bio-cta--stacked {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .hn-cta {
   padding: 1.15rem 2.8rem;
   background: var(--naraa-gold);
@@ -309,10 +336,22 @@
   transition: transform 0.28s ease, box-shadow 0.28s ease, filter 0.28s ease;
 }
 
+.hn-cta--ghost {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-pure);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
 .hn-cta:hover {
   transform: translateY(-3px);
   box-shadow: 0 22px 54px rgba(255, 204, 0, 0.42);
   filter: brightness(1.04);
+}
+
+.hn-cta--ghost:hover {
+  box-shadow: 0 16px 36px rgba(255, 255, 255, 0.08);
+  filter: brightness(1.08);
 }
 
 @media (max-width: 1100px) {
@@ -334,34 +373,8 @@
     flex-direction: column;
     align-items: flex-start;
   }
-}
 
-@media (max-width: 720px) {
-  .sobre-autor-content {
-    width: min(100% - 24px, 1320px);
-    padding: 92px 0 48px;
-  }
-
-  .sobre-copy,
-  .sobre-story-intro,
-  .sobre-story-card,
-  .sobre-cta-panel {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
-
-  .sobre-title {
-    max-width: none;
-    font-size: clamp(2.35rem, 11vw, 3.35rem);
-  }
-
-  .sobre-section-title,
-  .sobre-cta-title {
-    max-width: none;
-    font-size: clamp(1.7rem, 8vw, 2.4rem);
-  }
-
-  .hn-cta {
-    width: 100%;
+  .bio-cta--stacked {
+    justify-content: flex-start;
   }
 }

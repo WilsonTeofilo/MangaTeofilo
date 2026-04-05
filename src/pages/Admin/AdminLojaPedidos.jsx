@@ -7,6 +7,7 @@ import { db, functions } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import { formatLojaOrderStatusPt, formatLojaPayoutStatusPt } from '../../config/store';
+import { normalizeStoreStatus } from '../../utils/orderTrackingUi';
 import './AdminLojaPedidos.css';
 
 function orderBelongsToCreator(order, creatorUid) {
@@ -118,10 +119,11 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
     return filteredOrders.reduce(
       (acc, order) => {
         const total = isMangaka ? creatorTotal(order, creatorUid) : Number(order.total || 0);
+        const status = normalizeStoreStatus(order.status);
         acc.revenue += total;
-        if (String(order.status) === 'in_production' || String(order.status) === 'processing') acc.inProduction += 1;
-        if (String(order.status) === 'shipped') acc.shipped += 1;
-        if (String(order.status) === 'pending_payment' || String(order.status) === 'order_received') acc.pending += 1;
+        if (status === 'in_production') acc.inProduction += 1;
+        if (status === 'shipped') acc.shipped += 1;
+        if (status === 'pending' || status === 'paid') acc.pending += 1;
         return acc;
       },
       { revenue: 0, inProduction: 0, shipped: 0, pending: 0 }
@@ -204,7 +206,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
                 <div>
                   <strong>#{o.id.slice(-8).toUpperCase()}</strong>
                   <span className="admin-loja-pedidos__buyer">{names[o.uid] || o.uid}</span>
-                  <span className={`admin-loja-pedidos__status admin-loja-pedidos__status--${String(o.status || '').toLowerCase()}`}>{formatLojaOrderStatusPt(o.status)}</span>
+                  <span className={`admin-loja-pedidos__status admin-loja-pedidos__status--${normalizeStoreStatus(o.status)}`}>{formatLojaOrderStatusPt(o.status)}</span>
                 </div>
                 <div className="admin-loja-pedidos__row-meta">
                   <span>{formatarDataHoraBr(Number(o.createdAt || 0))}</span>
@@ -255,7 +257,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
               </div>
               <h3>Acoes</h3>
               <div className="admin-loja-pedidos__status-btns">
-                <button type="button" onClick={() => setStatus(detail.id, 'order_received')} disabled={!canMutateDetail}>Recebido</button>
+                <button type="button" onClick={() => setStatus(detail.id, 'paid')} disabled={!canMutateDetail}>Recebido</button>
                 <button type="button" onClick={() => setStatus(detail.id, 'in_production')} disabled={!canMutateDetail}>Iniciar producao</button>
                 <button type="button" onClick={() => setStatus(detail.id, 'shipped')} disabled={!canMutateDetail}>Marcar como enviado</button>
                 <button type="button" onClick={() => setStatus(detail.id, 'delivered')} disabled={!canMutateDetail}>Marcar como entregue</button>

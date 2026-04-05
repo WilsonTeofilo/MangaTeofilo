@@ -24,7 +24,6 @@ function monetizationModeLabel(preference, status) {
   const norm = String(status || 'disabled').trim().toLowerCase();
   if (pref !== 'monetize') return 'Apenas publicar';
   if (norm === 'active') return 'Monetizacao ativa';
-  if (norm === 'pending_review') return 'Em validacao';
   if (norm === 'blocked_underage') return 'Bloqueada por idade';
   return 'Configuracao pendente';
 }
@@ -158,15 +157,13 @@ export default function CreatorMonetizationDashboard({ user }) {
         <div>
           <p className="creator-state-card__eyebrow">Estado atual</p>
           <h2>{modeLabel}</h2>
-          <p>
-            {monetizationStatus === 'active'
-              ? 'Seu creatorId ja pode operar membership, membros e ganhos com visibilidade completa.'
-              : monetizationStatus === 'pending_review'
-                ? 'Sua configuracao foi enviada. Enquanto a equipe revisa, o painel mostra operacao sem liberar recebimento.'
+            <p>
+              {monetizationStatus === 'active'
+                ? 'Seu creatorId ja pode operar membership, membros e ganhos com visibilidade completa.'
                 : monetizationStatus === 'blocked_underage'
                   ? 'Sua conta pode publicar normalmente, mas a monetizacao fica bloqueada por idade.'
-                  : 'Sua conta esta em modo publicacao. Quando quiser monetizar, ajuste o perfil e envie para revisao.'}
-          </p>
+                  : 'Sua conta esta em modo publicacao. Quando quiser monetizar, basta concluir a liberacao uma unica vez e ativar o toggle no perfil.'}
+            </p>
           {monetizationReviewReason ? (
             <p className="creator-state-card__reason">Motivo registrado: {monetizationReviewReason}</p>
           ) : null}

@@ -1,0 +1,40 @@
+.kokuin-legacy-page {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #000;
+}
+
+.kokuin-legacy-page__back {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 12;
+  padding: 0.9rem 1.3rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 8, 8, 0.78);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  transition: transform 0.25s ease, background 0.25s ease, border-color 0.25s ease;
+}
+
+.kokuin-legacy-page__back:hover {
+  transform: translateY(-2px);
+  background: rgba(16, 16, 16, 0.92);
+  border-color: rgba(255, 204, 0, 0.32);
+}
+
+@media (max-width: 720px) {
+  .kokuin-legacy-page__back {
+    top: 14px;
+    right: 14px;
+    padding: 0.8rem 1rem;
+    font-size: 0.86rem;
+  }
+}

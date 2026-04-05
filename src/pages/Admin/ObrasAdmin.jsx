@@ -7,13 +7,11 @@ import { createPortal } from 'react-dom';
 import { auth, db, storage } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import {
-  OBRA_PADRAO_ID,
-  OBRA_SHITO_DEFAULT,
-  ensureLegacyShitoObra,
   normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
 } from '../../config/obras';
+import { isInstitutionalFeaturedWork } from '../../config/institutionalFeaturedWork';
 import {
   DESCRIPTION_MAX,
   DESCRIPTION_MIN,
@@ -304,18 +302,17 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     const obrasRef = dbRef(db, 'obras');
     const unsub = onValue(obrasRef, (snapshot) => {
       if (!snapshot.exists()) {
-        setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        setObras([]);
+        setObrasTodas([]);
         setObraSelecionadaId('');
         setLoading(false);
         return;
       }
       const raw = snapshot.val() || {};
-      const lista = ensureLegacyShitoObra(
-        Object.entries(raw).map(([id, data]) => ({
-          id,
-          ...(data || {}),
-        }))
-      );
+      const lista = Object.entries(raw).map(([id, data]) => ({
+        id,
+        ...(data || {}),
+      }));
       lista.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
       setObrasTodas(lista);
       const visivel =
@@ -681,8 +678,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       }
 
       await update(dbRef(db, `obras/${editandoId}`), payload);
-      const okMsg =
-        editandoId === OBRA_PADRAO_ID ? 'Obra base atualizada com sucesso.' : 'Obra atualizada com sucesso.';
+      const okMsg = 'Obra atualizada com sucesso.';
       setOk(okMsg);
       showSaveToast(okMsg);
     } catch (e) {
@@ -960,13 +956,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       setErro('Sem permissão para apagar esta obra.');
       return;
     }
-    if (obra.id === OBRA_PADRAO_ID) {
+    if (isInstitutionalFeaturedWork(obra)) {
       if (isMangaka) {
-        setErro('A obra padrão (Kokuin) não pode ser apagada por segurança.');
+        setErro('A obra institucional em destaque não pode ser apagada por segurança.');
         return;
       }
       const typed = window.prompt(
-        'A obra Kokuin (shito) é legada. Para apagar do banco, digite exatamente: KOKUIN'
+        'Kokuin está marcada como obra institucional em destaque. Para apagar do banco, digite exatamente: KOKUIN'
       );
       if (typed !== 'KOKUIN') {
         if (typed !== null && typed !== '') setErro('Confirmação incorreta. Nada foi apagado.');
@@ -1447,7 +1443,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               {saving ? 'Salvando...' : editandoId ? 'Salvar alterações' : 'Criar obra'}
             </button>
             <button type="button" className="btn-sec" onClick={iniciarNovo}>Limpar</button>
-            {editandoId && (isMangaka ? editandoId !== OBRA_PADRAO_ID : true) ? (
+            {editandoId && !isInstitutionalFeaturedWork({ id: editandoId, slug: editandoId, titulo: form.titulo }) ? (
               <button
                 type="button"
                 className="btn-inline danger"

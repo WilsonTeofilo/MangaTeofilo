@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
-const SITE_URL = (process.env.SITE_URL || 'https://mangateofilo.com').replace(/\/+$/, '');
+const SITE_URL = (process.env.SITE_URL || 'https://shitoproject-ed649.web.app').replace(/\/+$/, '');
 const DATABASE_URL = process.env.FIREBASE_DATABASE_URL || 'https://shitoproject-ed649-default-rtdb.firebaseio.com';
 
 const STATIC_ROUTES = ['/', '/works', '/mangas', '/sobre-autor', '/apoie', '/loja', '/print-on-demand', '/creators'];

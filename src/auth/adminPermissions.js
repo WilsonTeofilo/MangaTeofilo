@@ -1,5 +1,3 @@
-import { isStaffEquipeWithoutCreator } from './appRoles';
-
 /**
  * Campos de permissao alinhados a `functions/adminRbac.js` (normalizePermissionsForRegistry).
  * A UI de equipe agrupa apenas permissoes operacionais de staff.
@@ -52,22 +50,11 @@ export const STAFF_PERMISSION_FIELDS = [
 
 export function adminHasFullPanel(access) {
   if (access?.isMangaka) return false;
-  return Boolean(access?.superAdmin || access?.legacyAdmin);
+  return access?.superAdmin === true;
 }
 
 function hasCreatorScopeAccess(access) {
-  if (access?.isMangaka) return true;
-  if (!access?.canAccessAdmin) return false;
-  if (adminHasFullPanel(access)) return true;
-  const perm = access.permissions || {};
-  return Boolean(
-    perm.canAccessCapitulos ||
-    perm.canAccessObras ||
-    perm.canAccessDashboard ||
-    perm.canAccessFinanceiro ||
-    perm.canAccessLojaAdmin ||
-    perm.canAccessPedidos
-  );
+  return access?.isMangaka === true && access?.canAccessAdmin !== true;
 }
 
 /**
@@ -93,7 +80,7 @@ export function canAccessAdminPath(pathname, access) {
     return perm.canAccessCapitulos === true;
   }
   if (pathname.startsWith('/admin/manga')) {
-    return perm.canAccessCapitulos === true || perm.canAccessMangaLegacy === true;
+    return perm.canAccessCapitulos === true;
   }
   if (pathname.startsWith('/admin/obras')) {
     return perm.canAccessObras === true;
@@ -108,7 +95,6 @@ export function canAccessAdminPath(pathname, access) {
     return perm.canAccessFinanceiro === true;
   }
   if (pathname.startsWith('/admin/store/settings')) {
-    if (access?.isMangaka) return false;
     return perm.canAccessLojaAdmin === true;
   }
   if (pathname.startsWith('/admin/products') || pathname.startsWith('/admin/loja')) {
@@ -125,77 +111,26 @@ export function canAccessAdminPath(pathname, access) {
 
 export function canAccessCreatorPath(pathname, access) {
   const p = String(pathname || '');
-  /** Onboarding só para contas que não são equipe sem creator. */
   if (p.startsWith('/creator/onboarding')) {
-    if (isStaffEquipeWithoutCreator(access)) return false;
     return true;
   }
   if (!hasCreatorScopeAccess(access)) return false;
-  /** Equipe: só ferramentas operacionais; sem monetização, missões, analytics nem dashboard creator. */
-  if (isStaffEquipeWithoutCreator(access)) {
-    if (
-      p.startsWith('/creator/monetizacao') ||
-      p.startsWith('/creator/missoes') ||
-      p.startsWith('/creator/dashboard') ||
-      p.startsWith('/creator/audience') ||
-      p.startsWith('/creator/print') ||
-      (p.startsWith('/print-on-demand') && p.includes('ctx=creator'))
-    ) {
-      return false;
-    }
-  }
-  if (p === '/creator' || p === '/creator/') {
-    if (isStaffEquipeWithoutCreator(access)) {
-      return canAccessAdminPath('/admin/obras', access) || canAccessAdminPath('/admin/capitulos', access);
-    }
-    return true;
-  }
-  /** Hub de conta: equipe usa como leitor; não é painel creator. */
-  if (p === '/perfil') {
-    return true;
-  }
-  if (p.startsWith('/creator/monetizacao')) {
-    return access?.isMangaka === true;
-  }
-  if (p.startsWith('/creator/missoes')) {
-    return access?.isMangaka === true;
-  }
-  if (p.startsWith('/creator/dashboard')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/dashboard', access) || canAccessAdminPath('/admin/financeiro', access);
-  }
-  if (p.startsWith('/creator/audience')) {
-    return access?.isMangaka === true;
-  }
-  if (p.startsWith('/creator/obras')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/obras', access);
-  }
-  if (p.startsWith('/creator/capitulos')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/capitulos', access);
-  }
-  if (p.startsWith('/creator/editor')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/manga', access) || canAccessAdminPath('/admin/capitulos', access);
-  }
-  if (p.startsWith('/creator/promocoes')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/financeiro', access);
-  }
-  if (p.startsWith('/creator/loja')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/loja', access) || canAccessAdminPath('/admin/pedidos', access);
-  }
-  if (p.startsWith('/creator/print')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/loja', access) || canAccessAdminPath('/admin/pedidos', access);
-  }
-  if (p.startsWith('/print-on-demand') && p.includes('ctx=creator')) {
-    if (access?.isMangaka) return true;
-    return canAccessAdminPath('/admin/loja', access) || canAccessAdminPath('/admin/pedidos', access);
-  }
-  return false;
+  return (
+    p === '/creator' ||
+    p === '/creator/' ||
+    p === '/perfil' ||
+    p.startsWith('/creator/monetizacao') ||
+    p.startsWith('/creator/missoes') ||
+    p.startsWith('/creator/dashboard') ||
+    p.startsWith('/creator/audience') ||
+    p.startsWith('/creator/obras') ||
+    p.startsWith('/creator/capitulos') ||
+    p.startsWith('/creator/editor') ||
+    p.startsWith('/creator/promocoes') ||
+    p.startsWith('/creator/loja') ||
+    p.startsWith('/creator/print') ||
+    (p.startsWith('/print-on-demand') && p.includes('ctx=creator'))
+  );
 }
 
 const ADMIN_HOME_CANDIDATES = [
@@ -235,17 +170,6 @@ const CREATOR_HOME_CANDIDATES = [
 ];
 
 export function getDefaultCreatorRedirect(access) {
-  if (isStaffEquipeWithoutCreator(access)) {
-    const prefer = ['/creator/obras', '/creator/capitulos', '/admin/obras', '/admin/capitulos'];
-    for (const path of prefer) {
-      if (path.startsWith('/admin')) {
-        if (canAccessAdminPath(path, access)) return path;
-      } else if (canAccessCreatorPath(path, access)) {
-        return path;
-      }
-    }
-    return getDefaultAdminRedirect(access);
-  }
   for (const path of CREATOR_HOME_CANDIDATES) {
     if (canAccessCreatorPath(path, access)) return path;
   }

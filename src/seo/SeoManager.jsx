@@ -1,9 +1,9 @@
 import { Helmet } from 'react-helmet-async';
 import { useLocation } from 'react-router-dom';
+import { SITE_DEFAULT_IMAGE, SITE_NAME, SITE_ORIGIN } from '../config/site';
 
-const SITE_NAME = 'MangaTeofilo';
-const SITE_URL = 'https://mangateofilo.com';
-const DEFAULT_IMAGE_PATH = '/assets/fotos/shito.jpg';
+const SITE_URL = SITE_ORIGIN;
+const DEFAULT_IMAGE_PATH = SITE_DEFAULT_IMAGE;
 const NOINDEX_ROUTE_PREFIXES = ['/admin', '/creator/'];
 const NOINDEX_EXACT_ROUTES = new Set(['/biblioteca', '/perfil', '/login', '/loja/carrinho', '/loja/pedidos', '/pedidos']);
 

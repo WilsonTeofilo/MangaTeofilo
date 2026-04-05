@@ -80,7 +80,21 @@ export const POD_ORDER_STATUS = {
   READY_TO_SHIP: 'ready_to_ship',
   SHIPPED: 'shipped',
   DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
 };
+
+export function normalizePodOrderStatusInput(status) {
+  const raw = String(status || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === POD_ORDER_STATUS.PENDING_PAYMENT || raw === 'pending') return POD_ORDER_STATUS.PENDING_PAYMENT;
+  if (raw === POD_ORDER_STATUS.PAID || raw === 'order_received') return POD_ORDER_STATUS.PAID;
+  if (raw === POD_ORDER_STATUS.IN_PRODUCTION || raw === 'processing') return POD_ORDER_STATUS.IN_PRODUCTION;
+  if (raw === POD_ORDER_STATUS.READY_TO_SHIP) return POD_ORDER_STATUS.READY_TO_SHIP;
+  if (raw === POD_ORDER_STATUS.SHIPPED) return POD_ORDER_STATUS.SHIPPED;
+  if (raw === POD_ORDER_STATUS.DELIVERED) return POD_ORDER_STATUS.DELIVERED;
+  if (raw === POD_ORDER_STATUS.CANCELLED) return POD_ORDER_STATUS.CANCELLED;
+  return raw;
+}
 
 export const PRODUCTION_CHECKLIST_KEYS = [
   { key: 'printMiolo', label: 'Imprimir miolo' },

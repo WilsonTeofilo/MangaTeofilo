@@ -45,15 +45,14 @@ import {
   serializeCreatorProfileCrop,
   validateCreatorProfileImageFile,
 } from '../utils/creatorProfileImage';
+import { SITE_ORIGIN } from '../config/site';
 import './CreatorApplicationModal.css';
-
-const PUBLIC_SITE_ORIGIN = 'https://mangateofilo.com';
 
 function absolutizePublicProfileImageUrl(raw) {
   const u = String(raw || '').trim();
   if (!u) return '';
   if (/^https?:\/\//i.test(u)) return u;
-  if (u.startsWith('/') && !u.startsWith('//')) return `${PUBLIC_SITE_ORIGIN}${u}`;
+  if (u.startsWith('/') && !u.startsWith('//')) return `${SITE_ORIGIN}${u}`;
   return '';
 }
 

@@ -4,20 +4,15 @@ import { useNavigate } from 'react-router-dom';
 
 import { auth, db } from '../../services/firebase';
 import {
-  OBRA_PADRAO_ID,
-  OBRA_SHITO_DEFAULT,
-  ensureLegacyShitoObra,
   obterObraIdCapitulo,
   obraCreatorId,
 } from '../../config/obras';
 import './CapitulosAdminHub.css';
 
 function toSortedObras(raw) {
-  const list = ensureLegacyShitoObra(
-    Object.entries(raw || {}).map(([id, data]) => ({ id, ...(data || {}) }))
-  );
-  if (!list.length) return [{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }];
-  return list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+  return Object.entries(raw || {})
+    .map(([id, data]) => ({ id, ...(data || {}) }))
+    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
 }
 
 export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) {
@@ -30,7 +25,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   const [loading, setLoading] = useState(true);
   const [obras, setObras] = useState([]);
   const [allCapitulos, setAllCapitulos] = useState([]);
-  const [obraId, setObraId] = useState(OBRA_PADRAO_ID);
+  const [obraId, setObraId] = useState('');
 
   useEffect(() => {
     if (!adminAccess?.canAccessAdmin) {
@@ -46,12 +41,12 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
       setObras(visivel);
       setObraId((curr) => {
         if (visivel.some((o) => o.id === curr)) return curr;
-        return visivel[0]?.id || OBRA_PADRAO_ID;
+        return visivel[0]?.id || '';
       });
       setLoading(false);
     }, () => {
-      setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
-      setObraId(OBRA_PADRAO_ID);
+      setObras([]);
+      setObraId('');
       setLoading(false);
     });
     const unsubCaps = onValue(dbRef(db, 'capitulos'), (snapshot) => {
@@ -79,7 +74,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   }, [isMangaka, user?.uid, allCapitulos, obras]);
 
   const obraAtual = useMemo(
-    () => obras.find((o) => o.id === obraId) || { ...OBRA_SHITO_DEFAULT, id: obraId },
+    () => obras.find((o) => o.id === obraId) || null,
     [obras, obraId]
   );
 
@@ -115,7 +110,8 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
         <div className="capitulos-admin-hub__selector-main">
           <label>
             Selecionar obra
-            <select value={obraId} onChange={(e) => setObraId(String(e.target.value || OBRA_PADRAO_ID))}>
+            <select value={obraId} onChange={(e) => setObraId(String(e.target.value || ''))}>
+              {!obras.length ? <option value="">Nenhuma obra cadastrada</option> : null}
               {obras.map((obra) => (
                 <option key={obra.id} value={obra.id}>
                   {obra.tituloCurto || obra.titulo || obra.id}
@@ -127,6 +123,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
             <button
               type="button"
               className="capitulos-admin-hub__new-chapter"
+              disabled={!obraId}
               onClick={() => navigate(`${editorPathBase}?obra=${encodeURIComponent(obraId)}`)}
             >
               + Novo capítulo
@@ -140,8 +137,8 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
           </div>
         </div>
         <div className="capitulos-admin-hub__selected">
-          <strong>{obraAtual.titulo || obraAtual.id}</strong>
-          <span>{obraAtual.isPublished ? 'Publicada' : 'Oculta'}</span>
+          <strong>{obraAtual?.titulo || obraAtual?.id || 'Nenhuma obra selecionada'}</strong>
+          <span>{obraAtual ? (obraAtual.isPublished ? 'Publicada' : 'Oculta') : 'Sem catalogo ativo'}</span>
         </div>
       </section>
 
@@ -184,4 +181,3 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
     </main>
   );
 }
-

@@ -5,6 +5,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { onValue, ref as dbRef } from 'firebase/database';
 
 import { db, storage } from '../../services/firebase';
+import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../config/site';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import {
   BOOK_FORMAT,
@@ -99,7 +100,7 @@ function PodMetricBar({ label, current, max }) {
 export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal = null, capsVal = null }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const canonicalUrl = 'https://mangateofilo.com/print-on-demand';
+  const canonicalUrl = `${SITE_ORIGIN}/print-on-demand`;
 
   const creatorContext = searchParams.get('ctx') === 'creator';
   const podContinueUrl = useMemo(() => {
@@ -614,13 +615,13 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
         />
         <meta property="og:url" content={canonicalUrl} />
-        <meta property="og:image" content="https://mangateofilo.com/assets/fotos/shito.jpg" />
+        <meta property="og:image" content={SITE_DEFAULT_IMAGE} />
         <meta name="twitter:title" content="Lance sua linha | MangaTeofilo" />
         <meta
           name="twitter:description"
           content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
         />
-        <meta name="twitter:image" content="https://mangateofilo.com/assets/fotos/shito.jpg" />
+        <meta name="twitter:image" content={SITE_DEFAULT_IMAGE} />
         <link rel="canonical" href={canonicalUrl} />
       </Helmet>
 

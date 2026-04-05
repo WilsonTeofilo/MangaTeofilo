@@ -8,11 +8,11 @@ export function storeOrderBadgeProps(order) {
   const label = formatLojaOrderStatusPt(order?.status);
   if (meta.cancelled) return { className: 'ot-badge ot-badge--cancel', label };
   if (meta.problem) return { className: 'ot-badge ot-badge--problem', label: 'Problema no pagamento' };
-  if (s === 'pending' || s === 'pending_payment') return { className: 'ot-badge ot-badge--payment', label };
-  if (s === 'processing' || s === 'in_production' || s === 'paid' || s === 'order_received') {
+  if (s === 'pending') return { className: 'ot-badge ot-badge--payment', label };
+  if (s === 'in_production' || s === 'paid') {
     return { className: 'ot-badge ot-badge--production', label };
   }
-  if (s === 'ready_to_ship' || s === 'shipped') return { className: 'ot-badge ot-badge--transit', label };
+  if (s === 'shipped') return { className: 'ot-badge ot-badge--transit', label };
   if (s === 'delivered') return { className: 'ot-badge ot-badge--done', label };
   return { className: 'ot-badge ot-badge--neutral', label };
 }

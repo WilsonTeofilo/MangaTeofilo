@@ -374,7 +374,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
           String(item?.creatorMonetizationStatus || '').trim().toLowerCase();
         const role = String(item?.role || '').trim().toLowerCase();
         if (s === 'requested') return true;
-        if (s === 'approved' && mon === 'pending_review' && role === 'mangaka') return true;
+        if (s === 'approved' && mon !== 'active' && role === 'mangaka' && Number(item?.creatorMonetizationReviewRequestedAt || 0) > 0) return true;
         return false;
       }).length;
       setAdminCreatorQueueCount(pending);

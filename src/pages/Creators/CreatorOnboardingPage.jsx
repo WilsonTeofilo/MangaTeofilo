@@ -5,6 +5,7 @@ import { httpsCallable } from 'firebase/functions';
 import CreatorApplicationModal from '../../components/CreatorApplicationModal';
 import { CREATOR_BIO_MAX_LENGTH } from '../../constants';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
+import { SITE_ORIGIN } from '../../config/site';
 import { functions } from '../../services/firebase';
 import { submitCreatorApplicationPayload } from '../../utils/creatorApplicationClient';
 import { sanitizeCpfDigitsInput } from '../../utils/creatorRecord';
@@ -46,13 +47,12 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
       payoutPixType: String(perfil?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
       profileImageCrop: perfil?.creatorApplication?.profileImageCrop || null,
       existingProfileImageUrl: (() => {
-        const site = 'https://mangateofilo.com';
         const candidates = [perfil?.creatorApplication?.profileImageUrl, perfil?.userAvatar, user?.photoURL];
         for (const raw of candidates) {
           const u = String(raw || '').trim();
           if (!u) continue;
           if (/^https:\/\//i.test(u) && u.length >= 12 && u.length <= 2048) return u;
-          if (u.startsWith('/') && !u.startsWith('//') && u.length >= 2 && u.length <= 2048) return `${site}${u}`;
+          if (u.startsWith('/') && !u.startsWith('//') && u.length >= 2 && u.length <= 2048) return `${SITE_ORIGIN}${u}`;
         }
         return '';
       })(),
@@ -105,18 +105,11 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
           },
         };
       }
-      if (data?.alreadyMangaka && data?.monetizationPendingReviewSubmitted) {
+      if (data?.alreadyMangaka && data?.monetizationApprovalRequested) {
         return {
           successTitle: 'Dados enviados',
           successBody:
-            'Dados de monetização enviados. Você continua publicando normalmente; a equipe revisará antes de ativar repasses.',
-          afterDismiss: () => navigate('/perfil'),
-        };
-      }
-      if (data?.alreadyMangaka && data?.monetizationPendingReview) {
-        return {
-          successTitle: 'Em análise',
-          successBody: 'Sua monetização já está em análise pela equipe.',
+            'Seus dados de monetização foram enviados. Depois da primeira liberação, você poderá ligar e desligar repasses direto no perfil.',
           afterDismiss: () => navigate('/perfil'),
         };
       }
@@ -145,7 +138,7 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
       return {
         successTitle: 'Solicitação recebida',
         successBody: isMangakaMonetizeIntent
-          ? 'Solicitação enviada. A equipe vai revisar seus dados legais e repasse antes de ativar.'
+          ? 'Solicitação enviada. A equipe vai revisar seus dados legais e liberar sua monetização uma única vez.'
           : 'Recebemos sua candidatura. Ao continuar, você será levado ao perfil.',
         afterDismiss: () => navigate('/perfil'),
       };

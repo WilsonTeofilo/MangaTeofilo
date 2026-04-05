@@ -4,25 +4,7 @@ export const OBRAS_SCHEMA_VERSION = 1;
 
 export const OBRA_PADRAO_ID = 'shito';
 
-export const OBRA_SHITO_DEFAULT = {
-  id: OBRA_PADRAO_ID,
-  /** Slug canónico alinhado ao título (URL /work/...); o id RTDB permanece `shito`. */
-  slug: 'kokuin-heranca-do-abismo',
-  titulo: 'Kokuin : Heranca do Abismo',
-  tituloCurto: 'Kokuin',
-  sinopse:
-    'Em um mundo marcado por relíquias ancestrais e conflitos silenciosos, acompanhe a jornada de Kokuin. Ajuste este texto no painel quando quiser refinar a sinopse pública.',
-  genres: ['fantasia', 'aventura'],
-  mainGenre: 'fantasia',
-  tags: [],
-  status: 'ongoing',
-  isPublished: true,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-  creatorId: PLATFORM_LEGACY_CREATOR_UID,
-};
-
-/** Dono da obra para permissões multi-tenant (fallback = plataforma legada). */
+/** Dono da obra para permissoes multi-tenant (fallback = plataforma legada). */
 export function obraCreatorId(obra) {
   const c = String(obra?.creatorId || '').trim();
   if (c) return c;
@@ -35,27 +17,9 @@ export function normalizarObraId(raw) {
   return v.replace(/[^a-z0-9_-]/g, '').slice(0, 40) || OBRA_PADRAO_ID;
 }
 
-export function ensureLegacyShitoObra(list) {
-  const obras = Array.isArray(list) ? list : [];
-  const temShito = obras.some((obra) => normalizarObraId(obra?.id) === OBRA_PADRAO_ID);
-  if (temShito) return obras;
-  return [
-    ...obras,
-    {
-      ...OBRA_SHITO_DEFAULT,
-      id: OBRA_PADRAO_ID,
-      slug: 'kokuin-heranca-do-abismo',
-      createdAt: 0,
-      updatedAt: 0,
-      isPublished: true,
-      creatorId: OBRA_SHITO_DEFAULT.creatorId,
-    },
-  ];
-}
-
 /**
- * Identificador da obra no capítulo: `workId` (novo) ou `obraId` (legado).
- * Sempre normalizado; vazio cai no Shito padrão.
+ * Identificador da obra no capitulo: `workId` (novo) ou `obraId` (legado).
+ * Sempre normalizado; vazio cai no Shito padrao.
  */
 export function obterObraIdCapitulo(capitulo) {
   const w = String(capitulo?.workId ?? '').trim();
@@ -75,9 +39,9 @@ export function slugifyObraSlug(input) {
 }
 
 /**
- * Segmento usado em `/work/{segment}` — SEO canónico sem mudar a chave RTDB da obra.
- * - Obra-base (`shito`): prioriza slug derivado do **título** para a URL refletir "Kokuin…", não "shito".
- * - Demais obras: usa `slug` se existir e for distinto do id; senão título; senão id.
+ * Segmento usado em `/work/{segment}` - SEO canonico sem mudar a chave RTDB da obra.
+ * - Obra-base (`shito`): prioriza slug derivado do titulo para a URL refletir Kokuin, nao `shito`.
+ * - Demais obras: usa `slug` se existir e for distinto do id; senao titulo; senao id.
  */
 export function obraSegmentoUrlPublica(obra) {
   if (!obra || typeof obra !== 'object') return OBRA_PADRAO_ID;

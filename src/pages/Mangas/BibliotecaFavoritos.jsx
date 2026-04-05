@@ -4,9 +4,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import {
-  OBRA_PADRAO_ID,
-  OBRA_SHITO_DEFAULT,
-  ensureLegacyShitoObra,
   obterObraIdCapitulo,
   obraCreatorId,
   obraSegmentoUrlPublica,
@@ -67,15 +64,15 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     const obrasRef = ref(db, 'obras');
     const unsub = onValue(obrasRef, (snapshot) => {
       if (!snapshot.exists()) {
-        setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+        setObras([]);
         setLoadingObras(false);
         return;
       }
-      const lista = ensureLegacyShitoObra(toList(snapshot.val())).filter((obra) => obraVisivelNoCatalogoPublico(obra));
+      const lista = toList(snapshot.val()).filter((obra) => obraVisivelNoCatalogoPublico(obra));
       setObras(lista);
       setLoadingObras(false);
     }, () => {
-      setObras([{ ...OBRA_SHITO_DEFAULT, id: OBRA_PADRAO_ID }]);
+      setObras([]);
       setLoadingObras(false);
     });
     return () => unsub();

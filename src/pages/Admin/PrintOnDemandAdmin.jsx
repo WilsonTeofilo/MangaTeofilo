@@ -6,6 +6,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../../services/firebase';
 import { addBusinessDaysLocal } from '../../utils/businessDays';
 import { PRODUCTION_CHECKLIST_KEYS, formatBRL } from '../../utils/printOnDemandPricingV2';
+import { formatPodStatusLabel, normalizePodStatus } from '../../utils/podStatus';
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import './PrintOnDemandAdmin.css';
 
@@ -37,7 +38,7 @@ function shortId(id) {
 
 /** Opções do select alinhadas às transições permitidas no backend (sem «pago» manual). */
 function podAdminSelectableStatuses(current) {
-  const c = String(current || '').trim().toLowerCase();
+  const c = normalizePodStatus(current);
   const m = {
     pending_payment: ['pending_payment'],
     paid: ['paid', 'in_production'],
@@ -545,7 +546,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     <td>{snap.quantity}</td>
                     <td>{total}</td>
                     <td>
-                      <span className={`po-badge po-badge--${o.status}`}>{STATUS_LABELS[o.status] || o.status}</span>
+                      <span className={`po-badge po-badge--${normalizePodStatus(o.status)}`}>{formatPodStatusLabel(o.status)}</span>
                     </td>
                     <td>
                       <span className={pm.late ? 'po-prazo po-prazo--late' : 'po-prazo'}>{pm.label}</span>
@@ -584,7 +585,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               >
                 <div className="po-mobile-card__top">
                   <span className="po-table__mono">#{shortId(o.id)}</span>
-                  <span className={`po-badge po-badge--${o.status}`}>{STATUS_LABELS[o.status] || o.status}</span>
+                  <span className={`po-badge po-badge--${normalizePodStatus(o.status)}`}>{formatPodStatusLabel(o.status)}</span>
                 </div>
                 <div className="po-mobile-card__meta">
                   {podTipoDisplay(snap)} · {podOrigemDisplay(snap)}

@@ -125,7 +125,10 @@ function CreatorDetailDrawer({
   const uid = item.uid;
   const isPending = item.creatorApplicationStatus === 'requested';
   const monetizationPending =
-    item.creatorApplicationStatus === 'approved' && item.creatorMonetizationStatus === 'pending_review';
+    item.creatorApplicationStatus === 'approved' &&
+    item.role === 'mangaka' &&
+    item.creatorMonetizationStatus !== 'active' &&
+    Number(item.creatorMonetizationReviewRequestedAt || 0) > 0;
   const displayNameRaw = formatUserDisplayFromMixed(item);
   const displayName = displayNameRaw === 'Usuário' ? '—' : displayNameRaw;
   const bio = String(item.creatorBio || item.creatorBioShort || '').trim() || '—';
@@ -665,7 +668,13 @@ export default function CriadoresAdmin() {
     const pending = applications.filter((item) => item.creatorApplicationStatus === 'requested').length;
     const approved = applications.filter((item) => item.creatorApplicationStatus === 'approved').length;
     const onboarding = applications.filter((item) => item.creatorStatus === 'onboarding').length;
-    const monetizationReview = applications.filter((item) => item.creatorMonetizationStatus === 'pending_review').length;
+    const monetizationReview = applications.filter(
+      (item) =>
+        item.creatorApplicationStatus === 'approved' &&
+        item.role === 'mangaka' &&
+        item.creatorMonetizationStatus !== 'active' &&
+        Number(item.creatorMonetizationReviewRequestedAt || 0) > 0
+    ).length;
     const availablePayout = applications.reduce(
       (acc, item) => acc + Number(item?.creatorBalanceAdmin?.availableBRL || 0),
       0

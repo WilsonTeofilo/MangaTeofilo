@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get, onValue, push, ref as dbRef, remove, set, update } from 'firebase/database';
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { auth, db, storage } from '../../services/firebase';
-import { AVATAR_FALLBACK, isAdminUser } from '../../constants';
+import { AVATAR_FALLBACK } from '../../constants';
+import { canAccessAdminPath } from '../../auth/adminPermissions';
+import { emptyAdminAccess } from '../../auth/adminAccess';
 import { normalizarAcessoAvatar } from '../../utils/avatarAccess';
 import { safeDeleteStorageObject } from '../../utils/storageCleanup';
 import './AdminPanel.css';
@@ -16,7 +18,7 @@ function ModalErro({ mensagem, aoFechar }) {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <div className="modal-header">⚠️ OPERAÇÃO BLOQUEADA</div>
+        <div className="modal-header">âš ï¸ OPERAÃ‡ÃƒO BLOQUEADA</div>
         <div className="modal-body">
           <p>{mensagem}</p>
         </div>
@@ -26,7 +28,7 @@ function ModalErro({ mensagem, aoFechar }) {
   );
 }
 
-export default function AvatarAdmin() {
+export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(auth.currentUser);
 
@@ -41,6 +43,7 @@ export default function AvatarAdmin() {
   const [uploadAcesso, setUploadAcesso] = useState('publico');
   const [filtroAcesso, setFiltroAcesso] = useState('todos');
   const activeTasksRef = useRef([]);
+  const canManageAvatars = canAccessAdminPath('/admin/avatares', adminAccess);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (current) => {
@@ -51,7 +54,7 @@ export default function AvatarAdmin() {
 
   useEffect(() => {
     if (user === null) return;
-    if (!isAdminUser(user)) {
+    if (!canManageAvatars) {
       navigate('/');
       return;
     }
@@ -74,7 +77,7 @@ export default function AvatarAdmin() {
     });
 
     return () => unsub();
-  }, [navigate, user]);
+  }, [canManageAvatars, navigate, user]);
 
   useEffect(() => {
     if (uploadResultados.length === 0 || loading) return undefined;
@@ -133,7 +136,7 @@ export default function AvatarAdmin() {
       setErroModal('Selecione ao menos um arquivo WebP valido para enviar.');
       return;
     }
-    if (!isAdminUser(user)) {
+    if (!canManageAvatars) {
       setErroModal('Sessao de admin invalida para upload. Entre novamente.');
       return;
     }
@@ -283,12 +286,8 @@ export default function AvatarAdmin() {
       const updates = {};
 
       if (avatarUrl) {
-        const [usuariosSnap, publicosSnap] = await Promise.all([
-          get(dbRef(db, 'usuarios')),
-          get(dbRef(db, 'usuarios_publicos')),
-        ]);
+        const usuariosSnap = await get(dbRef(db, 'usuarios'));
         const usuarios = usuariosSnap.val() || {};
-        const publicos = publicosSnap.val() || {};
 
         Object.entries(usuarios).forEach(([uid, row]) => {
           if (!row || typeof row !== 'object') return;
@@ -298,15 +297,11 @@ export default function AvatarAdmin() {
           if (String(row.readerProfileAvatarUrl || '').trim() === avatarUrl) {
             updates[`usuarios/${uid}/readerProfileAvatarUrl`] = fallbackAvatarUrl;
           }
-        });
-
-        Object.entries(publicos).forEach(([uid, row]) => {
-          if (!row || typeof row !== 'object') return;
-          if (String(row.userAvatar || '').trim() === avatarUrl) {
-            updates[`usuarios_publicos/${uid}/userAvatar`] = fallbackAvatarUrl;
+          if (String(row?.publicProfile?.userAvatar || '').trim() === avatarUrl) {
+            updates[`usuarios/${uid}/publicProfile/userAvatar`] = fallbackAvatarUrl;
           }
-          if (String(row.readerProfileAvatarUrl || '').trim() === avatarUrl) {
-            updates[`usuarios_publicos/${uid}/readerProfileAvatarUrl`] = fallbackAvatarUrl;
+          if (String(row?.publicProfile?.readerProfileAvatarUrl || '').trim() === avatarUrl) {
+            updates[`usuarios/${uid}/publicProfile/readerProfileAvatarUrl`] = fallbackAvatarUrl;
           }
         });
       }
@@ -359,7 +354,7 @@ export default function AvatarAdmin() {
     const acesso = nextAccess === 'premium' ? 'premium' : 'publico';
     try {
       await update(dbRef(db, `avatares/${avatarId}`), { access: acesso });
-      setProgressoMsg(`Avatar marcado como ${acesso === 'premium' ? 'Premium' : 'Público'}.`);
+      setProgressoMsg(`Avatar marcado como ${acesso === 'premium' ? 'Premium' : 'PÃºblico'}.`);
       setTimeout(() => setProgressoMsg(''), 1800);
     } catch (err) {
       setErroModal(`Nao foi possivel atualizar acesso do avatar: ${err.message}`);
@@ -485,11 +480,11 @@ export default function AvatarAdmin() {
                   <div className="avatar-upload-row-top">
                     <strong title={item.nome}>{item.nome}</strong>
                     <span>
-                      {item.status === 'sucesso' && '✅ SUCESSO'}
-                      {item.status === 'erro' && '❌ ERRO'}
-                      {item.status === 'cancelado' && '⚠️ CANCELADO'}
-                      {item.status === 'enviando' && '⏳ UPLOAD...'}
-                      {item.status === 'na_fila' && '📦 NA FILA'}
+                      {item.status === 'sucesso' && 'âœ… SUCESSO'}
+                      {item.status === 'erro' && 'âŒ ERRO'}
+                      {item.status === 'cancelado' && 'âš ï¸ CANCELADO'}
+                      {item.status === 'enviando' && 'â³ UPLOAD...'}
+                      {item.status === 'na_fila' && 'ðŸ“¦ NA FILA'}
                     </span>
                   </div>
                   {(item.status === 'enviando' || item.status === 'na_fila') && (
@@ -548,3 +543,4 @@ export default function AvatarAdmin() {
     </div>
   );
 }
+

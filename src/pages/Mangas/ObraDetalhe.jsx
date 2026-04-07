@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 
 import { db, functions } from '../../services/firebase';
-import { isAdminUser } from '../../constants';
 import { emptyAdminAccess } from '../../auth/adminAccess';
 import {
   normalizarObraId,
@@ -22,6 +21,10 @@ import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada, obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
+import {
+  buildPublicProfileFromUsuarioRow,
+  resolvePublicProfileAvatarUrl,
+} from '../../utils/publicUserProfile';
 import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './ObraDetalhe.css';
@@ -29,7 +32,6 @@ import './ObraDetalhe.css';
 function usuarioPodeVerObraArquivada(user, adminAccess, obra) {
   if (!obraEstaArquivada(obra)) return true;
   if (!user?.uid) return false;
-  if (isAdminUser(user)) return true;
   if (adminAccess?.canAccessAdmin && !adminAccess?.isMangaka) return true;
   return obraCreatorId(obra) === user.uid;
 }
@@ -80,7 +82,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return buildObraPageSeo({ obra: obraParaExibir });
   }, [obraParaExibir]);
 
-  /** Redireciona `/obra/shito`, `/work/shito`, `/work/kokuin` → `/work/{slug-canônico}` (SEO) sem mudar `obras/shito` no RTDB. */
+  /** Redireciona `/obra/shito`, `/work/shito`, `/work/kokuin` â†’ `/work/{slug-canÃ´nico}` (SEO) sem mudar `obras/shito` no RTDB. */
   useEffect(() => {
     if (loading || !obraParaExibir) return;
     const canon = obraSegmentoUrlPublica(obraParaExibir);
@@ -214,8 +216,10 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       setCreatorProfile(null);
       return () => {};
     }
-    const unsub = onValue(ref(db, `usuarios_publicos/${creatorId}`), (snapshot) => {
-      setCreatorProfile(snapshot.exists() ? snapshot.val() || null : null);
+    const unsub = onValue(ref(db, `usuarios/${creatorId}`), (snapshot) => {
+      setCreatorProfile(
+        snapshot.exists() ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, creatorId) : null
+      );
     });
     return () => unsub();
   }, [obra]);
@@ -263,8 +267,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     const diff = Date.now() - ts;
     if (diff < 0) return null;
     const h = diff / 3600000;
-    if (h < 1) return 'Capítulo novo há menos de 1h';
-    if (h < 48) return `🔥 Capítulo novo há ${Math.round(h)}h`;
+    if (h < 1) return 'CapÃ­tulo novo hÃ¡ menos de 1h';
+    if (h < 48) return `ðŸ”¥ CapÃ­tulo novo hÃ¡ ${Math.round(h)}h`;
     return null;
   }, [capMaisRecente]);
 
@@ -339,8 +343,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return (
       <main className="obra-page">
         <section className="obra-not-found">
-          <h1>Obra não encontrada</h1>
-          <p>Confira o link ou volte ao catálogo.</p>
+          <h1>Obra nÃ£o encontrada</h1>
+          <p>Confira o link ou volte ao catÃ¡logo.</p>
           <button type="button" onClick={() => navigate('/works')}>
             Ver obras
           </button>
@@ -355,11 +359,11 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return (
       <main className="obra-page">
         <section className="obra-not-found">
-          <h1>Obra não encontrada</h1>
+          <h1>Obra nÃ£o encontrada</h1>
           <p>
             {obra && obraEstaArquivada(obra)
-              ? 'Esta obra foi arquivada e não está mais no catálogo público.'
-              : 'Essa obra não existe ou ainda não foi publicada.'}
+              ? 'Esta obra foi arquivada e nÃ£o estÃ¡ mais no catÃ¡logo pÃºblico.'
+              : 'Essa obra nÃ£o existe ou ainda nÃ£o foi publicada.'}
           </p>
           <button type="button" onClick={() => navigate('/works')}>
             Ver obras
@@ -381,7 +385,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
         open={workBrowserPushModalOpen}
         permission={workBrowserPushPermission}
         title="Avisos no navegador"
-        description="Obra acompanhada. Quer receber notificação aqui no navegador quando sair capítulo novo?"
+        description="Obra acompanhada. Quer receber notificaÃ§Ã£o aqui no navegador quando sair capÃ­tulo novo?"
         onClose={() => setWorkBrowserPushModalOpen(false)}
       />
       {obraSeo ? (
@@ -413,25 +417,25 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
           <img
             className="obra-cover"
             src={obraParaExibir.capaUrl || obraParaExibir.bannerUrl || '/assets/fotos/shito.jpg'}
-            alt={`Capa do mangá ${obraParaExibir.titulo || obraId}`}
+            alt={`Capa do mangÃ¡ ${obraParaExibir.titulo || obraId}`}
           />
           <div className="obra-info">
             <h1>{obraParaExibir.titulo || obraId}</h1>
             {novoCapLabel ? <p className="obra-novo-cap">{novoCapLabel}</p> : null}
             <div className="obra-meta">
               <span>Status: {obraParaExibir.status || 'ongoing'}</span>
-              <span>Público: {obraParaExibir.publicoAlvo || 'Geral'}</span>
-              <span>{capitulos.length} capítulos</span>
+              <span>PÃºblico: {obraParaExibir.publicoAlvo || 'Geral'}</span>
+              <span>{capitulos.length} capÃ­tulos</span>
               <span className="obra-meta-stats">
                 {obraViews > 0 ? `${obraViews.toLocaleString('pt-BR')} views` : null}
-                {obraViews > 0 && obraLikes > 0 ? ' · ' : null}
+                {obraViews > 0 && obraLikes > 0 ? ' Â· ' : null}
                 {obraLikes > 0 ? `${obraLikes.toLocaleString('pt-BR')} likes` : null}
               </span>
             </div>
             {creatorHandle ? (
               <Link className="obra-creator-chip" to={`/@${creatorHandle}`}>
                 <img
-                  src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
+                  src={resolvePublicProfileAvatarUrl(creatorProfile, { mode: 'creator', fallback: '/assets/fotos/shito.jpg' })}
                   alt={creatorPorLabel}
                 />
                 <span>por {creatorPorLabel}</span>
@@ -439,7 +443,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
             ) : (
               <button type="button" className="obra-creator-chip" onClick={abrirCriador}>
                 <img
-                  src={creatorProfile?.userAvatar || '/assets/fotos/shito.jpg'}
+                  src={resolvePublicProfileAvatarUrl(creatorProfile, { mode: 'creator', fallback: '/assets/fotos/shito.jpg' })}
                   alt={creatorPorLabel}
                 />
                 <span>por {creatorPorLabel}</span>
@@ -449,27 +453,27 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
             <p className="obra-sinopse">{obraParaExibir.sinopse || 'Sinopse em breve.'}</p>
             <div className="obra-actions obra-actions--dual">
               <button type="button" className="btn-obra-cta btn-obra-cta--sec" onClick={abrirComecar} disabled={!primeiroLiberado}>
-                Começar
+                ComeÃ§ar
               </button>
               <button type="button" className="btn-obra-cta" onClick={abrirContinuar} disabled={!continuarCap}>
                 Continuar
               </button>
               <button type="button" className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`} onClick={toggleFavorito}>
-                {isFavorito ? '★ Desfavoritar' : '☆ Favoritar'}
+                {isFavorito ? 'â˜… Desfavoritar' : 'â˜† Favoritar'}
               </button>
               <Link className="btn-obra-fav-page" to={`/criador/${encodeURIComponent(creatorUidObra)}`}>
                 Ver criador
               </Link>
             </div>
-            <nav className="obra-seo-nav" aria-label="Navegação do catálogo">
-              <Link to="/works">Mais mangás para ler online</Link>
-              <span aria-hidden="true"> · </span>
-              <Link to={`/criador/${encodeURIComponent(creatorUidObra)}`}>Página do autor</Link>
+            <nav className="obra-seo-nav" aria-label="NavegaÃ§Ã£o do catÃ¡logo">
+              <Link to="/works">Mais mangÃ¡s para ler online</Link>
+              <span aria-hidden="true"> Â· </span>
+              <Link to={`/criador/${encodeURIComponent(creatorUidObra)}`}>PÃ¡gina do autor</Link>
             </nav>
             {user?.uid ? (
               <div className="obra-notify-box">
                 <strong>Acompanhar esta obra</strong>
-                <p>Quando você acompanha uma obra, capítulos novos passam a aparecer no seu sino de notificações.</p>
+                <p>Quando vocÃª acompanha uma obra, capÃ­tulos novos passam a aparecer no seu sino de notificaÃ§Ãµes.</p>
                 <div className="obra-notify-box__options">
                   <button type="button" className="btn-obra-fav-page" onClick={salvarAvisosObra} disabled={workNotificationBusy}>
                     {workNotificationBusy ? 'Salvando...' : isSubscribedWork ? 'Parar de acompanhar' : 'Acompanhar obra'}
@@ -483,11 +487,11 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
       <section className="obra-capitulos-section">
         <div className="obra-capitulos-head">
-          <h2 className="obra-capitulos-title">Lista de capítulos</h2>
+          <h2 className="obra-capitulos-title">Lista de capÃ­tulos</h2>
         </div>
 
         {capitulos.length === 0 ? (
-          <p className="obra-capitulos-empty">Essa obra ainda não possui capítulos publicados.</p>
+          <p className="obra-capitulos-empty">Essa obra ainda nÃ£o possui capÃ­tulos publicados.</p>
         ) : (
           <div className="obra-capitulos-list shueisha-capitulos-list">
             {capitulosResolvidos.map((cap) => {
@@ -513,7 +517,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                       <div className="shito-cap-miniature-wrapper">
                         <img
                           src={cap.capaUrl || '/assets/fotos/shito.jpg'}
-                          alt={cap.titulo || `Capítulo ${cap.numero}`}
+                          alt={cap.titulo || `CapÃ­tulo ${cap.numero}`}
                           className="shito-cap-miniature"
                           style={chapterCoverStyle(cap.capaAjuste)}
                           loading="lazy"
@@ -521,14 +525,14 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                         />
                       </div>
                       <div className="cap-text-details">
-                        <h3 className="shito-cap-title">{cap.titulo || 'Capítulo sem título'}</h3>
+                        <h3 className="shito-cap-title">{cap.titulo || 'CapÃ­tulo sem tÃ­tulo'}</h3>
                         {!liberado && (
                           <span className="cap-badge-em-breve">
-                            Em breve · {formatarDataLancamento(cap.publicReleaseAt)}
+                            Em breve Â· {formatarDataLancamento(cap.publicReleaseAt)}
                           </span>
                         )}
                         <div className="obra-cap-access">
-                          {liberado && <span className="pill publico">Público</span>}
+                          {liberado && <span className="pill publico">PÃºblico</span>}
                           {!liberado && cap.antecipadoMembros && (
                             <span className="pill premium">Membership antecipada</span>
                           )}
@@ -537,9 +541,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                           )}
                         </div>
                         <div className="cap-stats-row">
-                          <span className="stat-item">👁 {Number(cap.viewsCount || cap.visualizacoes || 0)}</span>
+                          <span className="stat-item">ðŸ‘ {Number(cap.viewsCount || cap.visualizacoes || 0)}</span>
                           {Number(cap.likesCount || 0) > 0 ? (
-                            <span className="stat-item">♡ {Number(cap.likesCount || 0)}</span>
+                            <span className="stat-item">â™¡ {Number(cap.likesCount || 0)}</span>
                           ) : null}
                         </div>
                       </div>
@@ -547,7 +551,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                   </div>
                   <div className="cap-right-info">
                     <time className="shito-cap-date">{formatarDataBrPartirIsoOuMs(cap.dataUpload)}</time>
-                    <span className="arrow-mobile">›</span>
+                    <span className="arrow-mobile">â€º</span>
                   </div>
                 </article>
               );

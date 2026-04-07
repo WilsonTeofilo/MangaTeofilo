@@ -8,6 +8,7 @@ import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { SITE_ORIGIN } from '../../config/site';
 import { functions } from '../../services/firebase';
 import { submitCreatorApplicationPayload } from '../../utils/creatorApplicationClient';
+import { resolveCreatorMonetizationPreferenceFromDb } from '../../utils/creatorMonetizationUi';
 import { sanitizeCpfDigitsInput } from '../../utils/creatorRecord';
 import './CreatorsApplyPage.css';
 
@@ -29,16 +30,21 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
   const isStaffAdmin = adminAccess?.canAccessAdmin === true;
 
   const initial = useMemo(
-    () => ({
-      displayName: String(perfil?.creatorDisplayName || perfil?.userName || user?.displayName || '').trim(),
-      bio: String(perfil?.creatorBio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH),
-      instagramUrl: String(perfil?.instagramUrl || '').trim(),
-      youtubeUrl: String(perfil?.youtubeUrl || '').trim(),
+    () => {
+      const creatorProfile = perfil?.creator?.profile && typeof perfil.creator.profile === 'object'
+        ? perfil.creator.profile
+        : {};
+      const creatorSocial = perfil?.creator?.social && typeof perfil.creator.social === 'object'
+        ? perfil.creator.social
+        : {};
+      return {
+      displayName: String(creatorProfile.displayName || perfil?.userName || user?.displayName || '').trim(),
+      bio: String(creatorProfile.bio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH),
+      instagramUrl: String(creatorSocial.instagram || '').trim(),
+      youtubeUrl: String(creatorSocial.youtube || '').trim(),
       monetizationPreference: isMangakaMonetizeIntent
         ? 'monetize'
-        : String(perfil?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase() === 'monetize'
-          ? 'monetize'
-          : 'publish_only',
+        : resolveCreatorMonetizationPreferenceFromDb(perfil),
       termsAccepted: Boolean(perfil?.creatorTermsAccepted),
       birthDate: String(perfil?.birthDate || '').trim(),
       legalFullName: String(perfil?.creatorCompliance?.legalFullName || '').trim(),
@@ -56,7 +62,8 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
         }
         return '';
       })(),
-    }),
+    };
+    },
     [perfil, user, isMangakaMonetizeIntent]
   );
 

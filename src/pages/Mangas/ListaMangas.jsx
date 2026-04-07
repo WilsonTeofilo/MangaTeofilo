@@ -9,6 +9,7 @@ import {
   obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
+import { buildPublicProfilesMapFromUsuarios } from '../../utils/publicUserProfile';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
@@ -138,8 +139,8 @@ export default function ListaMangas({ user }) {
   }, []);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'usuarios_publicos'), (snapshot) => {
-      setCreatorsMap(snapshot.exists() ? snapshot.val() || {} : {});
+    const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
+      setCreatorsMap(snapshot.exists() ? buildPublicProfilesMapFromUsuarios(snapshot.val() || {}) : {});
     });
     return () => unsub();
   }, []);

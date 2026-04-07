@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { ref, onValue, push, set, get, runTransaction, serverTimestamp, update } from 'firebase/database';
+import { ref, onValue, push, set, get, runTransaction, serverTimestamp } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 
 import { db, functions } from '../../services/firebase';
-import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME } from '../../constants';
+import { AVATAR_FALLBACK } from '../../constants';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { applyChapterCommentDelta, applyChapterReadDelta } from '../../utils/discoveryStats';
 import { getLastRead, recordReadingProgress } from '../../utils/readingProgressLocal';
@@ -19,7 +19,8 @@ import {
 } from '../../config/obras';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
-import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
+import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { formatUserDisplayWithHandle, normalizePublicHandle } from '../../utils/publicCreatorName';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
@@ -39,7 +40,7 @@ function commentSortTs(c) {
   return 0;
 }
 
-/** Perfil público unificado: mesma URL para autor e leitor (abas no `/criador/:uid`). */
+/** Perfil pÃºblico unificado: mesma URL para autor e leitor (abas no `/criador/:uid`). */
 function publicCriadorProfilePath(perfilPublico, uid) {
   const u = String(uid || '').trim();
   if (!u || !perfilPublico) return null;
@@ -80,7 +81,7 @@ function buildCommentThreads(flat, filtro) {
   return roots;
 }
 
-/** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
+/** Distintivo nos comentÃ¡rios: sÃ³ assinatura Premium paga (nÃ£o doaÃ§Ã£o / membro manual). */
 const isContaPremium = (perfilPublico) => {
   const tipo = String(perfilPublico?.accountType ?? 'comum').toLowerCase();
   return tipo === 'premium';
@@ -189,12 +190,11 @@ export default function Leitor({ user, perfil }) {
       setCreatorSupportEnabled(false);
       return () => {};
     }
-    const unsub = onValue(ref(db, `usuarios_publicos/${creatorUidApoio}`), (snapshot) => {
-      const row = snapshot.exists() ? snapshot.val() || {} : {};
-      const monetizationStatus = effectiveCreatorMonetizationStatus(
-        row.creatorMonetizationPreference,
-        row.creatorMonetizationStatus
-      );
+    const unsub = onValue(ref(db, `usuarios/${creatorUidApoio}`), (snapshot) => {
+      const row = snapshot.exists()
+        ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, creatorUidApoio)
+        : {};
+      const monetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);
       setCreatorSupportEnabled(monetizationStatus === 'active');
     });
     return () => unsub();
@@ -208,438 +208,6 @@ export default function Leitor({ user, perfil }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [modalLoginComentario]);
-
-  // ✅ Lê de usuarios_publicos (.read = true nas rules)
-  // Qualquer visitante, logado ou não, consegue ver nome e avatar
-  const escutarPerfil = useCallback((uid) => {
-    if (!uid || unsubPerfis.current[uid]) return;
-    const unsub = onValue(
-      ref(db, `usuarios_publicos/${uid}`),
-      (snap) => {
-        if (snap.exists()) {
-          setPerfis((prev) => ({ ...prev, [uid]: snap.val() }));
-        }
-      }
-    );
-    unsubPerfis.current[uid] = unsub;
-  }, []);
-
-  useEffect(() => {
-    jaContouVisualizacao.current = false;
-    setVerticalFocusIndex(0);
-  }, [id]);
-
-  const commentFocusId = String(searchParams.get('comment') || '').trim();
-
-  useEffect(() => {
-    if (!commentFocusId || !listaComentarios.length) return undefined;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      if (cancelled) return;
-      const el = document.getElementById(`comentario-${commentFocusId}`);
-      if (!el) return;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('comentario--highlight');
-      window.setTimeout(() => el.classList.remove('comentario--highlight'), 4500);
-    }, 500);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [commentFocusId, listaComentarios.length, id]);
-
-  const chapterSeo = useMemo(() => {
-    if (!capitulo || !id) return null;
-    const SITE = 'MangaTeofilo';
-    const SITE_W = SITE_ORIGIN;
-    const absShareUrl = (u) => {
-      const s = String(u || '').trim();
-      if (!s) return SITE_DEFAULT_IMAGE;
-      if (/^https?:\/\//i.test(s)) return s;
-      return `${SITE_W}${s.startsWith('/') ? '' : '/'}${s}`;
-    };
-    const obraNome = String(capitulo.obraTitulo || capitulo.obraName || '').trim() || 'Mangá autoral';
-    const num = Number(capitulo.numero || 0);
-    const capTitulo =
-      String(capitulo.titulo || '').trim() || (num ? `Capítulo ${num}` : 'Capítulo');
-    const numLabel = num > 0 ? String(num) : '?';
-    const canonical = `${SITE_W}/ler/${encodeURIComponent(id)}`;
-    const title = `${obraNome} · Cap. ${numLabel}: ${capTitulo} | ${SITE}`;
-    const description = `Leia ${capTitulo} de ${obraNome} — mangá em português no ${SITE}. Toque para abrir o leitor.`;
-    const coverRaw =
-      String(capitulo.capaUrl || '').trim() ||
-      (Array.isArray(capitulo.paginas) && capitulo.paginas.length
-        ? String(capitulo.paginas[0] || '').trim()
-        : '');
-    const shareImage = absShareUrl(coverRaw);
-    const imageAlt = `${obraNome} — ${capTitulo}`;
-    const workId = obterObraIdCapitulo(capitulo);
-    const meta =
-      obraMetaLeitor && normalizarObraId(obraMetaLeitor.id) === normalizarObraId(workId)
-        ? obraMetaLeitor
-        : {
-            id: workId,
-            titulo: capitulo.obraTitulo || capitulo.obraName,
-            slug: capitulo.obraSlug,
-          };
-    const workSeg = obraSegmentoUrlPublica(meta);
-    const obraPageUrl = `${SITE_W}/work/${encodeURIComponent(workSeg)}`;
-    const jsonLd = {
-      '@context': 'https://schema.org',
-      '@type': 'Chapter',
-      name: capTitulo,
-      isPartOf: {
-        '@type': 'CreativeWorkSeries',
-        name: obraNome,
-        url: obraPageUrl,
-      },
-      url: canonical,
-      inLanguage: 'pt-BR',
-    };
-    return {
-      title,
-      description,
-      canonical,
-      shareImage,
-      imageAlt,
-      jsonLd,
-      obraNome,
-      capTitulo,
-      imgAltPrefix: `${obraNome} — ${capTitulo} — página`,
-      obraPath: `/work/${encodeURIComponent(workSeg)}`,
-    };
-  }, [capitulo, id, obraMetaLeitor]);
-
-  const capituloParaAcesso = useMemo(() => {
-    if (!capitulo) return null;
-    return creatorUidApoio && !capitulo.creatorId
-      ? { ...capitulo, creatorId: creatorUidApoio }
-      : capitulo;
-  }, [capitulo, creatorUidApoio]);
-
-  const workIdSibling = useMemo(() => (capitulo ? obterObraIdCapitulo(capitulo) : null), [capitulo]);
-
-  useEffect(() => {
-    if (!workIdSibling) {
-      setCapsObra([]);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, 'capitulos'), (snap) => {
-      const list = snap.exists() ? toRecordList(snap.val()) : [];
-      const mine = list
-        .filter((c) => obterObraIdCapitulo(c) === workIdSibling)
-        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0));
-      setCapsObra(mine);
-    });
-    return () => unsub();
-  }, [workIdSibling]);
-
-  const proximoCapituloId = useMemo(() => {
-    if (!capitulo || !id || !capsObra.length) return null;
-    const curNum = Number(capitulo.numero || 0);
-    const fallbackCreator = creatorUidApoio || String(capitulo.creatorId || '').trim();
-    const opts = { creatorIdFallback: fallbackCreator };
-    const baseCap = { ...(capituloParaAcesso || capitulo), id };
-    if (!capituloLiberadoParaUsuario(baseCap, user, perfil, opts)) return null;
-    for (const c of capsObra) {
-      if (Number(c.numero || 0) <= curNum) continue;
-      const enriched = c?.creatorId ? c : { ...c, creatorId: fallbackCreator };
-      const capCheck = { ...enriched, id: c.id };
-      if (capituloLiberadoParaUsuario(capCheck, user, perfil, opts)) return c.id;
-    }
-    return null;
-  }, [capitulo, id, capsObra, user, perfil, capituloParaAcesso, creatorUidApoio]);
-
-  const anteriorCapituloId = useMemo(() => {
-    if (!capitulo || !id || !capsObra.length) return null;
-    const curNum = Number(capitulo.numero || 0);
-    const fallbackCreator = creatorUidApoio || String(capitulo.creatorId || '').trim();
-    const opts = { creatorIdFallback: fallbackCreator };
-    const baseCap = { ...(capituloParaAcesso || capitulo), id };
-    if (!capituloLiberadoParaUsuario(baseCap, user, perfil, opts)) return null;
-    for (let i = capsObra.length - 1; i >= 0; i -= 1) {
-      const c = capsObra[i];
-      if (Number(c.numero || 0) >= curNum) continue;
-      const enriched = c?.creatorId ? c : { ...c, creatorId: fallbackCreator };
-      const capCheck = { ...enriched, id: c.id };
-      if (capituloLiberadoParaUsuario(capCheck, user, perfil, opts)) return c.id;
-    }
-    return null;
-  }, [capitulo, id, capsObra, user, perfil, capituloParaAcesso, creatorUidApoio]);
-
-  const capsLiberadosLista = useMemo(() => {
-    if (!capsObra.length || !capitulo) return [];
-    const fallbackCreator = creatorUidApoio || String(capitulo.creatorId || '').trim();
-    const opts = { creatorIdFallback: fallbackCreator };
-    return capsObra.filter((c) => {
-      const enriched = c?.creatorId ? c : { ...c, creatorId: fallbackCreator };
-      return capituloLiberadoParaUsuario({ ...enriched, id: c.id }, user, perfil, opts);
-    });
-  }, [capsObra, capitulo, user, perfil, creatorUidApoio]);
-
-  const showProfileToast = useCallback((msg) => {
-    const t = String(msg || '').trim();
-    if (!t) return;
-    setProfileToast(t);
-    window.clearTimeout(profileToastTimerRef.current);
-    profileToastTimerRef.current = window.setTimeout(() => setProfileToast(''), 4200);
-  }, []);
-
-  const triggerCapNavError = useCallback(() => {
-    setCapNavError(true);
-    window.clearTimeout(capNavErrorTimerRef.current);
-    capNavErrorTimerRef.current = window.setTimeout(() => setCapNavError(false), 650);
-  }, []);
-
-  const authorUid = String(creatorUidApoio || capitulo?.creatorId || '').trim();
-
-  useEffect(() => {
-    const fromUrl = parseAttributionFromSearch(searchParams);
-    if (fromUrl) {
-      persistAttribution(fromUrl);
-      leituraAttributionRef.current = {
-        source: fromUrl.source || 'normal',
-        campaignId: fromUrl.campaignId || null,
-        clickId: fromUrl.clickId || null,
-      };
-      if (fromUrl.source === 'chapter_email') {
-        registrarAttributionEvento({
-          eventType: 'chapter_landing',
-          source: fromUrl.source,
-          campaignId: fromUrl.campaignId || `chapter_${id}`,
-          clickId: fromUrl.clickId || null,
-          chapterId: id,
-        }).catch(() => {});
-      }
-      return;
-    }
-    const cached = getAttribution(2 * 24 * 60 * 60 * 1000);
-    const chapterWorkId = capitulo ? obterObraIdCapitulo(capitulo) : '';
-    const chapterCampaignId = buildChapterCampaignId(id, chapterWorkId || 'work');
-    const isSameChapterCampaign =
-      cached?.source === 'chapter_email' &&
-      (!cached?.campaignId || cached.campaignId === chapterCampaignId);
-    leituraAttributionRef.current = {
-      source: isSameChapterCampaign ? 'chapter_email' : 'normal',
-      campaignId: isSameChapterCampaign ? cached?.campaignId || chapterCampaignId : null,
-      clickId: isSameChapterCampaign ? cached?.clickId || null : null,
-    };
-  }, [searchParams, id, capitulo]);
-
-  useEffect(() => {
-    if (!id) {
-      setCapitulo(null);
-      setComentarios([]);
-      setCarregando(false);
-      return () => {};
-    }
-
-    let ativo = true;
-    setCarregando(true);
-    setCapitulo(null);
-    setComentarios([]);
-    setPaginaAtual(0);
-
-    const unsub = onValue(
-      ref(db, `capitulos/${id}`),
-      (snap) => {
-        if (!ativo) return;
-        if (!snap.exists()) {
-          setCapitulo(null);
-          setComentarios([]);
-          setCarregando(false);
-          return;
-        }
-        const dados = snap.val();
-        setCapitulo(dados);
-
-        if (dados.comentarios) {
-          const lista = Object.keys(dados.comentarios).map((key) => ({
-            id: key,
-            ...dados.comentarios[key],
-          }));
-          setComentarios(lista);
-          lista.forEach((c) => { if (c.userId) escutarPerfil(c.userId); });
-        } else {
-          setComentarios([]);
-        }
-        setCarregando(false);
-      },
-      () => {
-        if (!ativo) return;
-        setCapitulo(null);
-        setComentarios([]);
-        setCarregando(false);
-      }
-    );
-
-    return () => {
-      ativo = false;
-      unsub();
-      Object.values(unsubPerfis.current).forEach((u) => u?.());
-      unsubPerfis.current = {};
-    };
-  }, [id, escutarPerfil]);
-
-  // Restaura página salva (só quando o capítulo assenta — evita reset a cada tick do RTDB).
-  useEffect(() => {
-    if (!capitulo || !id || carregando) return;
-    const last = getLastRead();
-    if (!last || last.chapterId !== id) return;
-    const max = Math.max(0, (capitulo.paginas?.length || 1) - 1);
-    const target = Math.min(Math.max(0, last.page - 1), max);
-    setPaginaAtual(target);
-  }, [id, carregando, capitulo?.paginas?.length]);
-
-  useEffect(() => {
-    if (modoLeitura !== 'vertical' || carregando || !capitulo?.paginas?.length) return undefined;
-    let cancelled = false;
-    let obs = null;
-    const timer = window.setTimeout(() => {
-      if (cancelled) return;
-      const root = document.querySelector('.paginas-lista');
-      if (!root) return;
-      const imgs = root.querySelectorAll('img');
-      if (!imgs.length) return;
-      const ratios = new Map();
-      obs = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((en) => {
-            const idx = [...imgs].indexOf(en.target);
-            if (idx < 0) return;
-            ratios.set(idx, en.intersectionRatio);
-          });
-          let best = 0;
-          let bestR = 0;
-          ratios.forEach((r, i) => {
-            if (r > bestR) {
-              bestR = r;
-              best = i;
-            }
-          });
-          if (bestR > 0.12) setVerticalFocusIndex(best);
-        },
-        { root: null, rootMargin: '-18% 0px -28% 0px', threshold: [0, 0.12, 0.25, 0.45, 0.65] }
-      );
-      imgs.forEach((img) => obs.observe(img));
-    }, 150);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      if (obs) obs.disconnect();
-    };
-  }, [modoLeitura, carregando, capitulo?.paginas?.length, id]);
-
-  useEffect(() => {
-    if (!capitulo || !id || carregando) return;
-    const cap = { ...(capituloParaAcesso || capitulo), id };
-    if (
-      !capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: creatorUidApoio || '' })
-    ) {
-      return;
-    }
-    const workId = obterObraIdCapitulo(capitulo);
-    const page =
-      modoLeitura === 'horizontal' ? paginaAtual + 1 : Math.min(verticalFocusIndex + 1, capitulo.paginas?.length || 1);
-    const obraTitulo = String(obraMetaLeitor?.titulo || capitulo.obraTitulo || capitulo.obraName || '').trim();
-    const chapterTitle =
-      String(capitulo.titulo || '').trim() || `Capítulo ${capitulo.numero != null ? capitulo.numero : ''}`;
-    const capaUrl = String(capitulo.capaUrl || '').trim();
-    const timer = window.setTimeout(() => {
-      recordReadingProgress({
-        workId,
-        chapterId: id,
-        chapterNumber: Number(capitulo.numero) || 0,
-        page,
-        obraTitulo,
-        chapterTitle,
-        capaUrl,
-      });
-    }, 600);
-    return () => window.clearTimeout(timer);
-  }, [
-    id,
-    capitulo,
-    carregando,
-    paginaAtual,
-    modoLeitura,
-    verticalFocusIndex,
-    user,
-    perfil,
-    capituloParaAcesso,
-    creatorUidApoio,
-    obraMetaLeitor,
-  ]);
-
-  useEffect(() => {
-    if (!capitulo || !id) return;
-    const cap = { ...(capituloParaAcesso || capitulo), id };
-    if (
-      !capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: creatorUidApoio || '' })
-    ) {
-      return;
-    }
-    if (jaContouVisualizacao.current) return;
-    jaContouVisualizacao.current = true;
-    applyChapterReadDelta(db, {
-      chapterId: id,
-      workId: obterObraIdCapitulo(capitulo),
-      creatorId: creatorUidApoio || obraCreatorId({ creatorId: capitulo?.creatorId || '' }),
-      amount: 1,
-      viewerUid: String(user?.uid || '').trim(),
-      chapterNumber: Number(capitulo?.numero || 0),
-      chapterTitle: String(capitulo?.titulo || '').trim(),
-    }).catch(() => {});
-    const attrib = leituraAttributionRef.current || { source: 'normal' };
-    registrarAttributionEvento({
-      eventType: 'chapter_read',
-      source: attrib.source || 'normal',
-      campaignId:
-        attrib.campaignId ||
-        (attrib.source === 'chapter_email'
-          ? buildChapterCampaignId(id, obterObraIdCapitulo(capitulo))
-          : null),
-      clickId: attrib.clickId || null,
-      chapterId: id,
-    }).catch(() => {});
-  }, [capitulo, capituloParaAcesso, id, user, perfil, creatorUidApoio]);
-
-  // ✅ Sincroniza perfil público ANTES de comentar
-  // Garante que todos os visitantes verão o avatar e nome atualizados
-  const sincronizarPerfilPublico = async (usuario) => {
-    if (!usuario) return;
-    try {
-      const privSnap = await get(ref(db, `usuarios/${usuario.uid}`));
-      const row = privSnap.exists() ? privSnap.val() || {} : {};
-      const avatarPersistido = String(row.userAvatar || '').trim();
-      const tipoRaw = String(row.accountType ?? 'comum').toLowerCase();
-      const accountTypePub = ['comum', 'membro', 'premium', 'admin'].includes(tipoRaw)
-        ? tipoRaw
-        : 'comum';
-      const userAvatar =
-        avatarPersistido ||
-        String(usuario.photoURL || '').trim() ||
-        AVATAR_FALLBACK;
-      const handlePub = String(row.userHandle || '').trim().toLowerCase();
-      const pubPatch = {
-        uid: usuario.uid,
-        userName: String(
-          row.creatorDisplayName || row.userName || usuario.displayName || DEFAULT_USER_DISPLAY_NAME
-        ).trim() || DEFAULT_USER_DISPLAY_NAME,
-        userAvatar,
-        accountType: accountTypePub,
-        updatedAt: Date.now(),
-      };
-      if (handlePub) pubPatch.userHandle = handlePub;
-      const rootPatch = {};
-      for (const [key, value] of Object.entries(pubPatch)) {
-        rootPatch[`usuarios_publicos/${usuario.uid}/${key}`] = value;
-      }
-      await update(ref(db), rootPatch);
-    } catch (err) {
-      console.warn('Aviso: não foi possível sincronizar perfil público.', err.message);
-    }
-  };
 
   const totalPaginas = capitulo?.paginas?.length || 0;
   const currentWorkId = obterObraIdCapitulo(capitulo);
@@ -699,7 +267,6 @@ export default function Leitor({ user, perfil }) {
     setEnviando(true);
     const texto = comentarioTexto.trim();
     try {
-      await sincronizarPerfilPublico(user); // atualiza avatar antes de gravar
       await set(push(ref(db, `capitulos/${id}/comentarios`)), {
         texto,
         userId: user.uid,
@@ -720,7 +287,7 @@ export default function Leitor({ user, perfil }) {
     }
   };
 
-  // ✅ Qualquer usuário logado pode curtir — sem restrição de status
+  // âœ… Qualquer usuÃ¡rio logado pode curtir â€” sem restriÃ§Ã£o de status
   const handleLike = async (comentId) => {
     if (!user) {
       navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
@@ -739,7 +306,7 @@ export default function Leitor({ user, perfil }) {
       return post;
     });
     if (!tx.committed) return;
-    // Like de comentário fica só no nó do comentário; não altera likes da obra/capítulo.
+    // Like de comentÃ¡rio fica sÃ³ no nÃ³ do comentÃ¡rio; nÃ£o altera likes da obra/capÃ­tulo.
   };
 
   const comentariosEmThreads = useMemo(
@@ -756,7 +323,6 @@ export default function Leitor({ user, perfil }) {
     if (!texto || replyEnviando || !parentId) return;
     setReplyEnviando(true);
     try {
-      await sincronizarPerfilPublico(user);
       await set(push(ref(db, `capitulos/${id}/comentarios`)), {
         texto,
         userId: user.uid,
@@ -773,7 +339,7 @@ export default function Leitor({ user, perfil }) {
         amount: 1,
       });
     } catch (err) {
-      console.error('Erro ao responder comentário:', err);
+      console.error('Erro ao responder comentÃ¡rio:', err);
     } finally {
       setReplyEnviando(false);
     }
@@ -832,7 +398,7 @@ export default function Leitor({ user, perfil }) {
     try {
       await toggleChapterLikeCallable({ chapterId: id });
     } catch (e) {
-      console.error('Erro ao curtir capítulo:', e);
+      console.error('Erro ao curtir capÃ­tulo:', e);
     }
   };
 
@@ -841,11 +407,11 @@ export default function Leitor({ user, perfil }) {
     return (
       <div className="leitor-container">
         <Helmet prioritizeSeoTags>
-          <title>Capítulo não encontrado | MangaTeofilo</title>
+          <title>CapÃ­tulo nÃ£o encontrado | MangaTeofilo</title>
           <meta name="robots" content="noindex,follow" />
         </Helmet>
         <div className="leitor-not-found" role="alert">
-          Capítulo não encontrado.
+          CapÃ­tulo nÃ£o encontrado.
         </div>
       </div>
     );
@@ -884,19 +450,19 @@ export default function Leitor({ user, perfil }) {
           </Helmet>
         ) : null}
         <div className="leitor-lancamento-bloqueado" role="status">
-          <h1 className="leitor-lancamento-titulo">{capitulo.titulo || 'Capítulo'}</h1>
+          <h1 className="leitor-lancamento-titulo">{capitulo.titulo || 'CapÃ­tulo'}</h1>
           <p className="leitor-lancamento-msg">
-            Este fragmento ainda não está liberado para leitura pública.
+            Este fragmento ainda nÃ£o estÃ¡ liberado para leitura pÃºblica.
             {quando ? (
               <>
                 {' '}
-                Previsão: <strong>{quando}</strong>
+                PrevisÃ£o: <strong>{quando}</strong>
               </>
             ) : null}
           </p>
           {capitulo.antecipadoMembros && (
             <p className="leitor-lancamento-hint">
-              Quem tem <strong>membership ativa do autor desta obra</strong> pode ler antes do horário público.
+              Quem tem <strong>membership ativa do autor desta obra</strong> pode ler antes do horÃ¡rio pÃºblico.
             </p>
           )}
           <button
@@ -904,7 +470,7 @@ export default function Leitor({ user, perfil }) {
             className="leitor-lancamento-voltar"
             onClick={() => navigate('/works')}
           >
-            Voltar à biblioteca
+            Voltar Ã  biblioteca
           </button>
           {creatorSupportEnabled ? (
             <button
@@ -963,14 +529,14 @@ export default function Leitor({ user, perfil }) {
                     type="button"
                     className="comentario-user-link comentario-user-link--ghost"
                     onClick={() =>
-                      showProfileToast('Este perfil é privado e não aceita visitas no momento.')
+                      showProfileToast('Este perfil Ã© privado e nÃ£o aceita visitas no momento.')
                     }
                   >
                     {autorLabel}
                   </button>
                 )}
               </strong>
-              {isPremium ? <span className="premium-crown" title="Membro premium">👑</span> : null}
+              {isPremium ? <span className="premium-crown" title="Membro premium">ðŸ‘‘</span> : null}
             </div>
             <p className="comentario-texto">{c.texto}</p>
             <div className="comentario-acoes">
@@ -978,9 +544,9 @@ export default function Leitor({ user, perfil }) {
                 type="button"
                 className={`btn-like ${isLiked ? 'liked' : ''}`}
                 onClick={() => handleLike(c.id)}
-                title={user ? (isLiked ? 'Remover curtida' : 'Curtir') : 'Faça login para curtir'}
+                title={user ? (isLiked ? 'Remover curtida' : 'Curtir') : 'FaÃ§a login para curtir'}
               >
-                {isLiked ? '❤️' : '🤍'} {c.likes || 0}
+                {isLiked ? 'â¤ï¸' : 'ðŸ¤'} {c.likes || 0}
               </button>
               {user ? (
                 <button
@@ -1012,7 +578,7 @@ export default function Leitor({ user, perfil }) {
                 <textarea
                   value={replyDraft}
                   onChange={(e) => setReplyDraft(e.target.value)}
-                  placeholder="Escreva sua resposta…"
+                  placeholder="Escreva sua respostaâ€¦"
                   maxLength={500}
                   rows={3}
                   disabled={replyEnviando}
@@ -1061,7 +627,7 @@ export default function Leitor({ user, perfil }) {
         open={chapterBrowserPushModalOpen}
         permission={chapterBrowserPushPermission}
         title="Avisos no navegador"
-        description="Quer receber notificação aqui no navegador quando sair capítulo novo desta obra?"
+        description="Quer receber notificaÃ§Ã£o aqui no navegador quando sair capÃ­tulo novo desta obra?"
         onClose={() => setChapterBrowserPushModalOpen(false)}
       />
       {chapterSeo ? (
@@ -1097,7 +663,7 @@ export default function Leitor({ user, perfil }) {
             onClick={handleChapterLike}
             title={user ? (chapterLikedByUser ? 'Remover like do capitulo' : 'Curtir capitulo') : 'Faca login para curtir o capitulo'}
           >
-            <span className="leitor-chapter-like-icon">{chapterLikedByUser ? '❤' : '♡'}</span>
+            <span className="leitor-chapter-like-icon">{chapterLikedByUser ? 'â¤' : 'â™¡'}</span>
             <span className="leitor-chapter-like-text">Curtir capitulo</span>
             <span className="leitor-chapter-like-count">{chapterLikesCount}</span>
           </button>
@@ -1109,7 +675,7 @@ export default function Leitor({ user, perfil }) {
           aria-expanded={mostrarConfig}
           onClick={() => setMostrarConfig((v) => !v)}
         >
-          ⚙
+          âš™
         </button>
       </header>
 
@@ -1145,7 +711,7 @@ export default function Leitor({ user, perfil }) {
             <img
               key={index}
               src={url}
-              alt={`${chapterSeo?.imgAltPrefix || 'Mangá'} ${index + 1}`}
+              alt={`${chapterSeo?.imgAltPrefix || 'MangÃ¡'} ${index + 1}`}
               loading="lazy"
               style={{ width: `${zoom}%`, display: 'block', margin: '0 auto' }}
             />
@@ -1154,16 +720,16 @@ export default function Leitor({ user, perfil }) {
       ) : (
         <div className="horizontal-reader"
           onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-          <button type="button" className="seta esquerda" onClick={irAnterior} disabled={paginaAtual === 0}>‹</button>
+          <button type="button" className="seta esquerda" onClick={irAnterior} disabled={paginaAtual === 0}>â€¹</button>
           <div className="pagina-unica">
             <img
               src={capitulo.paginas?.[paginaAtual]}
-              alt={`${chapterSeo?.imgAltPrefix || 'Mangá'} ${paginaAtual + 1}`}
+              alt={`${chapterSeo?.imgAltPrefix || 'MangÃ¡'} ${paginaAtual + 1}`}
               loading="lazy"
               style={{ width: `${zoom}%`, margin: '0 auto', display: 'block' }}
             />
           </div>
-          <button type="button" className="seta direita" onClick={irProxima} disabled={paginaAtual >= totalPaginas - 1}>›</button>
+          <button type="button" className="seta direita" onClick={irProxima} disabled={paginaAtual >= totalPaginas - 1}>â€º</button>
           <div className="contador">{paginaAtual + 1} / {totalPaginas}</div>
         </div>
       )}
@@ -1179,11 +745,11 @@ export default function Leitor({ user, perfil }) {
                 : triggerCapNavError()
             }
           >
-            ← Capítulo anterior
+            â† CapÃ­tulo anterior
           </button>
           {capsLiberadosLista.length > 0 ? (
             <label className="leitor-cap-select-wrap">
-              <span className="leitor-cap-select-label">Capítulo</span>
+              <span className="leitor-cap-select-label">CapÃ­tulo</span>
               <select
                 className="leitor-cap-select"
                 value={id}
@@ -1191,13 +757,13 @@ export default function Leitor({ user, perfil }) {
                   const v = String(e.target.value || '').trim();
                   if (v && v !== id) navigate(`/ler/${v}`);
                 }}
-                aria-label="Escolher capítulo para ler"
+                aria-label="Escolher capÃ­tulo para ler"
               >
                 {capsLiberadosLista.map((c) => {
                   const n = Number(c.numero || 0);
                   const tituloCurto = String(c.titulo || '').trim();
-                  const labBase = tituloCurto || (n ? `Capítulo ${n}` : 'Capítulo');
-                  const lab = n ? `#${n} — ${labBase}` : labBase;
+                  const labBase = tituloCurto || (n ? `CapÃ­tulo ${n}` : 'CapÃ­tulo');
+                  const lab = n ? `#${n} â€” ${labBase}` : labBase;
                   return (
                     <option key={c.id} value={c.id}>
                       {lab}
@@ -1216,7 +782,7 @@ export default function Leitor({ user, perfil }) {
                 : triggerCapNavError()
             }
           >
-            Próximo capítulo →
+            PrÃ³ximo capÃ­tulo â†’
           </button>
         </div>
         {authorUid ? (
@@ -1228,7 +794,7 @@ export default function Leitor({ user, perfil }) {
             Perfil do autor
           </button>
         ) : null}
-        <button type="button" onClick={() => navigate('/works')}>Voltar às obras</button>
+        <button type="button" onClick={() => navigate('/works')}>Voltar Ã s obras</button>
         {chapterSeo ? (
           <Link className="leitor-footer-obra-link" to={chapterSeo.obraPath}>
             Ficha da obra
@@ -1262,9 +828,9 @@ export default function Leitor({ user, perfil }) {
         chapterTitle={chapterSeo?.title || capitulo?.titulo}
       />
 
-      {/* ── COMENTÁRIOS ── */}
+      {/* â”€â”€ COMENTÃRIOS â”€â”€ */}
       <section className="comentarios-section">
-        <h2 className="leitor-comentarios-heading">Comentários ({listaComentarios.length})</h2>
+        <h2 className="leitor-comentarios-heading">ComentÃ¡rios ({listaComentarios.length})</h2>
 
         <div className="filtro-comentarios">
           <button
@@ -1273,7 +839,7 @@ export default function Leitor({ user, perfil }) {
             className={filtro === 'relevantes' ? 'ativo' : ''}
             onClick={() => setFiltro('relevantes')}
           >
-            🔥 Relevantes
+            ðŸ”¥ Relevantes
           </button>
           <button
             type="button"
@@ -1281,7 +847,7 @@ export default function Leitor({ user, perfil }) {
             className={filtro === 'recentes' ? 'ativo' : ''}
             onClick={() => setFiltro('recentes')}
           >
-            🕒 Recentes
+            ðŸ•’ Recentes
           </button>
         </div>
 
@@ -1307,7 +873,7 @@ export default function Leitor({ user, perfil }) {
             <textarea
               value={user ? comentarioTexto : ''}
               onChange={(e) => user && setComentario(e.target.value)}
-              placeholder={user ? 'Escreva seu comentário…' : 'Entre na conta para comentar'}
+              placeholder={user ? 'Escreva seu comentÃ¡rioâ€¦' : 'Entre na conta para comentar'}
               readOnly={!user}
               disabled={Boolean(user && enviando)}
               maxLength={user ? 500 : undefined}
@@ -1325,7 +891,7 @@ export default function Leitor({ user, perfil }) {
 
         <div className="lista-comentarios">
           {listaComentarios.length === 0 && (
-            <p className="sem-comentarios">Seja o primeiro a comentar! 👇</p>
+            <p className="sem-comentarios">Seja o primeiro a comentar! ðŸ‘‡</p>
           )}
 
           {comentariosEmThreads.map((c) => renderCommentBranch(c, 0))}
@@ -1351,7 +917,7 @@ export default function Leitor({ user, perfil }) {
               onClick={() => setModalLoginComentario(false)}
               aria-label="Fechar"
             >
-              ×
+              Ã—
             </button>
             <h2 id="leitor-modal-login-titulo" className="leitor-modal-titulo">
               Comentar na obra
@@ -1365,7 +931,7 @@ export default function Leitor({ user, perfil }) {
                 className="leitor-modal-btn leitor-modal-btn--secundario"
                 onClick={() => setModalLoginComentario(false)}
               >
-                Agora não
+                Agora nÃ£o
               </button>
               <button
                 type="button"
@@ -1384,3 +950,4 @@ export default function Leitor({ user, perfil }) {
     </div>
   );
 }
+

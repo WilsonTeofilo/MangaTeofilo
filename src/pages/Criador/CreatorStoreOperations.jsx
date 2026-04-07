@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, ref as dbRef, remove, update } from 'firebase/database';
+import { equalTo, onValue, orderByChild, query, ref as dbRef, remove, update } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 
@@ -42,8 +42,8 @@ const ORDER_STATUS_OPTIONS = [
 export default function CreatorStoreOperations({ user }) {
   const navigate = useNavigate();
   const uid = String(user?.uid || '').trim();
-  const listVisibleOrders = useMemo(() => httpsCallable(functions, 'adminListVisibleStoreOrders'), []);
-  const updateVisibleOrder = useMemo(() => httpsCallable(functions, 'adminUpdateVisibleStoreOrder'), []);
+  const listVisibleOrders = useMemo(() => httpsCallable(functions, 'creatorListOwnStoreOrders'), []);
+  const updateVisibleOrder = useMemo(() => httpsCallable(functions, 'creatorUpdateOwnStoreOrder'), []);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [trackingDrafts, setTrackingDrafts] = useState({});
@@ -53,10 +53,9 @@ export default function CreatorStoreOperations({ user }) {
 
   useEffect(() => {
     if (!uid) return () => {};
-    const unsubProducts = onValue(dbRef(db, 'loja/produtos'), (snap) => {
-      const rows = toList(snap.exists() ? snap.val() : {}).filter(
-        (row) => String(row?.creatorId || '').trim() === uid
-      );
+    const creatorProductsQuery = query(dbRef(db, 'loja/produtos'), orderByChild('creatorId'), equalTo(uid));
+    const unsubProducts = onValue(creatorProductsQuery, (snap) => {
+      const rows = toList(snap.exists() ? snap.val() : {});
       setProducts(rows.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
     });
     return () => unsubProducts();
@@ -191,12 +190,8 @@ export default function CreatorStoreOperations({ user }) {
           <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/obras')}>
             Conectar com obras
           </button>
-          <button
-            type="button"
-            className="creator-frame-btn is-primary"
-            onClick={() => onToggleAdvanced?.()}
-          >
-            {showAdvanced ? 'Fechar editor detalhado' : 'Abrir editor detalhado'}
+          <button type="button" className="creator-frame-btn is-primary" onClick={() => navigate('/creator/promocoes')}>
+            Abrir promocoes
           </button>
         </div>
       </section>

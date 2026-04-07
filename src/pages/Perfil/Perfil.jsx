@@ -11,7 +11,6 @@ import { processCreatorProfileImageToWebp } from '../../utils/creatorProfileImag
 import {
   LISTA_AVATARES,
   AVATAR_FALLBACK,
-  isAdminUser,
   DISPLAY_NAME_MAX_LENGTH,
   CREATOR_BIO_MAX_LENGTH,
   CREATOR_BIO_MIN_LENGTH,
@@ -43,18 +42,19 @@ import {
   creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
   normalizeCreatorMonetizationPreference,
+  resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../../utils/creatorMonetizationUi';
 import { BRAZILIAN_STATES, PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
 import { normalizeBuyerProfile, sanitizeBuyerProfileForSave } from '../../utils/storeBuyerProfile';
 import { refreshAuthUser } from '../../userProfileSyncV2';
-import { syncReaderPublicFavoritesMirror } from '../../utils/readerPublicProfile';
 import { validateCreatorSocialLinks } from '../../utils/creatorSocialLinks';
 import {
   normalizeUsernameInput,
   validateUsernameHandle,
   suggestUsernameFromDisplayName,
 } from '../../utils/usernameValidation';
+import { buildUsuarioPublicProfileRecord } from '../../config/userProfileSchema';
 import './Perfil.css';
 
 function isCreatorProfileStorageAssetForUser(uid, pathOrUrl) {
@@ -136,6 +136,7 @@ export default function Perfil({
       return false;
     }
   });
+  const isStaffAdmin = adminAccess.canAccessAdmin === true && adminAccess.isMangaka !== true;
 
   useEffect(() => {
     const hash = String(location.hash || '').replace(/^#/, '');
@@ -154,17 +155,21 @@ export default function Perfil({
     const carregarPerfil = async () => {
       const snap = await get(ref(db, `usuarios/${user.uid}`));
       const perfil = snap.val() || {};
+      const creatorProfileDoc =
+        perfil?.creator?.profile && typeof perfil.creator.profile === 'object'
+          ? perfil.creator.profile
+          : {};
+      const creatorSocialDoc =
+        perfil?.creator?.social && typeof perfil.creator.social === 'object'
+          ? perfil.creator.social
+          : {};
       setPerfilDb(perfil);
       setNotifyPromotions(Boolean(perfil.notifyPromotions));
       setNotifyCommentSocial(perfil.notificationPrefs?.commentSocialInApp !== false);
       setGender(perfil.gender || 'nao_informado');
       const rawTipo = String(perfil.accountType ?? 'comum').toLowerCase();
       const tipoValido = ['comum', 'membro', 'premium', 'admin'].includes(rawTipo) ? rawTipo : 'comum';
-      if (isAdminUser(user)) {
-        setAccountType('admin');
-      } else {
-        setAccountType(tipoValido);
-      }
+      setAccountType(tipoValido);
       const fromDb = String(perfil.birthDate || '').trim();
       let birthIso = '';
       if (fromDb && parseBirthDateLocal(fromDb)) {
@@ -174,19 +179,17 @@ export default function Perfil({
       }
       setBirthDate(birthIso);
       setBirthDateDraft(birthIso ? formatBirthDateIsoToBr(birthIso) : '');
-      const publicName = String(perfil.creatorDisplayName || perfil.userName || user.displayName || '').trim();
+      const publicName = String(
+        creatorProfileDoc.displayName || perfil.userName || user.displayName || ''
+      ).trim();
       setCreatorDisplayName(publicName);
       setNovoNome(publicName || String(perfil.userName || user.displayName || '').trim() || '');
       setUserHandleDraft(String(perfil.userHandle || '').trim().toLowerCase());
-      setCreatorBio(String(perfil.creatorBio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH));
-      setInstagramUrl(String(perfil.instagramUrl || '').trim());
-      setYoutubeUrl(String(perfil.youtubeUrl || '').trim());
+      setCreatorBio(String(creatorProfileDoc.bio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH));
+      setInstagramUrl(String(creatorSocialDoc.instagram || '').trim());
+      setYoutubeUrl(String(creatorSocialDoc.youtube || '').trim());
       setCreatorTermsAccepted(Boolean(perfil.creatorTermsAccepted));
-      setCreatorMonetizationPreference(
-        String(perfil.creatorMonetizationPreference || 'publish_only').trim().toLowerCase() === 'monetize'
-          ? 'monetize'
-          : 'publish_only'
-      );
+      setCreatorMonetizationPreference(resolveCreatorMonetizationPreferenceFromDb(perfil));
       setCreatorMembershipEnabled(perfil.creatorMembershipEnabled !== false);
       setCreatorMembershipPriceBRL(
         perfil.creatorMembershipPriceBRL != null ? String(perfil.creatorMembershipPriceBRL) : '12'
@@ -276,10 +279,7 @@ export default function Perfil({
       : avatarSelecionado);
 
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
-  const creatorMonetizationStatusRaw = String(perfilDb?.creatorMonetizationStatus || '').trim().toLowerCase();
-  const creatorMonetizationStatusResolved = resolveCreatorMonetizationStatusFromDb(perfilDb || {});
-  const creatorMonetizationStatus =
-    creatorMonetizationStatusResolved !== '' ? creatorMonetizationStatusResolved : creatorMonetizationStatusRaw;
+  const creatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(perfilDb || {});
   const creatorMonetizationStatusEffective = effectiveCreatorMonetizationStatus(
     creatorMonetizationPreference,
     creatorMonetizationStatus
@@ -405,7 +405,7 @@ export default function Perfil({
 
     const lockedHandlePreview = String(perfilDb?.userHandle || '').trim().toLowerCase();
     const wantHandlePreview = normalizeUsernameInput(userHandleDraft);
-    if (!lockedHandlePreview && !wantHandlePreview && !isAdminUser(user)) {
+    if (!lockedHandlePreview && !wantHandlePreview && !isStaffAdmin) {
       setMensagem({
         texto: 'Defina um @username único (só letras minúsculas, números e _). Ele não poderá ser alterado depois.',
         tipo: 'erro',
@@ -638,7 +638,7 @@ export default function Perfil({
       const existingHandle = String(perfilDb?.userHandle || '').trim().toLowerCase();
       const wantHandle = normalizeUsernameInput(userHandleDraft);
 
-      if (!existingHandle && !wantHandle && !isAdminUser(user)) {
+      if (!existingHandle && !wantHandle && !isStaffAdmin) {
         setMensagem({
           texto: 'Defina um @username único (só letras minúsculas, números e _). Ele não poderá ser alterado depois.',
           tipo: 'erro',
@@ -654,7 +654,7 @@ export default function Perfil({
           setLoading(false);
           return;
         }
-        if (!isAdminUser(user) && usernameCheck.status === 'taken') {
+        if (!isStaffAdmin && usernameCheck.status === 'taken') {
           setMensagem({ texto: 'Este @username já está em uso.', tipo: 'erro' });
           setLoading(false);
           return;
@@ -695,17 +695,11 @@ export default function Perfil({
           birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? birthIsoForSave : null,
         [`usuarios/${user.uid}/birthYear`]:
           birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? ano : null,
-        [`usuarios/${user.uid}/creatorDisplayName`]: creatorPublicName,
         [`usuarios/${user.uid}/creatorTermsAccepted`]: creatorTermsAccepted === true,
-        [`usuarios/${user.uid}/creatorMonetizationPreference`]: creatorMonetizationPreferenceNext,
-        [`usuarios/${user.uid}/creatorMonetizationStatus`]: creatorMonetizationStatusNext,
-        [`usuarios/${user.uid}/creatorBio`]: String(creatorBio || '').trim(),
         [`usuarios/${user.uid}/buyerProfile`]: buyerProfile,
         [`usuarios/${user.uid}/readerProfilePublic`]: readerPub,
         [`usuarios/${user.uid}/readerProfileAvatarUrl`]: readerAvatarSave,
         [`usuarios/${user.uid}/creatorBannerUrl`]: null,
-        [`usuarios/${user.uid}/instagramUrl`]: String(instagramUrl || '').trim(),
-        [`usuarios/${user.uid}/youtubeUrl`]: String(youtubeUrl || '').trim(),
         [`usuarios/${user.uid}/creatorMembershipEnabled`]:
           adminAccess.isMangaka &&
           creatorMonetizationPreferenceNext === 'monetize' &&
@@ -733,29 +727,76 @@ export default function Perfil({
         privatePatch[`usuarios/${user.uid}/creator/profile`] = creatorCanonicalDoc.profile;
         privatePatch[`usuarios/${user.uid}/creator/social`] = creatorCanonicalDoc.social;
         privatePatch[`usuarios/${user.uid}/creator/meta`] = creatorCanonicalDoc.meta;
+        privatePatch[`usuarios/${user.uid}/creator/monetization/requested`] =
+          creatorCanonicalDoc.monetization?.requested === true;
+        privatePatch[`usuarios/${user.uid}/creator/monetization/enabled`] =
+          creatorCanonicalDoc.monetization?.enabled === true;
+        privatePatch[`usuarios/${user.uid}/creator/monetization/isMonetizationActive`] =
+          creatorCanonicalDoc.monetization?.isMonetizationActive === true;
       }
       await update(ref(db), privatePatch);
 
-      const publicPatch = {
-        [`usuarios_publicos/${user.uid}/uid`]: user.uid,
-        [`usuarios_publicos/${user.uid}/userName`]: accountDisplayName,
-        [`usuarios_publicos/${user.uid}/userAvatar`]: finalAvatar,
-        [`usuarios_publicos/${user.uid}/accountType`]: accountType,
-        [`usuarios_publicos/${user.uid}/creatorDisplayName`]: creatorPublicName,
-        [`usuarios_publicos/${user.uid}/creatorBio`]: String(creatorBio || '').trim(),
-        [`usuarios_publicos/${user.uid}/creatorBannerUrl`]: null,
-        [`usuarios_publicos/${user.uid}/instagramUrl`]: String(instagramUrl || '').trim(),
-        [`usuarios_publicos/${user.uid}/youtubeUrl`]: String(youtubeUrl || '').trim(),
-        [`usuarios_publicos/${user.uid}/readerProfilePublic`]: readerPub,
-        [`usuarios_publicos/${user.uid}/readerProfileAvatarUrl`]: readerAvatarSave,
-        [`usuarios_publicos/${user.uid}/updatedAt`]: nowTs,
-      };
-      if (persistedHandle) {
-        publicPatch[`usuarios_publicos/${user.uid}/userHandle`] = persistedHandle;
-      }
-      await update(ref(db), publicPatch);
-
-      await syncReaderPublicFavoritesMirror(db, user.uid);
+      const publicProfileRecord = buildUsuarioPublicProfileRecord(
+        {
+          ...(perfilDb || {}),
+          uid: user.uid,
+          userName: accountDisplayName,
+          userAvatar: finalAvatar,
+          accountType,
+          userHandle: persistedHandle || perfilDb?.userHandle || '',
+          signupIntent:
+            privatePatch[`usuarios/${user.uid}/signupIntent`] ??
+            perfilDb?.signupIntent ??
+            'reader',
+          creatorStatus:
+            privatePatch[`usuarios/${user.uid}/creatorStatus`] ??
+            perfilDb?.creatorStatus ??
+            '',
+          creatorDisplayName: creatorPublicName,
+          creatorBio: String(creatorBio || '').trim(),
+          creatorBannerUrl: null,
+          instagramUrl: String(instagramUrl || '').trim(),
+          youtubeUrl: String(youtubeUrl || '').trim(),
+          readerProfilePublic: readerPub,
+          readerProfileAvatarUrl: readerAvatarSave,
+          creatorMembershipEnabled:
+            privatePatch[`usuarios/${user.uid}/creatorMembershipEnabled`] ??
+            perfilDb?.creatorMembershipEnabled ??
+            false,
+          creatorMembershipPriceBRL:
+            privatePatch[`usuarios/${user.uid}/creatorMembershipPriceBRL`] ??
+            perfilDb?.creatorMembershipPriceBRL ??
+            null,
+          creatorDonationSuggestedBRL:
+            privatePatch[`usuarios/${user.uid}/creatorDonationSuggestedBRL`] ??
+            perfilDb?.creatorDonationSuggestedBRL ??
+            null,
+          creator: creatorCanonicalDoc
+            ? {
+                ...(perfilDb?.creator && typeof perfilDb.creator === 'object' ? perfilDb.creator : {}),
+                profile: creatorCanonicalDoc.profile,
+                social: creatorCanonicalDoc.social,
+                meta: creatorCanonicalDoc.meta,
+                monetization: {
+                  ...(perfilDb?.creator?.monetization &&
+                  typeof perfilDb.creator.monetization === 'object'
+                    ? perfilDb.creator.monetization
+                    : {}),
+                  requested: creatorCanonicalDoc.monetization?.requested === true,
+                  enabled: creatorCanonicalDoc.monetization?.enabled === true,
+                  isMonetizationActive:
+                    creatorCanonicalDoc.monetization?.isMonetizationActive === true,
+                },
+              }
+            : perfilDb?.creator,
+          updatedAt: nowTs,
+          lastLogin: nowTs,
+        },
+        user.uid
+      );
+      await update(ref(db), {
+        [`usuarios/${user.uid}/publicProfile`]: publicProfileRecord,
+      });
 
       if (
         previousCreatorProfileAvatar &&

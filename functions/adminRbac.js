@@ -1,20 +1,13 @@
-/**
- * RBAC Shito: super_admin (cachoroes fixos) + admins com permissoes em admins/registry.
- * Validacao sempre no backend; claims servem apenas para espelhar o papel no cliente.
+﻿/**
+ * RBAC Shito: staff resolvido por admins/registry e claims assinadas.
+ * Validacao sempre no backend; claims servem como cache assinado para cliente e rules.
  */
 
 import { HttpsError } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 
-import platformStaffAllowlist from './shared/platformStaffAllowlist.json' with { type: 'json' };
-
 export const ADMIN_REGISTRY_PATH = 'admins/registry';
-
-/** UIDs dos super admins — mesma lista que `shared/platformStaffAllowlist.json` / `src/constants.js`. */
-export const SUPER_ADMIN_UIDS = new Set(platformStaffAllowlist.uids);
-
-export const SUPER_ADMIN_EMAILS = new Set(platformStaffAllowlist.emails);
 
 /** Chaves logicas -> campo em permissions no registry. */
 export const PERM = {
@@ -32,19 +25,19 @@ export const PERM = {
 const ALL_PERM_KEYS = Object.values(PERM);
 
 function defaultPermissionsAllFalse() {
-  const o = {};
-  ALL_PERM_KEYS.forEach((k) => {
-    o[k] = false;
+  const permissions = {};
+  ALL_PERM_KEYS.forEach((key) => {
+    permissions[key] = false;
   });
-  return o;
+  return permissions;
 }
 
 export function defaultPermissionsAllTrue() {
-  const o = {};
-  ALL_PERM_KEYS.forEach((k) => {
-    o[k] = true;
+  const permissions = {};
+  ALL_PERM_KEYS.forEach((key) => {
+    permissions[key] = true;
   });
-  return o;
+  return permissions;
 }
 
 /** Permissoes do painel para mangaka (escopo de dados filtrado no front + RTDB). */
@@ -56,24 +49,77 @@ export function defaultMangakaPermissions() {
   return base;
 }
 
-export function isSuperAdminAuth(auth) {
-  if (!auth?.uid) return false;
-  const email = String(auth.token?.email || '').toLowerCase();
-  return SUPER_ADMIN_UIDS.has(auth.uid) || SUPER_ADMIN_EMAILS.has(email);
+function normalizeStaffRole(raw) {
+  const role = String(raw || '').trim().toLowerCase();
+  return role === 'admin' || role === 'super_admin' ? role : '';
 }
 
-export function isTargetSuperAdmin({ uid, email }) {
-  const em = String(email || '').toLowerCase();
-  return (uid && SUPER_ADMIN_UIDS.has(uid)) || SUPER_ADMIN_EMAILS.has(em);
+function claimPanelRole(auth) {
+  return String(auth?.token?.panelRole || '').trim().toLowerCase();
+}
+
+function permissionsGrantFullControl(permissions) {
+  return ALL_PERM_KEYS.every((key) => permissions?.[key] === true);
 }
 
 export function normalizePermissionsForRegistry(raw) {
   const base = defaultPermissionsAllFalse();
   if (!raw || typeof raw !== 'object') return base;
-  ALL_PERM_KEYS.forEach((k) => {
-    if (raw[k] === true) base[k] = true;
+  ALL_PERM_KEYS.forEach((key) => {
+    if (raw[key] === true) base[key] = true;
   });
   return base;
+}
+
+async function readStaffRegistryRow(uid) {
+  const normalizedUid = String(uid || '').trim();
+  if (!normalizedUid) return null;
+  const snap = await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${normalizedUid}`).get();
+  if (!snap.exists()) return null;
+  const row = snap.val() || {};
+  const role = normalizeStaffRole(row.role);
+  if (!role) return null;
+  return {
+    uid: normalizedUid,
+    role,
+    permissions: normalizePermissionsForRegistry(row.permissions),
+    updatedAt: Number(row.updatedAt || 0),
+    updatedBy: String(row.updatedBy || ''),
+  };
+}
+
+export async function listStaffRegistryRows() {
+  const snap = await getDatabase().ref(ADMIN_REGISTRY_PATH).get();
+  if (!snap.exists()) return [];
+  return Object.entries(snap.val() || {})
+    .map(([uid, row]) => {
+      const role = normalizeStaffRole(row?.role);
+      if (!role) return null;
+      return {
+        uid,
+        role,
+        permissions: normalizePermissionsForRegistry(row?.permissions),
+        updatedAt: Number(row?.updatedAt || 0),
+        updatedBy: String(row?.updatedBy || ''),
+      };
+    })
+    .filter(Boolean);
+}
+
+export async function listStaffUids() {
+  const rows = await listStaffRegistryRows();
+  return rows.map((row) => String(row.uid || '').trim()).filter(Boolean);
+}
+
+export async function isTargetSuperAdmin({ uid, email }) {
+  let targetUid = String(uid || '').trim();
+  if (!targetUid && email) {
+    targetUid = (await resolveTargetUidByEmail(email)) || '';
+  }
+  if (!targetUid) return false;
+  const row = await readStaffRegistryRow(targetUid);
+  if (!row) return false;
+  return row.role === 'super_admin' || permissionsGrantFullControl(row.permissions);
 }
 
 /**
@@ -81,33 +127,46 @@ export function normalizePermissionsForRegistry(raw) {
  */
 export async function getAdminAuthContext(auth) {
   if (!auth?.uid) return null;
-  if (isSuperAdminAuth(auth)) {
+
+  const row = await readStaffRegistryRow(auth.uid);
+  if (row) {
+    const fullControl = row.role === 'super_admin' || permissionsGrantFullControl(row.permissions);
     return {
       uid: auth.uid,
+      role: fullControl ? 'super_admin' : 'admin',
+      super: fullControl,
+      mangaka: false,
+      permissions: fullControl ? defaultPermissionsAllTrue() : row.permissions,
+    };
+  }
+
+  const panelRole = claimPanelRole(auth);
+  if (panelRole === 'super_admin') {
+    return {
+      uid: auth.uid,
+      role: 'super_admin',
       super: true,
-      legacy: false,
       mangaka: false,
       permissions: defaultPermissionsAllTrue(),
     };
   }
-  const db = getDatabase();
-  const snap = await db.ref(`${ADMIN_REGISTRY_PATH}/${auth.uid}`).get();
-  const row = snap.val();
-  if (row && row.role === 'admin') {
+
+  if (panelRole === 'admin' || auth.token?.admin === true) {
     return {
       uid: auth.uid,
+      role: 'admin',
       super: false,
-      legacy: false,
       mangaka: false,
-      permissions: normalizePermissionsForRegistry(row.permissions),
+      permissions: defaultPermissionsAllTrue(),
     };
   }
+
   return null;
 }
 
 export async function isCreatorAccountAuth(auth) {
   if (!auth?.uid) return false;
-  if (String(auth.token?.panelRole || '').trim().toLowerCase() === 'mangaka') return true;
+  if (claimPanelRole(auth) === 'mangaka') return true;
   const snap = await getDatabase().ref(`usuarios/${auth.uid}/role`).get();
   return String(snap.val() || '').trim().toLowerCase() === 'mangaka';
 }
@@ -132,25 +191,26 @@ export function requirePermission(ctx, key) {
   if (!field) {
     throw new HttpsError('internal', 'Permissao desconhecida.');
   }
-  if (ctx.super || ctx.legacy) return;
-  if (ctx.permissions[field] === true) return;
+  if (ctx.super || ctx.permissions[field] === true) return;
   throw new HttpsError('permission-denied', 'Sem permissao para esta acao.');
 }
 
-export function requireSuperAdmin(auth) {
-  if (!isSuperAdminAuth(auth)) {
+export async function requireSuperAdmin(auth) {
+  const ctx = await requireAdminAuth(auth);
+  if (!ctx.super) {
     throw new HttpsError('permission-denied', 'Apenas admin chefe pode fazer isso.');
   }
+  return ctx;
 }
 
 export async function resolveTargetUidByEmail(email) {
   const norm = String(email || '').trim().toLowerCase();
   if (!norm) return null;
   try {
-    const u = await getAuth().getUserByEmail(norm);
-    return u.uid;
-  } catch (e) {
-    if (e?.code === 'auth/user-not-found') return null;
-    throw e;
+    const user = await getAuth().getUserByEmail(norm);
+    return user.uid;
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return null;
+    throw error;
   }
 }

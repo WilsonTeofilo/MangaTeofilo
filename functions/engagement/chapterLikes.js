@@ -1,7 +1,6 @@
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { syncReaderLikedWorkStateForUser, syncReaderPublicProfileMirrorServer } from './readerProfiles.js';
-import { syncCreatorStatsMirrorsFromCanonical } from '../creator/audience.js';
+import { syncReaderLikedWorkStateForUser } from './readerProfiles.js';
 
 function safeWorkIdFromChapter(chapter) {
   return String(chapter?.obraId || chapter?.mangaId || '').trim();
@@ -72,11 +71,9 @@ export const toggleChapterLike = onCall({ region: 'us-central1' }, async (reques
       }),
       db.ref(`creatorStatsDaily/${creatorId}/${dateKey}/updatedAt`).set(Date.now()),
     ]);
-    await syncCreatorStatsMirrorsFromCanonical(db, creatorId);
   }
 
   await syncReaderLikedWorkStateForUser(db, uid, workId);
-  await syncReaderPublicProfileMirrorServer(db, uid);
 
   return { ok: true, liked, likesCount };
 });

@@ -23,23 +23,8 @@ function workIdFromChapter(cap) {
   return String(cap.obraId || '').trim();
 }
 
-function safeNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
 async function incrementPathTx(ref, amount) {
   await ref.transaction((current) => Math.max(0, Number(current || 0) + amount));
-}
-
-async function markUniquePath(ref) {
-  let created = false;
-  await ref.transaction((current) => {
-    if (current) return current;
-    created = true;
-    return Date.now();
-  });
-  return created;
 }
 
 async function bumpAuthRateLimit(db, uid) {
@@ -87,102 +72,36 @@ const FIELD_BY_ACTION = {
   chapter_like: 'likesTotal',
 };
 
-function legacyPublicField(field) {
-  if (field === 'followersCount') return 'followersCount';
-  if (field === 'totalViews') return 'totalViews';
-  if (field === 'commentsTotal') return 'totalComments';
-  if (field === 'likesTotal') return 'totalLikes';
-  return null;
-}
-
 function dailyMetricKey(field) {
   if (field === 'followersCount') return 'followersAdded';
   return field;
 }
 
 async function applyCreatorMetricDelta(db, creatorId, field, delta, dateKey) {
-  const legacy = legacyPublicField(field);
   const dailyKey = dailyMetricKey(field);
-  const ops = [
+  await Promise.all([
     incrementPathTx(db.ref(`creators/${creatorId}/stats/${field}`), delta),
     incrementPathTx(db.ref(`creatorStatsDaily/${creatorId}/${dateKey}/${dailyKey}`), delta),
-  ];
-  if (legacy) {
-    ops.push(incrementPathTx(db.ref(`usuarios_publicos/${creatorId}/stats/${legacy}`), delta));
-    ops.push(incrementPathTx(db.ref(`usuarios/${creatorId}/creatorProfile/stats/${legacy}`), delta));
-  }
-  await Promise.all(ops);
+  ]);
   await db.ref(`creatorStatsDaily/${creatorId}/${dateKey}/updatedAt`).set(Date.now());
 }
 
 async function handleChapterReadUnique(db, creatorId, viewerUid, dateKey) {
-  const seenRef = db.ref(`creatorAudienceSeen/${creatorId}/allReaders/${viewerUid}`);
+  const seenRef = db.ref(`creators/${creatorId}/audienceSeen/allReaders/${viewerUid}`);
   const seenSnap = await seenRef.get();
   if (!seenSnap.exists()) {
     await seenRef.set(Date.now());
     await incrementPathTx(db.ref(`creators/${creatorId}/stats/uniqueReaders`), 1);
     await incrementPathTx(db.ref(`creatorStatsDaily/${creatorId}/${dateKey}/uniqueReaders`), 1);
-    await db.ref(`creatorAudienceSeen/${creatorId}/dailyReaders/${dateKey}/${viewerUid}`).set(Date.now());
+    await db.ref(`creators/${creatorId}/audienceSeen/dailyReaders/${dateKey}/${viewerUid}`).set(Date.now());
     return;
   }
-  const daySeenRef = db.ref(`creatorAudienceSeen/${creatorId}/dailyReaders/${dateKey}/${viewerUid}`);
+  const daySeenRef = db.ref(`creators/${creatorId}/audienceSeen/dailyReaders/${dateKey}/${viewerUid}`);
   const daySnap = await daySeenRef.get();
   if (!daySnap.exists()) {
     await daySeenRef.set(Date.now());
     await incrementPathTx(db.ref(`creatorStatsDaily/${creatorId}/${dateKey}/uniqueReaders`), 1);
   }
-}
-
-async function updateWorkRetentionRead(db, { workId, chapterId, chapterNumber, chapterTitle, viewerUid }) {
-  if (!workId || !chapterId || !viewerUid) return;
-  const readerPath = db.ref(`workRetentionRaw/${workId}/chapterReaders/${chapterId}/${viewerUid}`);
-  const isFirstReadForChapter = await markUniquePath(readerPath);
-  if (!isFirstReadForChapter) return;
-
-  await Promise.all([
-    incrementPathTx(db.ref(`workRetention/${workId}/chapters/${chapterId}/readersCount`), 1),
-    db.ref(`workRetention/${workId}/chapters/${chapterId}/chapterId`).set(chapterId),
-    db.ref(`workRetention/${workId}/chapters/${chapterId}/chapterNumber`).set(safeNumber(chapterNumber)),
-    db
-      .ref(`workRetention/${workId}/chapters/${chapterId}/chapterTitle`)
-      .set(String(chapterTitle || '').trim() || `Capitulo ${chapterNumber || ''}`.trim()),
-  ]);
-
-  const lastReadRef = db.ref(`workRetentionRaw/${workId}/lastReadByUser/${viewerUid}`);
-  const lastReadSnap = await lastReadRef.get();
-  const lastRead = lastReadSnap.exists() ? lastReadSnap.val() || {} : {};
-  const prevChapterId = String(lastRead?.chapterId || '').trim();
-  const prevChapterNumber = Number(lastRead?.chapterNumber || 0);
-  const nextChapterNumber = Number(chapterNumber || 0);
-
-  if (
-    prevChapterId &&
-    prevChapterId !== chapterId &&
-    Number.isFinite(prevChapterNumber) &&
-    Number.isFinite(nextChapterNumber) &&
-    prevChapterNumber > 0 &&
-    nextChapterNumber === prevChapterNumber + 1
-  ) {
-    const transitionId = `${prevChapterId}__${chapterId}`;
-    const transitionSeenRef = db.ref(`workRetentionRaw/${workId}/transitionsSeen/${transitionId}/${viewerUid}`);
-    const isFirstTransition = await markUniquePath(transitionSeenRef);
-    if (isFirstTransition) {
-      const tBase = `workRetention/${workId}/transitions/${transitionId}`;
-      await Promise.all([
-        db.ref(`${tBase}/fromChapterId`).set(prevChapterId),
-        db.ref(`${tBase}/toChapterId`).set(chapterId),
-        db.ref(`${tBase}/fromChapterNumber`).set(prevChapterNumber),
-        db.ref(`${tBase}/toChapterNumber`).set(nextChapterNumber),
-        incrementPathTx(db.ref(`${tBase}/retainedReaders`), 1),
-      ]);
-    }
-  }
-
-  await lastReadRef.set({
-    chapterId,
-    chapterNumber: safeNumber(chapterNumber),
-    readAt: Date.now(),
-  });
 }
 
 export const recordDiscoveryCreatorMetrics = onCall(
@@ -194,9 +113,6 @@ export const recordDiscoveryCreatorMetrics = onCall(
     const workId = String(data.workId || '').trim();
     const chapterId = String(data.chapterId || '').trim();
     const viewerUid = String(data.viewerUid || '').trim();
-    const chapterNumber = Number(data.chapterNumber || 0);
-    const chapterTitle = String(data.chapterTitle || '').trim();
-
     if (!['work_favorite', 'chapter_read', 'chapter_comment', 'chapter_like'].includes(action)) {
       throw new HttpsError('invalid-argument', 'action invalida.');
     }
@@ -247,17 +163,8 @@ export const recordDiscoveryCreatorMetrics = onCall(
         incrementPathTx(db.ref(`obras/${workId}/viewsCount`), delta),
         incrementPathTx(db.ref(`obras/${workId}/visualizacoes`), delta),
       ]);
-      if (delta === 1) {
-        await db.ref(`workRetention/${workId}/updatedAt`).set(Date.now());
-        if (viewerUid) {
-          await updateWorkRetentionRead(db, {
-            workId,
-            chapterId,
-            chapterNumber,
-            chapterTitle,
-            viewerUid,
-          });
-        }
+      if (delta === 1 && viewerUid) {
+        await handleChapterReadUnique(db, creatorId, viewerUid, dk);
       }
     }
 
@@ -277,10 +184,6 @@ export const recordDiscoveryCreatorMetrics = onCall(
     }
 
     await applyCreatorMetricDelta(db, creatorId, field, delta, dk);
-
-    if (action === 'chapter_read' && delta === 1 && viewerUid) {
-      await handleChapterReadUnique(db, creatorId, viewerUid, dk);
-    }
 
     return { ok: true };
   }

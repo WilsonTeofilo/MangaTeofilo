@@ -71,10 +71,6 @@ Saíram do legado e foram para módulos próprios:
   - `deleteUserNotification`
   - `upsertNotificationSubscription`
 
-- `functions/engagement/entitlements.js`
-  - `seedUserEntitlementsOnUsuarioCreate`
-  - `syncCanonicalUserEntitlementsOnUsuarioWrite`
-
 - `functions/engagement/readerProfiles.js`
   - `onReaderFavoriteCanonChanged`
   - `onReaderFavoriteLegacyChanged`

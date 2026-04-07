@@ -1,16 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { onValue, ref } from 'firebase/database';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { equalTo, onValue, orderByChild, query, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { db, functions } from '../../services/firebase';
 import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { creatorPublicHeroImageUrl } from '../../utils/creatorPublicHero';
-import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
 import { obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
+import {
+  buildPublicProfileFromUsuarioRow,
+  resolvePublicProfileAvatarUrl,
+  resolvePublicProfileBio,
+  resolvePublicProfileSocialLinks,
+} from '../../utils/publicUserProfile';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './CriadorPublico.css';
 
@@ -109,6 +115,8 @@ export default function CreatorPublicProfilePage({ user }) {
   const [followBrowserPushPermission, setFollowBrowserPushPermission] = useState('default');
   const [publicoReady, setPublicoReady] = useState(false);
   const [obrasReady, setObrasReady] = useState(false);
+  const [capitulosReady, setCapitulosReady] = useState(false);
+  const [creatorStatsRow, setCreatorStatsRow] = useState({});
   const [sortObras, setSortObras] = useState('recent');
   const obrasSectionRef = useRef(null);
   const creatorUid = String(creatorId || '').trim();
@@ -118,9 +126,11 @@ export default function CreatorPublicProfilePage({ user }) {
     if (!creatorUid) return () => {};
     setPublicoReady(false);
     const unsub = onValue(
-      ref(db, `usuarios_publicos/${creatorUid}`),
+      ref(db, `usuarios/${creatorUid}`),
       (snapshot) => {
-        setPerfilPublico(snapshot.exists() ? snapshot.val() : null);
+        setPerfilPublico(
+          snapshot.exists() ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, creatorUid) : null
+        );
         setPublicoReady(true);
       },
       () => {
@@ -133,9 +143,23 @@ export default function CreatorPublicProfilePage({ user }) {
 
   useEffect(() => {
     if (!creatorUid) return () => {};
+    const unsub = onValue(
+      ref(db, `creators/${creatorUid}/stats`),
+      (snapshot) => {
+        setCreatorStatsRow(snapshot.exists() ? snapshot.val() || {} : {});
+      },
+      () => {
+        setCreatorStatsRow({});
+      }
+    );
+    return () => unsub();
+  }, [creatorUid]);
+
+  useEffect(() => {
+    if (!creatorUid) return () => {};
     setObrasReady(false);
     const unsub = onValue(
-      ref(db, 'obras'),
+      query(ref(db, 'obras'), orderByChild('creatorId'), equalTo(creatorUid)),
       (snapshot) => {
         const lista = snapshot.exists() ? toRecordList(snapshot.val()) : [];
         setObras(
@@ -154,11 +178,14 @@ export default function CreatorPublicProfilePage({ user }) {
   }, [creatorUid]);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'capitulos'), (snapshot) => {
+    if (!creatorUid) return () => {};
+    setCapitulosReady(false);
+    const unsub = onValue(query(ref(db, 'capitulos'), orderByChild('creatorId'), equalTo(creatorUid)), (snapshot) => {
       setCapitulos(snapshot.exists() ? toRecordList(snapshot.val()) : []);
+      setCapitulosReady(true);
     });
     return () => unsub();
-  }, []);
+  }, [creatorUid]);
 
   useEffect(() => {
     if (!user?.uid || !creatorUid) {
@@ -172,45 +199,52 @@ export default function CreatorPublicProfilePage({ user }) {
   }, [creatorUid, user?.uid]);
 
   const redes = useMemo(() => {
-    const socialLinks = perfilPublico?.creatorProfile?.socialLinks || {};
-    const instagramUrl = normalizarRede(
-      socialLinks?.instagramUrl || perfilPublico?.instagramUrl || perfilPublico?.instagram
-    );
-    const youtubeUrl = normalizarRede(
-      socialLinks?.youtubeUrl || perfilPublico?.youtubeUrl || perfilPublico?.youtube
-    );
+    const socialLinks = resolvePublicProfileSocialLinks(perfilPublico);
+    const instagramUrl = normalizarRede(socialLinks?.instagramUrl);
+    const youtubeUrl = normalizarRede(socialLinks?.youtubeUrl);
     return [
       instagramUrl ? { id: 'instagram', label: 'Instagram', href: instagramUrl } : null,
       youtubeUrl ? { id: 'youtube', label: 'YouTube', href: youtubeUrl } : null,
     ].filter(Boolean);
   }, [perfilPublico]);
 
+  const chapterStatsByWorkId = useMemo(() => {
+    const grouped = new Map();
+    capitulos.forEach((cap) => {
+      const capObraId = String(cap?.obraId || cap?.mangaId || '').trim().toLowerCase();
+      if (!capObraId) return;
+      const bucket = grouped.get(capObraId) || [];
+      bucket.push(cap);
+      grouped.set(capObraId, bucket);
+    });
+    return grouped;
+  }, [capitulos]);
+
   const obrasComStats = useMemo(() => {
     return obras.map((obra) => {
       const obraId = String(obra?.id || '').trim().toLowerCase();
-      const capsDaObra = capitulos.filter((cap) => {
-        const capObraId = String(cap?.obraId || cap?.mangaId || '').trim().toLowerCase();
-        return capObraId === obraId;
-      });
       return {
         ...obra,
-        stats: statsFromWork(obra, capsDaObra),
+        stats: statsFromWork(obra, chapterStatsByWorkId.get(obraId) || []),
       };
     });
-  }, [capitulos, obras]);
+  }, [chapterStatsByWorkId, obras]);
 
   const creatorStats = useMemo(() => {
-    const fromProfile = perfilPublico?.creatorProfile?.stats || perfilPublico?.stats || {};
+    const stats = creatorStatsRow && typeof creatorStatsRow === 'object' ? creatorStatsRow : {};
     return {
-      followersCount: valueCount(fromProfile?.followersCount, [
+      followersCount: valueCount(stats?.followersCount, [
         perfilPublico?.followersCount,
         countMapEntries(perfilPublico?.followers),
       ]),
-      totalLikes: obrasComStats.reduce((sum, obra) => sum + Number(obra?.stats?.likes || 0), 0),
-      totalViews: obrasComStats.reduce((sum, obra) => sum + Number(obra?.stats?.views || 0), 0),
-      totalComments: obrasComStats.reduce((sum, obra) => sum + Number(obra?.stats?.comments || 0), 0),
+      totalLikes: valueCount(stats?.likesTotal, [obrasComStats.reduce((sum, obra) => sum + Number(obra?.stats?.likes || 0), 0)]),
+      totalViews: valueCount(stats?.totalViews, [obrasComStats.reduce((sum, obra) => sum + Number(obra?.stats?.views || 0), 0)]),
+      totalComments: valueCount(
+        stats?.commentsTotal,
+        [obrasComStats.reduce((sum, obra) => sum + Number(obra?.stats?.comments || 0), 0)]
+      ),
     };
-  }, [obrasComStats, perfilPublico]);
+  }, [creatorStatsRow, obrasComStats, perfilPublico]);
 
   const readerPublic = isReaderPublicProfileEffective(perfilPublico);
   const creatorStatus = String(perfilPublico?.creatorStatus || '').trim().toLowerCase();
@@ -226,30 +260,15 @@ export default function CreatorPublicProfilePage({ user }) {
     formattedPublic !== 'Leitor'
       ? formattedPublic
       : (obras[0]?.creatorName ? String(obras[0].creatorName) : '') || (profileMode === 'writer' ? 'Escritor' : 'Leitor');
-  const writerBio = String(
-    perfilPublico?.creatorProfile?.bioFull ||
-    perfilPublico?.creatorProfile?.bioShort ||
-    perfilPublico?.creatorBio ||
-    ''
-  ).trim();
-  const readerBio = String(
-    perfilPublico?.readerProfileBio ||
-    perfilPublico?.publicBio ||
-    (!hasWriterProfile ? perfilPublico?.bio : '') ||
-    ''
-  ).trim();
+  const writerBio = resolvePublicProfileBio(perfilPublico, 'writer');
+  const readerBio = resolvePublicProfileBio(perfilPublico, 'reader');
   const bio = profileMode === 'writer' ? writerBio : readerBio;
-  const avatar =
-    String(
-      (profileMode === 'reader'
-        ? perfilPublico?.readerProfileAvatarUrl || perfilPublico?.userAvatar
-        : perfilPublico?.creatorProfile?.avatarUrl || perfilPublico?.userAvatar) || ''
-    ).trim() || '/assets/fotos/shito.jpg';
+  const avatar = resolvePublicProfileAvatarUrl(perfilPublico, {
+    mode: profileMode === 'reader' ? 'reader' : 'creator',
+    fallback: '/assets/fotos/shito.jpg',
+  });
   const heroBackdropUrl = profileMode === 'reader' ? avatar : creatorPublicHeroImageUrl(perfilPublico);
-  const creatorMonetizationStatus = effectiveCreatorMonetizationStatus(
-    perfilPublico?.creatorMonetizationPreference,
-    perfilPublico?.creatorMonetizationStatus
-  );
+  const creatorMonetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(perfilPublico);
   const supportEnabled = profileMode === 'writer' && creatorMonetizationStatus === 'active';
   const membershipEnabled = supportEnabled && perfilPublico?.creatorMembershipEnabled === true;
   const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
@@ -257,13 +276,7 @@ export default function CreatorPublicProfilePage({ user }) {
   const moderation = String(perfilPublico?.creatorModerationAction || '').trim().toLowerCase();
   const canFollow = profileMode === 'writer' && Boolean(user?.uid) && user.uid !== creatorUid;
 
-  const favoritesList = useMemo(() => {
-    const raw = perfilPublico?.readerFavorites;
-    if (!raw || typeof raw !== 'object') return [];
-    return Object.values(raw)
-      .filter((x) => x && typeof x === 'object' && x.workId)
-      .sort((a, b) => Number(b.addedAt || 0) - Number(a.addedAt || 0));
-  }, [perfilPublico]);
+  const favoritesList = useMemo(() => [], []);
 
   const rawTab = String(searchParams.get('tab') || '').toLowerCase();
   const availableTabs = profileMode === 'writer' ? ['works', 'likes'] : ['likes'];
@@ -304,29 +317,18 @@ export default function CreatorPublicProfilePage({ user }) {
       }
       setPerfilPublico((current) => {
         if (!current || typeof current !== 'object') return current;
-        const currentCount = valueCount(current?.creatorProfile?.stats?.followersCount, [
-          current?.stats?.followersCount,
-          current?.followersCount,
-          countMapEntries(current?.followers),
-        ]);
+        const currentCount = valueCount(current?.stats?.followersCount, [current?.followersCount, countMapEntries(current?.followers)]);
         const nextCount = Math.max(0, currentCount + (data?.isFollowing ? 1 : -1));
+        setCreatorStatsRow((currentStats) => ({
+          ...(currentStats && typeof currentStats === 'object' ? currentStats : {}),
+          followersCount: nextCount,
+        }));
         return {
           ...current,
           followersCount: nextCount,
           stats: {
             ...(current?.stats && typeof current.stats === 'object' ? current.stats : {}),
             followersCount: nextCount,
-          },
-          creatorProfile: {
-            ...(current?.creatorProfile && typeof current.creatorProfile === 'object'
-              ? current.creatorProfile
-              : {}),
-            stats: {
-              ...(current?.creatorProfile?.stats && typeof current.creatorProfile.stats === 'object'
-                ? current.creatorProfile.stats
-                : {}),
-              followersCount: nextCount,
-            },
           },
         };
       });
@@ -341,14 +343,14 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Criador não encontrado</h1>
+          <h1>Criador nÃ£o encontrado</h1>
           <p>O link publico informado esta incompleto.</p>
         </section>
       </main>
     );
   }
 
-  if (!publicoReady || !obrasReady) {
+  if (!publicoReady || !obrasReady || !capitulosReady) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
@@ -358,8 +360,8 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Perfil indisponível</h1>
-          <p>Este perfil público não está acessível no momento.</p>
+          <h1>Perfil indisponÃ­vel</h1>
+          <p>Este perfil pÃºblico nÃ£o estÃ¡ acessÃ­vel no momento.</p>
         </section>
       </main>
     );
@@ -370,7 +372,7 @@ export default function CreatorPublicProfilePage({ user }) {
       <main className="criador-page">
         <section className="criador-empty">
           <h1>Perfil privado</h1>
-          <p>Este usuário não deixou o perfil público disponível.</p>
+          <p>Este usuÃ¡rio nÃ£o deixou o perfil pÃºblico disponÃ­vel.</p>
         </section>
       </main>
     );
@@ -382,7 +384,7 @@ export default function CreatorPublicProfilePage({ user }) {
         open={followBrowserPushModalOpen}
         permission={followBrowserPushPermission}
         title="Avisos no navegador"
-        description="Você passou a seguir este criador. Quer receber notificação aqui no navegador quando sair capítulo novo?"
+        description="VocÃª passou a seguir este criador. Quer receber notificaÃ§Ã£o aqui no navegador quando sair capÃ­tulo novo?"
         onClose={() => setFollowBrowserPushModalOpen(false)}
       />
       <section className={`criador-hero criador-hero--blur-backdrop${profileMode === 'reader' ? ' criador-hero--reader' : ''}`}>
@@ -437,7 +439,7 @@ export default function CreatorPublicProfilePage({ user }) {
               </button>
             )}
             <button type="button" className="is-secondary" onClick={() => navigate('/works')}>
-              Catálogo geral
+              CatÃ¡logo geral
             </button>
           </div>
           {followMessage ? <p className="criador-hero__support-copy">{followMessage}</p> : null}
@@ -450,23 +452,23 @@ export default function CreatorPublicProfilePage({ user }) {
                 </article>
                 <article>
                   <strong>{obrasComStats.length}</strong>
-                  <span>obras públicas</span>
+                  <span>obras pÃºblicas</span>
                 </article>
                 <article>
                   <strong>{creatorStats.totalViews}</strong>
                   <span>views (obras)</span>
                 </article>
                 <article>
-                  <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : '—'}</strong>
-                  <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponível'}</span>
+                  <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : 'â€”'}</strong>
+                  <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponÃ­vel'}</span>
                 </article>
               </div>
               <p className="criador-hero__support-copy">
-                Seguir este escritor ajuda a plataforma a destacar lançamentos e novidades quando estiverem ativas.
+                Seguir este escritor ajuda a plataforma a destacar lanÃ§amentos e novidades quando estiverem ativas.
               </p>
               {!supportEnabled ? (
                 <p className="criador-hero__support-copy">
-                  Este escritor está em modo “só publicar”. Apoio e membership ainda não estão disponíveis.
+                  Este escritor estÃ¡ em modo â€œsÃ³ publicarâ€. Apoio e membership ainda nÃ£o estÃ£o disponÃ­veis.
                 </p>
               ) : null}
             </>
@@ -483,18 +485,18 @@ export default function CreatorPublicProfilePage({ user }) {
                 </article>
                 <article>
                   <strong>{readerPublic ? 'ativo' : 'fechado'}</strong>
-                  <span>perfil público</span>
+                  <span>perfil pÃºblico</span>
                 </article>
               </div>
               <p className="criador-hero__support-copy">
-                Este perfil mostra a biblioteca pública e as obras curtidas ou favoritadas por este leitor.
+                Este perfil pÃºblico de leitor mostra apenas os dados bÃ¡sicos disponibilizados pelo usuÃ¡rio.
               </p>
             </>
           )}
           {membershipEnabled ? (
             <p className="criador-hero__support-copy">
-              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias — acesso antecipado nas obras
-              deste escritor. Doação sugerida: {formatarPrecoBrl(donationSuggested)}.
+              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias â€” acesso antecipado nas obras
+              deste escritor. DoaÃ§Ã£o sugerida: {formatarPrecoBrl(donationSuggested)}.
             </p>
           ) : null}
           {redes.length ? (
@@ -512,7 +514,7 @@ export default function CreatorPublicProfilePage({ user }) {
 
       <nav
         className={`criador-profile-tabs${profileMode === 'reader' ? ' criador-profile-tabs--reader' : ''}`}
-        aria-label="Seções do perfil"
+        aria-label="SeÃ§Ãµes do perfil"
       >
         {profileMode === 'writer' ? (
           <button
@@ -539,7 +541,7 @@ export default function CreatorPublicProfilePage({ user }) {
           </div>
           <div className="criador-support-card">
             <p>
-              <strong>{formatarPrecoBrl(membershipPrice)}</strong> / 30 dias — membros ganham acesso antecipado aos
+              <strong>{formatarPrecoBrl(membershipPrice)}</strong> / 30 dias â€” membros ganham acesso antecipado aos
               capitulos deste autor nas obras vinculadas.
             </p>
             <ul className="criador-support-benefits">
@@ -569,7 +571,7 @@ export default function CreatorPublicProfilePage({ user }) {
             </div>
           </div>
           {!obrasSorted.length ? (
-            <p className="criador-section__empty">Nenhuma obra pública cadastrada ainda.</p>
+            <p className="criador-section__empty">Nenhuma obra pÃºblica cadastrada ainda.</p>
           ) : (
             <div className="criador-obras-grid">
               {obrasSorted.map((obra) => {
@@ -613,12 +615,12 @@ export default function CreatorPublicProfilePage({ user }) {
       {profileTab === 'likes' ? (
         <section className="criador-section criador-section--favorites" aria-labelledby="criador-curtidas-title">
           <div className="criador-section__head">
-            <h2 id="criador-curtidas-title">{profileMode === 'writer' ? 'Obras curtidas' : 'Biblioteca pública'}</h2>
+            <h2 id="criador-curtidas-title">{profileMode === 'writer' ? 'Obras curtidas' : 'Biblioteca pÃºblica'}</h2>
           </div>
           {!readerPublic ? (
-            <p className="criador-section__empty">Este usuário não exibe curtidas publicamente.</p>
+            <p className="criador-section__empty">Este usuÃ¡rio nÃ£o exibe curtidas publicamente.</p>
           ) : !favoritesList.length ? (
-            <p className="criador-section__empty">Nenhuma obra curtida ainda.</p>
+            <p className="criador-section__empty">Biblioteca pÃºblica indisponÃ­vel nesta versÃ£o.</p>
           ) : (
             <div className="criador-favorites-grid">
               {favoritesList.map((fav) => (

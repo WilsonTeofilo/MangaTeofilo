@@ -1,14 +1,12 @@
-import { PLATFORM_LEGACY_CREATOR_UID } from '../constants';
-
 export const OBRAS_SCHEMA_VERSION = 1;
 
 export const OBRA_PADRAO_ID = 'shito';
 
-/** Dono da obra para permissoes multi-tenant (fallback = plataforma legada). */
+/** Dono da obra para permissoes multi-tenant. */
 export function obraCreatorId(obra) {
   const c = String(obra?.creatorId || '').trim();
   if (c) return c;
-  return PLATFORM_LEGACY_CREATOR_UID;
+  return '';
 }
 
 export function normalizarObraId(raw) {

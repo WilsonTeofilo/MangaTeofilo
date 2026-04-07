@@ -1,4 +1,4 @@
-import { getAuth } from 'firebase-admin/auth';
+﻿import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { getStorage } from 'firebase-admin/storage';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -242,12 +242,12 @@ async function deleteUserEverywhere(uid, profile = null, publicProfile = null) {
     if (err?.code !== 'auth/user-not-found') throw err;
   }
   await db.ref(`usuarios/${uid}`).remove();
-  await db.ref(`usuarios_publicos/${uid}`).remove();
+  await db.ref(`usuarios/${uid}/publicProfile`).remove();
   logger.info(`Usuario removido: ${uid}`);
 }
 
 const EMAIL_BRAND_TITLE = 'MangaTeofilo';
-const EMAIL_BRAND_TAGLINE = 'Sua plataforma de mangás favorito';
+const EMAIL_BRAND_TAGLINE = 'Sua plataforma de mangÃ¡s favorito';
 
 function buildLoginEmailHtml(code, isNewUser) {
   return `<!DOCTYPE html>
@@ -266,19 +266,19 @@ function buildLoginEmailHtml(code, isNewUser) {
           <tr>
             <td style="padding:36px 40px;text-align:center;">
               <p style="color:#aaa;font-size:14px;margin:0 0 24px;">
-                ${isNewUser ? 'Uma nova alma está prestes a despertar.' : 'Bem-vindo de volta ao MangaTeofilo.'}
+                ${isNewUser ? 'Uma nova alma estÃ¡ prestes a despertar.' : 'Bem-vindo de volta ao MangaTeofilo.'}
               </p>
-              <p style="color:#fff;font-size:14px;margin:0 0 16px;">Seu código de acesso:</p>
+              <p style="color:#fff;font-size:14px;margin:0 0 16px;">Seu cÃ³digo de acesso:</p>
               <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:20px;margin:0 auto 24px;">
                 <span style="font-size:36px;font-weight:900;letter-spacing:10px;color:#ffcc00;">${code}</span>
               </div>
               <p style="color:#666;font-size:13px;margin:0 0 8px;">Expira em <strong style="color:#aaa">10 minutos</strong></p>
-              <p style="color:#666;font-size:12px;margin:0;">Não compartilhe este código com ninguém.</p>
+              <p style="color:#666;font-size:12px;margin:0;">NÃ£o compartilhe este cÃ³digo com ninguÃ©m.</p>
             </td>
           </tr>
           <tr>
             <td style="padding:16px 40px 24px;text-align:center;border-top:1px solid #1a1a1a;">
-              <p style="color:#444;font-size:11px;margin:0;">Se você não solicitou este código, ignore este e-mail.</p>
+              <p style="color:#444;font-size:11px;margin:0;">Se vocÃª nÃ£o solicitou este cÃ³digo, ignore este e-mail.</p>
             </td>
           </tr>
         </table>
@@ -322,7 +322,7 @@ export const cleanupUsers = onSchedule(
         continue;
       }
       if (status === 'inativo' && createdAt > 0 && now - createdAt > PENDING_TTL_MS + INATIVO_TTL_MS) {
-        const publicProfileSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+        const publicProfileSnap = await db.ref(`usuarios/${uid}/publicProfile`).get();
         await deleteUserEverywhere(uid, profile, publicProfileSnap.val() || {});
         removedExpired += 1;
         continue;
@@ -337,7 +337,7 @@ export const cleanupUsers = onSchedule(
           markedInactive += 1;
           continue;
         }
-        const publicProfileSnap = await db.ref(`usuarios_publicos/${uid}`).get();
+        const publicProfileSnap = await db.ref(`usuarios/${uid}/publicProfile`).get();
         await deleteUserEverywhere(uid, profile, publicProfileSnap.val() || {});
         removedInactive += 1;
       }
@@ -380,7 +380,7 @@ export const sendLoginCode = onRequest(
         res.status(400).json({
           ok: false,
           code: 'NO_AUTH_USER',
-          error: 'Nenhuma conta com este e-mail. Use login com Google se foi assim que entrou, ou toque em criar conta para receber o código.',
+          error: 'Nenhuma conta com este e-mail. Use login com Google se foi assim que entrou, ou toque em criar conta para receber o cÃ³digo.',
         });
         return;
       }
@@ -417,8 +417,8 @@ export const sendLoginCode = onRequest(
       await getTransporter().sendMail({
         from: getSmtpFrom(),
         to: normEmail,
-        subject: isNewUser ? 'Seu código para cadastrar no MangaTeofilo' : 'Seu código de acesso ao MangaTeofilo',
-        text: `Seu código de acesso é: ${code}\n\nEle vale por 10 minutos. Não compartilhe.\n\nSe não pediu, ignore.`,
+        subject: isNewUser ? 'Seu cÃ³digo para cadastrar no MangaTeofilo' : 'Seu cÃ³digo de acesso ao MangaTeofilo',
+        text: `Seu cÃ³digo de acesso Ã©: ${code}\n\nEle vale por 10 minutos. NÃ£o compartilhe.\n\nSe nÃ£o pediu, ignore.`,
         html: buildLoginEmailHtml(code, isNewUser),
       });
 
@@ -507,3 +507,4 @@ export const verifyLoginCode = onRequest(
     }
   }
 );
+

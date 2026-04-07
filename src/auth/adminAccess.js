@@ -1,15 +1,13 @@
 import { getIdTokenResult } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { isAdminUser } from '../constants';
 import { functions } from '../services/firebase';
 
-/** @typedef {{ byClaim: boolean, byAllowlist: boolean, canAccessAdmin: boolean, claimChecked: boolean, profileLoaded: boolean, superAdmin: boolean, isChiefAdmin: boolean, isMangaka: boolean, panelRole: string | null, permissions: Record<string, boolean> | null }} AdminAccessState */
+/** @typedef {{ byClaim: boolean, canAccessAdmin: boolean, claimChecked: boolean, profileLoaded: boolean, superAdmin: boolean, isChiefAdmin: boolean, isMangaka: boolean, panelRole: string | null, permissions: Record<string, boolean> | null }} AdminAccessState */
 
 /** @returns {AdminAccessState} */
 export function emptyAdminAccess() {
   return {
     byClaim: false,
-    byAllowlist: false,
     canAccessAdmin: false,
     claimChecked: false,
     profileLoaded: false,
@@ -24,7 +22,7 @@ export function emptyAdminAccess() {
 const adminGetMyAdminProfile = httpsCallable(functions, 'adminGetMyAdminProfile');
 
 /**
- * Resolve acesso admin: allowlist (chefes) + perfil no backend em `admins/registry`.
+ * Resolve acesso admin pelo backend em `admins/registry` + claims assinadas.
  */
 export async function resolveAdminAccess(user) {
   if (!user) return emptyAdminAccess();
@@ -35,25 +33,32 @@ export async function resolveAdminAccess(user) {
     /* token refresh opcional */
   }
 
-  const byAllowlist = isAdminUser(user);
+  let tokenResult = null;
   let claimChecked = false;
 
   try {
-    claimChecked = Boolean(await getIdTokenResult(user, false));
+    tokenResult = await getIdTokenResult(user, false);
+    claimChecked = Boolean(tokenResult);
   } catch {
     claimChecked = false;
   }
 
+  const panelRoleFromClaim = String(tokenResult?.claims?.panelRole || '').trim().toLowerCase();
+  const byClaim =
+    tokenResult?.claims?.admin === true ||
+    panelRoleFromClaim === 'admin' ||
+    panelRoleFromClaim === 'super_admin';
+  const claimSuperAdmin = panelRoleFromClaim === 'super_admin';
+
   const base = {
-    byClaim: false,
-    byAllowlist,
-    canAccessAdmin: byAllowlist,
+    byClaim,
+    canAccessAdmin: byClaim,
     claimChecked,
     profileLoaded: false,
-    superAdmin: byAllowlist,
-    isChiefAdmin: byAllowlist,
+    superAdmin: claimSuperAdmin,
+    isChiefAdmin: claimSuperAdmin,
     isMangaka: false,
-    panelRole: byAllowlist ? 'super_admin' : null,
+    panelRole: panelRoleFromClaim || null,
     permissions: null,
   };
 
@@ -63,10 +68,6 @@ export async function resolveAdminAccess(user) {
       return {
         ...base,
         profileLoaded: true,
-        superAdmin: byAllowlist,
-        isChiefAdmin: byAllowlist,
-        isMangaka: false,
-        panelRole: byAllowlist ? 'super_admin' : null,
         permissions: null,
       };
     }
@@ -77,8 +78,7 @@ export async function resolveAdminAccess(user) {
     }
     if (data.mangaka === true) {
       return {
-        byClaim: false,
-        byAllowlist,
+        byClaim,
         canAccessAdmin: false,
         claimChecked,
         profileLoaded: true,
@@ -97,15 +97,14 @@ export async function resolveAdminAccess(user) {
       };
     }
     const isStaffSuper = data.super === true;
-    const panelRole = data.panelRole || (byAllowlist ? 'super_admin' : isStaffSuper ? 'super_admin' : 'admin');
+    const panelRole = data.panelRole || (isStaffSuper ? 'super_admin' : 'admin');
     return {
-      byClaim: false,
-      byAllowlist,
+      byClaim,
       canAccessAdmin: true,
       claimChecked,
       profileLoaded: true,
-      superAdmin: byAllowlist || isStaffSuper,
-      isChiefAdmin: byAllowlist || isStaffSuper,
+      superAdmin: isStaffSuper,
+      isChiefAdmin: isStaffSuper,
       isMangaka: false,
       panelRole,
       permissions: data.permissions && typeof data.permissions === 'object' ? data.permissions : {},
@@ -114,10 +113,6 @@ export async function resolveAdminAccess(user) {
     return {
       ...base,
       profileLoaded: true,
-      superAdmin: byAllowlist,
-      isChiefAdmin: byAllowlist,
-      isMangaka: false,
-      panelRole: byAllowlist ? 'super_admin' : null,
       permissions: {},
     };
   }

@@ -6,13 +6,47 @@ export function normalizeCreatorMonetizationPreference(v) {
   return String(v || 'publish_only').trim().toLowerCase() === 'monetize' ? 'monetize' : 'publish_only';
 }
 
+export function resolveCreatorMonetizationPreferenceFromDb(row) {
+  const mon = row?.creator?.monetization;
+  if (mon && typeof mon === 'object') {
+    if (mon.requested === true) return 'monetize';
+    if (
+      mon.enabled === true ||
+      mon.isMonetizationActive === true ||
+      mon.approved === true ||
+      mon.isApproved === true ||
+      Boolean(mon.legal) ||
+      Boolean(mon.payout)
+    ) {
+      return 'monetize';
+    }
+    if (mon.requested === false) return 'publish_only';
+  }
+  const publicProjection = row?.creatorProfile;
+  if (publicProjection && typeof publicProjection === 'object') {
+    if (
+      publicProjection.monetizationPreference === 'monetize' ||
+      publicProjection.isMonetizationActive === true ||
+      publicProjection.monetizationEnabled === true ||
+      publicProjection.isApproved === true
+    ) {
+      return 'monetize';
+    }
+    if (publicProjection.monetizationPreference === 'publish_only') return 'publish_only';
+  }
+  return 'publish_only';
+}
+
 export function resolveCreatorMonetizationFlags(row) {
   const approved =
     row?.creator?.monetization?.approved === true ||
-    row?.creator?.monetization?.isApproved === true;
+    row?.creator?.monetization?.isApproved === true ||
+    row?.creatorProfile?.isApproved === true;
   const active =
     row?.creator?.monetization?.isMonetizationActive === true ||
-    row?.creator?.monetization?.enabled === true;
+    row?.creator?.monetization?.enabled === true ||
+    row?.creatorProfile?.isMonetizationActive === true ||
+    row?.creatorProfile?.monetizationEnabled === true;
   return { isApproved: approved, isMonetizationActive: active };
 }
 
@@ -30,13 +64,32 @@ export function resolveCreatorMonetizationStatusFromDb(row) {
     if (adultBlocked) return 'blocked_underage';
     if (mon.enabled === true && (mon.approved === true || mon.isApproved === true)) return 'active';
   }
+  const publicProjection = row?.creatorProfile;
+  if (publicProjection && typeof publicProjection === 'object') {
+    const projectionStatus = String(publicProjection.monetizationStatus || '').trim().toLowerCase();
+    if (projectionStatus === 'blocked_underage') return 'blocked_underage';
+    if (
+      (publicProjection.isMonetizationActive === true || publicProjection.monetizationEnabled === true) &&
+      publicProjection.isApproved === true
+    ) {
+      return 'active';
+    }
+  }
   if (row?.creator?.meta?.isAdult === false) return 'blocked_underage';
+  if (row?.creatorProfile?.ageVerified === false) return 'blocked_underage';
   return 'disabled';
 }
 
 export function effectiveCreatorMonetizationStatus(preference, status) {
   if (normalizeCreatorMonetizationPreference(preference) !== 'monetize') return 'disabled';
   return String(status || 'disabled').trim().toLowerCase();
+}
+
+export function resolveEffectiveCreatorMonetizationStatusFromDb(row) {
+  return effectiveCreatorMonetizationStatus(
+    resolveCreatorMonetizationPreferenceFromDb(row),
+    resolveCreatorMonetizationStatusFromDb(row)
+  );
 }
 
 export function creatorMonetizationCanToggle(row, preference) {

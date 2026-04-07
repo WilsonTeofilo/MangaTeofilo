@@ -7,14 +7,12 @@ import {
   Navigate,
   useLocation,
   useSearchParams,
-  useParams,
 } from 'react-router-dom';
 import { buildLoginUrlWithRedirect, resolveSafeInternalRedirect } from './utils/loginRedirectPath';
 import { onAuthStateChanged } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 
 import { auth, db } from './services/firebase';
-import { isAdminUser } from './constants';
 import { emptyAdminAccess, resolveAdminAccess } from './auth/adminAccess';
 import {
   canAccessAdminPath,
@@ -29,7 +27,7 @@ import {
   creatorOnboardingIsRequiredComplete,
   creatorOnboardingPrimaryNextPath,
 } from './utils/creatorOnboardingProgress';
-import { effectiveCreatorMonetizationStatus } from './utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from './utils/creatorMonetizationUi';
 import { useCreatorScopedCatalog } from './hooks/useCreatorScopedCatalog';
 
 import Header from './components/Header.jsx';
@@ -39,7 +37,6 @@ import './pages/Admin/AdminUiForms.css';
 
 const MangaMain = lazy(() => import('./pages/Home/MangaMain.jsx'));
 const SobreAutor = lazy(() => import('./pages/Home/SobreAutorV2.jsx'));
-const KokuinLegacyPage = lazy(() => import('./pages/Home/KokuinLegacyPage.jsx'));
 const Apoie = lazy(() => import('./pages/Home/Apoie.jsx'));
 const ApoieCreatorRedirect = lazy(() => import('./pages/Home/ApoieCreatorRedirect.jsx'));
 const ListaMangas = lazy(() => import('./pages/Mangas/ListaMangas.jsx'));
@@ -97,7 +94,7 @@ function resolveShellRedirectTarget(raw, { usuario, adminAccess }) {
     target.startsWith('/creator') ||
     target.startsWith('/print-on-demand?ctx=creator') ||
     target.includes('ctx=creator');
-  if ((adminAccess?.canAccessAdmin || isAdminUser(usuario)) && isCreatorFlow) {
+  if (adminAccess?.canAccessAdmin && isCreatorFlow) {
     if (adminAccess?.canAccessAdmin && canAccessAdminPath('/admin/criadores', adminAccess)) {
       return '/admin/criadores';
     }
@@ -117,21 +114,9 @@ function LoginRoute({ podeAcessarApp, usuario, adminAccess }) {
 }
 
 /** URL canónica pública do POD; `/creator/print` redireciona para `?ctx=creator`. */
-function LegacyPrintOnDemandRedirect() {
-  const { search } = useLocation();
-  return <Navigate to={`/print-on-demand${search}`} replace />;
-}
-
-function LegacyReaderPublicRedirect() {
-  const { readerUid } = useParams();
-  const uid = String(readerUid || '').trim();
-  if (!uid) return <Navigate to="/works" replace />;
-  return <Navigate to={`/criador/${encodeURIComponent(uid)}?tab=likes`} replace />;
-}
-
-function computePodeAcessarApp(usuario, perfilUsuario) {
+function computePodeAcessarApp(usuario, perfilUsuario, adminAccess) {
   if (!usuario) return false;
-  if (isAdminUser(usuario)) return true;
+  if (adminAccess?.canAccessAdmin) return true;
   if (!perfilUsuario) return false;
   if (perfilUsuario.status === 'banido') return false;
   if (perfilUsuario.status !== 'ativo') return false;
@@ -202,7 +187,7 @@ function AppRoutes() {
       })
       .catch(() => {
         if (!ativo) return;
-        setAdminAccess({ ...emptyAdminAccess(), byAllowlist: isAdminUser(usuario), canAccessAdmin: isAdminUser(usuario) });
+        setAdminAccess(emptyAdminAccess());
       });
     return () => {
       ativo = false;
@@ -220,7 +205,7 @@ function AppRoutes() {
 
   const podeAcessarApp =
     Boolean(usuario) &&
-    computePodeAcessarApp(usuario, perfilUsuario);
+    computePodeAcessarApp(usuario, perfilUsuario, adminAccess);
 
   const sessaoInvalida =
     Boolean(usuario) &&
@@ -244,7 +229,7 @@ function AppRoutes() {
       ? { ...adminAccess, isMangaka: true, canAccessAdmin: false, panelRole: 'mangaka' }
       : { ...adminAccess, isMangaka: false };
   const routeShellReady =
-    !usuario || adminAccess.profileLoaded || adminAccess.byAllowlist || creatorRoleFromResolvedBootstrap;
+    !usuario || adminAccess.profileLoaded || creatorRoleFromResolvedBootstrap;
   const canAccessAdminWorkspace = isAdmin && resolvedAppRole === APP_ROLE.ADMIN;
   const canAccessCreator = canAccessCreatorPath('/creator', accessForCreatorRouting);
   const creatorOnboardingSteps = buildCreatorOnboardingSteps({
@@ -259,10 +244,7 @@ function AppRoutes() {
     !isMangakaEffective || creatorOnboardingIsRequiredComplete(creatorOnboardingSteps);
   const creatorOnboardingNextPath = creatorOnboardingPrimaryNextPath(creatorOnboardingSteps);
   const creatorMonetizationIsActive =
-    effectiveCreatorMonetizationStatus(
-      perfilUsuario?.creatorMonetizationPreference,
-      perfilUsuario?.creatorMonetizationStatus
-    ) === 'active';
+    resolveEffectiveCreatorMonetizationStatusFromDb(perfilUsuario) === 'active';
   const adminPathOk = (path) => canAccessAdminPath(path, adminAccess);
   const creatorPathOk = (path) => canAccessCreatorPath(path, accessForCreatorRouting);
   const qs = new URLSearchParams(location.search || '');
@@ -341,6 +323,7 @@ function AppRoutes() {
               <LojaCatalogo
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
+                adminAccess={adminAccess}
               />
             }
           />
@@ -390,7 +373,6 @@ function AppRoutes() {
             path="/pedidos/fisico/:orderId"
             element={podeAcessarApp ? <PodOrderDetailPage user={usuario} /> : <RedirectToLogin />}
           />
-          <Route path="/store/print-on-demand" element={<LegacyPrintOnDemandRedirect />} />
           <Route
             path="/print-on-demand"
             element={
@@ -423,7 +405,6 @@ function AppRoutes() {
             }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
-          <Route path="/kokuin" element={<KokuinLegacyPage />} />
           <Route
             path="/creators"
             element={
@@ -487,7 +468,6 @@ function AppRoutes() {
             element={<CreatorPublicProfilePage user={podeAcessarApp ? usuario : null} />}
           />
           <Route path="/@:userHandle" element={<UsernamePublicRoute />} />
-          <Route path="/leitor/:readerUid" element={<LegacyReaderPublicRedirect />} />
 
           <Route
             path="/admin"
@@ -567,7 +547,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/avatares') ? (
-                <AvatarAdmin />
+                <AvatarAdmin adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )

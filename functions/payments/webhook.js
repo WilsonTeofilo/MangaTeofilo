@@ -24,11 +24,6 @@ import {
   normalizeUnifiedSource,
   tryCommitUnifiedApprovedSettlement,
 } from '../platformPaymentSettlement.js';
-import {
-  commitUnifiedPodPaidMirror,
-  commitUnifiedRefundAdjustmentMirror,
-  commitUnifiedStorePhysicalMirror,
-} from '../unifiedFinanceMirror.js';
 import { validPromoPrice } from '../promoUtils.js';
 import { buildUserEntitlementsPatch } from '../userEntitlements.js';
 import {
@@ -56,7 +51,6 @@ const MP_WEBHOOK_PAYMENTS_PATH = 'financas/mp_webhook_payments';
 const MP_WEBHOOK_LAST_PATH = 'financas/mp_webhook_last';
 const MP_PROCESSED_STALE_MS = 10 * 60 * 1000;
 const MS_DAY = 86400000;
-const AVATAR_FALLBACK_FUNCTIONS = '/assets/avatares/ava1.webp';
 const CREATOR_MEMBERSHIP_D_MS = 30 * 24 * 60 * 60 * 1000;
 
 function formatarDataBr(ms) {
@@ -138,6 +132,64 @@ function appendNestedPatch(target, basePath, value) {
       target[nextPath] = nested;
     }
   }
+}
+
+function toMs(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizePremiumEntitlement(profile = {}) {
+  const raw = profile?.userEntitlements?.global;
+  const rawExists =
+    raw &&
+    typeof raw === 'object' &&
+    (typeof raw.isPremium === 'boolean' ||
+      typeof raw.memberUntil === 'number' ||
+      typeof raw.premiumUntil === 'number' ||
+      String(raw.status || '').trim().length > 0);
+
+  const fallbackUntil = rawExists ? 0 : toMs(profile?.memberUntil);
+  const fallbackStatus =
+    rawExists
+      ? 'inativo'
+      : String(profile?.membershipStatus || (fallbackUntil > Date.now() ? 'ativo' : 'inativo'))
+          .trim()
+          .toLowerCase() || 'inativo';
+  const fallbackIsPremium =
+    !rawExists &&
+    String(profile?.accountType || '').trim().toLowerCase() === 'premium' &&
+    fallbackStatus === 'ativo' &&
+    fallbackUntil > Date.now();
+
+  const memberUntil = toMs(raw?.memberUntil || raw?.premiumUntil || fallbackUntil);
+  const status = String(raw?.status || fallbackStatus).trim().toLowerCase() || 'inativo';
+  const isPremium = raw?.isPremium === true || (fallbackIsPremium && status === 'ativo' && memberUntil > Date.now());
+
+  return {
+    isPremium: Boolean(isPremium && memberUntil > Date.now() && status === 'ativo'),
+    status: memberUntil > Date.now() ? status : (status === 'ativo' ? 'vencido' : status),
+    memberUntil,
+  };
+}
+
+function buildPremiumStatusPatch(uid, entitlement, now, extra = {}) {
+  const basePath = `usuarios/${uid}`;
+  const isPremium = entitlement?.isPremium === true;
+  const status = String(entitlement?.status || 'inativo').trim().toLowerCase() || 'inativo';
+  const memberUntil = toMs(entitlement?.memberUntil) || null;
+  return {
+    [`${basePath}/accountType`]: isPremium ? 'premium' : 'comum',
+    [`${basePath}/membershipStatus`]: status,
+    [`${basePath}/memberUntil`]: memberUntil,
+    [`${basePath}/currentPlanId`]: isPremium ? PREMIUM_PLAN_ID : null,
+    [`${basePath}/premium5dNotifiedForUntil`]: isPremium ? null : extra.premium5dNotifiedForUntil ?? null,
+    [`${basePath}/userEntitlements/global/isPremium`]: isPremium,
+    [`${basePath}/userEntitlements/global/status`]: status,
+    [`${basePath}/userEntitlements/global/memberUntil`]: memberUntil,
+    [`${basePath}/userEntitlements/updatedAt`]: now,
+    ...(extra.lastPaymentAt !== undefined ? { [`${basePath}/lastPaymentAt`]: extra.lastPaymentAt } : {}),
+  };
 }
 
 function extractMercadoPagoPaymentId(req) {
@@ -321,9 +373,14 @@ async function aplicarMembershipCriadorAprovada(
   if (!uid || !cid) return { applied: false, duplicate: false };
 
   const now = Date.now();
-  const creatorPublicSnap = await db.ref(`usuarios_publicos/${cid}`).get();
-  const creatorPublic = creatorPublicSnap.val() || {};
-  const creatorName = String(creatorPublic.creatorDisplayName || creatorPublic.userName || '').trim();
+  const creatorSnap = await db.ref(`usuarios/${cid}`).get();
+  const creatorProfile = creatorSnap.exists() ? creatorSnap.val() || {} : {};
+  const creatorName = String(
+    creatorProfile?.creator?.profile?.displayName ||
+      creatorProfile?.creatorDisplayName ||
+      creatorProfile?.userName ||
+      ''
+  ).trim();
   const currentEntitlementSnap = await db.ref(`usuarios/${uid}/userEntitlements/creators/${cid}`).get();
   const atual = currentEntitlementSnap.exists() ? currentEntitlementSnap.val() || {} : {};
   const currentUntil = Number(atual.memberUntil || 0);
@@ -448,32 +505,21 @@ async function aplicarPremiumAprovado(
   }
 
   const profile = snap.val() || {};
-  const currentUntil = typeof profile.memberUntil === 'number' ? profile.memberUntil : 0;
+  const currentEntitlement = normalizePremiumEntitlement(profile);
+  const currentUntil = currentEntitlement.memberUntil;
   const base = Math.max(now, currentUntil);
   const newUntil = base + PREMIUM_D_MS;
 
-  const pubSnap = await db.ref(`usuarios_publicos/${uid}`).get();
-  const pub = pubSnap.val() || {};
-  const userNamePub = pub.userName || profile.userName || 'Leitor';
-  let avatarPub = String(pub.userAvatar || profile.userAvatar || '').trim();
-  if (!avatarPub) avatarPub = AVATAR_FALLBACK_FUNCTIONS;
-
-  const patch = {};
-  patch[`usuarios/${uid}/accountType`] = 'premium';
-  patch[`usuarios/${uid}/membershipStatus`] = 'ativo';
-  patch[`usuarios/${uid}/memberUntil`] = newUntil;
-  patch[`usuarios/${uid}/lastPaymentAt`] = now;
-  patch[`usuarios/${uid}/currentPlanId`] = PREMIUM_PLAN_ID;
-  patch[`usuarios/${uid}/premium5dNotifiedForUntil`] = null;
-  patch[`usuarios/${uid}/userEntitlements/global/isPremium`] = true;
-  patch[`usuarios/${uid}/userEntitlements/global/status`] = 'ativo';
-  patch[`usuarios/${uid}/userEntitlements/global/memberUntil`] = newUntil;
-  patch[`usuarios/${uid}/userEntitlements/updatedAt`] = now;
-  patch[`usuarios_publicos/${uid}/uid`] = uid;
-  patch[`usuarios_publicos/${uid}/userName`] = userNamePub;
-  patch[`usuarios_publicos/${uid}/userAvatar`] = avatarPub;
-  patch[`usuarios_publicos/${uid}/accountType`] = 'premium';
-  patch[`usuarios_publicos/${uid}/updatedAt`] = now;
+  const patch = buildPremiumStatusPatch(
+    uid,
+    {
+      isPremium: true,
+      status: 'ativo',
+      memberUntil: newUntil,
+    },
+    now,
+    { lastPaymentAt: now }
+  );
 
   await db.ref().update(patch);
   await finalizeMpProcessedPayment(db, paymentId, {
@@ -576,20 +622,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
           entryKey: `premium_refund_adjustment_${paymentId}_${status}`,
           extra: { planId: PREMIUM_PLAN_ID },
         }]);
-        try {
-          await commitUnifiedRefundAdjustmentMirror(db, {
-            mpPaymentId: String(paymentId),
-            creatorId: attrCid,
-            amount,
-            currency: String(pay.currency_id || 'BRL'),
-            kind: 'PREMIUM_ATTRIBUTION_REFUND',
-            status: String(status),
-            buyerUid: premiumUid,
-            extra: { flow: 'premium_attribution_refund', planId: PREMIUM_PLAN_ID },
-          });
-        } catch (e) {
-          logger.warn('unified refund mirror premium', { paymentId, error: e?.message });
-        }
       }
       return;
     }
@@ -669,23 +701,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
             extra: { source: 'checkout_store' },
           }))
         );
-        for (const [cid, amt] of byCreatorRefund) {
-          try {
-            await commitUnifiedRefundAdjustmentMirror(db, {
-              mpPaymentId: String(paymentId),
-              creatorId: cid,
-              amount: amt,
-              currency: String(pay?.currency_id || 'BRL'),
-              kind: 'STORE_PHYSICAL_REFUND',
-              status: String(status),
-              orderId: storeRef.orderId,
-              buyerUid: storeRef.uid,
-              extra: { source: 'checkout_store' },
-            });
-          } catch (e) {
-            logger.warn('unified refund mirror loja', { paymentId, creatorId: cid, error: e?.message });
-          }
-        }
       }
       return;
     }
@@ -786,18 +801,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
           extra: { source: 'checkout_store' },
         });
       }
-      const lines = [...byCreator.entries()].map(([creatorId, lineAmount]) => ({
-        creatorId,
-        amount: round2(lineAmount),
-      }));
-      await commitUnifiedStorePhysicalMirror(db, {
-        mpPaymentId: String(paymentId),
-        buyerUid: storeRef.uid,
-        orderId: storeRef.orderId,
-        currency: String(pay?.currency_id || 'BRL'),
-        totalBRL: expected,
-        lines,
-      });
     } catch (e) {
       logger.warn('Loja: falha ao registrar creatorData', { orderId: storeRef.orderId, error: e?.message });
     }
@@ -875,17 +878,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     } catch (e) {
       logger.warn('POD: falha notificacao', { orderId: podRef.orderId, error: e?.message });
     }
-    try {
-      await commitUnifiedPodPaidMirror(db, {
-        mpPaymentId: String(paymentId),
-        userId: podRef.uid,
-        orderId: podRef.orderId,
-        amountBRL: amount,
-        currency: String(pay?.currency_id || 'BRL'),
-      });
-    } catch (e) {
-      logger.warn('POD: falha unified mirror', { orderId: podRef.orderId, error: e?.message });
-    }
     return;
   }
 
@@ -922,20 +914,6 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
         entryKey: `${creatorMembershipMode ? 'creator_membership' : 'apoio'}_refund_adjustment_${paymentId}_${status}`,
         extra: { origem: origemRefund },
       }]);
-      try {
-        await commitUnifiedRefundAdjustmentMirror(db, {
-          mpPaymentId: String(paymentId),
-          creatorId: apoioAttr,
-          amount,
-          currency,
-          kind: creatorMembershipMode ? 'CREATOR_MEMBERSHIP_REFUND' : 'DONATION_REFUND',
-          status: String(status),
-          buyerUid: apoioUid,
-          extra: { origem: origemRefund },
-        });
-      } catch (e) {
-        logger.warn('unified refund mirror apoio', { paymentId, error: e?.message });
-      }
     }
     if (creatorMembershipMode && apoioAttr) {
       await reverterMembershipCriadorSeNecessario(db, apoioUid, apoioAttr, paymentId, status);
@@ -1151,40 +1129,29 @@ export const assinaturasPremiumDiario = onSchedule(
         }
       }
 
-      const statusMembro = profile?.membershipStatus;
-      const mu = profile?.memberUntil;
-      const tipoConta = String(profile?.accountType || 'comum').toLowerCase();
+      const premiumEntitlement = normalizePremiumEntitlement(profile);
+      const statusMembro = premiumEntitlement.status;
+      const mu = premiumEntitlement.memberUntil;
+      const premiumProjectionStillActive =
+        String(profile?.accountType || 'comum').toLowerCase() === 'premium' ||
+        String(profile?.membershipStatus || '').trim().toLowerCase() === 'ativo';
       const appStatus = profile?.status;
       if (appStatus !== 'ativo') continue;
 
-      if (statusMembro === 'ativo' && typeof mu === 'number' && mu < now && tipoConta === 'premium') {
+      if (premiumProjectionStillActive && typeof mu === 'number' && mu < now) {
         try {
-          const pubSnap = await db.ref(`usuarios_publicos/${uid}`).get();
-          const pub = pubSnap.val() || {};
-          let avatarPub = String(pub.userAvatar || profile.userAvatar || '').trim();
-          if (!avatarPub) avatarPub = AVATAR_FALLBACK_FUNCTIONS;
-          await db.ref(`usuarios/${uid}`).update({
-            membershipStatus: 'vencido',
-            accountType: 'comum',
-            userEntitlements: {
-              ...(profile?.userEntitlements && typeof profile.userEntitlements === 'object'
-                ? profile.userEntitlements
-                : {}),
-              global: {
+          await db.ref().update(
+            buildPremiumStatusPatch(
+              uid,
+              {
                 isPremium: false,
                 status: 'vencido',
                 memberUntil: typeof mu === 'number' ? mu : null,
               },
-              updatedAt: now,
-            },
-          });
-          await db.ref(`usuarios_publicos/${uid}`).update({
-            uid,
-            userName: pub.userName || profile.userName || 'Leitor',
-            userAvatar: avatarPub,
-            accountType: 'comum',
-            updatedAt: now,
-          });
+              now,
+              { premium5dNotifiedForUntil: profile?.premium5dNotifiedForUntil ?? null }
+            )
+          );
           expirados += 1;
         } catch (err) {
           logger.error('Premium expirar falhou', { uid, error: err?.message });

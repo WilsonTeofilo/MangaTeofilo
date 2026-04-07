@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { db } from '../../services/firebase';
-import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
+import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
 
 /** Redireciona `/apoie/criador/:creatorId` → `/apoie?creatorId=…` */
 export default function ApoieCreatorRedirect() {
@@ -15,13 +16,10 @@ export default function ApoieCreatorRedirect() {
   useEffect(() => {
     if (!isValidRaw) return () => {};
     const unsub = onValue(
-      ref(db, `usuarios_publicos/${raw}`),
+      ref(db, `usuarios/${raw}`),
       (snapshot) => {
-        const row = snapshot.exists() ? snapshot.val() || {} : {};
-        const monetizationStatus = effectiveCreatorMonetizationStatus(
-          row.creatorMonetizationPreference,
-          row.creatorMonetizationStatus
-        );
+        const row = snapshot.exists() ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, raw) : {};
+        const monetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);
         setCanSupport(monetizationStatus === 'active');
       },
       () => setCanSupport(false)

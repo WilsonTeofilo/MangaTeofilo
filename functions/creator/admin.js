@@ -1,4 +1,4 @@
-import { getAuth } from 'firebase-admin/auth';
+﻿import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
@@ -20,6 +20,8 @@ import { notifyUserByPreference } from '../notifications/delivery.js';
 import { resolveCreatorAgeYears } from '../creatorCompliance.js';
 import {
   assembleCreatorRecordForRtdb,
+  readCreatorStatsFromDb,
+  resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../creatorRecord.js';
 
@@ -67,12 +69,7 @@ function normalizeReviewReason(raw, fallback = '') {
 }
 
 function resolveCreatorMonetizationPreference(row, app = null) {
-  if (row?.creator?.monetization?.requested === true) return 'monetize';
-  return String(row?.creatorMonetizationPreference || app?.monetizationPreference || 'publish_only')
-    .trim()
-    .toLowerCase() === 'monetize'
-    ? 'monetize'
-    : 'publish_only';
+  return resolveCreatorMonetizationPreferenceFromDb(row, app?.monetizationPreference || 'publish_only');
 }
 
 function maskPixKeyForAdminSnapshot(rawPixKey) {
@@ -82,7 +79,49 @@ function maskPixKeyForAdminSnapshot(rawPixKey) {
   return `${value.slice(0, 3)}***${value.slice(-3)}`;
 }
 
-async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
+function buildPublicCreatorProfileDoc({
+  uid,
+  currentPublicProfile = null,
+  displayName,
+  bioShort,
+  bioFull = '',
+  avatarUrl,
+  instagramUrl,
+  youtubeUrl,
+  monetizationPreference,
+  monetizationStatus,
+  status,
+  createdAt,
+  now,
+}) {
+  const current =
+    currentPublicProfile && typeof currentPublicProfile === 'object' ? currentPublicProfile : {};
+  return {
+    creatorId: uid,
+    userId: uid,
+    displayName,
+    username: current.username || '',
+    bioShort,
+    bioFull: String(bioFull || '').trim(),
+    avatarUrl: avatarUrl || '',
+    bannerUrl: String(current.bannerUrl || '').trim(),
+    socialLinks: {
+      instagramUrl: instagramUrl || null,
+      youtubeUrl: youtubeUrl || null,
+    },
+    monetizationPreference,
+    monetizationStatus,
+    monetizationEnabled: monetizationStatus === 'active',
+    isMonetizationActive: monetizationStatus === 'active',
+    isApproved: monetizationStatus === 'active' || current.isApproved === true,
+    ageVerified: current.ageVerified === true || current.ageVerified === false ? current.ageVerified : null,
+    status,
+    createdAt,
+    updatedAt: now,
+  };
+}
+
+async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creatorStatsRow = null) {
   let email = null;
   try {
     const user = await getAuth().getUser(uid);
@@ -94,7 +133,10 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
     row?.creatorApplication && typeof row.creatorApplication === 'object'
       ? row.creatorApplication
       : {};
-  const approvalGate = evaluateCreatorApplicationApprovalGate(row);
+  const approvalGate = evaluateCreatorApplicationApprovalGate({
+    ...row,
+    creatorStats: readCreatorStatsFromDb(row, creatorStatsRow),
+  });
   const creatorData = creatorDataRow && typeof creatorDataRow === 'object' ? creatorDataRow : {};
   const balance = creatorData?.balance && typeof creatorData.balance === 'object' ? creatorData.balance : null;
   const payoutsRaw = creatorData?.payouts && typeof creatorData.payouts === 'object' ? creatorData.payouts : null;
@@ -104,16 +146,20 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null) {
         .sort((a, b) => Number(b.paidAt || b.createdAt || 0) - Number(a.paidAt || a.createdAt || 0))
         .slice(0, 3)
     : [];
+  const creatorProfile =
+    row?.creator?.profile && typeof row.creator.profile === 'object' ? row.creator.profile : {};
+  const creatorSocial =
+    row?.creator?.social && typeof row.creator.social === 'object' ? row.creator.social : {};
   return {
     uid,
     email,
     userName: String(row?.userName || ''),
     userAvatar: String(row?.userAvatar || ''),
-    creatorDisplayName: String(row?.creatorDisplayName || app.displayName || ''),
-    creatorBio: String(row?.creatorBio || ''),
+    creatorDisplayName: String(creatorProfile.displayName || app.displayName || row?.userName || ''),
+    creatorBio: String(creatorProfile.bio || ''),
     creatorBioShort: String(app.bioShort || ''),
-    creatorInstagramUrl: String(row?.instagramUrl || app?.socialLinks?.instagramUrl || ''),
-    creatorYoutubeUrl: String(row?.youtubeUrl || app?.socialLinks?.youtubeUrl || ''),
+    creatorInstagramUrl: String(creatorSocial.instagram || app?.socialLinks?.instagramUrl || ''),
+    creatorYoutubeUrl: String(creatorSocial.youtube || app?.socialLinks?.youtubeUrl || ''),
     creatorApplication: app,
     creatorStatus: String(row?.creatorStatus || ''),
     creatorOnboardingCompleted: row?.creatorOnboardingCompleted === true,
@@ -209,15 +255,19 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     row?.creatorApplication && typeof row.creatorApplication === 'object'
       ? row.creatorApplication
       : {};
+  const creatorProfileRow =
+    row?.creator?.profile && typeof row.creator.profile === 'object' ? row.creator.profile : {};
+  const creatorSocialRow =
+    row?.creator?.social && typeof row.creator.social === 'object' ? row.creator.social : {};
   const displayName =
-    String(row?.creatorDisplayName || application.displayName || row?.userName || '').trim() || 'Criador';
+    String(creatorProfileRow.displayName || application.displayName || row?.userName || '').trim() || 'Criador';
   const currentUserAvatar = String(row?.userAvatar || '').trim();
   const approvedCreatorAvatar = String(
     application.profileImageUrl || row?.creatorPendingProfileImageUrl || row?.userAvatar || ''
   ).trim();
-  const bioShort = String(row?.creatorBio || application.bioShort || '').trim();
-  const instagramUrl = String(row?.instagramUrl || application?.socialLinks?.instagramUrl || '').trim();
-  const youtubeUrl = String(row?.youtubeUrl || application?.socialLinks?.youtubeUrl || '').trim();
+  const bioShort = String(creatorProfileRow.bio || application.bioShort || '').trim();
+  const instagramUrl = String(creatorSocialRow.instagram || application?.socialLinks?.instagramUrl || '').trim();
+  const youtubeUrl = String(creatorSocialRow.youtube || application?.socialLinks?.youtubeUrl || '').trim();
   const monetizationPreference = resolveCreatorMonetizationPreference(row, application);
   const age = resolveCreatorAgeYears(row);
   const isUnderage = age != null && age < 18;
@@ -228,28 +278,32 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
         : 'active'
       : 'disabled';
   const creatorUsername = slugifyCreatorUsername(displayName, uid);
-  const creatorProfile = {
-    creatorId: uid,
+  const creatorStatusNext = row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding';
+  const [currentPublicProfileSnap, creatorStatsSnap] = await Promise.all([
+    db.ref(`usuarios/${uid}/publicProfile/creatorProfile`).get(),
+    db.ref(`creators/${uid}/stats`).get(),
+  ]);
+  const creatorStats = readCreatorStatsFromDb(
+    row,
+    creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {}
+  );
+  const publicCreatorProfile = buildPublicCreatorProfileDoc({
+    uid,
+    currentPublicProfile: currentPublicProfileSnap.exists() ? currentPublicProfileSnap.val() || {} : null,
     displayName,
-    username: creatorUsername,
     bioShort,
-    bioFull: String(row?.creatorBio || '').trim(),
-    avatarUrl: approvedCreatorAvatar || '',
-    bannerUrl: '',
-    socialLinks: {
-      instagramUrl: instagramUrl || null,
-      youtubeUrl: youtubeUrl || null,
-    },
-    monetizationEnabled: monetizationStatus === 'active',
-    isMonetizationActive: monetizationStatus === 'active',
+    bioFull: String(creatorProfileRow.bio || '').trim(),
+    avatarUrl: approvedCreatorAvatar || currentUserAvatar || '',
+    instagramUrl,
+    youtubeUrl,
     monetizationPreference,
     monetizationStatus,
-    isApproved: monetizationStatus === 'active',
-    ageVerified: age != null,
-    status: row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-    createdAt: row?.creatorProfile?.createdAt || now,
-    updatedAt: now,
-  };
+    status: creatorStatusNext,
+    createdAt: Number(row?.creator?.meta?.createdAt || now),
+    now,
+  });
+  publicCreatorProfile.username = creatorUsername;
+  publicCreatorProfile.ageVerified = age != null;
 
   await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).remove();
 
@@ -293,71 +347,37 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     [`usuarios/${uid}/creatorOnboardingStartedAt`]: row?.creatorOnboardingStartedAt || now,
     [`usuarios/${uid}/creatorOnboardingCompleted`]: row?.creatorOnboardingCompleted === true,
     [`usuarios/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
-    [`usuarios/${uid}/creatorProfile`]: creatorProfile,
     [`usuarios/${uid}/creatorPendingProfileImageUrl`]: null,
     [`usuarios/${uid}/creatorPendingProfileImageCrop`]: null,
     [`usuarios/${uid}/creatorBannerUrl`]: null,
-    [`usuarios/${uid}/creatorStatus`]:
-      row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-    [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
-    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
+    [`usuarios/${uid}/creatorStatus`]: creatorStatusNext,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
-    [`usuarios_publicos/${uid}/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
-    [`usuarios_publicos/${uid}/creatorDisplayName`]: displayName,
-    [`usuarios_publicos/${uid}/creatorUsername`]: creatorUsername,
-    [`usuarios_publicos/${uid}/creatorBio`]: bioShort,
-    [`usuarios_publicos/${uid}/creatorBannerUrl`]: null,
-    [`usuarios_publicos/${uid}/instagramUrl`]: instagramUrl || null,
-    [`usuarios_publicos/${uid}/youtubeUrl`]: youtubeUrl || null,
-    [`usuarios_publicos/${uid}/creatorStatus`]:
-      row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding',
-    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
-    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: false,
-    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios_publicos/${uid}/creatorProfile`]: {
-      creatorId: uid,
-      userId: uid,
-      displayName,
-      username: creatorUsername,
-      bioShort,
-      bioFull: String(row?.creatorBio || '').trim(),
-      avatarUrl: approvedCreatorAvatar || currentUserAvatar || '',
-      bannerUrl: '',
-      socialLinks: {
-        instagramUrl: instagramUrl || null,
-        youtubeUrl: youtubeUrl || null,
-      },
-      stats: {
-        followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
-        totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
-        totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
-        totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
-      },
-      createdAt: row?.creatorProfile?.createdAt || now,
-      updatedAt: now,
-    },
-    [`usuarios_publicos/${uid}/stats`]: {
-      followersCount: Number(row?.creatorProfile?.stats?.followersCount || 0),
-      totalLikes: Number(row?.creatorProfile?.stats?.totalLikes || 0),
-      totalViews: Number(row?.creatorProfile?.stats?.totalViews || 0),
-      totalComments: Number(row?.creatorProfile?.stats?.totalComments || 0),
-    },
-    [`usuarios_publicos/${uid}/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
-    [`usuarios_publicos/${uid}/userName`]: displayName,
-    [`usuarios_publicos/${uid}/accountType`]: String(row?.accountType || 'comum'),
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
-    [`creators/${uid}/stats/followersCount`]: Number(row?.creatorProfile?.stats?.followersCount || 0),
-    [`creators/${uid}/stats/likesTotal`]: Number(row?.creatorProfile?.stats?.totalLikes || 0),
-    [`creators/${uid}/stats/totalViews`]: Number(row?.creatorProfile?.stats?.totalViews || 0),
-    [`creators/${uid}/stats/commentsTotal`]: Number(row?.creatorProfile?.stats?.totalComments || 0),
-    [`creators/${uid}/stats/membersCount`]: Number(row?.creatorProfile?.stats?.membersCount || 0),
-    [`creators/${uid}/stats/revenueTotal`]: Number(row?.creatorProfile?.stats?.revenueTotal || 0),
-    [`creators/${uid}/stats/uniqueReaders`]: Number(row?.creatorProfile?.stats?.uniqueReaders || 0),
+    [`usuarios/${uid}/publicProfile/signupIntent`]: 'creator',
+    [`usuarios/${uid}/publicProfile/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
+    [`usuarios/${uid}/publicProfile/creatorDisplayName`]: displayName,
+    [`usuarios/${uid}/publicProfile/creatorUsername`]: creatorUsername,
+    [`usuarios/${uid}/publicProfile/creatorBio`]: bioShort,
+    [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: null,
+    [`usuarios/${uid}/publicProfile/instagramUrl`]: instagramUrl || null,
+    [`usuarios/${uid}/publicProfile/youtubeUrl`]: youtubeUrl || null,
+    [`usuarios/${uid}/publicProfile/creatorStatus`]: creatorStatusNext,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorProfile`]: publicCreatorProfile,
+    [`usuarios/${uid}/publicProfile/userName`]: displayName,
+    [`usuarios/${uid}/publicProfile/accountType`]: String(row?.accountType || 'comum'),
+    [`usuarios/${uid}/publicProfile/updatedAt`]: now,
+    [`creators/${uid}/stats/followersCount`]: creatorStats.followersCount,
+    [`creators/${uid}/stats/likesTotal`]: creatorStats.likesTotal,
+    [`creators/${uid}/stats/totalViews`]: creatorStats.totalViews,
+    [`creators/${uid}/stats/commentsTotal`]: creatorStats.commentsTotal,
+    [`creators/${uid}/stats/membersCount`]: creatorStats.membersCount,
+    [`creators/${uid}/stats/revenueTotal`]: creatorStats.revenueTotal,
+    [`creators/${uid}/stats/uniqueReaders`]: creatorStats.uniqueReaders,
     [`creators/${uid}/stats/updatedAt`]: now,
   });
 
@@ -404,18 +424,27 @@ export const adminListCreatorApplications = onCall({ region: 'us-central1' }, as
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const db = getDatabase();
-  const [snap, creatorDataSnap] = await Promise.all([
+  const [snap, creatorDataSnap, creatorStatsSnap] = await Promise.all([
     db.ref('usuarios').get(),
     db.ref('creatorData').get(),
+    db.ref('creators').get(),
   ]);
   const users = snap.val() || {};
   const creatorDataByUid = creatorDataSnap.exists() ? creatorDataSnap.val() || {} : {};
+  const creatorStatsByUid = creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {};
   const rows = await Promise.all(
     Object.entries(users)
       .filter(([, row]) => String(row?.signupIntent || '') === 'creator')
-      .map(([uid, row]) => buildCreatorApplicationRow(uid, row, creatorDataByUid?.[uid] || null))
+      .map(([uid, row]) =>
+        buildCreatorApplicationRow(
+          uid,
+          row,
+          creatorDataByUid?.[uid] || null,
+          creatorStatsByUid?.[uid]?.stats || null
+        )
+      )
   );
   rows.sort((a, b) => {
     const queueScore = (r) => {
@@ -436,7 +465,7 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const uid = String(request.data?.uid || '').trim();
   if (!uid) {
     throw new HttpsError('invalid-argument', 'uid obrigatorio.');
@@ -458,7 +487,7 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
   } catch {
     throw new HttpsError('not-found', 'Usuario alvo nao encontrado no Auth.');
   }
-  if (isTargetSuperAdmin({ uid, email: targetEmail })) {
+  if (await isTargetSuperAdmin({ uid, email: targetEmail })) {
     throw new HttpsError('failed-precondition', 'Nao e possivel aprovar administradores chefes como creator.');
   }
   const regSnap = await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).get();
@@ -474,7 +503,14 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
     return { ok: true, uid, status: 'approved', alreadyApproved: true };
   }
   if (appStatus === 'requested') {
-    const gate = evaluateCreatorApplicationApprovalGate(row);
+    const creatorStatsSnap = await db.ref(`creators/${uid}/stats`).get();
+    const gate = evaluateCreatorApplicationApprovalGate({
+      ...row,
+      creatorStats: readCreatorStatsFromDb(
+        row,
+        creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {}
+      ),
+    });
     if (!gate.ok) {
       throw new HttpsError(
         'failed-precondition',
@@ -490,7 +526,7 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const uid = String(request.data?.uid || '').trim();
   if (!uid) {
     throw new HttpsError('invalid-argument', 'uid obrigatorio.');
@@ -504,7 +540,20 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
   const userSnap = await db.ref(`usuarios/${uid}`).get();
   const row = userSnap.exists() ? userSnap.val() || {} : {};
   const now = Date.now();
+  const creatorDocRejected = assembleCreatorRecordForRtdb({
+    row,
+    birthDateIso: String(row?.birthDate || '').trim(),
+    displayName: String(row?.creator?.profile?.displayName || row?.userName || '').trim(),
+    bio: String(row?.creator?.profile?.bio || '').trim(),
+    instagramUrl: row?.creator?.social?.instagram,
+    youtubeUrl: row?.creator?.social?.youtube,
+    monetizationPreference: resolveCreatorMonetizationPreference(row, row?.creatorApplication),
+    creatorMonetizationStatus: 'disabled',
+    compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
+    now,
+  });
   await db.ref().update({
+    [`usuarios/${uid}/creator`]: creatorDocRejected,
     [`usuarios/${uid}/creatorApplicationStatus`]: 'rejected',
     [`usuarios/${uid}/creatorApplication/status`]: 'rejected',
     [`usuarios/${uid}/creatorApplication/updatedAt`]: now,
@@ -518,7 +567,6 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
     [`usuarios/${uid}/creatorModerationBy`]: request.auth.uid,
     [`usuarios/${uid}/creatorModeratedAt`]: now,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
     [`usuarios/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
@@ -526,13 +574,12 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
     [`usuarios/${uid}/creatorPendingProfileImageCrop`]: null,
     [`usuarios/${uid}/status`]: banUser ? 'banido' : null,
     [`usuarios/${uid}/banReason`]: banUser ? reason : null,
-    [`usuarios_publicos/${uid}/creatorStatus`]: banUser ? 'banned' : 'rejected',
-    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: 'disabled',
-    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: false,
-    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios_publicos/${uid}/status`]: banUser ? 'banido' : null,
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
+    [`usuarios/${uid}/publicProfile/creatorStatus`]: banUser ? 'banned' : 'rejected',
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/publicProfile/status`]: banUser ? 'banido' : null,
+    [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
   const rejectMessage = banUser
     ? `Sua conta foi bloqueada pela equipe. Motivo: ${reason}`
@@ -561,7 +608,7 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const uid = String(request.data?.uid || '').trim();
   if (!uid) {
     throw new HttpsError('invalid-argument', 'uid obrigatorio.');
@@ -589,10 +636,10 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
   const creatorDocMonApprove = assembleCreatorRecordForRtdb({
     row,
     birthDateIso: String(row?.birthDate || '').trim(),
-    displayName: String(row?.creatorDisplayName || row?.userName || '').trim(),
-    bio: String(row?.creatorBio || '').trim(),
-    instagramUrl: row?.instagramUrl,
-    youtubeUrl: row?.youtubeUrl,
+    displayName: String(row?.creator?.profile?.displayName || row?.userName || '').trim(),
+    bio: String(row?.creator?.profile?.bio || '').trim(),
+    instagramUrl: row?.creator?.social?.instagram,
+    youtubeUrl: row?.creator?.social?.youtube,
     monetizationPreference: 'monetize',
     creatorMonetizationStatus: monetizationStatus,
     compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
@@ -601,22 +648,12 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
 
   await db.ref().update({
     [`usuarios/${uid}/creator`]: creatorDocMonApprove,
-    [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
-    [`usuarios/${uid}/creatorMonetizationStatus`]: monetizationStatus,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
-    [`usuarios/${uid}/creatorProfile/monetizationStatus`]: monetizationStatus,
-    [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: monetizationStatus === 'active',
-    [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: monetizationStatus === 'active',
-    [`usuarios/${uid}/creatorProfile/isApproved`]: monetizationStatus === 'active',
-    [`usuarios/${uid}/creatorProfile/ageVerified`]: age != null,
-    [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
-    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: canPublishMembership,
-    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: membershipPricePub,
-    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: donationSuggestedPub,
-    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: monetizationStatus,
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: canPublishMembership,
+    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: membershipPricePub,
+    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: donationSuggestedPub,
+    [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
 
   const monetizationApprovalMessage =
@@ -650,7 +687,7 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const uid = String(request.data?.uid || '').trim();
   if (!uid) {
     throw new HttpsError('invalid-argument', 'uid obrigatorio.');
@@ -672,15 +709,16 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
     );
   }
   const now = Date.now();
+  const monetizationPreference = resolveCreatorMonetizationPreference(row);
 
   const creatorDocMonReject = assembleCreatorRecordForRtdb({
     row,
     birthDateIso: String(row?.birthDate || '').trim(),
-    displayName: String(row?.creatorDisplayName || row?.userName || '').trim(),
-    bio: String(row?.creatorBio || '').trim(),
-    instagramUrl: row?.instagramUrl,
-    youtubeUrl: row?.youtubeUrl,
-    monetizationPreference: String(row?.creatorMonetizationPreference || 'monetize').trim().toLowerCase() === 'publish_only' ? 'publish_only' : 'monetize',
+    displayName: String(row?.creator?.profile?.displayName || row?.userName || '').trim(),
+    bio: String(row?.creator?.profile?.bio || '').trim(),
+    instagramUrl: row?.creator?.social?.instagram,
+    youtubeUrl: row?.creator?.social?.youtube,
+    monetizationPreference,
     creatorMonetizationStatus: 'disabled',
     compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
     now,
@@ -688,31 +726,15 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
 
   await db.ref().update({
     [`usuarios/${uid}/creator`]: creatorDocMonReject,
-    [`usuarios/${uid}/creatorMonetizationPreference`]:
-      String(row?.creatorMonetizationPreference || 'monetize').trim().toLowerCase() === 'publish_only'
-        ? 'publish_only'
-        : 'monetize',
-    [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: reason,
     [`usuarios/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/creatorProfile/monetizationPreference`]:
-      String(row?.creatorMonetizationPreference || 'monetize').trim().toLowerCase() === 'publish_only'
-        ? 'publish_only'
-        : 'monetize',
-    [`usuarios/${uid}/creatorProfile/monetizationStatus`]: 'disabled',
-    [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: false,
-    [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: false,
-    [`usuarios/${uid}/creatorProfile/isApproved`]:
-      row?.creator?.monetization?.approved === true || row?.creator?.monetization?.isApproved === true,
-    [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
-    [`usuarios_publicos/${uid}/creatorMembershipEnabled`]: false,
-    [`usuarios_publicos/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios_publicos/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: 'disabled',
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
 
   const monetizationRejectMessage = `Sua conta segue habilitada para publicar, mas a monetizacao nao foi liberada agora. Motivo: ${reason}`;
@@ -741,7 +763,7 @@ export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, asy
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const uid = String(request.data?.uid || '').trim();
   if (!uid) {
     throw new HttpsError('invalid-argument', 'uid obrigatorio.');
@@ -811,3 +833,4 @@ export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, asy
     remainingAvailableBRL: round2(Math.max(0, available - requestedAmount)),
   };
 });
+

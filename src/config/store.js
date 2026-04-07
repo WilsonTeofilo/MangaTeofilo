@@ -9,16 +9,16 @@ export const STORE_CATEGORY_KEYS = {
 };
 
 export const STORE_CATEGORY_LABELS = {
-  [STORE_CATEGORY_KEYS.MANGA]: 'MangÃ¡s',
-  [STORE_CATEGORY_KEYS.VESTUARIO]: 'VestuÃ¡rio',
+  [STORE_CATEGORY_KEYS.MANGA]: 'Mangás',
+  [STORE_CATEGORY_KEYS.VESTUARIO]: 'Vestuário',
   [STORE_CATEGORY_KEYS.EXTRAS]: 'Extras',
 };
 
-/** RÃ³tulos da vitrine (Ã­cones discretos). Admin continua usando STORE_CATEGORY_LABELS. */
+/** Rótulos da vitrine (ícones discretos). Admin continua usando STORE_CATEGORY_LABELS. */
 export const STORE_CATEGORY_TAB_LABELS = {
   all: 'Todos',
-  [STORE_CATEGORY_KEYS.MANGA]: 'ðŸ“š MangÃ¡s',
-  [STORE_CATEGORY_KEYS.VESTUARIO]: 'ðŸ‘• VestuÃ¡rio',
+  [STORE_CATEGORY_KEYS.MANGA]: 'ðŸ“š Mangás',
+  [STORE_CATEGORY_KEYS.VESTUARIO]: 'ðŸ‘• Vestuário',
   [STORE_CATEGORY_KEYS.EXTRAS]: 'ðŸŽ Extras',
 };
 
@@ -32,17 +32,17 @@ export const STORE_DEFAULT_CONFIG = {
   storeVisibleToUsers: false,
   acceptingOrders: false,
   vipDiscountPct: 10,
-  /** PadrÃ£o quando o produto nÃ£o define `shippingMode` (api | region | fixed). */
+  /** Padrão quando o produto não define `shippingMode` (api | region | fixed). */
   defaultShippingMode: 'api',
   freeShippingThresholdBrl: 150,
   /** Frete fixo em BRL (fase 1). */
   fixedShippingBrl: 0,
-  /** Texto opcional exibido apÃ³s compra (ex.: benefÃ­cio no site). */
+  /** Texto opcional exibido após compra (ex.: benefício no site). */
   postPurchaseThanks: '',
   /** Hero da loja (vitrine marca). */
   heroEyebrow: 'MangaTeofilo Â· Loja do universo',
   heroTitle: 'KOKUIN COLLECTION',
-  heroSubtitle: 'PeÃ§as e ediÃ§Ãµes do universo â€” streetwear, minimal e identidade de marca.',
+  heroSubtitle: 'Peças e edições do universo — streetwear, minimal e identidade de marca.',
   shippingRegions: normalizeShippingRegions({}),
   updatedAt: Date.now(),
 };
@@ -64,7 +64,7 @@ export function normalizeStoreConfig(raw) {
       ? Math.max(0, Number(c.fixedShippingBrl))
       : 0,
     postPurchaseThanks: typeof c.postPurchaseThanks === 'string' ? c.postPurchaseThanks : '',
-    /** Espelha regiÃµes de frete gravadas pelo admin (o cÃ¡lculo final continua nas functions). */
+    /** Espelha regiões de frete gravadas pelo admin (o cálculo final continua nas functions). */
     shippingRegions: normalizeShippingRegions(c.shippingRegions),
     heroEyebrow:
       typeof c.heroEyebrow === 'string' && c.heroEyebrow.trim()
@@ -110,18 +110,18 @@ const NEW_BADGE_MS = 14 * 86400000;
 /**
  * Badges para card: { key, label }[]
  */
-/** Chave de agrupamento na vitrine â€” sÃ³ `collection` (ex.: "DROP 01 â€” TEMPESTUA"). */
+/** Chave de agrupamento na vitrine — só `collection` (ex.: "DROP 01 — TEMPESTUA"). */
 export function getProductCollectionKey(product) {
   return String(product?.collection || '').trim();
 }
 
-/** Selo opcional no card (ex.: "Limited edition"); nÃ£o define grupo. */
+/** Selo opcional no card (ex.: "Limited edition"); não define grupo. */
 export function getProductDropLabel(product) {
   return String(product?.dropLabel || '').trim();
 }
 
 /**
- * Agrupa produtos por coleÃ§Ã£o. Sem coleÃ§Ã£o â†’ grupo "Essenciais".
+ * Agrupa produtos por coleção. Sem coleção → grupo "Essenciais".
  * @returns {Array<[string, typeof product[]]>}
  */
 export function groupStoreProductsByCollection(products) {
@@ -162,7 +162,7 @@ export function formatLojaOrderStatusPt(status) {
   const normalized = normalizeStoreStatus(status);
   if (normalized === 'pending') return 'Aguardando pagamento';
   if (normalized === 'paid') return 'Pedido confirmado';
-  if (normalized === 'in_production') return 'Em produÃ§Ã£o';
+  if (normalized === 'in_production') return 'Em produção';
   if (normalized === 'shipped') return 'Enviado · em trânsito';
   if (normalized === 'delivered') return 'Entregue';
   if (normalized === 'cancelled') return 'Cancelado';
@@ -172,7 +172,7 @@ export function formatLojaOrderStatusPt(status) {
 export function formatLojaPayoutStatusPt(status) {
   const v = String(status || '').toLowerCase();
   if (v === 'released') return 'Liberado ao criador';
-  return 'Retido atÃ© a entrega';
+  return 'Retido até a entrega';
 }
 
 /** URL oficial de rastreio dos Correios (código sem espaços). */

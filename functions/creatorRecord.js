@@ -31,6 +31,49 @@ export function normalizePixKey(raw) {
   return String(raw || '').trim();
 }
 
+function toSafeNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+export function resolveCreatorMonetizationPreferenceFromDb(row, fallback = 'publish_only') {
+  const mon = row?.creator?.monetization;
+  if (mon && typeof mon === 'object') {
+    if (mon.requested === true) return 'monetize';
+    if (
+      mon.enabled === true ||
+      mon.isMonetizationActive === true ||
+      mon.approved === true ||
+      mon.isApproved === true ||
+      Boolean(mon.legal) ||
+      Boolean(mon.payout)
+    ) {
+      return 'monetize';
+    }
+    if (mon.requested === false) return 'publish_only';
+  }
+  return String(fallback || 'publish_only').trim().toLowerCase() === 'monetize' ? 'monetize' : 'publish_only';
+}
+
+export function readCreatorStatsFromDb(row, creatorStatsRow = null) {
+  const canonical =
+    creatorStatsRow && typeof creatorStatsRow === 'object'
+      ? creatorStatsRow
+      : row?.creatorStats && typeof row.creatorStats === 'object'
+        ? row.creatorStats
+        : {};
+  return {
+    followersCount: toSafeNumber(canonical?.followersCount),
+    totalViews: toSafeNumber(canonical?.totalViews),
+    likesTotal: toSafeNumber(canonical?.likesTotal),
+    commentsTotal: toSafeNumber(canonical?.commentsTotal),
+    membersCount: toSafeNumber(canonical?.membersCount),
+    revenueTotal: Math.round(toSafeNumber(canonical?.revenueTotal) * 100) / 100,
+    uniqueReaders: toSafeNumber(canonical?.uniqueReaders),
+    updatedAt: Number(canonical?.updatedAt ?? 0) || 0,
+  };
+}
+
 function payoutPixTypeFromCompliance(c, pixKey) {
   const p = String(c?.payoutPixType || '').trim().toLowerCase();
   if (PAYOUT_PIX_TYPES.includes(p)) return p;
@@ -80,6 +123,8 @@ export function assembleCreatorRecordForRtdb({
     st === 'active';
 
   const prev = row?.creator && typeof row.creator === 'object' ? row.creator : {};
+  const prevMon =
+    prev.monetization && typeof prev.monetization === 'object' ? prev.monetization : {};
   const createdAt = Number(prev.meta?.createdAt) || now;
 
   const ig = String(instagramUrl || '').trim().slice(0, 200) || null;
@@ -89,18 +134,22 @@ export function assembleCreatorRecordForRtdb({
   if (!isAdult) {
     monetization = {
       enabled: false,
+      isMonetizationActive: false,
       requested: false,
       approved: false,
+      isApproved: false,
       legal: null,
       payout: null,
     };
   } else if (pref !== 'monetize') {
     monetization = {
       enabled: false,
+      isMonetizationActive: false,
       requested: false,
-      approved: false,
-      legal: null,
-      payout: null,
+      approved: approvedOnce,
+      isApproved: approvedOnce,
+      legal: approvedOnce ? prevMon.legal || null : null,
+      payout: approvedOnce ? prevMon.payout || null : null,
     };
   } else {
     const c = compliance && typeof compliance === 'object' ? compliance : null;
@@ -117,10 +166,10 @@ export function assembleCreatorRecordForRtdb({
       requested: true,
       approved: approvedOnce,
       isApproved: approvedOnce,
-      legal: hasCompliance ? { fullName, cpf: cpfDigits } : null,
+      legal: hasCompliance ? { fullName, cpf: cpfDigits } : prevMon.legal || null,
       payout: hasCompliance
         ? { type: 'pix', key: pixKey.slice(0, 2000), pixType }
-        : null,
+        : prevMon.payout || null,
     };
   }
 
@@ -155,7 +204,7 @@ export function resolveCreatorMonetizationStatusFromDb(row) {
   if (
     mon &&
     typeof mon === 'object' &&
-    mon.enabled === true &&
+    (mon.enabled === true || mon.isMonetizationActive === true) &&
     (mon.approved === true || mon.isApproved === true)
   ) {
     return 'active';

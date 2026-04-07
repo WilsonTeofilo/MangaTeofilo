@@ -2,7 +2,8 @@
  * Entitlements — regras centralizadas de acesso pago / perks.
  *
  * PREMIUM DA PLATAFORMA (global)
- * - `usuarios/{uid}`: accountType === 'premium', membershipStatus, memberUntil
+ * - Canonico: `usuarios/{uid}/userEntitlements/global`
+ * - Projecao compat: `usuarios/{uid}`: accountType, membershipStatus, memberUntil
  * - Beneficios: remocao de anuncios, perks globais e cosmeticos globais.
  * - Nao libera conteudo antecipado de criadores.
  *
@@ -12,11 +13,9 @@
  * - Nao herda perks globais do Premium da plataforma.
  *
  * ADMIN
- * - Allowlist isAdminUser(email) OU role "admin" no perfil RTDB.
+ * - Papel admin/super_admin no perfil RTDB.
  * - Bypass total para leitura antecipada.
  */
-
-import { isAdminUser } from '../constants';
 import {
   obterEntitlementCriador,
   obterEntitlementPremiumGlobal,
@@ -59,9 +58,8 @@ export const algumaCreatorMembershipAtiva = algumaMembershipDeCriadorAtiva;
 
 export function usuarioTemPapelAdminPlataforma(user, perfil) {
   if (!user) return false;
-  if (isAdminUser(user)) return true;
-  if (String(perfil?.role ?? '').toLowerCase() === 'admin') return true;
-  return false;
+  const role = String(perfil?.role ?? '').toLowerCase();
+  return role === 'admin' || role === 'super_admin';
 }
 
 export function podeLerCapituloAntecipado(user, perfil, creatorIdResolvido) {
@@ -102,7 +100,7 @@ export function podeUsarAvataresPremiumDaLoja(user, perfil) {
 }
 
 export function descontoVipLojaAtivo(perfil, user) {
-  if (user && isAdminUser(user)) return true;
+  if (usuarioTemPapelAdminPlataforma(user, perfil)) return true;
   return assinaturaPlataformaPremiumAtiva(perfil);
 }
 

@@ -1,25 +1,21 @@
-/**
- * Níveis de criador — métricas agregadas (seguidores, views totais, likes totais).
- * Fonte: `usuarios/{uid}/creatorProfile/stats` (espelhada em `stats` no perfil).
+﻿/**
+ * Creator progression helpers for display. Sensitive gating stays in the backend.
+ * Canonical metrics source: creators/{uid}/stats.
  */
 
 import { STORE_PROMO_ELIGIBILITY_THRESHOLDS } from '../../shared/promoThresholds.js';
-import { normalizeCreatorEngagementMetrics, resolveCreatorEngagementMetrics } from '../../shared/creatorEngagementMetrics.js';
+import {
+  normalizeCreatorEngagementMetrics,
+  resolveCreatorEngagementMetrics,
+} from '../../shared/creatorEngagementMetrics.js';
 
-/**
- * Nível 1 = Em ascensão · Nível 2 = Monetizado · Nível 3 = Destaque.
- * Só usa métricas acumuladas (seguidores, views totais, likes totais) — não exige cadência de capítulo.
- */
 export const CREATOR_LEVEL_THRESHOLDS = {
   1: STORE_PROMO_ELIGIBILITY_THRESHOLDS,
   2: { followers: 200, views: 10000, likes: 80 },
   3: { followers: 400, views: 80000, likes: 80 },
 };
 
-/** Metas modo vitrine POD = Nível 1 */
 export const VITRINE_PROMO_THRESHOLDS = CREATOR_LEVEL_THRESHOLDS[1];
-
-/** Alvo único “quase monetizando” (barras % e copy) = Nível 2 */
 export const MONETIZATION_THRESHOLDS = CREATOR_LEVEL_THRESHOLDS[2];
 
 export const CREATOR_LEVEL_META = {
@@ -30,13 +26,13 @@ export const CREATOR_LEVEL_META = {
     short: 'Iniciante',
     emoji: '🟤',
     color: '#a8a29e',
-    perks: ['Publicar obras', 'Modo vitrine ao bater as metas do Nível 1'],
+    perks: ['Publicar obras', 'Modo vitrine ao bater as metas do Nivel 1'],
   },
   1: {
     id: 1,
     key: 'rising',
-    title: 'Em ascensão',
-    short: 'Em ascensão',
+    title: 'Em ascensao',
+    short: 'Em ascensao',
     emoji: '🟡',
     color: '#eab308',
     perks: ['Prioridade leve no ranking', 'Vitrine POD liberada nas metas'],
@@ -57,14 +53,13 @@ export const CREATOR_LEVEL_META = {
     short: 'Destaque',
     emoji: '🔵',
     color: '#38bdf8',
-    perks: ['Mais exposição', 'Prioridade na vitrine (evoluindo)', 'Selo especial (em breve)'],
+    perks: ['Mais exposicao', 'Prioridade na vitrine (evoluindo)', 'Selo especial (em breve)'],
   },
 };
 
-/** Recompensas exibidas ao usuário rumo ao Nível 2 */
 export const MONETIZATION_REWARD_LINES = [
-  'Monetização e repasses (com aprovação no perfil)',
-  'Venda na loja — mangá físico com repasse',
+  'Monetizacao e repasses (com aprovacao no perfil)',
+  'Venda na loja - manga fisico com repasse',
   'Membership e apoio direto',
 ];
 
@@ -72,164 +67,112 @@ function norm(n) {
   return Math.max(0, Math.floor(Number(n) || 0));
 }
 
-/**
- * @param {object | null | undefined} row — nó `usuarios/{uid}`
- */
+function buildProgressRows(metrics, thresholds) {
+  return [
+    { key: 'followers', label: 'Seguidores', current: metrics.followers, target: thresholds.followers },
+    { key: 'views', label: 'Views totais', current: metrics.views, target: thresholds.views },
+    { key: 'likes', label: 'Likes totais', current: metrics.likes, target: thresholds.likes },
+  ];
+}
+
+function averagePercent(rows) {
+  if (!rows.length) return 100;
+  const total = rows.reduce((sum, row) => {
+    const target = Math.max(1, Number(row.target) || 1);
+    return sum + Math.min(1, Math.max(0, Number(row.current) || 0) / target);
+  }, 0);
+  return Math.min(100, Math.round((total / rows.length) * 100));
+}
+
+function buildGapRows(rows) {
+  return rows
+    .map((row) => ({
+      key: row.key,
+      label: String(row.label || '').toLowerCase(),
+      left: Math.max(0, norm(row.target) - norm(row.current)),
+    }))
+    .filter((row) => row.left > 0);
+}
+
+function firstGapPhrase(gaps, suffix) {
+  if (!gaps.length) return null;
+  const sorted = [...gaps].sort((a, b) => a.left - b.left);
+  const gap = sorted[0];
+  const nf = new Intl.NumberFormat('pt-BR');
+  return `Faltam ${nf.format(gap.left)} ${gap.label}${suffix}`;
+}
+
 export function metricsFromUsuarioRow(row) {
   return resolveCreatorEngagementMetrics({
-    creatorStats: row?.creatorsStats,
+    creatorStats: row?.creatorsStats || row?.creatorStats || null,
     userRow: row,
   });
 }
 
-/**
- * @param {{ followers?: number, views?: number, likes?: number }} m
- */
-export function normalizeCreatorMetrics(m) {
-  return normalizeCreatorEngagementMetrics(m);
+export function normalizeCreatorMetrics(metrics) {
+  return normalizeCreatorEngagementMetrics(metrics);
 }
 
-/**
- * @param {{ followers?: number, views?: number, likes?: number }} metrics
- * @returns {0|1|2|3}
- */
-export function computeCreatorLevel(metrics) {
-  const m = normalizeCreatorMetrics(metrics);
+function computeCreatorLevel(metrics) {
+  const normalized = normalizeCreatorMetrics(metrics);
   if (
-    m.followers >= CREATOR_LEVEL_THRESHOLDS[3].followers &&
-    m.views >= CREATOR_LEVEL_THRESHOLDS[3].views &&
-    m.likes >= CREATOR_LEVEL_THRESHOLDS[3].likes
+    normalized.followers >= CREATOR_LEVEL_THRESHOLDS[3].followers &&
+    normalized.views >= CREATOR_LEVEL_THRESHOLDS[3].views &&
+    normalized.likes >= CREATOR_LEVEL_THRESHOLDS[3].likes
   ) {
     return 3;
   }
   if (
-    m.followers >= CREATOR_LEVEL_THRESHOLDS[2].followers &&
-    m.views >= CREATOR_LEVEL_THRESHOLDS[2].views &&
-    m.likes >= CREATOR_LEVEL_THRESHOLDS[2].likes
+    normalized.followers >= CREATOR_LEVEL_THRESHOLDS[2].followers &&
+    normalized.views >= CREATOR_LEVEL_THRESHOLDS[2].views &&
+    normalized.likes >= CREATOR_LEVEL_THRESHOLDS[2].likes
   ) {
     return 2;
   }
   if (
-    m.followers >= CREATOR_LEVEL_THRESHOLDS[1].followers &&
-    m.views >= CREATOR_LEVEL_THRESHOLDS[1].views &&
-    m.likes >= CREATOR_LEVEL_THRESHOLDS[1].likes
+    normalized.followers >= CREATOR_LEVEL_THRESHOLDS[1].followers &&
+    normalized.views >= CREATOR_LEVEL_THRESHOLDS[1].views &&
+    normalized.likes >= CREATOR_LEVEL_THRESHOLDS[1].likes
   ) {
     return 1;
   }
   return 0;
 }
 
-/** % médio rumo às metas de monetização (Nível 2), 0–100 */
-export function getMonetizationProgressPercent(metrics) {
-  const m = normalizeCreatorMetrics(metrics);
-  const t = MONETIZATION_THRESHOLDS;
-  const pf = Math.min(1, m.followers / Math.max(1, t.followers));
-  const pv = Math.min(1, m.views / Math.max(1, t.views));
-  const pl = Math.min(1, m.likes / Math.max(1, t.likes));
-  return Math.min(100, Math.round(((pf + pv + pl) / 3) * 100));
+export function buildCreatorProgressViewModel(metrics) {
+  const normalized = normalizeCreatorMetrics(metrics);
+  const level = computeCreatorLevel(normalized);
+  const nextLevel = level >= 3 ? null : level + 1;
+  const nextLevelRows = nextLevel == null ? [] : buildProgressRows(normalized, CREATOR_LEVEL_THRESHOLDS[nextLevel]);
+  const nextLevelGapRows = buildGapRows(nextLevelRows);
+  const monetizationProgressRows = buildProgressRows(normalized, MONETIZATION_THRESHOLDS);
+  const monetizationGapRows = buildGapRows(monetizationProgressRows);
+
+  return {
+    metrics: normalized,
+    level,
+    meta: CREATOR_LEVEL_META[level] || CREATOR_LEVEL_META[0],
+    nextLevel,
+    nextLevelMeta: nextLevel == null ? null : CREATOR_LEVEL_META[nextLevel] || null,
+    nextLevelRows,
+    nextLevelGapRows,
+    nextLevelProgressPercent: nextLevel == null ? 100 : averagePercent(nextLevelRows),
+    primaryNextLevelGapPhrase:
+      nextLevel == null
+        ? 'Voce atingiu o nivel maximo de metas da plataforma.'
+        : firstGapPhrase(nextLevelGapRows, ' para o proximo nivel'),
+    monetizationProgressRows,
+    monetizationGapRows,
+    monetizationProgressPercent: averagePercent(monetizationProgressRows),
+    monetizationThresholdReached: level >= 2,
+    primaryMonetizationGapPhrase: firstGapPhrase(monetizationGapRows, ' para monetizar'),
+  };
 }
 
-/** Linhas para barras “progresso para monetização” (sempre alvo Nível 2) */
-export function getMonetizationProgressRows(metrics) {
-  const m = normalizeCreatorMetrics(metrics);
-  const t = MONETIZATION_THRESHOLDS;
-  return [
-    { key: 'followers', label: 'Seguidores', current: m.followers, target: t.followers },
-    { key: 'views', label: 'Views', current: m.views, target: t.views },
-    { key: 'likes', label: 'Likes', current: m.likes, target: t.likes },
-  ];
-}
-
-/** Gaps até monetização (nível 2), só itens que faltam */
-export function getGapsUntilMonetization(metrics) {
-  const m = normalizeCreatorMetrics(metrics);
-  const t = MONETIZATION_THRESHOLDS;
-  const rows = [
-    { key: 'followers', label: 'seguidores', left: Math.max(0, t.followers - m.followers) },
-    { key: 'views', label: 'views', left: Math.max(0, t.views - m.views) },
-    { key: 'likes', label: 'likes', left: Math.max(0, t.likes - m.likes) },
-  ];
-  return rows.filter((r) => r.left > 0);
-}
-
-/** Uma frase curta: o que mais aproxima de monetizar */
-export function getPrimaryMonetizationGapPhrase(metrics) {
-  const gaps = getGapsUntilMonetization(metrics);
-  if (!gaps.length) return null;
-  gaps.sort((a, b) => a.left - b.left);
-  const g = gaps[0];
-  const nf = new Intl.NumberFormat('pt-BR');
-  return `Faltam ${nf.format(g.left)} ${g.label} para monetizar`;
-}
-
-/** % médio rumo ao próximo nível (1, 2 ou 3), 0–100 */
-export function getNextLevelProgressPercent(metrics) {
-  const prog = getProgressTowardsNextLevel(metrics);
-  if (prog.nextLevel == null) return 100;
-  const m = normalizeCreatorMetrics(metrics);
-  const t = CREATOR_LEVEL_THRESHOLDS[prog.nextLevel];
-  const pf = Math.min(1, m.followers / Math.max(1, t.followers));
-  const pv = Math.min(1, m.views / Math.max(1, t.views));
-  const pl = Math.min(1, m.likes / Math.max(1, t.likes));
-  return Math.min(100, Math.round(((pf + pv + pl) / 3) * 100));
-}
-
-/** Frase curta: o que mais falta para o próximo nível (não confundir com monetização). */
-export function getPrimaryNextLevelGapPhrase(metrics) {
-  const prog = getProgressTowardsNextLevel(metrics);
-  if (prog.nextLevel == null) {
-    return 'Você atingiu o nível máximo de metas da plataforma.';
-  }
-  const m = normalizeCreatorMetrics(metrics);
-  const t = CREATOR_LEVEL_THRESHOLDS[prog.nextLevel];
-  const rows = [
-    { key: 'followers', label: 'seguidores', left: Math.max(0, t.followers - m.followers) },
-    { key: 'views', label: 'views', left: Math.max(0, t.views - m.views) },
-    { key: 'likes', label: 'likes', left: Math.max(0, t.likes - m.likes) },
-  ];
-  const gaps = rows.filter((r) => r.left > 0);
-  if (!gaps.length) return null;
-  gaps.sort((a, b) => a.left - b.left);
-  const g = gaps[0];
-  const nf = new Intl.NumberFormat('pt-BR');
-  return `Faltam ${nf.format(g.left)} ${g.label} para o próximo nível`;
-}
-
-/**
- * Progresso rumo ao próximo nível (card secundário).
- */
-export function getProgressTowardsNextLevel(metrics) {
-  const m = normalizeCreatorMetrics(metrics);
-  const level = computeCreatorLevel(m);
-  if (level >= 3) {
-    return { level, nextLevel: null, rows: [] };
-  }
-  const next = level + 1;
-  const t = CREATOR_LEVEL_THRESHOLDS[next];
-  const rows = [
-    { key: 'followers', label: 'Seguidores', current: m.followers, target: t.followers },
-    { key: 'views', label: 'Views totais', current: m.views, target: t.views },
-    { key: 'likes', label: 'Likes totais', current: m.likes, target: t.likes },
-  ];
-  return { level, nextLevel: next, rows };
-}
-
-/** Nudge longo (perfil legal) */
-export function getMonetizationNudgeMessage(metrics) {
-  const line = getPrimaryMonetizationGapPhrase(metrics);
-  if (!line) return null;
-  return `${line} na plataforma — aí liberamos venda pelo POD com repasse (com monetização aprovada).`;
-}
-
-export function meetsMonetizationLevel(metrics) {
-  return computeCreatorLevel(metrics) >= 2;
-}
-
-/** Boost discreto no ranking por nível */
 export function creatorDiscoveryLevelBoost(metrics) {
-  const lv = computeCreatorLevel(metrics);
-  if (lv <= 0) return 0;
-  if (lv === 1) return 220;
-  if (lv === 2) return 480;
+  const level = buildCreatorProgressViewModel(metrics).level;
+  if (level <= 0) return 0;
+  if (level === 1) return 220;
+  if (level === 2) return 480;
   return 820;
 }

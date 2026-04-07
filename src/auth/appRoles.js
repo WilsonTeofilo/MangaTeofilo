@@ -13,11 +13,7 @@ export const APP_ROLE = {
 export function isStaffEquipeWithoutCreator(adminAccess) {
   if (!adminAccess?.canAccessAdmin) return false;
   if (adminAccess.isMangaka === true) return false;
-  return (
-    adminAccess.superAdmin === true ||
-    adminAccess.byAllowlist === true ||
-    adminAccess.profileLoaded === true
-  );
+  return adminAccess.superAdmin === true || adminAccess.profileLoaded === true;
 }
 
 export function rtdbRoleIsCreator(perfilRow) {

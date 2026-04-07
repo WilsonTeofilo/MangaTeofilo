@@ -224,6 +224,17 @@ async function recordCreatorRevenuePlatformEvent(
  */
 const APPLY_LOCK_STALE_MS = 10 * 60 * 1000;
 
+function classifyApplySettlementLock(lockValue, now = Date.now()) {
+  if (lockValue && typeof lockValue === 'object') {
+    if (lockValue.s === 'done') return { ok: false, duplicate: true, reason: 'already_applied' };
+    if (lockValue.s === 'wip' && now - Number(lockValue.at || 0) < APPLY_LOCK_STALE_MS) {
+      return { ok: false, duplicate: false, reason: 'in_progress' };
+    }
+  }
+  if (lockValue === 'done') return { ok: false, duplicate: true, reason: 'already_applied' };
+  return { ok: false, duplicate: false, reason: 'contention' };
+}
+
 export async function applyExplicitApprovedFinancialSettlement(db, rec) {
   const gross = round2(rec.grossBRL);
   const cNet = round2(rec.creatorNetBRL);
@@ -246,10 +257,7 @@ export async function applyExplicitApprovedFinancialSettlement(db, rec) {
     return { s: 'wip', at: Date.now() };
   });
   if (!lockTx.committed) {
-    const lv = lockTx.snapshot?.val();
-    if (lv && typeof lv === 'object' && lv.s === 'done') return;
-    if (lv === 'done') return;
-    throw new Error('apply_explicit_lock_contention');
+    return classifyApplySettlementLock(lockTx.snapshot?.val());
   }
 
   const creatorNetSigned = cNet;
@@ -315,6 +323,7 @@ export async function applyExplicitApprovedFinancialSettlement(db, rec) {
       });
     }
     await lockRef.set({ s: 'done', at: Date.now() });
+    return { ok: true, duplicate: false };
   } catch (e) {
     logger.error('creatorDataLedger applyExplicitApprovedFinancialSettlement', {
       cid,
@@ -404,7 +413,8 @@ export async function recordCreatorPayment(db, rec) {
 }
 
 /**
- * Assinatura premium da plataforma atribuída a um criador (rastreio / repasse futuro).
+ * Indice operacional de atribuicao premium ao criador.
+ * Nao grava ledger financeiro: o settlement canonico ja fez isso.
  * @param {import('firebase-admin/database').Database} db
  */
 export async function recordCreatorAttributedPremium(db, rec) {
@@ -428,7 +438,9 @@ export async function recordCreatorAttributedPremium(db, rec) {
 }
 
 /**
- * Membership real do criador.
+ * Indice operacional da membership do criador.
+ * Nao grava ledger financeiro: o settlement canonico ja fez isso.
+ * Mantem apenas subscriptions + membersIndex para o workspace do creator.
  * @param {import('firebase-admin/database').Database} db
  */
 export async function recordCreatorMembershipSubscription(db, rec) {
@@ -526,3 +538,4 @@ export async function recordCreatorManualPixPayout(db, rec) {
     return null;
   }
 }
+

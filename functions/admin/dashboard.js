@@ -4,6 +4,7 @@ import { PREMIUM_D_MS, PREMIUM_PLAN_ID } from '../mercadoPagoPremium.js';
 import { requireAdminAuth, requirePermission } from '../adminRbac.js';
 import { sanitizeTrackingValue, normalizeTrackingSource } from '../trackingUtils.js';
 import { gerarRollupMensalFinancas } from '../system/rollup.js';
+import { buildPublicProfilesMapFromUsuarios } from '../shared/publicUserProfile.js';
 
 const MS_DAY = 86400000;
 
@@ -442,10 +443,9 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
     : defaultComparePeriod(period);
 
   const db = getDatabase();
-  const [eventsSnap, usuariosSnap, pubSnap, marketingSnap] = await Promise.all([
+  const [eventsSnap, usuariosSnap, marketingSnap] = await Promise.all([
     db.ref('financas/eventos').get(),
     db.ref('usuarios').get(),
-    db.ref('usuarios_publicos').get(),
     db.ref('marketing/eventos').get(),
   ]);
 
@@ -457,6 +457,7 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
     : [];
   const rawMarketingEvents = marketingSnap.exists() ? Object.values(marketingSnap.val() || {}) : [];
   const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
+  const pub = buildPublicProfilesMapFromUsuarios(usuarios);
   const usuariosPublicos = pubSnap.exists() ? pubSnap.val() || {} : {};
 
   const current = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, period);

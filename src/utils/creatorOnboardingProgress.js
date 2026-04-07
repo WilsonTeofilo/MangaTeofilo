@@ -1,5 +1,8 @@
 import { obterObraIdCapitulo } from '../config/obras';
-import { resolveCreatorMonetizationStatusFromDb } from './creatorMonetizationUi';
+import {
+  resolveCreatorMonetizationPreferenceFromDb,
+  resolveCreatorMonetizationStatusFromDb,
+} from './creatorMonetizationUi';
 import {
   CREATOR_BIO_MIN_LENGTH,
   CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY,
@@ -33,14 +36,20 @@ export function buildCreatorOnboardingSteps({
     return obraIds.has(String(oid || '').toLowerCase());
   });
 
-  const bio = String(perfilDb.creatorBio || '').trim();
-  const ig = String(perfilDb.instagramUrl || '').trim();
-  const yt = String(perfilDb.youtubeUrl || '').trim();
-  const publicName = String(perfilDb.creatorDisplayName || perfilDb.userName || '').trim();
+  const creatorProfile =
+    perfilDb?.creator?.profile && typeof perfilDb.creator.profile === 'object'
+      ? perfilDb.creator.profile
+      : {};
+  const creatorSocial =
+    perfilDb?.creator?.social && typeof perfilDb.creator.social === 'object'
+      ? perfilDb.creator.social
+      : {};
+  const bio = String(creatorProfile.bio || '').trim();
+  const ig = String(creatorSocial.instagram || '').trim();
+  const yt = String(creatorSocial.youtube || '').trim();
+  const publicName = String(creatorProfile.displayName || perfilDb.userName || '').trim();
   const avatar = String(perfilDb.userAvatar || '').trim();
-  const monetizationPreference = String(perfilDb.creatorMonetizationPreference || 'publish_only')
-    .trim()
-    .toLowerCase();
+  const monetizationPreference = resolveCreatorMonetizationPreferenceFromDb(perfilDb);
   const bioMin =
     monetizationPreference === 'monetize' ? CREATOR_BIO_MIN_LENGTH : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
   const hasBio = bio.length >= bioMin;

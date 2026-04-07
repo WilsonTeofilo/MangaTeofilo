@@ -227,7 +227,6 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
       countEntries(obra?.favoritos) ||
       countEntries(obra?.favorites);
     const creatorFollowers =
-      numeric(creatorsMap?.[creatorId]?.creatorProfile?.stats?.followersCount) ||
       numeric(creatorsMap?.[creatorId]?.stats?.followersCount) ||
       numeric(creatorsMap?.[creatorId]?.followersCount);
     const likes = Math.max(chapterLikes, rawWorkLikes);
@@ -266,7 +265,6 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
     .map(([creatorId, profile]) => {
       const creatorWorks = works.filter((obra) => obra.creatorId === creatorId);
       const followers =
-        numeric(profile?.creatorProfile?.stats?.followersCount) ||
         numeric(profile?.stats?.followersCount) ||
         numeric(profile?.followersCount);
       const likes = creatorWorks.reduce((sum, obra) => sum + numeric(obra?.totalLikes), 0);

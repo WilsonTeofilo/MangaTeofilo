@@ -16,9 +16,10 @@ import {
   LISTA_AVATARES,
   AVATAR_FALLBACK,
   DEFAULT_USER_DISPLAY_NAME,
-  isAdminUser,
   DISPLAY_NAME_MAX_LENGTH,
 } from '../../constants';
+import { resolveAdminAccess } from '../../auth/adminAccess';
+import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { buildPublicFunctionUrl } from '../../config/functions';
 import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSyncV2';
 import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
@@ -117,7 +118,7 @@ async function carregarStatusConta(uid) {
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const resolvePostLoginRedirect = (authUser) => {
+  const resolvePostLoginRedirect = async (authUser) => {
     const raw = searchParams.get('redirect');
     const resolved = resolveSafeInternalRedirect(raw);
     const isCreatorFlow =
@@ -125,13 +126,20 @@ export default function Login() {
       resolved.startsWith('/creator') ||
       resolved.startsWith('/print-on-demand?ctx=creator') ||
       resolved.includes('ctx=creator');
-    if (isAdminUser(authUser) && isCreatorFlow) {
-      return '/admin/criadores';
+    if (authUser && isCreatorFlow) {
+      try {
+        const adminAccess = await resolveAdminAccess(authUser);
+        if (adminAccess.canAccessAdmin === true && adminAccess.isMangaka !== true) {
+          return canAccessAdminPath('/admin/criadores', adminAccess) ? '/admin/criadores' : '/admin';
+        }
+      } catch {
+        /* usa redirect seguro padrao */
+      }
     }
     return resolved;
   };
-  const irParaAposLogin = (authUser) => {
-    const resolved = resolvePostLoginRedirect(authUser);
+  const irParaAposLogin = async (authUser) => {
+    const resolved = await resolvePostLoginRedirect(authUser);
     if (resolved !== '/') {
       navigate(resolved, { replace: true });
       return;
@@ -255,14 +263,6 @@ export default function Login() {
       const result     = await signInWithPopup(auth, googleProvider);
       const googleUser = result.user;
 
-      if (isAdminUser(googleUser)) {
-        const av = listaAvatares[0] || AVATAR_FALLBACK;
-        await ensureUsuarioRecord(googleUser, googleUser.displayName || DEFAULT_USER_DISPLAY_NAME, av, listaAvatares, 'ativo');
-        await ativarContaUsuario(googleUser.uid);
-        irParaAposLogin(googleUser);
-        return;
-      }
-
       const statusAtual = await carregarStatusConta(googleUser.uid);
       if (statusAtual === 'banido') {
         await signOut(auth);
@@ -280,7 +280,7 @@ export default function Login() {
       await ensureUsuarioRecord(googleUser, googleUser.displayName || DEFAULT_USER_DISPLAY_NAME, av, listaAvatares, 'ativo');
       await ativarContaUsuario(googleUser.uid);
 
-      irParaAposLogin(googleUser);
+      await irParaAposLogin(googleUser);
     } catch (err) {
       const msgs = {
         'auth/popup-closed-by-user':                     'Popup fechado. Tente novamente.',
@@ -535,8 +535,6 @@ export default function Login() {
         [`usuarios/${cred.user.uid}/creatorApplicationStatus`]:
           signupIntent === 'creator' ? 'draft' : null,
         [`usuarios/${cred.user.uid}/creatorRequestedAt`]: null,
-        [`usuarios_publicos/${cred.user.uid}/signupIntent`]: signupIntent,
-        [`usuarios_publicos/${cred.user.uid}/updatedAt`]: agora,
       });
 
       registerAttemptResult('registerPassword', true);
@@ -548,7 +546,7 @@ export default function Login() {
       if (signupIntent === 'creator') {
         navigate('/creator/onboarding', { replace: true });
       } else {
-        irParaAposLogin(cred.user);
+        await irParaAposLogin(cred.user);
       }
     } catch (err) {
       registerAttemptResult('registerPassword', false);
@@ -586,21 +584,6 @@ export default function Login() {
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       await refreshAuthUser(cred.user);
 
-      if (isAdminUser(cred.user)) {
-        const av = listaAvatares[0] || AVATAR_FALLBACK;
-        await ensureUsuarioRecord(
-          cred.user,
-          cred.user.displayName || DEFAULT_USER_DISPLAY_NAME,
-          cred.user.photoURL || av,
-          listaAvatares,
-          'ativo'
-        );
-        await ativarContaUsuario(cred.user.uid);
-        registerAttemptResult('loginPassword', true);
-        irParaAposLogin(cred.user);
-        return;
-      }
-
       const statusConta = await carregarStatusConta(cred.user.uid);
       if (statusConta === 'banido') {
         await signOut(auth);
@@ -622,7 +605,7 @@ export default function Login() {
       }
 
       registerAttemptResult('loginPassword', true);
-      irParaAposLogin(cred.user);
+      await irParaAposLogin(cred.user);
     } catch (err) {
       registerAttemptResult('loginPassword', false);
       const base = {

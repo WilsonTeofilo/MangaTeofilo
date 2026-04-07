@@ -1,16 +1,13 @@
-import {
-  PLATFORM_LEGACY_CREATOR_DISPLAY_NAME,
-  PLATFORM_LEGACY_CREATOR_UID,
-} from '../constants';
-import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
+﻿import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
 import { normalizeUsernameInput, validateUsernameHandle } from './usernameValidation';
+import { resolvePublicProfileDisplayName } from './publicUserProfile';
 import {
   resolveCanonicalWorkCreator,
   resolveCreatorPublicProfileById,
   resolveEffectiveWorkCreatorId,
 } from './workCreatorResolution';
 
-/** Nomes de teste / legado tipo "Criador1", "criador 10", "user3" — não usar como nome público. */
+/** Nomes de teste / legado tipo "Criador1", "criador 10", "user3" â€” nÃ£o usar como nome pÃºblico. */
 export function isPlaceholderCreatorLabel(raw) {
   const s = String(raw || '').trim();
   if (s.length < 2) return true;
@@ -63,9 +60,15 @@ function looksLikeGeneratedHandle(raw) {
   return /^[a-z][a-z0-9_]*[_-][a-z0-9]{5,8}$/.test(s);
 }
 
-/** Handle público (@usuario) a partir de `usuarios_publicos` ou objeto equivalente. */
+function publicRowShape(profile) {
+  if (profile?.publicProfile && typeof profile.publicProfile === 'object') {
+    return profile.publicProfile;
+  }
+  return profile && typeof profile === 'object' ? profile : {};
+}
+/** Handle publico (@usuario) a partir do `publicProfile` canonico ou objeto equivalente. */
 export function normalizePublicHandle(profile) {
-  const p = profile && typeof profile === 'object' ? profile : {};
+  const p = publicRowShape(profile);
   const raw = String(
     p.userHandle || p.creatorProfile?.username || p.creatorUsername || p.username || ''
   )
@@ -79,17 +82,14 @@ export function normalizePublicHandle(profile) {
 }
 
 /**
- * Uma linha: «Nome (@handle)». Se só existe handle, mostra `@handle`.
+ * Uma linha: Â«Nome (@handle)Â». Se sÃ³ existe handle, mostra `@handle`.
  * Objetos de admin / callable costumam ter userName, creatorDisplayName, userHandle, creatorProfile.
  */
 export function formatUserDisplayWithHandle(creatorPublicProfile) {
-  const p = creatorPublicProfile && typeof creatorPublicProfile === 'object' ? creatorPublicProfile : {};
+  const p = publicRowShape(creatorPublicProfile);
   const handle = normalizePublicHandle(p);
   const name = firstNonPlaceholder([
-    p.creatorProfile?.displayName,
-    p.creatorDisplayName,
-    typeof p.displayName === 'string' ? p.displayName : null,
-    p.userName,
+    resolvePublicProfileDisplayName(p, ''),
     handle,
   ]);
   if (handle) {
@@ -99,14 +99,14 @@ export function formatUserDisplayWithHandle(creatorPublicProfile) {
   return name || 'Leitor';
 }
 
-/** Alias para linhas de admin / pedidos quando o snapshot mistura campos de `usuarios` e `usuarios_publicos`. */
+/** Alias para linhas de admin / pedidos quando o snapshot mistura campos do usuario e do perfil publico. */
 export function formatUserDisplayFromMixed(row) {
   return formatUserDisplayWithHandle(row && typeof row === 'object' ? row : {});
 }
 
 /**
- * Nome do autor para catálogo / home pública.
- * Com handle público, o identificador canônico é o @username (nome legado só como fallback).
+ * Nome do autor para catÃ¡logo / home pÃºblica.
+ * Com handle pÃºblico, o identificador canÃ´nico Ã© o @username (nome legado sÃ³ como fallback).
  */
 export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = null, fallback = 'Autor' } = {}) {
   const p = creatorPublicProfile;
@@ -114,12 +114,9 @@ export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = n
   const handle = normalizePublicHandle(p);
   if (handle) return handle;
   const resolved = firstNonPlaceholder([
-    p?.creatorProfile?.displayName,
-    p?.creatorDisplayName,
-    typeof p?.displayName === 'string' ? p.displayName : null,
+    resolvePublicProfileDisplayName(p, ''),
     p?.userHandle,
     p?.creatorUsername,
-    p?.username,
     o?.creatorDisplayName,
     o?.creatorUsername,
     o?.creatorHandle,
@@ -132,17 +129,13 @@ export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = n
     o?.writerName,
     o?.creatorProfile?.displayName,
     o?.creatorUsername,
-    o?.username,
-    p?.userName,
   ]);
   return resolved || fallback;
 }
 
 /**
- * @param {object} obra
- * @param {Record<string, object>|null} creatorsMap - snapshot de `usuarios_publicos`
- * @param {object[]|null} [allCapitulos] - quando informado, infere UID do autor pelos capítulos
- *   se `obra.creatorId` estiver vazio ou for o UID legado da plataforma.
+ * Resolve o nome publico do criador para uma obra.
+ * `creatorsMap` deve ser derivado do perfil publico canonico em `usuarios`.
  */
 export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = null) {
   const obraId = String(obra?.id || '').toLowerCase();
@@ -177,12 +170,11 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
     obra?.userName,
   ]);
   if (obraName) return obraName;
-  if (String(creatorId) === PLATFORM_LEGACY_CREATOR_UID) return PLATFORM_LEGACY_CREATOR_DISPLAY_NAME;
   return 'Autor';
 }
 
 /**
- * Texto curto para listagens (home, catálogo): prioriza @username do perfil público.
+ * Texto curto para listagens (home, catÃ¡logo): prioriza @username do perfil pÃºblico.
  */
 export function resolveCreatorFeedLabel(obra, creatorsMap, allCapitulos = null) {
   const obraId = String(obra?.id || '').toLowerCase();
@@ -201,3 +193,4 @@ export function resolveCreatorFeedLabel(obra, creatorsMap, allCapitulos = null) 
   }
   return resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos);
 }
+

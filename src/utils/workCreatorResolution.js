@@ -1,4 +1,3 @@
-import { PLATFORM_LEGACY_CREATOR_UID } from '../constants';
 
 /**
  * UID mais frequente nos capítulos (ignora vazio e UID legado da plataforma).
@@ -10,7 +9,7 @@ export function inferDominantCreatorIdFromChapters(caps) {
   const counts = new Map();
   for (const cap of caps) {
     const cid = String(cap?.creatorId || '').trim();
-    if (!cid || cid === PLATFORM_LEGACY_CREATOR_UID) continue;
+    if (!cid) continue;
     counts.set(cid, (counts.get(cid) || 0) + 1);
   }
   let best = '';
@@ -89,10 +88,10 @@ export function resolveCanonicalWorkCreator(obra, caps, creatorsMap = null) {
   const inferred = inferDominantCreatorIdFromChapters(caps);
   const chapterIds = collectChapterCreatorIds(caps);
   const candidates = [...new Set([fromObra, inferred, ...chapterIds].filter(Boolean))];
-  const fallbackCreatorId = fromObra || inferred || candidates[0] || PLATFORM_LEGACY_CREATOR_UID;
+  const fallbackCreatorId = fromObra || inferred || candidates[0] || '';
 
   const profileBacked = candidates.find((cid) => {
-    if (!cid || cid === PLATFORM_LEGACY_CREATOR_UID) return false;
+    if (!cid) return false;
     return Boolean(resolveCreatorPublicProfileById(creatorsMap, cid));
   });
   if (profileBacked) {
@@ -102,11 +101,11 @@ export function resolveCanonicalWorkCreator(obra, caps, creatorsMap = null) {
     };
   }
 
-  const preferredNonLegacy = candidates.find((cid) => cid && cid !== PLATFORM_LEGACY_CREATOR_UID);
-  if (preferredNonLegacy) {
+  const preferredCandidate = candidates.find(Boolean);
+  if (preferredCandidate) {
     return {
-      creatorId: preferredNonLegacy,
-      profile: resolveCreatorPublicProfileById(creatorsMap, preferredNonLegacy),
+      creatorId: preferredCandidate,
+      profile: resolveCreatorPublicProfileById(creatorsMap, preferredCandidate),
     };
   }
 

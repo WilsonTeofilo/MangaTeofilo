@@ -9,8 +9,10 @@ import {
   requireSuperAdmin,
   resolveTargetUidByEmail,
 } from '../adminRbac.js';
+import { resolveCreatorMonetizationPreferenceFromDb } from '../creatorRecord.js';
 import { sanitizeCreatorId, recordCreatorManualPixPayout } from '../creatorDataLedger.js';
 import { buildUserEntitlementsPatch } from '../userEntitlements.js';
+import { buildPublicProfileFromUsuarioRow } from '../shared/publicUserProfile.js';
 
 const USER_AVATAR_FALLBACK = '/assets/avatares/ava1.webp';
 function normalizeEmail(email) {
@@ -135,15 +137,11 @@ export const adminBackfillUserProfileSchema = onCall(
     requirePermission(ctx, 'migrateUsers');
 
     const db = getDatabase();
-    const [usuariosSnap, publicosSnap] = await Promise.all([
-      db.ref('usuarios').get(),
-      db.ref('usuarios_publicos').get(),
-    ]);
+    const usuariosSnap = await db.ref('usuarios').get();
     const usuarios = usuariosSnap.val() || {};
-    const publicos = publicosSnap.val() || {};
-    const allUids = new Set([...Object.keys(usuarios), ...Object.keys(publicos)]);
+    const allUids = new Set(Object.keys(usuarios));
     let usuariosComPatch = 0;
-    let publicosComPatch = 0;
+    let publicProfilesComPatch = 0;
 
     for (const uid of allUids) {
       let authUser = null;
@@ -161,19 +159,19 @@ export const adminBackfillUserProfileSchema = onCall(
 
       const publicPatch = buildAdminPublicUserSchemaPatch(
         uid,
-        publicos[uid] || {},
+        usuarios[uid]?.publicProfile || {},
         { ...(usuarios[uid] || {}), ...userPatch },
         authUser
       );
       if (Object.keys(publicPatch).length) {
-        await db.ref(`usuarios_publicos/${uid}`).update(publicPatch);
-        publicosComPatch += 1;
+        await db.ref(`usuarios/${uid}/publicProfile`).update(publicPatch);
+        publicProfilesComPatch += 1;
       }
     }
 
     logger.info('adminBackfillUserProfileSchema', {
       usuariosComPatch,
-      publicosComPatch,
+      publicProfilesComPatch,
       total: allUids.size,
     });
 
@@ -181,7 +179,7 @@ export const adminBackfillUserProfileSchema = onCall(
       ok: true,
       total: allUids.size,
       usuariosComPatch,
-      publicosComPatch,
+      publicProfilesComPatch,
     };
   }
 );
@@ -195,13 +193,9 @@ export const adminCleanupOrphanUserProfiles = onCall(
 
     const dryRun = request.data?.dryRun !== false;
     const db = getDatabase();
-    const [usuariosSnap, publicosSnap] = await Promise.all([
-      db.ref('usuarios').get(),
-      db.ref('usuarios_publicos').get(),
-    ]);
+    const usuariosSnap = await db.ref('usuarios').get();
     const usuarios = usuariosSnap.val() || {};
-    const publicos = publicosSnap.val() || {};
-    const allUids = new Set([...Object.keys(usuarios), ...Object.keys(publicos)]);
+    const allUids = new Set(Object.keys(usuarios));
     const orphanUids = [];
 
     for (const uid of allUids) {
@@ -219,7 +213,6 @@ export const adminCleanupOrphanUserProfiles = onCall(
     if (!dryRun) {
       for (const uid of orphanUids) {
         await db.ref(`usuarios/${uid}`).remove();
-        await db.ref(`usuarios_publicos/${uid}`).remove();
       }
     }
 
@@ -239,7 +232,7 @@ export const adminCleanupOrphanUserProfiles = onCall(
 
 export const adminBackfillObraCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const db = getDatabase();
   const [worksSnap, chaptersSnap, creatorsSnap] = await Promise.all([
     db.ref('obras').get(),
@@ -285,15 +278,22 @@ export const adminDiagnosticarObrasAutorInconsistente = onCall({ region: 'us-cen
   requirePermission(ctx, 'migrateUsers');
 
   const db = getDatabase();
-  const [worksSnap, chaptersSnap, publicProfilesSnap] = await Promise.all([
+  const [worksSnap, chaptersSnap, usuariosSnap] = await Promise.all([
     db.ref('obras').get(),
     db.ref('capitulos').get(),
-    db.ref('usuarios_publicos').get(),
+    db.ref('usuarios').get(),
   ]);
 
   const works = worksSnap.exists() ? worksSnap.val() || {} : {};
   const chapters = chaptersSnap.exists() ? chaptersSnap.val() || {} : {};
-  const publicProfiles = publicProfilesSnap.exists() ? publicProfilesSnap.val() || {} : {};
+  const publicProfiles = usuariosSnap.exists()
+    ? Object.fromEntries(
+        Object.entries(usuariosSnap.val() || {}).map(([uid, row]) => [
+          uid,
+          buildPublicProfileFromUsuarioRow(row, uid),
+        ])
+      )
+    : {};
   const chaptersByWork = new Map();
 
   for (const [chapterId, row] of Object.entries(chapters)) {
@@ -378,7 +378,7 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
         current?.creator?.monetization?.isMonetizationActive === true;
       const nextRequested =
         current?.creator?.monetization?.requested === true ||
-        String(current?.creatorMonetizationPreference || '').trim().toLowerCase() === 'monetize';
+        resolveCreatorMonetizationPreferenceFromDb(current) === 'monetize';
 
       const needsCreatorDoc =
         current?.creator?.monetization?.isApproved !== approved ||
@@ -386,16 +386,14 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
         current?.creator?.monetization?.isMonetizationActive !== active ||
         current?.creator?.monetization?.enabled !== active ||
         current?.creator?.monetization?.requested !== nextRequested;
-      const needsProfileDoc =
-        current?.creatorProfile?.isApproved !== approved ||
-        current?.creatorProfile?.isMonetizationActive !== active;
       const hasLegacyFields =
+        String(current?.creatorMonetizationPreference || '').trim().length > 0 ||
         current?.creatorMonetizationApprovedOnce != null ||
         String(current?.creatorMonetizationStatus || '').trim().length > 0 ||
         current?.creatorMonetizationReviewRequestedAt != null ||
         String(current?.creatorMonetizationReviewReason || '').trim().length > 0;
 
-      if (!needsCreatorDoc && !needsProfileDoc && !hasLegacyFields) continue;
+      if (!needsCreatorDoc && !hasLegacyFields) continue;
 
       if (needsCreatorDoc) {
         patch[`usuarios/${uid}/creator/monetization/approved`] = approved;
@@ -404,11 +402,8 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
         patch[`usuarios/${uid}/creator/monetization/isMonetizationActive`] = active;
         patch[`usuarios/${uid}/creator/monetization/requested`] = nextRequested;
       }
-      if (needsProfileDoc) {
-        patch[`usuarios/${uid}/creatorProfile/isApproved`] = approved;
-        patch[`usuarios/${uid}/creatorProfile/isMonetizationActive`] = active;
-      }
       if (hasLegacyFields) {
+        patch[`usuarios/${uid}/creatorMonetizationPreference`] = null;
         patch[`usuarios/${uid}/creatorMonetizationApprovedOnce`] = null;
         patch[`usuarios/${uid}/creatorMonetizationStatus`] = null;
         patch[`usuarios/${uid}/creatorMonetizationReviewRequestedAt`] = null;
@@ -686,7 +681,7 @@ export const adminBackfillCanonicalIdentifiers = onCall(
 
 export const adminBackfillChapterCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const db = getDatabase();
   const [capsSnap, obrasSnap] = await Promise.all([db.ref('capitulos').get(), db.ref('obras').get()]);
   const obras = obrasSnap.val() || {};
@@ -719,7 +714,7 @@ export const adminBackfillChapterCreatorIds = onCall({ region: 'us-central1', co
 
 export const adminBackfillChapterWorkIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const db = getDatabase();
   const snap = await db.ref('capitulos').get();
   const caps = snap.val() || {};
@@ -745,7 +740,7 @@ export const adminBackfillChapterWorkIds = onCall({ region: 'us-central1', cors:
 
 export const adminBackfillStoreProductCreatorIds = onCall({ region: 'us-central1', cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const db = getDatabase();
   const [productsSnap, obrasSnap] = await Promise.all([db.ref('loja/produtos').get(), db.ref('obras').get()]);
   const products = productsSnap.val() || {};
@@ -860,7 +855,7 @@ export const adminRevokeUserSessions = onCall({ region: 'us-central1' }, async (
     if (error?.code === 'auth/user-not-found') throw new HttpsError('not-found', 'Usuario nao encontrado.');
     throw error;
   }
-  if (!ctx.super && !ctx.legacy && isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
+  if (!ctx.super && (await isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower }))) {
     throw new HttpsError('permission-denied', 'Sem permissao para revogar sessoes deste usuario.');
   }
   await getAuth().revokeRefreshTokens(targetUid);
@@ -871,7 +866,7 @@ export const adminRevokeAllSessions = onCall(
   { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB' },
   async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Faca login.');
-    requireSuperAdmin(request.auth);
+    await requireSuperAdmin(request.auth);
     let nextPageToken;
     let revoked = 0;
     do {

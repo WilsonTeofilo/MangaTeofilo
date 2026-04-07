@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
@@ -94,10 +94,8 @@ function sugestaoPorHistorico(history) {
 import { labelPrecoPremium, PREMIUM_PRECO_BRL } from '../../config/premiumAssinatura';
 import './FinanceiroAdmin.css';
 
-const migrateDeprecatedFields = httpsCallable(functions, 'adminMigrateDeprecatedUserFields');
 const adminAuditCreatorLedgerReconciliation = httpsCallable(functions, 'adminAuditCreatorLedgerReconciliation');
 const adminRepairCreatorLifetimeNet = httpsCallable(functions, 'adminRepairCreatorLifetimeNet');
-const adminBackfillEngagementPublicProfiles = httpsCallable(functions, 'adminBackfillEngagementPublicProfiles');
 const adminObterPromocaoPremium = httpsCallable(functions, 'adminObterPromocaoPremium');
 const adminSalvarPromocaoPremium = httpsCallable(functions, 'adminSalvarPromocaoPremium');
 const adminIncrementarDuracaoPromocaoPremium = httpsCallable(functions, 'adminIncrementarDuracaoPromocaoPremium');
@@ -148,10 +146,10 @@ function toDatetimeLocal(ms) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** Se o campo de início está claramente “velho” (ex.: página aberta há minutos), alinhar ao relógio atual. */
+/** Se o campo de início está claramente "velho" (ex.: página aberta há minutos), alinhar ao relógio atual. */
 const MARGEM_INICIO_NO_PASSADO_MS = 2 * 60 * 1000;
 
-/** Ao salvar campanha nova: início muito no passado vira “agora” (evita promo de 10 min virar 2 por campo desatualizado). */
+/** Ao salvar campanha nova: início muito no passado vira "agora" (evita promo de 10 min virar 2 por campo desatualizado). */
 const AJUSTE_INICIO_AO_SALVAR_MS = 3 * 60 * 1000;
 
 /** Segunda confirmação ao publicar com e-mail se a janela útil for curta ou o desconto for mínimo. */
@@ -245,8 +243,6 @@ export default function FinanceiroAdmin() {
   const navigate = useNavigate();
   const [aba, setAba] = useState('visao');
   const [nowMs, setNowMs] = useState(Date.now());
-  const [migrando, setMigrando] = useState(false);
-  const [msgMigracao, setMsgMigracao] = useState('');
   const [loadingPromo, setLoadingPromo] = useState(false);
   const [msgPromo, setMsgPromo] = useState('');
   const [promoAtual, setPromoAtual] = useState(null);
@@ -285,10 +281,6 @@ export default function FinanceiroAdmin() {
   const [repairLoading, setRepairLoading] = useState(false);
   const [repairResult, setRepairResult] = useState(null);
   const [repairMsg, setRepairMsg] = useState('');
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillMsg, setBackfillMsg] = useState('');
-  const [backfillResult, setBackfillResult] = useState(null);
-  const [backfillMaxUpdates, setBackfillMaxUpdates] = useState('500');
 
   const exportarHistoricoCampanhasCsv = () => {
     downloadCsv(
@@ -355,28 +347,6 @@ export default function FinanceiroAdmin() {
     () => Number(String(promoPreco || '').replace(',', '.')),
     [promoPreco]
   );
-
-  const rodarMigracaoCampos = async () => {
-    const ok = window.confirm(
-      'Confirmar limpeza de dados antigos nos perfis?\n\n' +
-        'Remove apenas campos obsoletos / não usados.\n' +
-        'Não remove assinaturas, pagamentos nem histórico financeiro.'
-    );
-    if (!ok) return;
-    setMsgMigracao('');
-    setMigrando(true);
-    try {
-      const { data } = await migrateDeprecatedFields();
-      const total = Number(data?.usuariosComPatch || 0) + Number(data?.publicosComPatch || 0);
-      setMsgMigracao(
-        `Limpeza concluída com sucesso em ${total} cadastro(s). Pode continuar usando o painel normalmente.`
-      );
-    } catch (err) {
-      setMsgMigracao(`Não foi possível finalizar agora. Tente novamente em alguns minutos. Detalhe: ${err.message || String(err)}`);
-    } finally {
-      setMigrando(false);
-    }
-  };
 
   const carregarPromo = async () => {
     setLoadingPromo(true);
@@ -519,7 +489,7 @@ export default function FinanceiroAdmin() {
     }
     const trimmed = metaPagamentosInput.trim();
     if (trimmed !== '' && (!Number.isFinite(Number(trimmed)) || Number(trimmed) < 0)) {
-      setMsgPromo('Meta inválida: use um número inteiro ≥ 0 ou deixe em branco para limpar.');
+      setMsgPromo('Meta inválida: use um número inteiro >= 0 ou deixe em branco para limpar.');
       return;
     }
     setSalvandoMeta(true);
@@ -823,7 +793,7 @@ export default function FinanceiroAdmin() {
       return;
     }
     const adj = repairAdjustAvailable
-      ? '\n\nTambém ajustar «disponível» pelo mesmo Δ (pode errar se já houve saques).'
+      ? '\n\nTambém ajustar "disponível" pelo mesmo Î” (pode errar se já houve saques).'
       : '';
     if (
       !window.confirm(
@@ -841,37 +811,12 @@ export default function FinanceiroAdmin() {
       });
       setRepairResult(data);
       if (data?.apply && data?.wouldChange === false) {
-        setRepairMsg('Nada a alterar (Δ já dentro da tolerância).');
+        setRepairMsg('Nada a alterar (Î” já dentro da tolerância).');
       }
     } catch (e) {
       setRepairMsg(mensagemErroCallable(e, 'Não foi possível aplicar o reparo.'));
     } finally {
       setRepairLoading(false);
-    }
-  };
-
-  const rodarBackfillEngagementPublic = async () => {
-    setBackfillMsg('');
-    setBackfillResult(null);
-    if (
-      !window.confirm(
-        'Reespelhar campos engagement* em usuarios_publicos a partir do ciclo gravado em usuarios? ' +
-          'Útil após deploy das rules. Continuar?'
-      )
-    ) {
-      return;
-    }
-    setBackfillLoading(true);
-    try {
-      const maxU = Number(backfillMaxUpdates);
-      const { data } = await adminBackfillEngagementPublicProfiles({
-        maxUpdates: Number.isFinite(maxU) ? maxU : 500,
-      });
-      setBackfillResult(data);
-    } catch (e) {
-      setBackfillMsg(mensagemErroCallable(e, 'Backfill falhou.'));
-    } finally {
-      setBackfillLoading(false);
     }
   };
 
@@ -899,9 +844,6 @@ export default function FinanceiroAdmin() {
           </button>
           <button type="button" className={aba === 'config' ? 'active' : ''} onClick={abrirAbaConfigPromo}>
             Criar promoção
-          </button>
-          <button type="button" className={aba === 'limpeza' ? 'active' : ''} onClick={() => setAba('limpeza')}>
-            Limpeza de cadastro
           </button>
           <button type="button" className={aba === 'integridade' ? 'active' : ''} onClick={() => setAba('integridade')}>
             Integridade (ledger)
@@ -1096,7 +1038,7 @@ export default function FinanceiroAdmin() {
               </div>
             ) : (
               <div className="promo-banner promo-banner--inactive promo-banner--hero">
-                <div className="promo-empty-icon" aria-hidden="true">📣</div>
+                <div className="promo-empty-icon" aria-hidden="true">ðŸ“£</div>
                 <p className="promo-status-mega">Nenhuma campanha no ar</p>
                 <p className="promo-empty-lead">Lance uma promoção com preço e janela claros — o painel mostra conversão, CTR e onde o funil perde força.</p>
                 <button type="button" className="financeiro-btn-primary financeiro-btn-cta-lg" onClick={abrirAbaConfigPromo}>
@@ -1174,7 +1116,7 @@ export default function FinanceiroAdmin() {
             <section className="financeiro-resultados">
               <div className="financeiro-resultados-head financeiro-resultados-head--lg">
                 <div>
-                  <h3>Última campanha no histórico</h3>
+                  <h3>Ãšltima campanha no histórico</h3>
                   <p className="financeiro-resultados-lead">Onde essa campanha converteu — ou onde morreu no funil.</p>
                 </div>
                 {lastCampaign && (
@@ -1589,43 +1531,6 @@ export default function FinanceiroAdmin() {
               refunded) com <code className="financeiro-inline-code">lifetimeNetBRL</code>. Serve como alerta — não altera
               saldos.
             </p>
-            <h3 className="financeiro-integridade-repair-title">Engajamento público (backfill)</h3>
-            <p className="financeiro-migracao-texto">
-              Atualiza <code className="financeiro-inline-code">usuarios_publicos/.../engagement*</code> a partir de{' '}
-              <code className="financeiro-inline-code">usuarios/.../engagementCycle</code> para quem já tinha ciclo antes
-              do espelho só-servidor. Só altera quem já tem nó em{' '}
-              <code className="financeiro-inline-code">usuarios_publicos</code>.
-            </p>
-            <div className="financeiro-grid financeiro-integridade-form">
-              <label>
-                Máx. perfis a atualizar
-                <input
-                  type="number"
-                  min={1}
-                  max={2000}
-                  value={backfillMaxUpdates}
-                  onChange={(e) => setBackfillMaxUpdates(e.target.value)}
-                />
-              </label>
-            </div>
-            <div className="financeiro-acoes financeiro-acoes--config">
-              <button
-                type="button"
-                className="financeiro-btn-secondary-lg"
-                disabled={backfillLoading}
-                onClick={rodarBackfillEngagementPublic}
-              >
-                {backfillLoading ? 'A executar...' : 'Executar backfill engagement público'}
-              </button>
-            </div>
-            {backfillMsg ? <p className="financeiro-migracao-msg">{backfillMsg}</p> : null}
-            {backfillResult?.ok ? (
-              <p className="financeiro-migracao-texto">
-                Atualizados: <strong>{backfillResult.updated}</strong> de até{' '}
-                <strong>{backfillResult.maxUpdates}</strong> · contas com ciclo:{' '}
-                <strong>{backfillResult.scannedWithCycle}</strong>
-              </p>
-            ) : null}
             <div className="financeiro-grid financeiro-integridade-form">
               <label>
                 Creator ID (opcional)
@@ -1661,7 +1566,7 @@ export default function FinanceiroAdmin() {
             {auditNote ? <p className="financeiro-migracao-texto financeiro-integridade-note">{auditNote}</p> : null}
             {auditSummary ? (
               <p className="financeiro-migracao-texto">
-                Varredura: <strong>{auditSummary.scanned}</strong> criador(es) · divergências (Δ &gt; R$ 0,05):{' '}
+                Varredura: <strong>{auditSummary.scanned}</strong> criador(es) · divergências (Î” &gt; R$ 0,05):{' '}
                 <strong>{auditSummary.mismatches}</strong>
               </p>
             ) : null}
@@ -1676,7 +1581,7 @@ export default function FinanceiroAdmin() {
                       <th>lifetimeNet</th>
                       <th>Disponível</th>
                       <th>Pendente</th>
-                      <th>Δ (soma − lifetime)</th>
+                      <th>Î” (soma âˆ’ lifetime)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1696,13 +1601,6 @@ export default function FinanceiroAdmin() {
                 </table>
               </div>
             ) : null}
-
-            <h3 className="financeiro-integridade-repair-title">Reparo de lifetimeNet (opcional)</h3>
-            <p className="financeiro-migracao-texto">
-              Alinha <code className="financeiro-inline-code">balance/lifetimeNetBRL</code> à soma dos payments
-              (mesma heurística da auditoria). Use só quando tiver certeza do motivo da divergência. Opcionalmente ajusta
-              também o disponível pelo mesmo Δ (arriscado se já houve repasses).
-            </p>
             <div className="financeiro-grid financeiro-integridade-form">
               <label>
                 Creator ID (obrigatório)
@@ -1720,7 +1618,7 @@ export default function FinanceiroAdmin() {
                   checked={repairAdjustAvailable}
                   onChange={(e) => setRepairAdjustAvailable(e.target.checked)}
                 />
-                Ao aplicar, também ajustar disponível (availableBRL += Δ)
+                Ao aplicar, também ajustar disponível (availableBRL += Î”)
               </label>
             </div>
             <div className="financeiro-acoes financeiro-acoes--config">
@@ -1754,43 +1652,6 @@ export default function FinanceiroAdmin() {
             ) : null}
           </div>
         )}
-
-        {aba === 'limpeza' && (
-          <div className="financeiro-migracao financeiro-limpeza">
-            <h2>Limpeza de dados antigos</h2>
-            <p className="financeiro-migracao-texto">
-              Remove <strong>apenas</strong> campos obsoletos ou não utilizados nos perfis — útil após migrações de schema.
-            </p>
-            <div className="financeiro-limpeza-cols">
-              <div className="financeiro-limpeza-sim">
-                <h3>Remove</h3>
-                <ul className="financeiro-migracao-list">
-                  <li>Campos legados que não entram mais no app</li>
-                  <li>Flags e metadados descartados em versões antigas</li>
-                </ul>
-              </div>
-              <div className="financeiro-limpeza-nao">
-                <h3>Não remove</h3>
-                <ul className="financeiro-migracao-list">
-                  <li>Assinaturas, Premium ou histórico de pagamento</li>
-                  <li>E-mail, nome público ou dados essenciais da conta</li>
-                </ul>
-              </div>
-            </div>
-            <p className="financeiro-migracao-texto financeiro-limpeza-foot">
-              Ao confirmar, o sistema pede uma segunda confirmação antes de executar. Pode levar alguns segundos com muitos usuários.
-            </p>
-            <button
-              type="button"
-              className="financeiro-btn-migrar"
-              disabled={migrando}
-              onClick={rodarMigracaoCampos}
-            >
-              {migrando ? 'Executando limpeza...' : 'Confirmar limpeza'}
-            </button>
-            {msgMigracao && <p className="financeiro-migracao-msg">{msgMigracao}</p>}
-          </div>
-        )}
       </section>
 
       {modalCampanha.aberto && (
@@ -1821,3 +1682,7 @@ export default function FinanceiroAdmin() {
     </main>
   );
 }
+
+
+
+

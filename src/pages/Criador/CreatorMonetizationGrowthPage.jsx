@@ -7,7 +7,7 @@ import { useCreatorLevel2Celebration, useCreatorWorkspaceData } from '../../hook
 import './CreatorWorkspace.css';
 
 export default function CreatorMonetizationGrowthPage({ user, perfil }) {
-  const { dashMetrics, creatorLevelDash } = useCreatorWorkspaceData(user, perfil);
+  const { creatorProgressVm, creatorLevelDash } = useCreatorWorkspaceData(user, perfil);
   const { celebrationOpen, closeCelebration } = useCreatorLevel2Celebration(user, creatorLevelDash);
 
   return (
@@ -15,16 +15,10 @@ export default function CreatorMonetizationGrowthPage({ user, perfil }) {
       <CreatorUnlockCelebrationModal open={celebrationOpen} onClose={closeCelebration} />
       <section className="creator-workspace-shell">
         <CreatorMonetizationPanel
-          followers={dashMetrics.followers}
-          views={dashMetrics.views}
-          likes={dashMetrics.likes}
+          progressVm={creatorProgressVm}
         />
         <div className="creator-workspace-level-row">
-          <CreatorLevelBadgeCard
-            followers={dashMetrics.followers}
-            views={dashMetrics.views}
-            likes={dashMetrics.likes}
-          />
+          <CreatorLevelBadgeCard progressVm={creatorProgressVm} />
         </div>
       </section>
     </main>

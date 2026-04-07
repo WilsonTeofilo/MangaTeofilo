@@ -18,7 +18,7 @@
 - Abrir perfil.
 - Salvar nome, avatar e `@username`.
 - Salvar dados de leitor (`buyerProfile`).
-- Verificar criacao de `usuarios/{uid}` e `usuarios_publicos/{uid}` sem erro de permissao.
+- Verificar criacao de `usuarios/{uid}` e `usuarios/{uid}/publicProfile` sem erro de permissao.
 
 3. Obra
 - Criar 1 obra nova.
@@ -44,7 +44,7 @@
 
 ## Pos deploy imediato
 - Se login/perfil falhar: revisar `admins/registry`, claims e `usuarios/$uid` rules.
-- Se salvar perfil falhar: revisar writes permitidos em `usuarios` e `usuarios_publicos`.
+- Se salvar perfil falhar: revisar writes permitidos em `usuarios` e `usuarios/{uid}/publicProfile`.
 - Se criar obra/capitulo falhar: revisar `storage.rules` e segmentos de path.
 - Se exclusao nao limpar arquivos: revisar paths persistidos (`capaStoragePath`, `paginasStoragePaths`, `bannerStoragePath`).
 

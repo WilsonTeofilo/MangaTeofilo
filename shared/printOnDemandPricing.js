@@ -117,17 +117,6 @@ export {
   REGIONAL_FREIGHT_DISCOUNT_RATE,
 };
 
-/** @deprecated Use REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL. */
-export const PERSONAL_ORDER_SUBTOTAL_FREE_SHIPPING_BRL = REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL;
-
-export function quotePersonalDeliveryShippingBRL(uf, quantity, goodsSubtotal) {
-  return computeFixedZoneShippingParts({
-    state: uf,
-    quantity,
-    cartTotal: goodsSubtotal,
-  }).priceBrl;
-}
-
 const WEIGHT_GRAMS_PER_UNIT = {
   [BOOK_FORMAT.TANKOBON]: 300,
   [BOOK_FORMAT.MEIO_TANKO]: 160,
@@ -259,50 +248,6 @@ export function computePersonalOrder(format, quantity) {
     shippingNote: freeShipping
       ? `Frete gratis a partir de ${row.freeShippingAt} unidades. O prazo abaixo ja considera producao + entrega.`
       : `Frete a parte: abaixo de ${row.freeShippingAt} unidades o frete e cobrado separadamente.`,
-  };
-}
-
-export function computePersonalOrderTotalWithShipping(format, quantity, uf) {
-  const calc = computePersonalOrder(format, quantity);
-  if (!calc) return null;
-  if (calc.freeShipping) {
-    return {
-      ...calc,
-      shippingBRL: 0,
-      shippingOriginalBRL: 0,
-      shippingDiscountBRL: 0,
-      amountDueBRL: calc.goodsTotalBRL,
-      regionalFreightDiscountApplied: false,
-      freeShippingBySubtotal: false,
-    };
-  }
-  const goods = Number(calc.goodsTotalBRL || 0);
-  const u = String(uf || '').trim().toUpperCase();
-  if (!u || u.length !== 2) {
-    return {
-      ...calc,
-      shippingBRL: null,
-      shippingOriginalBRL: null,
-      shippingDiscountBRL: null,
-      amountDueBRL: goods,
-      regionalFreightDiscountApplied: false,
-      freeShippingBySubtotal: false,
-    };
-  }
-  const parts = computeFixedZoneShippingParts({
-    state: u,
-    quantity,
-    cartTotal: goods,
-  });
-  const sh = parts.priceBrl;
-  return {
-    ...calc,
-    shippingBRL: sh,
-    shippingOriginalBRL: parts.originalPriceBrl,
-    shippingDiscountBRL: parts.discountBrl,
-    amountDueBRL: Math.round((goods + sh) * 100) / 100,
-    regionalFreightDiscountApplied: parts.regionalFreightDiscountApplied === true,
-    freeShippingBySubtotal: false,
   };
 }
 

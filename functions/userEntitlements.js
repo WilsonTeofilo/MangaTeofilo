@@ -8,21 +8,33 @@ function normalizeStatus(value, fallback = 'inativo') {
   return raw || fallback;
 }
 
+function hasCanonicalGlobalEntitlement(raw) {
+  if (!raw || typeof raw !== 'object') return false;
+  return (
+    typeof raw.isPremium === 'boolean' ||
+    typeof raw.memberUntil === 'number' ||
+    typeof raw.premiumUntil === 'number' ||
+    String(raw.status || '').trim().length > 0
+  );
+}
+
 function normalizeGlobalEntitlement(profile = {}) {
   const now = Date.now();
   const raw = profile?.userEntitlements?.global || {};
-  const fallbackUntil = toMs(profile.memberUntil);
-  const fallbackStatus = normalizeStatus(profile.membershipStatus, fallbackUntil > now ? 'ativo' : 'inativo');
-  const fallbackIsPremium =
-    String(profile.accountType || '').toLowerCase() === 'premium' &&
-    fallbackStatus === 'ativo' &&
-    fallbackUntil > now;
+  const rawExists = hasCanonicalGlobalEntitlement(raw);
+  const fallbackUntil = rawExists ? 0 : toMs(profile.memberUntil);
+  const fallbackStatus = rawExists
+    ? 'inativo'
+    : normalizeStatus(profile.membershipStatus, fallbackUntil > now ? 'ativo' : 'inativo');
+  const fallbackIsPremium = rawExists
+    ? false
+    : String(profile.accountType || '').toLowerCase() === 'premium' &&
+      fallbackStatus === 'ativo' &&
+      fallbackUntil > now;
 
   const memberUntil = toMs(raw.memberUntil || raw.premiumUntil || fallbackUntil);
   const status = normalizeStatus(raw.status, fallbackStatus);
-  const isPremium =
-    raw.isPremium === true ||
-    (fallbackIsPremium && status === 'ativo' && memberUntil > now);
+  const isPremium = raw.isPremium === true || (fallbackIsPremium && status === 'ativo' && memberUntil > now);
 
   return {
     isPremium: Boolean(isPremium && memberUntil > now && status === 'ativo'),
@@ -74,16 +86,11 @@ function applyCanonicalCreatorEntitlements(target, entCreators) {
 }
 
 /**
- * Compatibilidade temporária com o legado.
- *
- * Fonte canônica atual:
+ * Fonte canonica atual:
+ * - `usuarios/{uid}/userEntitlements/global`
  * - `usuarios/{uid}/userEntitlements/creators`
  *
- * Fonte legada:
- * - `usuarios/{uid}/creatorMemberships`
- *
- * Enquanto ainda houver perfis antigos não migrados, o backend continua
- * lendo essa árvore apenas para consolidar o espelho canônico.
+ * Campos top-level de premium sobrevivem apenas como projecao compat.
  */
 export function buildUserEntitlements(profile = {}) {
   const global = normalizeGlobalEntitlement(profile);
@@ -127,3 +134,5 @@ export function buildUserEntitlementsPatch(profile = {}) {
 
   return patch;
 }
+
+

@@ -1,56 +1,40 @@
-/**
- * Somente crescimento / metas da plataforma ligadas a monetização (longo prazo).
- * Não incluir XP, missões, boost ou ciclo semanal.
+﻿/**
+ * Only platform growth and monetization goals live here.
+ * XP, missions, boost, and the weekly cycle are separate.
  */
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-import {
-  CREATOR_LEVEL_META,
-  MONETIZATION_REWARD_LINES,
-  MONETIZATION_THRESHOLDS,
-  computeCreatorLevel,
-  getNextLevelProgressPercent,
-  getPrimaryNextLevelGapPhrase,
-  getProgressTowardsNextLevel,
-  meetsMonetizationLevel,
-} from '../../utils/creatorProgression';
+import { MONETIZATION_REWARD_LINES, MONETIZATION_THRESHOLDS } from '../../utils/creatorProgression';
 import './CreatorDashboardPanel.css';
 
 const nf = new Intl.NumberFormat('pt-BR');
 
 function barPct(cur, target) {
-  const t = Math.max(1, Number(target) || 1);
-  return Math.min(100, Math.round((Math.max(0, Number(cur) || 0) / t) * 100));
+  const total = Math.max(1, Number(target) || 1);
+  return Math.min(100, Math.round((Math.max(0, Number(cur) || 0) / total) * 100));
 }
 
-export default function CreatorMonetizationPanel({ followers, views, likes }) {
-  const metrics = useMemo(() => ({ followers, views, likes }), [followers, views, likes]);
-  const platformLevel = useMemo(() => computeCreatorLevel(metrics), [metrics]);
-  const meta = CREATOR_LEVEL_META[platformLevel] || CREATOR_LEVEL_META[0];
-  const monetizationReady = useMemo(() => meetsMonetizationLevel(metrics), [metrics]);
-  const nextLevel = useMemo(() => getProgressTowardsNextLevel(metrics), [metrics]);
-  const nextMeta =
-    nextLevel.nextLevel != null ? CREATOR_LEVEL_META[nextLevel.nextLevel] : null;
-  const nextLevelPct = useMemo(() => getNextLevelProgressPercent(metrics), [metrics]);
-  const nudgeNextLevel = useMemo(() => getPrimaryNextLevelGapPhrase(metrics), [metrics]);
+export default function CreatorMonetizationPanel({ progressVm }) {
+  const vm = progressVm;
 
-  const motivacional = useMemo(() => {
-    if (nextLevel.nextLevel == null) {
-      return monetizationReady
-        ? 'Metas de nível máximo. Mantenha ritmo e monetização ativa no perfil para repasses.'
-        : nudgeNextLevel;
+  if (!vm) return null;
+
+  const motivationalLine = useMemo(() => {
+    if (vm.nextLevel == null) {
+      return vm.monetizationThresholdReached
+        ? 'Metas de nivel maximo. Mantenha ritmo e monetizacao ativa no perfil para repasses.'
+        : vm.primaryNextLevelGapPhrase;
     }
-    return nudgeNextLevel || 'Publique com constância e compartilhe seu perfil para subir de nível na plataforma.';
-  }, [nextLevel.nextLevel, monetizationReady, nudgeNextLevel]);
+    return vm.primaryNextLevelGapPhrase || 'Publique com constancia e compartilhe seu perfil para subir de nivel na plataforma.';
+  }, [vm.monetizationThresholdReached, vm.nextLevel, vm.primaryNextLevelGapPhrase]);
 
   return (
     <div className="creator-dash">
       <header className="creator-dash__intro">
-        <h2 className="creator-dash__intro-title">Monetização na plataforma</h2>
+        <h2 className="creator-dash__intro-title">Monetizacao na plataforma</h2>
         <p className="creator-dash__intro-sub">
-          Crescimento real (seguidores, views e likes) e caminho para liberar recursos financeiros — separado de missões e
-          XP.
+          Crescimento real (seguidores, views e likes) e caminho para liberar recursos financeiros - separado de missoes e XP.
         </p>
       </header>
 
@@ -64,45 +48,45 @@ export default function CreatorMonetizationPanel({ followers, views, likes }) {
           </h3>
           <p className="creator-dash__mono-tier">
             <span className="creator-dash__level-emoji" aria-hidden="true">
-              {meta.emoji}
+              {vm.meta.emoji}
             </span>
-            Nível atual: <strong>{meta.title}</strong>
-            {nextMeta ? (
+            Nivel atual: <strong>{vm.meta.title}</strong>
+            {vm.nextLevelMeta ? (
               <>
                 {' '}
-                · Próximo nível: <strong>{nextMeta.title}</strong>
+                · Proximo nivel: <strong>{vm.nextLevelMeta.title}</strong>
               </>
             ) : (
               <>
                 {' '}
-                · <strong>Nível máximo</strong> nas metas
+                · <strong>Nivel maximo</strong> nas metas
               </>
             )}
           </p>
 
-          {nextLevel.nextLevel != null ? (
+          {vm.nextLevel != null ? (
             <>
               <div className="creator-dash__next-level-bar-block">
                 <div
                   className="creator-dash__metric-bar creator-dash__metric-bar--hero"
                   role="progressbar"
-                  aria-valuenow={nextLevelPct}
+                  aria-valuenow={vm.nextLevelProgressPercent}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-label={`Progresso médio rumo a ${nextMeta?.title || 'próximo nível'}`}
+                  aria-label={`Progresso medio rumo a ${vm.nextLevelMeta?.title || 'proximo nivel'}`}
                 >
                   <div
                     className="creator-dash__metric-fill creator-dash__metric-fill--yellow"
-                    style={{ width: `${nextLevelPct}%` }}
+                    style={{ width: `${vm.nextLevelProgressPercent}%` }}
                   />
                 </div>
                 <p className="creator-dash__next-level-bar-caption">
-                  <strong>{nextLevelPct}%</strong> para {nextMeta ? nextMeta.title : 'o próximo nível'}
+                  <strong>{vm.nextLevelProgressPercent}%</strong> para {vm.nextLevelMeta ? vm.nextLevelMeta.title : 'o proximo nivel'}
                 </p>
               </div>
               <div className="creator-dash__metric-grid creator-dash__metric-grid--mono">
-                {nextLevel.rows.map((row) => {
-                  const p = barPct(row.current, row.target);
+                {vm.nextLevelRows.map((row) => {
+                  const pct = barPct(row.current, row.target);
                   return (
                     <article key={row.key} className="creator-dash__metric-card">
                       <p className="creator-dash__metric-line">
@@ -115,10 +99,10 @@ export default function CreatorMonetizationPanel({ followers, views, likes }) {
                         <div className="creator-dash__metric-bar" aria-hidden="true">
                           <div
                             className="creator-dash__metric-fill creator-dash__metric-fill--yellow"
-                            style={{ width: `${p}%` }}
+                            style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <span className="creator-dash__metric-pct creator-dash__metric-pct--yellow">{p}%</span>
+                        <span className="creator-dash__metric-pct creator-dash__metric-pct--yellow">{pct}%</span>
                       </div>
                     </article>
                   );
@@ -127,26 +111,25 @@ export default function CreatorMonetizationPanel({ followers, views, likes }) {
             </>
           ) : (
             <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-              Você atingiu o nível máximo de metas (Destaque). Continue publicando para manter alcance.
+              Voce atingiu o nivel maximo de metas (Destaque). Continue publicando para manter alcance.
             </p>
           )}
 
           <p className="creator-dash__motivate" role="status">
-            {motivacional}
+            {motivationalLine}
           </p>
 
-          <div className="creator-dash__mono-longterm" aria-label="Metas de monetização">
-            <h4 className="creator-dash__subhead">Desbloqueio de monetização (Nível 2)</h4>
+          <div className="creator-dash__mono-longterm" aria-label="Metas de monetizacao">
+            <h4 className="creator-dash__subhead">Desbloqueio de monetizacao (Nivel 2)</h4>
             <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-              Alvo para <strong>POD com repasse</strong> e vitrine com repasse — além de{' '}
-              <strong>monetização aprovada</strong> no perfil.
+              Alvo para <strong>POD com repasse</strong> e vitrine com repasse - alem de <strong>monetizacao aprovada</strong> no perfil.
             </p>
             <ul className="creator-dash__mono-longterm-metrics">
               <li>Seguidores: {nf.format(MONETIZATION_THRESHOLDS.followers)}</li>
               <li>Views: {nf.format(MONETIZATION_THRESHOLDS.views)}</li>
               <li>Likes: {nf.format(MONETIZATION_THRESHOLDS.likes)}</li>
             </ul>
-            {!monetizationReady ? (
+            {!vm.monetizationThresholdReached ? (
               <>
                 <p className="creator-dash__unlock-sub creator-dash__unlock-sub--inline">Ao bater essas metas:</p>
                 <ul className="creator-dash__unlock-list creator-dash__unlock-list--compact">
@@ -157,16 +140,16 @@ export default function CreatorMonetizationPanel({ followers, views, likes }) {
               </>
             ) : (
               <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-                Nas métricas, você já está no patamar de monetização — siga com a conta e as aprovações no perfil.
+                Nas metricas, voce ja esta no patamar de monetizacao - siga com a conta e as aprovacoes no perfil.
               </p>
             )}
           </div>
         </section>
 
         <section className="creator-dash__panel creator-dash__panel--drive" aria-label="Continue publicando">
-          <p className="creator-dash__drive-title">Ritmo sustentável</p>
+          <p className="creator-dash__drive-title">Ritmo sustentavel</p>
           <p className="creator-dash__drive-text">
-            Cada capítulo te aproxima do próximo nível na plataforma. Consistência {'>'} velocidade.
+            Cada capitulo te aproxima do proximo nivel na plataforma. Consistencia {'>'} velocidade.
           </p>
         </section>
 
@@ -175,11 +158,10 @@ export default function CreatorMonetizationPanel({ followers, views, likes }) {
             Ver analytics
           </Link>
           <Link className="creator-dash__cta creator-dash__cta--ghost" to="/creator/missoes">
-            Ir para Missões &amp; XP
+            Ir para Missoes &amp; XP
           </Link>
           <p className="creator-dash__legal">
-            Missões, XP e boost são só engajamento — não liberam dinheiro. POD com repasse: Nível 2 nas métricas +
-            monetização aprovada no perfil.
+            Missoes, XP e boost nao liberam repasse. POD com repasse: Nivel 2 nas metricas + monetizacao aprovada no perfil.
           </p>
         </footer>
       </div>

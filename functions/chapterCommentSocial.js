@@ -1,5 +1,5 @@
-/**
- * Notificações de resposta a comentário e marcos de curtidas (estilo Facebook: 1, 5, 10, 20, 40, 60, 120).
+﻿/**
+ * NotificaÃ§Ãµes de resposta a comentÃ¡rio e marcos de curtidas (estilo Facebook: 1, 5, 10, 20, 40, 60, 120).
  */
 import { getDatabase } from 'firebase-admin/database';
 import { onValueWritten } from 'firebase-functions/v2/database';
@@ -13,10 +13,10 @@ function likerKeys(obj) {
   return Object.keys(obj).filter(Boolean);
 }
 
-function normalizeHandleFromPublic(p) {
+function normalizeHandleFromProfile(p) {
   const row = p && typeof p === 'object' ? p : {};
   const raw = String(
-    row.userHandle || row.creatorProfile?.username || row.creatorUsername || row.username || ''
+    row.userHandle || row.creator?.profile?.username || row.creatorUsername || row.username || ''
   )
     .trim()
     .replace(/^@+/, '')
@@ -32,7 +32,7 @@ function normalizeHandleFromPublic(p) {
 function firstNonPlaceholderName(p) {
   const row = p && typeof p === 'object' ? p : {};
   const cands = [
-    row.creatorProfile?.displayName,
+    row.creator?.profile?.displayName,
     row.creatorDisplayName,
     typeof row.displayName === 'string' ? row.displayName : null,
     row.userName,
@@ -44,11 +44,11 @@ function firstNonPlaceholderName(p) {
   return '';
 }
 
-/** Rótulo tipo «Nome (@handle)» para notificações (espelha a política do cliente). */
+/** RÃ³tulo tipo Â«Nome (@handle)Â» para notificaÃ§Ãµes (espelha a polÃ­tica do cliente). */
 async function actorLabelFromUid(db, uid) {
-  const snap = await db.ref(`usuarios_publicos/${uid}`).get();
+  const snap = await db.ref(`usuarios/${uid}`).get();
   const p = snap.exists() ? snap.val() || {} : {};
-  const handle = normalizeHandleFromPublic(p);
+  const handle = normalizeHandleFromProfile(p);
   const name = firstNonPlaceholderName(p);
   if (handle) {
     if (name && name.toLowerCase() !== handle.toLowerCase()) return `${name} (@${handle})`;
@@ -82,7 +82,7 @@ function chapterCreatorUid(cap) {
   return String(c.creatorId || '').trim();
 }
 
-/** Uma vez por resposta do autor do capítulo — espelha missões de ciclo (evita duplicar com cliente). */
+/** Uma vez por resposta do autor do capÃ­tulo â€” espelha missÃµes de ciclo (evita duplicar com cliente). */
 async function bumpCreatorReplyEngagement(db, creatorUid) {
   const uid = String(creatorUid || '').trim();
   if (!uid) return;
@@ -97,7 +97,7 @@ async function bumpCreatorReplyEngagement(db, creatorUid) {
 }
 
 function likeMilestoneCopy(n, capTitulo) {
-  const em = capTitulo ? ` em «${capTitulo}»` : '';
+  const em = capTitulo ? ` em Â«${capTitulo}Â»` : '';
   if (n === 1) return `Seu comentario recebeu a primeira curtida${em}.`;
   return `Seu comentario atingiu ${n} curtidas${em}.`;
 }
@@ -169,7 +169,7 @@ export const onChapterCommentSocialWritten = onValueWritten(
 
       const actorLabel = await actorLabelFromUid(db, actorUid);
       const title = 'Resposta ao seu comentario';
-      const message = `${actorLabel} respondeu seu comentario${capTitulo ? ` em «${capTitulo}»` : ''}.`;
+      const message = `${actorLabel} respondeu seu comentario${capTitulo ? ` em Â«${capTitulo}Â»` : ''}.`;
 
       try {
         await maybePushCommentSocial(db, recipientUid, {
@@ -243,3 +243,4 @@ export const onChapterCommentSocialWritten = onValueWritten(
     }
   }
 );
+

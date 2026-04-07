@@ -216,7 +216,7 @@ export default function EquipeAdmin({ adminAccess }) {
           <div className="admin-team-panel-head">
             <div>
               <h2>Membros</h2>
-              <p>Fonte de verdade: <code>admins/registry</code> para admins e lista fixa para super admins.</p>
+              <p>Fonte de verdade: <code>admins/registry</code>; claims so espelham o acesso ja resolvido no backend.</p>
             </div>
           </div>
 

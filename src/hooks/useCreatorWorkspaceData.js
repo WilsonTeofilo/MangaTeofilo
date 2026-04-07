@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 
 import { db, functions } from '../services/firebase';
-import { useCreatorScopedCatalog } from './useCreatorScopedCatalog';
-import { computeCreatorLevel, metricsFromUsuarioRow } from '../utils/creatorProgression';
+import {
+  buildCreatorProgressViewModel,
+  metricsFromUsuarioRow,
+} from '../utils/creatorProgression';
 import { buildEngagementCycleViewModel } from '../utils/creatorEngagementCycle';
-import { toRecordList } from '../utils/firebaseRecordList';
 
 const commitCreatorEngagementCycleTick = httpsCallable(functions, 'commitCreatorEngagementCycleTick');
 
 /**
- * Dados compartilhados entre Monetização (crescimento), Missões & XP e métricas do criador.
+ * Shared creator workspace data. The server is authoritative for engagement
+ * cycle transitions; the client only renders the latest snapshot.
  */
 export function useCreatorWorkspaceData(user, perfil) {
-  const { obrasVal, capsVal, produtosVal } = useCreatorScopedCatalog(db, user?.uid);
   const [usuarioLive, setUsuarioLive] = useState(null);
   const [creatorStatsLive, setCreatorStatsLive] = useState(null);
   const lastVisitCommitRef = useRef('');
@@ -34,45 +35,27 @@ export function useCreatorWorkspaceData(user, perfil) {
   }, [user?.uid]);
 
   const dashMetrics = useMemo(() => {
-    const row = usuarioLive && typeof usuarioLive === 'object' ? usuarioLive : perfil;
+    const baseRow = usuarioLive && typeof usuarioLive === 'object' ? usuarioLive : perfil;
     return metricsFromUsuarioRow({
-      ...(row || {}),
-      creatorsStats: creatorStatsLive || null,
+      ...(baseRow || {}),
+      creatorsStats: creatorStatsLive || baseRow?.creatorsStats || null,
     });
   }, [usuarioLive, perfil, creatorStatsLive]);
 
-  const creatorLevelDash = useMemo(() => computeCreatorLevel(dashMetrics), [dashMetrics]);
-
-  const metrics = useMemo(() => {
-    const uid = String(user?.uid || '').trim();
-    const obras = toRecordList(obrasVal).filter((obra) => String(obra?.creatorId || '').trim() === uid);
-    const obraIds = new Set(obras.map((obra) => String(obra.id || '').trim().toLowerCase()));
-    const caps = toRecordList(capsVal).filter((cap) => {
-      if (String(cap?.creatorId || '').trim() === uid) return true;
-      const obraId = String(cap?.obraId || cap?.mangaId || '').trim().toLowerCase();
-      return obraIds.has(obraId);
-    });
-    const produtos = toRecordList(produtosVal).filter(
-      (produto) => String(produto?.creatorId || '').trim() === uid
-    );
-    return { obras, caps, produtos };
-  }, [user?.uid, obrasVal, capsVal, produtosVal]);
+  const creatorProgressVm = useMemo(
+    () => buildCreatorProgressViewModel(dashMetrics),
+    [dashMetrics]
+  );
 
   const cycleVm = useMemo(
-    () =>
-      buildEngagementCycleViewModel(
-        usuarioLive?.engagementCycle,
-        dashMetrics,
-        metrics.caps,
-        user?.uid
-      ),
-    [usuarioLive?.engagementCycle, dashMetrics, metrics.caps, user?.uid]
+    () => buildEngagementCycleViewModel(usuarioLive?.engagementCycle, dashMetrics),
+    [usuarioLive?.engagementCycle, dashMetrics]
   );
 
   useEffect(() => {
     if (!user?.uid) return undefined;
-    const d = new Date();
-    const visitKey = `${user.uid}:${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const date = new Date();
+    const visitKey = `${user.uid}:${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     if (lastVisitCommitRef.current === visitKey) return undefined;
     lastVisitCommitRef.current = visitKey;
     commitCreatorEngagementCycleTick().catch(() => {});
@@ -81,18 +64,16 @@ export function useCreatorWorkspaceData(user, perfil) {
 
   return {
     usuarioLive,
+    creatorStatsLive,
     dashMetrics,
-    creatorLevelDash,
-    metrics,
+    creatorProgressVm,
+    creatorLevelDash: creatorProgressVm.level,
     cycleVm,
-    obrasVal,
-    capsVal,
-    produtosVal,
   };
 }
 
 /**
- * Detecção de transição de nível da plataforma (monetização) para modal de celebração.
+ * Detects the first transition into level 2 so the UI can celebrate once.
  */
 export function useCreatorLevel2Celebration(user, creatorLevelDash) {
   const [celebrationOpen, setCelebrationOpen] = useState(false);
@@ -100,8 +81,8 @@ export function useCreatorLevel2Celebration(user, creatorLevelDash) {
 
   useEffect(() => {
     if (!user?.uid) return;
-    const k = `mtf_l2_celebration_done_${user.uid}`;
-    if (typeof localStorage !== 'undefined' && localStorage.getItem(k)) return;
+    const key = `mtf_l2_celebration_done_${user.uid}`;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem(key)) return;
     const prev = prevLevelRef.current;
     if (prev !== null && prev < 2 && creatorLevelDash >= 2) {
       queueMicrotask(() => setCelebrationOpen(true));

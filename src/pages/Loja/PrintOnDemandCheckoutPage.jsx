@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link, useSearchParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -8,11 +8,6 @@ import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import {
   SALE_MODEL,
   formatBRL,
-  computePersonalOrderTotalWithShipping,
-  REGIONAL_FREIGHT_DISCOUNT_CAP_BRL,
-  REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY,
-  REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL,
-  REGIONAL_FREIGHT_DISCOUNT_RATE,
 } from '../../utils/printOnDemandPricingV2';
 import {
   describePodLeadTimePt,
@@ -38,7 +33,7 @@ function formatAddressOneLine(name, logradouro, numero, bairro, city, state, zip
     z ? `CEP ${z}` : '',
     complement?.trim(),
   ].filter(Boolean);
-  return parts.join(' · ');
+  return parts.join(' Â· ');
 }
 
 export default function PrintOnDemandCheckoutPage({ user }) {
@@ -103,11 +98,6 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     [addrName, addrLogradouro, addrNumero, addrBairro, addrCity, addrState, addrZip, addrComp]
   );
 
-  const personalPricingPreview = useMemo(() => {
-    if (!draft || draft.saleModel !== SALE_MODEL.PERSONAL) return null;
-    return computePersonalOrderTotalWithShipping(draft.format, draft.quantity, addrState);
-  }, [draft, addrState]);
-
   const showToast = (msg) => {
     setToast(msg);
     window.setTimeout(() => setToast(''), 5000);
@@ -116,7 +106,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
   const handleLookupCep = async () => {
     const digits = addrZip.replace(/\D/g, '');
     if (digits.length !== 8) {
-      showToast('Digite o CEP com 8 dígitos.');
+      showToast('Digite o CEP com 8 dÃ­gitos.');
       return;
     }
     setCepLookupBusy(true);
@@ -140,11 +130,11 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     const uf = addrState.trim().toUpperCase();
     const zipDigits = addrZip.replace(/\D/g, '');
     if (zipDigits.length !== 8) {
-      showToast('CEP inválido: são obrigatórios 8 dígitos.');
+      showToast('CEP invÃ¡lido: sÃ£o obrigatÃ³rios 8 dÃ­gitos.');
       return false;
     }
     if (!cepValidated) {
-      showToast('Valide o CEP com «Buscar CEP» antes de salvar o endereço.');
+      showToast('Valide o CEP com Â«Buscar CEPÂ» antes de salvar o endereÃ§o.');
       return false;
     }
     if (
@@ -156,7 +146,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
       addrCity.trim().length < 2 ||
       !BRAZIL_UF_SET.has(uf)
     ) {
-      showToast('Preencha nome, logradouro, número, bairro, cidade e UF.');
+      showToast('Preencha nome, logradouro, nÃºmero, bairro, cidade e UF.');
       return false;
     }
     return true;
@@ -183,7 +173,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
   const handlePay = async () => {
     if (!draft || !user?.uid) return;
     if (needAddress && !addressConfirmed) {
-      showToast('Salve o endereço antes de pagar — toque em «Salvar endereço».');
+      showToast('Salve o endereÃ§o antes de pagar â€” toque em Â«Salvar endereÃ§oÂ».');
       return;
     }
     if (needAddress && !validateAddress()) return;
@@ -217,7 +207,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
       clearPodCartDraft();
       window.location.href = url;
     } catch (e) {
-      showToast(e?.message || 'Não foi possível iniciar o pagamento.');
+      showToast(e?.message || 'NÃ£o foi possÃ­vel iniciar o pagamento.');
       setBusy(false);
     }
   };
@@ -226,11 +216,11 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     return (
       <main className="pod-checkout-page">
         <Helmet>
-          <title>Finalizar pedido — mangá físico | MangaTeofilo</title>
+          <title>Finalizar pedido â€” mangÃ¡ fÃ­sico | MangaTeofilo</title>
         </Helmet>
         <section className="pod-checkout-card pod-checkout-card--empty">
           <h1>Finalizar pedido</h1>
-          <p>Entre na conta para escolher o pagamento com segurança no Mercado Pago.</p>
+          <p>Entre na conta para escolher o pagamento com seguranÃ§a no Mercado Pago.</p>
           <Link className="pod-checkout-btn pod-checkout-btn--primary" to={loginUrl}>
             Entrar
           </Link>
@@ -243,7 +233,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     return (
       <main className="pod-checkout-page">
         <Helmet>
-          <title>Finalizar pedido — mangá físico | MangaTeofilo</title>
+          <title>Finalizar pedido â€” mangÃ¡ fÃ­sico | MangaTeofilo</title>
         </Helmet>
         <section className="pod-checkout-card pod-checkout-card--empty">
           <h1>Nada para pagar</h1>
@@ -259,34 +249,34 @@ export default function PrintOnDemandCheckoutPage({ user }) {
   return (
     <main className="pod-checkout-page">
       <Helmet>
-        <title>Finalizar pedido — mangá físico | MangaTeofilo</title>
+        <title>Finalizar pedido â€” mangÃ¡ fÃ­sico | MangaTeofilo</title>
       </Helmet>
 
       {busy ? (
         <div className="pod-checkout-processing" role="status" aria-live="polite">
           <div className="pod-checkout-processing__card">
             <div className="pod-checkout-processing__spinner" aria-hidden="true" />
-            <p className="pod-checkout-processing__title">Processando pagamento…</p>
-            <p className="pod-checkout-processing__sub">Abrindo o Mercado Pago com segurança.</p>
+            <p className="pod-checkout-processing__title">Processando pagamentoâ€¦</p>
+            <p className="pod-checkout-processing__sub">Abrindo o Mercado Pago com seguranÃ§a.</p>
           </div>
         </div>
       ) : null}
 
       <Link className="pod-checkout-link-back" to="/loja/carrinho">
-        ← Voltar ao carrinho
+        â† Voltar ao carrinho
       </Link>
       <header className="pod-checkout-head">
         <h1>Finalizar pedido</h1>
         <p className="pod-checkout-head__sub">
-          Endereço (se for «Produzir para mim») → escolha Pix ou cartão no passo seguinte → só após aprovação o pedido entra na
-          fila. Produto sob demanda: após pagamento o endereço fica travado; sem devolução por arrependimento, salvo defeito
+          EndereÃ§o (se for Â«Produzir para mimÂ») â†’ escolha Pix ou cartÃ£o no passo seguinte â†’ sÃ³ apÃ³s aprovaÃ§Ã£o o pedido entra na
+          fila. Produto sob demanda: apÃ³s pagamento o endereÃ§o fica travado; sem devoluÃ§Ã£o por arrependimento, salvo defeito
           analisado pelo suporte.
         </p>
       </header>
 
       {mpErro ? (
         <p className="pod-checkout-banner pod-checkout-banner--warn" role="status">
-          O pagamento não foi concluído. Tente de novo abaixo ou abra o pedido em «Mangá físico» em Pedidos.
+          O pagamento nÃ£o foi concluÃ­do. Tente de novo abaixo ou abra o pedido em Â«MangÃ¡ fÃ­sicoÂ» em Pedidos.
         </p>
       ) : null}
       {toast ? (
@@ -301,13 +291,13 @@ export default function PrintOnDemandCheckoutPage({ user }) {
             <section className="pod-checkout-card">
               <h2 className="pod-checkout-section-title">
                 <span className="pod-checkout-section-ico" aria-hidden="true">
-                  📍
+                  ðŸ“
                 </span>
-                Endereço de entrega
+                EndereÃ§o de entrega
               </h2>
               {addressConfirmed ? (
                 <div className="pod-checkout-address-review">
-                  <p className="pod-checkout-address-review__label">Endereço selecionado</p>
+                  <p className="pod-checkout-address-review__label">EndereÃ§o selecionado</p>
                   <p className="pod-checkout-address-review__line">{addressDisplayLine}</p>
                   <div className="pod-checkout-address-review__actions">
                     <button type="button" className="pod-checkout-btn pod-checkout-btn--ghost" onClick={() => setAddressConfirmed(false)}>
@@ -321,7 +311,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
               ) : (
                 <>
                   <p className="pod-checkout-hint">
-                    CEP com 8 dígitos. É obrigatório usar «Buscar CEP» (ViaCEP) antes de salvar — ajuste só número e
+                    CEP com 8 dÃ­gitos. Ã‰ obrigatÃ³rio usar Â«Buscar CEPÂ» (ViaCEP) antes de salvar â€” ajuste sÃ³ nÃºmero e
                     complemento se precisar.
                   </p>
                   <label className="pod-checkout-field">
@@ -335,7 +325,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                   </label>
                   <div className="pod-checkout-cep-row">
                     <label className="pod-checkout-field pod-checkout-field--grow">
-                      <span>CEP (8 números)</span>
+                      <span>CEP (8 nÃºmeros)</span>
                       <input
                         value={addrZip}
                         onChange={(e) => {
@@ -354,12 +344,12 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                       disabled={cepLookupBusy}
                       onClick={handleLookupCep}
                     >
-                      {cepLookupBusy ? '…' : 'Buscar CEP'}
+                      {cepLookupBusy ? 'â€¦' : 'Buscar CEP'}
                     </button>
                   </div>
                   {cepValidated ? (
                     <p className="pod-checkout-hint pod-checkout-hint--compact" role="status">
-                      CEP validado ✓
+                      CEP validado âœ“
                     </p>
                   ) : null}
                   <label className="pod-checkout-field">
@@ -372,7 +362,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                     />
                   </label>
                   <label className="pod-checkout-field">
-                    <span>Número</span>
+                    <span>NÃºmero</span>
                     <input
                       value={addrNumero}
                       onChange={(e) => setAddrNumero(e.target.value)}
@@ -401,7 +391,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                         <option value="">UF</option>
                         {BRAZILIAN_STATES.map(({ uf, name }) => (
                           <option key={uf} value={uf}>
-                            {uf} — {name}
+                            {uf} â€” {name}
                           </option>
                         ))}
                       </select>
@@ -412,7 +402,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                     <input value={addrComp} onChange={(e) => setAddrComp(e.target.value)} className="pod-checkout-input" />
                   </label>
                   <button type="button" className="pod-checkout-btn pod-checkout-btn--primary" onClick={handleConfirmAddress}>
-                    Salvar endereço
+                    Salvar endereÃ§o
                   </button>
                 </>
               )}
@@ -421,13 +411,13 @@ export default function PrintOnDemandCheckoutPage({ user }) {
             <section className="pod-checkout-card">
               <h2 className="pod-checkout-section-title">
                 <span className="pod-checkout-section-ico" aria-hidden="true">
-                  📍
+                  ðŸ“
                 </span>
                 Envio
               </h2>
               <p className="pod-checkout-hint">
-                Este tipo de venda não exige endereço seu na plataforma. O envio ao leitor final segue o fluxo da loja após a
-                produção.
+                Este tipo de venda nÃ£o exige endereÃ§o seu na plataforma. O envio ao leitor final segue o fluxo da loja apÃ³s a
+                produÃ§Ã£o.
               </p>
             </section>
           )}
@@ -435,11 +425,11 @@ export default function PrintOnDemandCheckoutPage({ user }) {
           <section className="pod-checkout-card">
             <h2 className="pod-checkout-section-title">
               <span className="pod-checkout-section-ico" aria-hidden="true">
-                💳
+                ðŸ’³
               </span>
               Pagamento
             </h2>
-            <p className="pod-checkout-hint">Escolha como prefere pagar — no Mercado Pago você confirma com o meio selecionado.</p>
+            <p className="pod-checkout-hint">Escolha como prefere pagar â€” no Mercado Pago vocÃª confirma com o meio selecionado.</p>
             <div className="pod-pay-choice" role="radiogroup" aria-label="Forma de pagamento">
               <label className={`pod-pay-choice__opt ${payChoice === 'pix' ? 'is-on' : ''}`}>
                 <input
@@ -457,11 +447,11 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                   checked={payChoice === 'card'}
                   onChange={() => setPayChoice('card')}
                 />
-                <span>Cartão</span>
+                <span>CartÃ£o</span>
               </label>
             </div>
             <p className="pod-checkout-hint pod-checkout-hint--compact">
-              Outros meios podem aparecer na página do Mercado Pago conforme sua conta.
+              Outros meios podem aparecer na pÃ¡gina do Mercado Pago conforme sua conta.
             </p>
           </section>
         </div>
@@ -470,66 +460,32 @@ export default function PrintOnDemandCheckoutPage({ user }) {
           <div className="pod-checkout-card pod-checkout-card--sticky">
             <h2 className="pod-checkout-summary__title">
               <span className="pod-checkout-section-ico" aria-hidden="true">
-                📦
+                ðŸ“¦
               </span>
               Resumo do pedido
             </h2>
             <p className="pod-cart-line__meta" style={{ marginTop: 0 }}>
-              <strong>{formatPodBookFormatPt(draft.format)}</strong> · {draft.quantity} un.
+              <strong>{formatPodBookFormatPt(draft.format)}</strong> Â· {draft.quantity} un.
             </p>
             <p className="pod-cart-line__meta">{formatPodSaleModelPt(draft.saleModel)}</p>
             {draft.obraTitle ? <p className="pod-cart-line__meta">Obra: {draft.obraTitle}</p> : null}
             <dl className="pod-checkout-summary__dl">
-              {needAddress && personalPricingPreview && addrState.trim().length === 2 ? (
+              {needAddress ? (
                 <>
                   <div className="pod-checkout-summary__row">
-                    <dt>Subtotal (lote)</dt>
-                    <dd>{formatBRL(personalPricingPreview.goodsTotalBRL ?? 0)}</dd>
+                    <dt>Endereco</dt>
+                    <dd>{addressConfirmed ? 'Confirmado' : 'Pendente'}</dd>
                   </div>
-                  {personalPricingPreview.freeShipping ? (
-                    <div className="pod-checkout-summary__row">
-                      <dt>Frete</dt>
-                      <dd>Grátis (quantidade)</dd>
-                    </div>
-                  ) : personalPricingPreview.regionalFreightDiscountApplied ? (
-                    <>
-                      <div className="pod-checkout-summary__row">
-                        <dt>Frete ({addrState})</dt>
-                        <dd>{formatBRL(personalPricingPreview.shippingOriginalBRL ?? 0)}</dd>
-                      </div>
-                      <div className="pod-checkout-summary__row">
-                        <dt>Desconto no frete</dt>
-                        <dd>-{formatBRL(personalPricingPreview.shippingDiscountBRL ?? 0)}</dd>
-                      </div>
-                      <div className="pod-checkout-summary__row">
-                        <dt>Total frete</dt>
-                        <dd>{formatBRL(personalPricingPreview.shippingBRL ?? 0)}</dd>
-                      </div>
-                      <p className="pod-checkout-hint pod-checkout-hint--compact" style={{ marginTop: 8 }}>
-                        Sudeste, Sul e Centro-Oeste: com subtotal {formatBRL(REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL)}+ ou{' '}
-                        {REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY}+ un., até {Math.round(REGIONAL_FREIGHT_DISCOUNT_RATE * 100)}% de
-                        desconto no frete (máx. {formatBRL(REGIONAL_FREIGHT_DISCOUNT_CAP_BRL)}).
-                      </p>
-                    </>
-                  ) : personalPricingPreview.shippingBRL != null ? (
-                    <div className="pod-checkout-summary__row">
-                      <dt>Frete ({addrState})</dt>
-                      <dd>{formatBRL(personalPricingPreview.shippingBRL)}</dd>
-                    </div>
-                  ) : (
-                    <div className="pod-checkout-summary__row">
-                      <dt>Frete</dt>
-                      <dd>Informe a UF</dd>
-                    </div>
-                  )}
+                  <div className="pod-checkout-summary__row">
+                    <dt>Frete</dt>
+                    <dd>Calculado no backend ao abrir o Mercado Pago</dd>
+                  </div>
                 </>
               ) : null}
               <div className="pod-checkout-summary__total">
                 <dt>Total</dt>
                 <dd>
-                  {needAddress && personalPricingPreview && personalPricingPreview.amountDueBRL != null && addrState.length === 2
-                    ? formatBRL(personalPricingPreview.amountDueBRL)
-                    : formatBRL(draft.amountDueBRL ?? 0)}
+                  {formatBRL(draft.amountDueBRL ?? 0)}
                 </dd>
               </div>
             </dl>
@@ -540,7 +496,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
               disabled={busy}
               onClick={handlePay}
             >
-              {busy ? 'Abrindo…' : 'Confirmar e pagar'}
+              {busy ? 'Abrindoâ€¦' : 'Confirmar e pagar'}
             </button>
           </div>
         </aside>
@@ -548,3 +504,5 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     </main>
   );
 }
+
+

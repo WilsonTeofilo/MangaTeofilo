@@ -28,6 +28,133 @@ function resolveStoreInternalPdfPath(product) {
   return extractStoragePathFromDownloadUrl(product?.internalFiles?.mioloPdfUrl);
 }
 
+function canManageStoreOrdersGlobally(ctx) {
+  return (
+    ctx?.super === true ||
+    ctx?.permissions?.canAccessLojaAdmin === true ||
+    ctx?.permissions?.canAccessPedidos === true
+  );
+}
+
+async function listVisibleStoreOrdersRuntime(request, { creatorOnly = false } = {}) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const ctx = await getAdminAuthContext(request.auth);
+  const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
+  if (!ctx && !isCreator) {
+    throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
+  }
+  if (creatorOnly && !isCreator) {
+    throw new HttpsError('permission-denied', 'Apenas creators podem usar este endpoint.');
+  }
+
+  const snap = await getDatabase().ref('loja/pedidos').get();
+  const orders = snap.val() || {};
+  const list = Object.entries(orders)
+    .map(([id, row]) => ({ id, ...(row || {}) }))
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+  if (isCreator) {
+    const visible = list
+      .filter((order) => orderItemsForCreator(order, request.auth.uid).length > 0)
+      .map((order) => sanitizeStoreOrderForViewer(order.id, order, request.auth.uid));
+    return { ok: true, orders: visible, scopedToCreator: true };
+  }
+
+  if (!canManageStoreOrdersGlobally(ctx)) {
+    throw new HttpsError('permission-denied', 'Sem permissao para pedidos da loja.');
+  }
+  return { ok: true, orders: list, scopedToCreator: false };
+}
+
+async function updateVisibleStoreOrderRuntime(request, { creatorOnly = false } = {}) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  const ctx = await getAdminAuthContext(request.auth);
+  const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
+  if (!ctx && !isCreator) {
+    throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
+  }
+  if (creatorOnly && !isCreator) {
+    throw new HttpsError('permission-denied', 'Apenas creators podem usar este endpoint.');
+  }
+
+  const body = request.data && typeof request.data === 'object' ? request.data : {};
+  const orderId = String(body.orderId || '').trim();
+  if (!orderId) {
+    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
+  }
+  const statusRaw = body.status == null ? '' : String(body.status).trim();
+  const trackingCode = body.trackingCode == null ? null : String(body.trackingCode || '').trim();
+  const productionChecklist =
+    body.productionChecklist && typeof body.productionChecklist === 'object'
+      ? body.productionChecklist
+      : null;
+  if (!statusRaw && trackingCode == null && !productionChecklist) {
+    throw new HttpsError('invalid-argument', 'Envie status, trackingCode ou productionChecklist.');
+  }
+
+  const orderRef = getDatabase().ref(`loja/pedidos/${orderId}`);
+  const snap = await orderRef.get();
+  if (!snap.exists()) {
+    throw new HttpsError('not-found', 'Pedido nao encontrado.');
+  }
+  const order = snap.val() || {};
+  const patch = { updatedAt: Date.now() };
+
+  if (isCreator) {
+    const ownItems = orderItemsForCreator(order, request.auth.uid);
+    const hasForeignItems = (Array.isArray(order?.items) ? order.items : []).length > ownItems.length;
+    if (!ownItems.length) {
+      throw new HttpsError('permission-denied', 'Pedido fora do seu escopo.');
+    }
+    if (hasForeignItems) {
+      throw new HttpsError('failed-precondition', 'Pedido misto deve ser atualizado pelo admin.');
+    }
+  } else if (!canManageStoreOrdersGlobally(ctx)) {
+    throw new HttpsError('permission-denied', 'Sem permissao para atualizar pedido.');
+  }
+
+  if (statusRaw) {
+    const normalizedStatus = normalizeStoreOrderStatusInput(statusRaw, '');
+    if (!normalizedStatus || !STORE_ORDER_STATUS_CANON.has(normalizedStatus)) {
+      throw new HttpsError('invalid-argument', 'Status invalido.');
+    }
+    patch.status = normalizedStatus;
+    if (normalizedStatus === 'delivered') {
+      patch.payoutStatus = 'released';
+      patch.payoutReleasedAt = Date.now();
+    } else if (
+      normalizedStatus === 'paid' ||
+      normalizedStatus === 'in_production' ||
+      normalizedStatus === 'shipped'
+    ) {
+      patch.payoutStatus = 'held';
+    }
+  }
+  if (trackingCode != null) {
+    if (trackingCode.length > 80) {
+      throw new HttpsError('invalid-argument', 'trackingCode muito longo.');
+    }
+    patch.trackingCode = trackingCode;
+  }
+  if (productionChecklist) {
+    patch.productionChecklist = {
+      printing: productionChecklist.printing === true,
+      organizing: productionChecklist.organizing === true,
+      gluing: productionChecklist.gluing === true,
+      pressing: productionChecklist.pressing === true,
+      cutting: productionChecklist.cutting === true,
+      finishing: productionChecklist.finishing === true,
+    };
+  }
+
+  await orderRef.update(patch);
+  return { ok: true };
+}
+
 export const quoteStoreShipping = onCall(
   {
     region: 'us-central1',
@@ -64,38 +191,13 @@ export const quoteStoreShipping = onCall(
   }
 );
 
-export const adminListVisibleStoreOrders = onCall({ region: 'us-central1' }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Faca login.');
-  }
-  const ctx = await getAdminAuthContext(request.auth);
-  const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
-  if (!ctx && !isCreator) {
-    throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
-  }
-  const canUseGlobal =
-    ctx?.super === true ||
-    ctx?.legacy === true ||
-    ctx?.permissions?.canAccessLojaAdmin === true ||
-    ctx?.permissions?.canAccessPedidos === true;
-  const snap = await getDatabase().ref('loja/pedidos').get();
-  const orders = snap.val() || {};
-  const list = Object.entries(orders)
-    .map(([id, row]) => ({ id, ...(row || {}) }))
-    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+export const adminListVisibleStoreOrders = onCall({ region: 'us-central1' }, async (request) =>
+  listVisibleStoreOrdersRuntime(request)
+);
 
-  if (isCreator) {
-    const visible = list
-      .filter((order) => orderItemsForCreator(order, request.auth.uid).length > 0)
-      .map((order) => sanitizeStoreOrderForViewer(order.id, order, request.auth.uid));
-    return { ok: true, orders: visible, scopedToCreator: true };
-  }
-
-  if (!canUseGlobal) {
-    throw new HttpsError('permission-denied', 'Sem permissao para pedidos da loja.');
-  }
-  return { ok: true, orders: list, scopedToCreator: false };
-});
+export const creatorListOwnStoreOrders = onCall({ region: 'us-central1' }, async (request) =>
+  listVisibleStoreOrdersRuntime(request, { creatorOnly: true })
+);
 
 export const listMyStoreOrders = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth?.uid) {
@@ -172,10 +274,7 @@ export const getStoreProductFileAccessUrl = onCall({ region: 'us-central1' }, as
   const ctx = await getAdminAuthContext(request.auth);
   const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
   const isAdmin =
-    ctx?.super === true ||
-    ctx?.legacy === true ||
-    ctx?.permissions?.canAccessLojaAdmin === true ||
-    ctx?.permissions?.canAccessPedidos === true;
+    canManageStoreOrdersGlobally(ctx);
 
   let allowed = false;
   if (isAdmin) {
@@ -210,91 +309,10 @@ export const getStoreProductFileAccessUrl = onCall({ region: 'us-central1' }, as
   return { ok: true, url };
 });
 
-export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Faca login.');
-  }
-  const ctx = await getAdminAuthContext(request.auth);
-  const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
-  if (!ctx && !isCreator) {
-    throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
-  }
-  const body = request.data && typeof request.data === 'object' ? request.data : {};
-  const orderId = String(body.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
-  const statusRaw = body.status == null ? '' : String(body.status).trim();
-  const trackingCode = body.trackingCode == null ? null : String(body.trackingCode || '').trim();
-  const productionChecklist =
-    body.productionChecklist && typeof body.productionChecklist === 'object'
-      ? body.productionChecklist
-      : null;
-  if (!statusRaw && trackingCode == null && !productionChecklist) {
-    throw new HttpsError('invalid-argument', 'Envie status, trackingCode ou productionChecklist.');
-  }
+export const adminUpdateVisibleStoreOrder = onCall({ region: 'us-central1' }, async (request) =>
+  updateVisibleStoreOrderRuntime(request)
+);
 
-  const orderRef = getDatabase().ref(`loja/pedidos/${orderId}`);
-  const snap = await orderRef.get();
-  if (!snap.exists()) {
-    throw new HttpsError('not-found', 'Pedido nao encontrado.');
-  }
-  const order = snap.val() || {};
-  const patch = { updatedAt: Date.now() };
-
-  const canUseGlobal =
-    ctx?.super === true ||
-    ctx?.legacy === true ||
-    ctx?.permissions?.canAccessLojaAdmin === true ||
-    ctx?.permissions?.canAccessPedidos === true;
-
-  if (isCreator) {
-    const ownItems = orderItemsForCreator(order, request.auth.uid);
-    const hasForeignItems = (Array.isArray(order?.items) ? order.items : []).length > ownItems.length;
-    if (!ownItems.length) {
-      throw new HttpsError('permission-denied', 'Pedido fora do seu escopo.');
-    }
-    if (hasForeignItems) {
-      throw new HttpsError('failed-precondition', 'Pedido misto deve ser atualizado pelo admin.');
-    }
-  } else if (!canUseGlobal) {
-    throw new HttpsError('permission-denied', 'Sem permissao para atualizar pedido.');
-  }
-
-  if (statusRaw) {
-    const normalizedStatus = normalizeStoreOrderStatusInput(statusRaw, '');
-    if (!normalizedStatus || !STORE_ORDER_STATUS_CANON.has(normalizedStatus)) {
-      throw new HttpsError('invalid-argument', 'Status invalido.');
-    }
-    patch.status = normalizedStatus;
-    if (normalizedStatus === 'delivered') {
-      patch.payoutStatus = 'released';
-      patch.payoutReleasedAt = Date.now();
-    } else if (
-      normalizedStatus === 'paid' ||
-      normalizedStatus === 'in_production' ||
-      normalizedStatus === 'shipped'
-    ) {
-      patch.payoutStatus = 'held';
-    }
-  }
-  if (trackingCode != null) {
-    if (trackingCode.length > 80) {
-      throw new HttpsError('invalid-argument', 'trackingCode muito longo.');
-    }
-    patch.trackingCode = trackingCode;
-  }
-  if (productionChecklist) {
-    patch.productionChecklist = {
-      printing: productionChecklist.printing === true,
-      organizing: productionChecklist.organizing === true,
-      gluing: productionChecklist.gluing === true,
-      pressing: productionChecklist.pressing === true,
-      cutting: productionChecklist.cutting === true,
-      finishing: productionChecklist.finishing === true,
-    };
-  }
-
-  await orderRef.update(patch);
-  return { ok: true };
-});
+export const creatorUpdateOwnStoreOrder = onCall({ region: 'us-central1' }, async (request) =>
+  updateVisibleStoreOrderRuntime(request, { creatorOnly: true })
+);

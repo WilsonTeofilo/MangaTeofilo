@@ -3,7 +3,6 @@ import { onValue, ref } from 'firebase/database';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
-import { isAdminUser } from '../../constants';
 import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../../store/cartStore';
 import {
@@ -49,7 +48,7 @@ function CartIcon() {
   );
 }
 
-export default function LojaCatalogo({ user, perfil }) {
+export default function LojaCatalogo({ user, perfil, adminAccess }) {
   const navigate = useNavigate();
   const [config, setConfig] = useState(STORE_DEFAULT_CONFIG);
   const [products, setProducts] = useState([]);
@@ -59,7 +58,7 @@ export default function LojaCatalogo({ user, perfil }) {
   const [checkoutErr, setCheckoutErr] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const isAdmin = isAdminUser(user);
+  const isAdmin = adminAccess?.canAccessAdmin === true && adminAccess?.isMangaka !== true;
   const vip = descontoVipLojaAtivo(perfil, user);
   const buyerMissingFields = useMemo(
     () => getStoreBuyerProfileMissingFields(perfil?.buyerProfile),

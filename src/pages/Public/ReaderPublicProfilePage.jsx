@@ -4,6 +4,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
+import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
 import './ReaderPublicProfile.css';
 
 /**
@@ -21,9 +22,9 @@ export default function ReaderPublicProfilePage() {
     if (!uid) return () => {};
     setReady(false);
     const unsub = onValue(
-      ref(db, `usuarios_publicos/${uid}`),
+      ref(db, `usuarios/${uid}`),
       (snap) => {
-        setPub(snap.exists() ? snap.val() : null);
+        setPub(snap.exists() ? buildPublicProfileFromUsuarioRow(snap.val() || {}, uid) : null);
         setReady(true);
       },
       () => {

@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { onValue, ref as dbRef } from 'firebase/database';
+import { equalTo, onValue, orderByChild, query, ref as dbRef } from 'firebase/database';
 
 import { db, storage } from '../../services/firebase';
 import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../config/site';
@@ -22,11 +22,9 @@ import {
   getProductionDaysRange,
   computePlatformCreatorProfit,
 } from '../../utils/printOnDemandPricingV2';
-import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
 import {
-  computeCreatorLevel,
-  CREATOR_LEVEL_THRESHOLDS,
-  getGapsUntilMonetization,
+  buildCreatorProgressViewModel,
   metricsFromUsuarioRow,
 } from '../../utils/creatorProgression';
 import PodConfirmModal from '../../components/pod/PodConfirmModal';
@@ -47,18 +45,18 @@ const STEPS = [
 const FORMAT_CARDS = [
   {
     id: BOOK_FORMAT.TANKOBON,
-    title: 'Tankōbon',
+    title: 'TankÅbon',
     lines: ['180–220 páginas', 'Mais completo e profissional'],
   },
   {
     id: BOOK_FORMAT.MEIO_TANKO,
-    title: 'Meio-Tankō',
+    title: 'Meio-TankÅ',
     lines: ['80–100 páginas', 'Mais rápido e barato'],
   },
 ];
 
 function formatLabel(id) {
-  return id === BOOK_FORMAT.TANKOBON ? 'Tankōbon' : 'Meio-Tankō';
+  return id === BOOK_FORMAT.TANKOBON ? 'TankÅbon' : 'Meio-TankÅ';
 }
 
 function saleModelLabel(m) {
@@ -156,6 +154,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   const [modal, setModal] = useState(null);
   const [linkedWorkId, setLinkedWorkId] = useState('');
   const [followerCount, setFollowerCount] = useState(0);
+  const [creatorStatsLive, setCreatorStatsLive] = useState(null);
   /** Catálogo local: o App só envia obras quando detecta mangaká; aqui garantimos dados para o select. */
   const [rtObras, setRtObras] = useState(null);
   const [rtCaps, setRtCaps] = useState(null);
@@ -169,19 +168,31 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) {
+    if (!user?.uid || (obrasVal != null && capsVal != null)) {
       setRtObras(null);
       setRtCaps(null);
       return undefined;
     }
-    const oRef = dbRef(db, 'obras');
-    const cRef = dbRef(db, 'capitulos');
-    const uo = onValue(oRef, (snap) => setRtObras(snap.exists() ? snap.val() : {}));
-    const uc = onValue(cRef, (snap) => setRtCaps(snap.exists() ? snap.val() : {}));
+    const obrasQuery = query(dbRef(db, 'obras'), orderByChild('creatorId'), equalTo(user.uid));
+    const capsQuery = query(dbRef(db, 'capitulos'), orderByChild('creatorId'), equalTo(user.uid));
+    const uo = onValue(obrasQuery, (snap) => setRtObras(snap.exists() ? snap.val() : {}));
+    const uc = onValue(capsQuery, (snap) => setRtCaps(snap.exists() ? snap.val() : {}));
     return () => {
       uo();
       uc();
     };
+  }, [capsVal, obrasVal, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setCreatorStatsLive(null);
+      return undefined;
+    }
+    const statsRef = dbRef(db, `creators/${user.uid}/stats`);
+    const unsubscribe = onValue(statsRef, (snap) => {
+      setCreatorStatsLive(snap.exists() ? snap.val() : null);
+    });
+    return () => unsubscribe();
   }, [user?.uid]);
 
   const effectiveObras = obrasVal != null ? obrasVal : rtObras;
@@ -194,28 +205,29 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
     [adminAccess?.isMangaka, perfil?.role]
   );
   const creatorMonetizationActive = useMemo(
-    () =>
-      effectiveCreatorMonetizationStatus(
-        perfil?.creatorMonetizationPreference,
-        perfil?.creatorMonetizationStatus
-      ) === 'active',
-    [perfil?.creatorMonetizationPreference, perfil?.creatorMonetizationStatus]
+    () => resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active',
+    [perfil]
   );
 
-  const creatorProgressMetrics = useMemo(() => metricsFromUsuarioRow(perfil), [perfil]);
-
-  const monetizationGaps = useMemo(
-    () => getGapsUntilMonetization(creatorProgressMetrics),
+  const creatorProgressMetrics = useMemo(
+    () =>
+      metricsFromUsuarioRow({
+        ...(perfil || {}),
+        creatorsStats: creatorStatsLive || null,
+      }),
+    [perfil, creatorStatsLive]
+  );
+  const creatorProgressVm = useMemo(
+    () => buildCreatorProgressViewModel(creatorProgressMetrics),
     [creatorProgressMetrics]
   );
-
-  const creatorLevel = useMemo(() => computeCreatorLevel(creatorProgressMetrics), [creatorProgressMetrics]);
+  const monetizationGaps = creatorProgressVm.monetizationGapRows;
 
   const platformSaleNeedsMonetization =
     isMangakaUser && (perfil == null || !creatorMonetizationActive);
-  const platformSaleNeedsLevel = isMangakaUser && creatorMonetizationActive && creatorLevel < 2;
-
-  const platformSaleBlocked = platformSaleNeedsMonetization || platformSaleNeedsLevel;
+  const platformSaleLevelHintVisible =
+    isMangakaUser && creatorMonetizationActive && !creatorProgressVm.monetizationThresholdReached;
+  const platformSaleBlocked = platformSaleNeedsMonetization;
 
   const flowSteps = useMemo(() => {
     if (saleModel === SALE_MODEL.STORE_PROMO) {
@@ -238,7 +250,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
       );
   }, [effectiveObras, user?.uid]);
 
-  /** Pode concluir pedido «postar sem monetização» (login + criador com obra + sem monetização ativa). */
+  /** Pode concluir pedido Â«postar sem monetizaçãoÂ» (login + criador com obra + sem monetização ativa). */
   const storePromoOrderEligible =
     Boolean(user?.uid) && !creatorMonetizationActive && (isMangakaUser || myWorks.length > 0);
 
@@ -418,11 +430,6 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         scrollToStep('modelo');
         return false;
       }
-      if (platformSaleNeedsLevel) {
-        setModal('creatorLevel');
-        scrollToStep('modelo');
-        return false;
-      }
       if (!platformCalc) {
         showToast('Quantidade inválida para venda na plataforma.');
         scrollToStep('quantidade');
@@ -445,7 +452,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         return false;
       }
       if (creatorMonetizationActive) {
-        showToast('Com monetização ativa, use «Venda pela plataforma».');
+        showToast('Com monetização ativa, use Â«Venda pela plataformaÂ».');
         return false;
       }
       if (!isMangakaUser && myWorks.length === 0) {
@@ -487,7 +494,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           : saleModel === SALE_MODEL.STORE_PROMO
             ? storePromoCalc?.amountDueBRL
             : personalCalc?.amountDueBRL;
-      const labelLine = `${formatLabel(format)} · ${saleModelLabel(saleModel)} · ${quantity} un.`;
+      const labelLine = `${formatLabel(format)} Â· ${saleModelLabel(saleModel)} Â· ${quantity} un.`;
       setPodCartDraft({
         saleModel,
         format,
@@ -525,15 +532,11 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         setModal('monetization');
         return;
       }
-      if (platformSaleNeedsLevel) {
-        setModal('creatorLevel');
-        return;
-      }
     }
     if (m === SALE_MODEL.STORE_PROMO) {
       if (creatorMonetizationActive) {
         showToast(
-          'Com monetização ativa, use «Vender e ganhar» na loja para repasse. O modo vitrine é para quem ainda não monetiza.'
+          'Com monetização ativa, use Â«Vender e ganharÂ» na loja para repasse. O modo vitrine é para quem ainda não monetiza.'
         );
         return;
       }
@@ -606,20 +609,20 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         <title>Lance sua linha | MangaTeofilo</title>
         <meta
           name="description"
-          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
+          content="TankÅbon e meio-tankÅ físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
         />
         <meta property="og:type" content="website" />
         <meta property="og:title" content="Lance sua linha | MangaTeofilo" />
         <meta
           property="og:description"
-          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
+          content="TankÅbon e meio-tankÅ físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
         />
         <meta property="og:url" content={canonicalUrl} />
         <meta property="og:image" content={SITE_DEFAULT_IMAGE} />
         <meta name="twitter:title" content="Lance sua linha | MangaTeofilo" />
         <meta
           name="twitter:description"
-          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
+          content="TankÅbon e meio-tankÅ físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
         />
         <meta name="twitter:image" content={SITE_DEFAULT_IMAGE} />
         <link rel="canonical" href={canonicalUrl} />
@@ -676,63 +679,13 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         </div>
       ) : null}
 
-      {modal === 'creatorLevel' ? (
-        <div
-          className="pod-modal-root"
-          role="presentation"
-          onClick={(e) => e.target === e.currentTarget && setModal(null)}
-        >
-          <div className="pod-modal" role="dialog" aria-modal="true" aria-labelledby="pod-modal-level-title">
-            <h2 id="pod-modal-level-title" className="pod-modal__title">
-              Suba de nível para vender com repasse
-            </h2>
-            <div className="pod-modal__body">
-              <p>
-                A <strong>venda pelo POD com repasse</strong> abre no <strong>Nível 2 (Monetizado)</strong>, com métricas
-                na plataforma:
-              </p>
-              <ul className="pod-modal__list">
-                <li>
-                  <strong>{CREATOR_LEVEL_THRESHOLDS[2].followers}</strong> seguidores
-                </li>
-                <li>
-                  <strong>{new Intl.NumberFormat('pt-BR').format(CREATOR_LEVEL_THRESHOLDS[2].views)}</strong> views totais
-                </li>
-                <li>
-                  <strong>{CREATOR_LEVEL_THRESHOLDS[2].likes}</strong> likes totais
-                </li>
-              </ul>
-              <p>
-                Você já tem monetização ativa — falta crescer na comunidade. Acompanhe percentual, barras e recompensas
-                no <strong>Painel do Criador</strong>.
-              </p>
-              <p className="pod-modal__hint">
-                Enquanto isso, use <strong>Modo vitrine</strong> (sem repasse) ou <strong>Produzir para mim</strong>.
-              </p>
-            </div>
-            <div className="pod-modal__actions">
-              <button type="button" className="pod-btn pod-btn--ghost" onClick={() => setModal(null)}>
-                Fechar
-              </button>
-              <Link
-                to="/creator/monetizacao"
-                className="pod-btn pod-btn--primary pod-modal__link-btn"
-                onClick={() => setModal(null)}
-              >
-                Ver progresso
-              </Link>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <PodConfirmModal
         open={modal === 'addCartConfirm'}
         title={saleModel === SALE_MODEL.STORE_PROMO ? 'Enviar este lote ao carrinho?' : 'Adicionar lote ao carrinho?'}
         description={
           saleModel === SALE_MODEL.STORE_PROMO
             ? 'Você será levado ao carrinho para revisar e pagar. O pedido só entra na fila depois do pagamento aprovado. No modo vitrine não há repasse de lucro das vendas na loja.'
-            : 'Os arquivos serão enviados ao armazenamento seguro e o lote vai para o carrinho. Na próxima etapa você informa endereço (se for «Produzir para mim») e paga no Mercado Pago — sem pagamento, não há pedido confirmado.'
+            : 'Os arquivos serão enviados ao armazenamento seguro e o lote vai para o carrinho. Na próxima etapa você informa endereço (se for Â«Produzir para mimÂ») e paga no Mercado Pago — sem pagamento, não há pedido confirmado.'
         }
         confirmLabel="Continuar"
         cancelLabel="Cancelar"
@@ -751,7 +704,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   Carrinho
                 </Link>
                 <span className="pod-hero__orders-sep" aria-hidden="true">
-                  ·
+                  Â·
                 </span>
                 <Link className="pod-hero__orders-link" to="/pedidos?tab=fisico">
                   Acompanhar pedidos
@@ -761,7 +714,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
 
             {user && podCartActive ? (
               <p className="pod-draft-active-banner" role="status">
-                Há um lote no carrinho. Se você montar outro e tocar em «Adicionar ao carrinho», o lote atual será{' '}
+                Há um lote no carrinho. Se você montar outro e tocar em Â«Adicionar ao carrinhoÂ», o lote atual será{' '}
                 <strong>substituído</strong>.{' '}
                 <Link className="pod-draft-active-banner__link" to="/loja/carrinho">
                   Abrir carrinho
@@ -779,9 +732,9 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               >
                 <span className="pod-mode-card__badge">Recomendado</span>
                 <h2 className="pod-mode-card__title">
-                  {platformSaleNeedsLevel ? (
+                  {platformSaleNeedsMonetization ? (
                     <>
-                      Vender e ganhar <span className="pod-mode-card__lock-inline">🔒</span>
+                      Vender e ganhar <span className="pod-mode-card__lock-inline">ðŸ”’</span>
                     </>
                   ) : (
                     'Vender e ganhar'
@@ -793,7 +746,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 </p>
                 {platformSaleNeedsMonetization ? (
                   <p className="pod-mode-card__lock">Disponível com monetização aprovada na plataforma.</p>
-                ) : platformSaleNeedsLevel ? (
+                ) : platformSaleLevelHintVisible ? (
                   <div className="pod-platform-gate">
                     <p className="pod-platform-gate__title">Disponível no nível Monetizado</p>
                     <p className="pod-platform-gate__hint">Faltam:</p>
@@ -845,10 +798,10 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   <p className="pod-mode-card__footnote">(sem repasse de lucro neste modo)</p>
                 </div>
                 <p className="pod-mode-card__desc pod-mode-card__desc--after">
-                  Lotes <strong>10, 20 ou 30</strong> un. · metas de engajamento e aprovação da equipe antes de publicar.
+                  Lotes <strong>10, 20 ou 30</strong> un. Â· metas de engajamento e aprovação da equipe antes de publicar.
                 </p>
                 {creatorMonetizationActive ? (
-                  <p className="pod-mode-card__lock">Com monetização ativa, use «Vender e ganhar» para repasse.</p>
+                  <p className="pod-mode-card__lock">Com monetização ativa, use Â«Vender e ganharÂ» para repasse.</p>
                 ) : !user ? (
                   <p className="pod-mode-card__tap-hint">
                     Visualização:{' '}
@@ -866,7 +819,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   </p>
                 )}
                 {saleModel === SALE_MODEL.STORE_PROMO && linkedWorkId && !storePromoMetrics.ok ? (
-                  <p className="pod-mode-card__lock">Meta ainda não batida — veja as barras na etapa «Obra na loja».</p>
+                  <p className="pod-mode-card__lock">Meta ainda não batida — veja as barras na etapa Â«Obra na lojaÂ».</p>
                 ) : null}
               </button>
             </div>
@@ -884,7 +837,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           {saleModel === SALE_MODEL.STORE_PROMO ? (
             <section ref={obraRef} id="pod-step-obra" className="pod-panel pod-panel--obra">
               <h2 className="pod-panel__title">
-                {stepIndex('obra')} · Qual obra vai para a vitrine?
+                {stepIndex('obra')} Â· Qual obra vai para a vitrine?
               </h2>
               {!user ? (
                 <p className="pod-panel__hint">
@@ -911,7 +864,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   required
                   disabled={!storePromoOrderEligible || myWorks.length === 0}
                 >
-                  <option value="">Selecione…</option>
+                  <option value="">Selecioneâ€¦</option>
                   {myWorks.map((w) => (
                     <option key={w.id} value={w.id}>
                       {String(w.title || w.titulo || w.nome || w.name || w.id).trim()}
@@ -926,7 +879,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                     <ul className="pod-obra-quick-stats__list">
                       <li>
                         <span className="pod-obra-quick-stats__ico" aria-hidden="true">
-                          👁️
+                          ðŸ‘ï¸
                         </span>
                         <span>
                           <strong>{fmtCountPt(storePromoMetrics.views)}</strong> views
@@ -934,7 +887,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                       </li>
                       <li>
                         <span className="pod-obra-quick-stats__ico" aria-hidden="true">
-                          ❤️
+                          â¤ï¸
                         </span>
                         <span>
                           <strong>{fmtCountPt(storePromoMetrics.likes)}</strong> likes
@@ -942,7 +895,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                       </li>
                       <li>
                         <span className="pod-obra-quick-stats__ico" aria-hidden="true">
-                          👥
+                          ðŸ‘¥
                         </span>
                         <span>
                           <strong>{fmtCountPt(storePromoMetrics.followers)}</strong> seguidores
@@ -951,7 +904,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                     </ul>
                   </div>
                   <p className="pod-panel__hint pod-panel__hint--metrics">
-                    Progresso rumo às metas para liberar o envio (Nível 1 — 300 seguidores · 5 mil views · 100 likes):
+                    Progresso rumo às metas para liberar o envio (Nível 1 — 300 seguidores Â· 5 mil views Â· 100 likes):
                   </p>
                   <div className="pod-promo-metrics" aria-live="polite">
                     <PodMetricBar
@@ -976,7 +929,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   {!storePromoMetrics.ok ? (
                     <div className="pod-promo-gate">
                       <p className="pod-promo-lock">
-                        <span aria-hidden="true">🔒</span> Bloqueado até atingir os requisitos acima.
+                        <span aria-hidden="true">ðŸ”’</span> Bloqueado até atingir os requisitos acima.
                       </p>
                       <button type="button" className="pod-btn pod-btn--ghost" disabled>
                         Bloqueado — requisitos não atingidos
@@ -1000,7 +953,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           ) : null}
 
           <section ref={modeloRef} id="pod-step-modelo" className="pod-panel">
-            <h2 className="pod-panel__title">{stepIndex('modelo')} · Modelo</h2>
+            <h2 className="pod-panel__title">{stepIndex('modelo')} Â· Modelo</h2>
             <p className="pod-panel__hint">Escolha o formato do volume.</p>
             <div className="pod-format-grid">
               {FORMAT_CARDS.map((c) => (
@@ -1023,7 +976,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
 
           <section ref={vendaRef} id="pod-step-venda" className="pod-panel">
             <h2 className="pod-panel__title">
-              {stepIndex('venda')} · {saleModel === SALE_MODEL.STORE_PROMO ? 'Divulgação na loja' : 'Venda'}
+              {stepIndex('venda')} Â· {saleModel === SALE_MODEL.STORE_PROMO ? 'Divulgação na loja' : 'Venda'}
             </h2>
             {saleModel === SALE_MODEL.PLATFORM ? (
               <>
@@ -1047,7 +1000,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   />
                   <div className="pod-price-input-row">
                     <span className="pod-muted">
-                      Mín. {formatBRL(retail.min)} · Máx. {formatBRL(retail.max)}
+                      Mín. {formatBRL(retail.min)} Â· Máx. {formatBRL(retail.max)}
                     </span>
                     <input
                       type="number"
@@ -1102,7 +1055,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           </section>
 
           <section ref={quantidadeRef} id="pod-step-quantidade" className="pod-panel">
-            <h2 className="pod-panel__title">{stepIndex('quantidade')} · Quantidade</h2>
+            <h2 className="pod-panel__title">{stepIndex('quantidade')} Â· Quantidade</h2>
             <p className="pod-panel__hint">Toque no lote desejado.</p>
             <div className="pod-qty-grid">
               {qtyOptions.map((q) => (
@@ -1112,7 +1065,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   className={`pod-qty-btn ${quantity === q ? 'is-selected' : ''}`}
                   onClick={() => setQuantity(q)}
                 >
-                  {saleModel === SALE_MODEL.PERSONAL && q === 1 ? '1 · teste' : q}
+                  {saleModel === SALE_MODEL.PERSONAL && q === 1 ? '1 Â· teste' : q}
                 </button>
               ))}
             </div>
@@ -1143,7 +1096,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           </section>
 
           <section ref={arquivosRef} id="pod-step-arquivos" className="pod-panel">
-            <h2 className="pod-panel__title">{stepIndex('arquivos')} · Arquivos</h2>
+            <h2 className="pod-panel__title">{stepIndex('arquivos')} Â· Arquivos</h2>
             <p className="pod-panel__hint">
               {saleModel === SALE_MODEL.STORE_PROMO
                 ? 'PDF do miolo e imagem da capa.'
@@ -1187,7 +1140,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               onDrop={(e) => onDrop(e, 'cover')}
             >
               <span className="pod-drop__title">Capa</span>
-              <span className="pod-drop__meta">JPG, PNG ou WebP · máx. 8 MB</span>
+              <span className="pod-drop__meta">JPG, PNG ou WebP Â· máx. 8 MB</span>
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
@@ -1214,7 +1167,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           </section>
 
           <section ref={revisaoRef} id="pod-step-revisao" className="pod-panel pod-panel--review">
-            <h2 className="pod-panel__title">{stepIndex('revisao')} · Revisão</h2>
+            <h2 className="pod-panel__title">{stepIndex('revisao')} Â· Revisão</h2>
             <div className="pod-review-card">
               <dl className="pod-review-dl">
                 <div>
@@ -1321,7 +1274,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               }
               onClick={handleOpenAddToCartModal}
             >
-              {busy ? 'Enviando…' : 'Adicionar ao carrinho'}
+              {busy ? 'Enviandoâ€¦' : 'Adicionar ao carrinho'}
             </button>
             {saleModel === SALE_MODEL.STORE_PROMO ? (
               <p className="pod-cta-note">O produto será analisado pelo admin antes de entrar na loja.</p>
@@ -1387,3 +1340,4 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
     </main>
   );
 }
+

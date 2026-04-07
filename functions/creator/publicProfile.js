@@ -1,6 +1,11 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';
-import { resolveCreatorMonetizationStatusFromDb } from '../creatorRecord.js';
+import {
+  readCreatorStatsFromDb,
+  resolveCreatorMonetizationPreferenceFromDb,
+  resolveCreatorMonetizationStatusFromDb,
+} from '../creatorRecord.js';
+import { buildPublicProfileFromUsuarioRow } from '../shared/publicUserProfile.js';
 
 export async function getMonetizableCreatorPublicProfile(
   db,
@@ -11,23 +16,22 @@ export async function getMonetizableCreatorPublicProfile(
   if (!cid) {
     throw new HttpsError('invalid-argument', 'creatorId invalido.');
   }
-  const [publicSnap, privateSnap] = await Promise.all([
-    db.ref(`usuarios_publicos/${cid}`).get(),
+  const [privateSnap, statsSnap] = await Promise.all([
     db.ref(`usuarios/${cid}`).get(),
+    db.ref(`creators/${cid}/stats`).get(),
   ]);
-  if (!publicSnap.exists()) {
+  if (!privateSnap.exists()) {
     throw new HttpsError('not-found', 'Perfil publico do criador nao encontrado.');
   }
-  const creatorPublic = publicSnap.val() || {};
-  const creatorPrivate = privateSnap.exists() ? privateSnap.val() || {} : {};
-  const creatorMonetizationPreferenceRaw =
-    creatorPrivate.creatorMonetizationPreference ||
-    (creatorPrivate?.creator?.monetization?.requested === true ? 'monetize' : '') ||
-    creatorPublic.creatorMonetizationPreference ||
-    'publish_only';
-  const creatorMonetizationPreference = String(creatorMonetizationPreferenceRaw)
-    .trim()
-    .toLowerCase();
+  const creatorPrivate = privateSnap.val() || {};
+  const creatorPublic =
+    creatorPrivate?.publicProfile && typeof creatorPrivate.publicProfile === 'object'
+      ? creatorPrivate.publicProfile
+      : buildPublicProfileFromUsuarioRow(creatorPrivate, cid);
+  const creatorMonetizationPreference = resolveCreatorMonetizationPreferenceFromDb({
+    ...creatorPublic,
+    ...creatorPrivate,
+  });
   const creatorMonetizationStatus =
     creatorMonetizationPreference === 'monetize'
       ? resolveCreatorMonetizationStatusFromDb(creatorPrivate)
@@ -48,8 +52,26 @@ export async function getMonetizableCreatorPublicProfile(
   if (requireMembershipEnabled && creatorPrivate.creatorMembershipEnabled !== true) {
     throw new HttpsError('failed-precondition', 'Este criador ainda nao ativou a membership publica.');
   }
+  const creatorStats = readCreatorStatsFromDb(
+    { ...creatorPublic, ...creatorPrivate },
+    statsSnap.exists() ? statsSnap.val() || {} : {}
+  );
+  const publicCreatorProfile =
+    creatorPublic?.creatorProfile && typeof creatorPublic.creatorProfile === 'object'
+      ? creatorPublic.creatorProfile
+      : {};
   return {
     ...creatorPublic,
+    creatorProfile: {
+      ...publicCreatorProfile,
+      monetizationPreference: creatorMonetizationPreference,
+      monetizationStatus: creatorMonetizationStatus,
+      monetizationEnabled: creatorMonetizationActive,
+      isMonetizationActive: creatorMonetizationActive,
+      isApproved: creatorMonetizationApproved,
+    },
+    stats: creatorStats,
+    followersCount: creatorStats.followersCount,
     creatorMembershipEnabled: creatorPrivate.creatorMembershipEnabled === true,
     creatorMembershipPriceBRL:
       creatorPrivate.creatorMembershipPriceBRL ?? creatorPublic.creatorMembershipPriceBRL,

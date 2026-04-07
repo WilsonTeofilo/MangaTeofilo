@@ -20,7 +20,7 @@ import './MeusPedidosHub.css';
 
 const listMyStoreOrders = httpsCallable(functions, 'listMyStoreOrders');
 const listMyPrintOnDemandOrders = httpsCallable(functions, 'listMyPrintOnDemandOrders');
-const listVisibleStoreOrders = httpsCallable(functions, 'adminListVisibleStoreOrders');
+const listVisibleStoreOrders = httpsCallable(functions, 'creatorListOwnStoreOrders');
 
 const TAB_COMPRAS = 'compras';
 const TAB_VENDAS = 'vendas';

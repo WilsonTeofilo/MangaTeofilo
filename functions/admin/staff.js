@@ -3,26 +3,23 @@ import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
   ADMIN_REGISTRY_PATH,
-  defaultPermissionsAllTrue,
   isTargetSuperAdmin,
+  listStaffRegistryRows,
   normalizePermissionsForRegistry,
   requireSuperAdmin,
   resolveTargetUidByEmail,
-  SUPER_ADMIN_UIDS,
 } from '../adminRbac.js';
 
 export const adminListStaff = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const db = getDatabase();
-  const snap = await db.ref(ADMIN_REGISTRY_PATH).get();
-  const raw = snap.val() || {};
+  const registryRowsOnly = await listStaffRegistryRows();
   const registryRows = await Promise.all(
-    Object.entries(raw)
-      .filter(([, row]) => String(row?.role || '').toLowerCase() === 'admin')
-      .map(async ([uid, row]) => {
+    registryRowsOnly.map(async (row) => {
+      const uid = String(row.uid || '').trim();
         let email = null;
         let name = '';
         try {
@@ -41,42 +38,15 @@ export const adminListStaff = onCall({ region: 'us-central1' }, async (request) 
           uid,
           email,
           name: name || null,
-          role: 'admin',
-          permissions: normalizePermissionsForRegistry(row?.permissions),
-          updatedAt: Number(row?.updatedAt || 0),
-          updatedBy: String(row?.updatedBy || ''),
+          role: row.role,
+          permissions: normalizePermissionsForRegistry(row.permissions),
+          updatedAt: Number(row.updatedAt || 0),
+          updatedBy: String(row.updatedBy || ''),
         };
       })
   );
-  const superAdmins = await Promise.all(
-    Array.from(SUPER_ADMIN_UIDS).map(async (uid) => {
-      let email = null;
-      let name = '';
-      try {
-        const user = await getAuth().getUser(uid);
-        email = user.email || null;
-        name = String(user.displayName || '').trim();
-      } catch {
-        email = null;
-      }
-      if (!name) {
-        const userSnap = await db.ref(`usuarios/${uid}`).get();
-        const userRow = userSnap.val() || {};
-        name = String(userRow?.userName || userRow?.creatorDisplayName || '').trim();
-      }
-      return {
-        uid,
-        email,
-        name: name || null,
-        role: 'super_admin',
-        permissions: defaultPermissionsAllTrue(),
-        updatedAt: 0,
-        updatedBy: '',
-      };
-    })
-  );
   const seen = new Set();
-  const staff = [...superAdmins, ...registryRows].filter((row) => {
+  const staff = [...registryRows].filter((row) => {
     if (!row?.uid || seen.has(row.uid)) return false;
     seen.add(row.uid);
     return true;
@@ -94,7 +64,7 @@ export const adminUpsertStaff = onCall({ region: 'us-central1' }, async (request
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const data = request.data || {};
   const email = String(data.email || '').trim();
   if (!email) {
@@ -111,7 +81,7 @@ export const adminUpsertStaff = onCall({ region: 'us-central1' }, async (request
   } catch {
     /* ignore */
   }
-  if (isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
+  if (await isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
     throw new HttpsError('permission-denied', 'Nao e permitido alterar admin chefe.');
   }
   const permissions = normalizePermissionsForRegistry(data.permissions);
@@ -135,7 +105,7 @@ export const adminRemoveStaff = onCall({ region: 'us-central1' }, async (request
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const data = request.data || {};
   let targetUid = String(data.uid || '').trim();
   if (!targetUid && data.email) {
@@ -154,7 +124,7 @@ export const adminRemoveStaff = onCall({ region: 'us-central1' }, async (request
     }
     throw e;
   }
-  if (isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
+  if (await isTargetSuperAdmin({ uid: targetUid, email: targetEmailLower })) {
     throw new HttpsError('permission-denied', 'Nao e permitido remover admin chefe.');
   }
   const regSnap = await getDatabase().ref(`${ADMIN_REGISTRY_PATH}/${targetUid}`).get();

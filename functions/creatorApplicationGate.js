@@ -2,6 +2,8 @@
  * Metas mínimas para aprovação manual de candidatura (monetização em fila).
  * Espelha `VITRINE_PROMO_THRESHOLDS` / CREATOR_LEVEL_THRESHOLDS[1] em `src/utils/creatorProgression.js`.
  */
+import { readCreatorStatsFromDb } from './creatorRecord.js';
+
 export const CREATOR_APPLICATION_APPROVAL_THRESHOLDS = {
   followers: 300,
   views: 5000,
@@ -16,10 +18,11 @@ export function metricsFromUsuarioRowForCreatorApproval(row) {
   if (!row || typeof row !== 'object') {
     return { followers: 0, views: 0, likes: 0 };
   }
+  const stats = readCreatorStatsFromDb(row, row?.creatorStats || null);
   return {
-    followers: norm(row?.creatorProfile?.stats?.followersCount ?? row?.stats?.followersCount),
-    views: norm(row?.creatorProfile?.stats?.totalViews ?? row?.stats?.totalViews),
-    likes: norm(row?.creatorProfile?.stats?.totalLikes ?? row?.stats?.totalLikes),
+    followers: norm(stats.followersCount),
+    views: norm(stats.totalViews),
+    likes: norm(stats.likesTotal),
   };
 }
 

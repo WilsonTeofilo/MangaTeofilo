@@ -2,7 +2,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getDatabase } from 'firebase-admin/database';
-import { getAdminAuthContext, requireSuperAdmin, ADMIN_REGISTRY_PATH, SUPER_ADMIN_UIDS } from './adminRbac.js';
+import { getAdminAuthContext, requireSuperAdmin, listStaffUids } from './adminRbac.js';
 import { pushUserNotification as pushStaffInAppNotification } from './notificationPush.js';
 import {
   BOOK_FORMAT,
@@ -21,7 +21,11 @@ import {
   REGIONAL_FREIGHT_DISCOUNT_RATE,
   STORE_PROMO_THRESHOLDS,
 } from './printOnDemandPricing.js';
-import { resolveCreatorMonetizationStatusFromDb } from './creatorRecord.js';
+import {
+  readCreatorStatsFromDb,
+  resolveCreatorMonetizationPreferenceFromDb,
+  resolveCreatorMonetizationStatusFromDb,
+} from './creatorRecord.js';
 
 /**
  * Nível 2 — venda POD com repasse (alinhado a `CREATOR_LEVEL_THRESHOLDS[2]` no app).
@@ -38,11 +42,11 @@ function normalizePodStatus(value, fallback = 'pending') {
   return raw;
 }
 
-function creatorMeetsPlatformSaleLevel(userRow) {
-  const row = userRow && typeof userRow === 'object' ? userRow : {};
-  const followers = Number(row?.creatorProfile?.stats?.followersCount ?? row?.stats?.followersCount ?? 0);
-  const views = Number(row?.creatorProfile?.stats?.totalViews ?? row?.stats?.totalViews ?? 0);
-  const likes = Number(row?.creatorProfile?.stats?.totalLikes ?? row?.stats?.totalLikes ?? 0);
+function creatorMeetsPlatformSaleLevel(userRow, creatorStatsRow = null) {
+  const stats = readCreatorStatsFromDb(userRow, creatorStatsRow);
+  const followers = Number(stats.followersCount || 0);
+  const views = Number(stats.totalViews || 0);
+  const likes = Number(stats.likesTotal || 0);
   return (
     followers >= CREATOR_LEVEL_2_THRESHOLDS.followers &&
     views >= CREATOR_LEVEL_2_THRESHOLDS.views &&
@@ -183,7 +187,7 @@ function usuarioIsMangaka(row) {
 }
 
 function usuarioMonetizacaoAtiva(row) {
-  const pref = String(row?.creatorMonetizationPreference || 'publish_only').trim().toLowerCase();
+  const pref = resolveCreatorMonetizationPreferenceFromDb(row);
   if (pref !== 'monetize') return false;
   return resolveCreatorMonetizationStatusFromDb(row) === 'active';
 }
@@ -230,26 +234,8 @@ async function pushPodOrderEvent(db, orderId, evt) {
 
 /** UIDs da equipe (super admins + registry exceto mangaka) — alinhado a `notifyCreatorRequestAdmins` em index.js */
 async function collectStaffAdminUids(db) {
-  const adminIds = new Set();
-  const superList =
-    SUPER_ADMIN_UIDS instanceof Set
-      ? [...SUPER_ADMIN_UIDS]
-      : Array.isArray(SUPER_ADMIN_UIDS)
-        ? [...SUPER_ADMIN_UIDS]
-        : SUPER_ADMIN_UIDS && typeof SUPER_ADMIN_UIDS[Symbol.iterator] === 'function'
-          ? [...SUPER_ADMIN_UIDS]
-          : [];
-  for (const id of superList) {
-    if (id) adminIds.add(String(id).trim());
-  }
-  const registrySnap = await db.ref(ADMIN_REGISTRY_PATH).get();
-  if (registrySnap.exists()) {
-    for (const [uid, row] of Object.entries(registrySnap.val() || {})) {
-      const role = String(row?.role || '').trim().toLowerCase();
-      if (role && role !== 'mangaka') adminIds.add(String(uid || '').trim());
-    }
-  }
-  return [...adminIds].filter(Boolean);
+  const adminIds = await listStaffUids();
+  return [...new Set(adminIds.map((uid) => String(uid || '').trim()).filter(Boolean))];
 }
 
 /**
@@ -409,8 +395,12 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
 
   const pr = productionDays(saleModel, format, quantity);
   const now = Date.now();
-  const userSnap = await db.ref(`usuarios/${uid}`).get();
+  const [userSnap, creatorStatsSnap] = await Promise.all([
+    db.ref(`usuarios/${uid}`).get(),
+    db.ref(`creators/${uid}/stats`).get(),
+  ]);
   const userRow = userSnap.exists() ? userSnap.val() || {} : {};
+  const creatorStatsRow = creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {};
   let storePromoElig = null;
 
   if (saleModel === SALE_MODEL.STORE_PROMO) {
@@ -445,10 +435,10 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
         'Venda na loja exige monetizacao ativa e dados para repasse. Use Comprar para mim ou ative a monetizacao no perfil e aguarde aprovacao do admin.'
       );
     }
-    if (!creatorMeetsPlatformSaleLevel(userRow)) {
+    if (!creatorMeetsPlatformSaleLevel(userRow, creatorStatsRow)) {
       throw new HttpsError(
         'failed-precondition',
-        'Venda com repasse exige Nivel 2 nas metricas da plataforma: 1000 seguidores, 20 mil views totais e 500 likes totais.'
+        `Venda com repasse exige Nivel 2 nas metricas da plataforma: ${CREATOR_LEVEL_2_THRESHOLDS.followers} seguidores, ${CREATOR_LEVEL_2_THRESHOLDS.views} views totais e ${CREATOR_LEVEL_2_THRESHOLDS.likes} likes totais.`
       );
     }
   }
@@ -631,7 +621,7 @@ export const adminListPrintOnDemandOrders = onCall({ region: 'us-central1' }, as
     throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
   }
   const can =
-    ctx.super === true || ctx.legacy === true || ctx.permissions?.canAccessLojaAdmin === true;
+    ctx.super === true || ctx.permissions?.canAccessLojaAdmin === true;
   if (!can) {
     throw new HttpsError('permission-denied', 'Sem permissao para producao fisica.');
   }
@@ -652,7 +642,7 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
     throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
   }
   const can =
-    ctx.super === true || ctx.legacy === true || ctx.permissions?.canAccessLojaAdmin === true;
+    ctx.super === true || ctx.permissions?.canAccessLojaAdmin === true;
   if (!can) {
     throw new HttpsError('permission-denied', 'Sem permissao.');
   }
@@ -896,7 +886,7 @@ export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, asyn
 
 /** Super-admin: ajuste manual se necessario (ex.: corrigir URL). */
 export const adminPatchPrintOnDemandOrderSuper = onCall({ region: 'us-central1' }, async (request) => {
-  requireSuperAdmin(request.auth);
+  await requireSuperAdmin(request.auth);
   const body = request.data && typeof request.data === 'object' ? request.data : {};
   const orderId = String(body.orderId || '').trim();
   if (!orderId) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { get, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
@@ -71,7 +71,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
       const updates = {};
       for (const uid of uids) {
         try {
-          const s = await get(ref(db, `usuarios_publicos/${uid}`));
+          const s = await get(ref(db, `usuarios/${uid}/publicProfile`));
           updates[uid] = s.exists() ? formatUserDisplayWithHandle(s.val()) : uid;
         } catch {
           updates[uid] = uid;
@@ -193,7 +193,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por pedido, cliente, rastreio ou serviço…"
+          placeholder="Buscar por pedido, cliente, rastreio ou serviÃ§oâ€¦"
         />
       </div>
 
@@ -270,3 +270,4 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
     </main>
   );
 }
+

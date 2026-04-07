@@ -1,38 +1,38 @@
-# Legacy Freeze Checklist
+﻿# Legacy Freeze Checklist
 
 ## Runtime ativo
 
-- `functions/index.js` exporta apenas módulos ativos.
-- `functions/deprecated/index.js` não reexporta monólito legado.
-- o runtime não deve depender de `legacyIndex.js`.
+- `functions/index.js` exporta apenas mÃ³dulos ativos.
+- `functions/deprecated/index.js` nÃ£o reexporta monÃ³lito legado.
+- o runtime nÃ£o deve depender de `legacyIndex.js`.
 
-## Fontes canônicas
+## Fontes canÃ´nicas
 
 - roles efetivos: `src/auth/appRoles.js`
 - creator stats: `creators/{uid}/stats`
-- monetização do creator: `usuarios/{uid}/creator/monetization/*`
+- monetizaÃ§Ã£o do creator: `usuarios/{uid}/creator/monetization/*`
 - trilha MP: `financas/mp_webhook_payments`
-- obra pública: `/work/:slug`
+- obra pÃºblica: `/work/:slug`
 - landing institucional Kokuin: `/kokuin`
 
 ## Espelhos permitidos
 
 - `usuarios/{uid}/creatorProfile/*`: apenas espelho/UI
-- `usuarios_publicos/{uid}/*`: apenas projeção pública
-- seller de pedido da loja: nunca recebe endereço completo do comprador
+- `usuarios/{uid}/publicProfile/*`: apenas projeÃ§Ã£o pÃºblica
+- seller de pedido da loja: nunca recebe endereÃ§o completo do comprador
 
 ## Legado proibido no fluxo vivo
 
 - `pending_review`
 - `creatorMonetizationApprovedOnce`
 - `mp_processed`
-- fallback automático para `shito`
-- perfil público duplicado em JSX
+- fallback automÃ¡tico para `shito`
+- perfil pÃºblico duplicado em JSX
 
-## Regra para manutenção/backfill
+## Regra para manutenÃ§Ã£o/backfill
 
-- se não houver inferência segura, pular e diagnosticar
-- nunca inventar creator/work legado para “tampar buraco”
-- nunca usar espelho público como fonte de verdade
-- qualquer limpeza deve convergir para o canônico e apagar campo legado
+- se nÃ£o houver inferÃªncia segura, pular e diagnosticar
+- nunca inventar creator/work legado para â€œtampar buracoâ€
+- nunca usar espelho pÃºblico como fonte de verdade
+- qualquer limpeza deve convergir para o canÃ´nico e apagar campo legado
 - qualquer retomada de checkout deve passar pelo backend vivo

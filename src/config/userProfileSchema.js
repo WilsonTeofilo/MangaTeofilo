@@ -45,6 +45,63 @@ export function buildUsuarioBaseRecord({
   };
 }
 
+export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null) {
+  const source = current && typeof current === 'object' ? current : {};
+  const creatorProfile =
+    source?.creator?.profile && typeof source.creator.profile === 'object'
+      ? source.creator.profile
+      : {};
+  const creatorSocial =
+    source?.creator?.social && typeof source.creator.social === 'object'
+      ? source.creator.social
+      : {};
+  const userHandle = asNonEmptyString(source.userHandle, '').toLowerCase();
+  const creatorDisplayName = asNonEmptyString(
+    creatorProfile.displayName || source.creatorDisplayName || source.userName,
+    DEFAULT_USER_DISPLAY_NAME
+  );
+  const creatorBio = asNonEmptyString(creatorProfile.bio || source.creatorBio, '');
+  const instagramUrl = asNonEmptyString(creatorSocial.instagram || source.instagramUrl, '');
+  const youtubeUrl = asNonEmptyString(creatorSocial.youtube || source.youtubeUrl, '');
+  const userAvatar = asNonEmptyString(source.userAvatar, AVATAR_FALLBACK);
+
+  return {
+    uid: asNonEmptyString(uidOverride || source.uid, ''),
+    userName: asNonEmptyString(source.userName, creatorDisplayName || DEFAULT_USER_DISPLAY_NAME),
+    userHandle,
+    userAvatar,
+    accountType: asNonEmptyString(source.accountType, 'comum'),
+    signupIntent: asNonEmptyString(source.signupIntent, 'reader'),
+    status: asNonEmptyString(source.status, ''),
+    creatorDisplayName,
+    creatorUsername: userHandle,
+    creatorBio,
+    creatorBannerUrl: asNonEmptyString(source.creatorBannerUrl, ''),
+    instagramUrl,
+    youtubeUrl,
+    readerProfilePublic: source.readerProfilePublic === true,
+    readerProfileAvatarUrl: asNonEmptyString(source.readerProfileAvatarUrl, userAvatar),
+    readerSince: Number(source.createdAt || source.readerSince || 0) || 0,
+    creatorStatus: asNonEmptyString(source.creatorStatus, ''),
+    creatorMembershipEnabled: source.creatorMembershipEnabled === true,
+    creatorMembershipPriceBRL:
+      source.creatorMembershipPriceBRL == null ? null : Number(source.creatorMembershipPriceBRL),
+    creatorDonationSuggestedBRL:
+      source.creatorDonationSuggestedBRL == null ? null : Number(source.creatorDonationSuggestedBRL),
+    updatedAt:
+      Number(source?.creator?.meta?.updatedAt || source.updatedAt || source.lastLogin || source.createdAt || 0) || 0,
+    creatorProfile: {
+      displayName: creatorDisplayName,
+      username: userHandle,
+      bioFull: creatorBio,
+      socialLinks: {
+        instagramUrl,
+        youtubeUrl,
+      },
+    },
+  };
+}
+
 export function buildUsuarioMissingFieldsPatch(current = {}, options = {}) {
   const now = Number(options.now || Date.now());
   const desired = buildUsuarioBaseRecord({
@@ -98,27 +155,3 @@ export function buildUsuarioMissingFieldsPatch(current = {}, options = {}) {
   return patch;
 }
 
-export function buildUsuarioPublicoPatch(current = {}, options = {}) {
-  const now = Number(options.now || Date.now());
-  const patch = {};
-
-  const userName = asNonEmptyString(options.userName || current.userName, DEFAULT_USER_DISPLAY_NAME);
-  const userAvatar = asNonEmptyString(options.userAvatar || current.userAvatar, AVATAR_FALLBACK);
-  const accountType = asNonEmptyString(options.accountType || current.accountType, 'comum');
-  const signupIntent = asNonEmptyString(options.signupIntent || current.signupIntent, 'reader');
-
-  if (!asNonEmptyString(current.uid)) patch.uid = options.uid;
-  if (options.userName || !asNonEmptyString(current.userName)) patch.userName = userName;
-  if (options.userAvatar || !asNonEmptyString(current.userAvatar)) patch.userAvatar = userAvatar;
-  if (options.accountType || !asNonEmptyString(current.accountType)) patch.accountType = accountType;
-  if (!asNonEmptyString(current.signupIntent)) patch.signupIntent = signupIntent;
-
-  const uhIn = options.userHandle != null ? String(options.userHandle || '').trim().toLowerCase() : null;
-  if (uhIn && uhIn !== String(current.userHandle || '').trim().toLowerCase()) {
-    patch.userHandle = uhIn;
-  }
-
-  if (Object.keys(patch).length) patch.updatedAt = now;
-
-  return patch;
-}

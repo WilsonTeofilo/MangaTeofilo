@@ -1,4 +1,4 @@
-# RTDB Domains - MangaTeofilo
+﻿# RTDB Domains - MangaTeofilo
 
 ## Objetivo
 
@@ -54,7 +54,7 @@ Regra:
 
 Paths:
 
-- `usuarios_publicos/{uid}/*`
+- `usuarios/{uid}/publicProfile/*`
 
 Regra:
 
@@ -114,4 +114,4 @@ Regra:
 - qualquer override administrativo novo deve usar o mesmo contexto admin global
 - quando uma regra ficar longa demais, priorizar mover o fluxo para Cloud Functions em vez de empilhar excecoes no cliente
 - manter os paths derivados claramente separados dos campos editaveis pelo usuario
-- legado de memberships por creator deve ser tratado apenas como compatibilidade temporaria; a fonte canônica é `usuarios/{uid}/userEntitlements/creators`
+- legado de memberships por creator deve ser tratado apenas como compatibilidade temporaria; a fonte canÃ´nica Ã© `usuarios/{uid}/userEntitlements/creators`

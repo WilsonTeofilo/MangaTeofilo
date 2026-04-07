@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { onValue, ref } from 'firebase/database';
@@ -27,7 +27,11 @@ import {
 } from '../../utils/trafficAttribution';
 import { formatarDataLongaBr, formatarHoraBr } from '../../utils/datasBr';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
-import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
+import {
+  buildPublicProfileFromUsuarioRow,
+  resolvePublicProfileDisplayName,
+} from '../../utils/publicUserProfile';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
@@ -35,7 +39,7 @@ const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
-/** Inclui dias completos; antes usávamos só (seg % 86400)/3600 e promoções >24h pareciam ter ~1h. */
+/** Inclui dias completos; antes usÃ¡vamos sÃ³ (seg % 86400)/3600 e promoÃ§Ãµes >24h pareciam ter ~1h. */
 function textoCountdownPromoSegundos(totalSegundos) {
   const s = Math.max(0, Math.floor(Number(totalSegundos) || 0));
   const dd = Math.floor(s / 86400);
@@ -381,11 +385,11 @@ export default function Apoie({ user, perfil }) {
     const normalizado = String(valorLivre).trim().replace(',', '.');
     const n = parseFloat(normalizado);
     if (!Number.isFinite(n) || n < 1) {
-      setErroValorLivre('Informe um valor mínimo de R$ 1,00.');
+      setErroValorLivre('Informe um valor mÃ­nimo de R$ 1,00.');
       return;
     }
     if (n > 5000) {
-      setErroValorLivre('Valor máximo neste fluxo: R$ 5.000,00.');
+      setErroValorLivre('Valor mÃ¡ximo neste fluxo: R$ 5.000,00.');
       return;
     }
 
@@ -423,11 +427,11 @@ export default function Apoie({ user, perfil }) {
       return;
     }
     if (!attributionCreatorIdParaCheckout || !creatorOffer?.creatorMembershipEnabled) {
-      setErroMembershipCriador('Este criador ainda não ativou a membership pública.');
+      setErroMembershipCriador('Este criador ainda nÃ£o ativou a membership pÃºblica.');
       return;
     }
     if (attributionCreatorIdParaCheckout === user.uid) {
-      setErroMembershipCriador('Você não pode assinar a própria membership de criador.');
+      setErroMembershipCriador('VocÃª nÃ£o pode assinar a prÃ³pria membership de criador.');
       return;
     }
     setErroMembershipCriador('');
@@ -492,26 +496,25 @@ export default function Apoie({ user, perfil }) {
   const textoAteInicioPromo = textoCountdownPromoSegundos(segundosAteInicio);
   const textoTerminaPromo = textoCountdownPromoSegundos(segundosRestantes);
 
-  /** Atribuição de apoio/premium a um mangaká (links: ?creatorId=UID ou ?criador=UID). */
+  /** AtribuiÃ§Ã£o de apoio/premium a um mangakÃ¡ (links: ?creatorId=UID ou ?criador=UID). */
 
   useEffect(() => {
     if (!attributionCreatorIdParaCheckout) {
       setCreatorOffer(null);
       return () => {};
     }
-    const unsub = onValue(ref(db, `usuarios_publicos/${attributionCreatorIdParaCheckout}`), (snapshot) => {
-      const row = snapshot.exists() ? snapshot.val() || {} : {};
-      const monetizationStatus = effectiveCreatorMonetizationStatus(
-        row.creatorMonetizationPreference,
-        row.creatorMonetizationStatus
-      );
+    const unsub = onValue(ref(db, `usuarios/${attributionCreatorIdParaCheckout}`), (snapshot) => {
+      const row = snapshot.exists()
+        ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, attributionCreatorIdParaCheckout)
+        : {};
+      const monetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);
       if (monetizationStatus !== 'active') {
         setCreatorOffer(null);
         return;
       }
       setCreatorOffer({
         creatorId: attributionCreatorIdParaCheckout,
-        creatorName: String(row.creatorDisplayName || row.userName || 'Criador').trim() || 'Criador',
+        creatorName: resolvePublicProfileDisplayName(row, 'Criador'),
         creatorMembershipEnabled: row.creatorMembershipEnabled !== false,
         creatorMembershipPriceBRL: Number(row.creatorMembershipPriceBRL || 12),
         creatorDonationSuggestedBRL: Number(row.creatorDonationSuggestedBRL || 7),
@@ -586,23 +589,23 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="apoie-title-discord">Apoie Kokuin: Herança do Abismo</h1>
+          <h1 className="apoie-title-discord">Apoie Kokuin: HeranÃ§a do Abismo</h1>
 
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="status">
-              Você entrou por um link de criador: os apoios desta sessão podem ser atribuídos a esse perfil.
+              VocÃª entrou por um link de criador: os apoios desta sessÃ£o podem ser atribuÃ­dos a esse perfil.
             </p>
           ) : null}
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="note">
-              Atribuição vale para métrica interna e repasse futuro, quando a regra estiver ativa. O valor cobrado não muda por causa disso.
+              AtribuiÃ§Ã£o vale para mÃ©trica interna e repasse futuro, quando a regra estiver ativa. O valor cobrado nÃ£o muda por causa disso.
             </p>
           ) : null}
 
           {celebracaoPremium.show && (
             <div className="apoie-celebracao-backdrop" role="status" aria-live="polite">
               <div className="apoie-celebracao-card">
-                <div className="apoie-celebracao-icone" aria-hidden="true">⚡</div>
+                <div className="apoie-celebracao-icone" aria-hidden="true">âš¡</div>
                 <h2>
                   {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
                     ? 'Assinatura renovada com sucesso'
@@ -610,8 +613,8 @@ export default function Apoie({ user, perfil }) {
                 </h2>
                 <p>
                   {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
-                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai até ${formatarDataLongaBr(acompanhamentoPremium.novoUntil)}.`
-                    : 'Seus poderes Premium foram liberados. Bem-vindo à Elite da Tempestade.'}
+                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai atÃ© ${formatarDataLongaBr(acompanhamentoPremium.novoUntil)}.`
+                    : 'Seus poderes Premium foram liberados. Bem-vindo Ã  Elite da Tempestade.'}
                 </p>
                 <button
                   type="button"
@@ -655,20 +658,20 @@ export default function Apoie({ user, perfil }) {
 
           {mpRetorno === 'pending' && (
             <p className="apoie-flash apoie-flash--pending" role="status">
-              Pagamento pendente. Quando o Mercado Pago confirmar, você verá a cobrança finalizada.
+              Pagamento pendente. Quando o Mercado Pago confirmar, vocÃª verÃ¡ a cobranÃ§a finalizada.
             </p>
           )}
           {mpRetorno === 'erro' && (
             <p className="apoie-flash apoie-flash--erro" role="alert">
-              Não foi possível concluir o pagamento. Você pode tentar de novo abaixo.
+              NÃ£o foi possÃ­vel concluir o pagamento. VocÃª pode tentar de novo abaixo.
             </p>
           )}
 
           <p className="apoie-texto">
-            Cada apoio faz diferença real: ajuda com servidor, energia, ferramentas de IA, café e meu
-            tempo pra desenhar mais capítulos.
+            Cada apoio faz diferenÃ§a real: ajuda com servidor, energia, ferramentas de IA, cafÃ© e meu
+            tempo pra desenhar mais capÃ­tulos.
             <br />
-            <strong>Obrigado por acreditar na história e na tempestade!</strong>
+            <strong>Obrigado por acreditar na histÃ³ria e na tempestade!</strong>
           </p>
 
           {attributionCreatorIdParaCheckout && creatorOffer && (
@@ -678,8 +681,8 @@ export default function Apoie({ user, perfil }) {
                 {creatorOffer.creatorName} - {formatarPrecoBrl(creatorOffer.creatorMembershipPriceBRL)} / 30 dias
               </h2>
               <p className="apoie-premium-desc">
-                Esta assinatura é do criador. Ela libera acesso antecipado só aos capítulos ligados a{' '}
-                <strong>{creatorOffer.creatorName}</strong> — o valor é apoio direto a esse autor.
+                Esta assinatura Ã© do criador. Ela libera acesso antecipado sÃ³ aos capÃ­tulos ligados a{' '}
+                <strong>{creatorOffer.creatorName}</strong> â€” o valor Ã© apoio direto a esse autor.
               </p>
               <ul className="apoie-premium-lista">
                 <li>
@@ -689,14 +692,14 @@ export default function Apoie({ user, perfil }) {
                   <i className="fa-solid fa-heart" /> O valor desta assinatura vai para o criador indicado.
                 </li>
                 <li>
-                  <i className="fa-solid fa-layer-group" /> Não substitui o Premium da plataforma nem libera benefícios globais.
+                  <i className="fa-solid fa-layer-group" /> NÃ£o substitui o Premium da plataforma nem libera benefÃ­cios globais.
                 </li>
               </ul>
               {membershipCriadorAtiva && (
                 <p className="apoie-premium-status" role="status">
-                  Sua membership deste criador está <strong>ativa</strong>
+                  Sua membership deste criador estÃ¡ <strong>ativa</strong>
                   {typeof membershipAtualDoCriador?.memberUntil === 'number'
-                    ? ` até ${formatarDataLongaBr(membershipAtualDoCriador.memberUntil)}`
+                    ? ` atÃ© ${formatarDataLongaBr(membershipAtualDoCriador.memberUntil)}`
                     : ''}
                   .
                 </p>
@@ -722,17 +725,17 @@ export default function Apoie({ user, perfil }) {
           )}
 
           {fromChapterEmail && (
-            <div className="apoie-cap-email-banner" role="region" aria-label="Novo capítulo por e-mail">
+            <div className="apoie-cap-email-banner" role="region" aria-label="Novo capÃ­tulo por e-mail">
               <p>
-                Você abriu o link do aviso de capítulo novo. Esta página é o <strong>checkout</strong> para
-                apoiar a obra; se preferir ler antes, use o botão abaixo (o rastreio do e-mail continua igual).
+                VocÃª abriu o link do aviso de capÃ­tulo novo. Esta pÃ¡gina Ã© o <strong>checkout</strong> para
+                apoiar a obra; se preferir ler antes, use o botÃ£o abaixo (o rastreio do e-mail continua igual).
               </p>
               <button
                 type="button"
                 className="apoie-cap-email-banner-btn"
                 onClick={() => navigate(hrefLerCapEmail)}
               >
-                Ir ler o capítulo
+                Ir ler o capÃ­tulo
               </button>
             </div>
           )}
@@ -748,7 +751,7 @@ export default function Apoie({ user, perfil }) {
             ) : (
               <>
                 <h2 className="apoie-premium-titulo">
-                  Assinatura Premium — {labelPrecoPremium(precoSeguro)} / 30 dias
+                  Assinatura Premium â€” {labelPrecoPremium(precoSeguro)} / 30 dias
                 </h2>
                 {ofertaPremium.isPromoActive && (
                   <div className="apoie-premium-oferta">
@@ -771,10 +774,10 @@ export default function Apoie({ user, perfil }) {
                 {promoProgramada && (
                   <div className="apoie-premium-oferta">
                     <p>
-                      <strong>{ofertaPremium?.promo?.name || 'Promoção relâmpago'}</strong> programada.
+                      <strong>{ofertaPremium?.promo?.name || 'PromoÃ§Ã£o relÃ¢mpago'}</strong> programada.
                     </p>
                     <p>
-                      Entrará em: <strong>{textoAteInicioPromo}</strong>
+                      EntrarÃ¡ em: <strong>{textoAteInicioPromo}</strong>
                     </p>
                     <p>
                       Quando iniciar, o valor muda automaticamente para{' '}
@@ -790,10 +793,10 @@ export default function Apoie({ user, perfil }) {
             <ul className="apoie-premium-lista">
 
               <li>
-                <i className="fa-solid fa-crown" /> Distintivo dourado nos comentários e destaque de presença.
+                <i className="fa-solid fa-crown" /> Distintivo dourado nos comentÃ¡rios e destaque de presenÃ§a.
               </li>
               <li>
-                <i className="fa-solid fa-eye" /> Leitura sem anúncios (quando houver espaços de mídia no site).
+                <i className="fa-solid fa-eye" /> Leitura sem anÃºncios (quando houver espaÃ§os de mÃ­dia no site).
               </li>
               <li>
                 <i className="fa-solid fa-user-pen" /> Perfil: avatares exclusivos e cor de nome (em evolucao no
@@ -805,8 +808,8 @@ export default function Apoie({ user, perfil }) {
             </ul>
             {premiumAtivo && fimPremium && (
               <p className="apoie-premium-status" role="status">
-                Sua assinatura está <strong>ativa</strong> até <strong>{fimPremium}</strong>. Você pode renovar
-                antes do fim para somar mais 30 dias a partir do último dia válido.
+                Sua assinatura estÃ¡ <strong>ativa</strong> atÃ© <strong>{fimPremium}</strong>. VocÃª pode renovar
+                antes do fim para somar mais 30 dias a partir do Ãºltimo dia vÃ¡lido.
               </p>
             )}
             {!user && (
@@ -814,7 +817,7 @@ export default function Apoie({ user, perfil }) {
                 <button type="button" className="apoie-link-login" onClick={irLoginComRetorno}>
                   Entre na sua conta
                 </button>{' '}
-                para assinar — precisamos saber quem é você para liberar o Premium.
+                para assinar â€” precisamos saber quem Ã© vocÃª para liberar o Premium.
               </p>
             )}
             {erroPremium && (
@@ -831,7 +834,7 @@ export default function Apoie({ user, perfil }) {
                 <h3>
                   {acompanhamentoPremium.confirmado
                     ? 'Pagamento confirmado na tempestade'
-                    : 'Aguardando confirmação do pagamento'}
+                    : 'Aguardando confirmaÃ§Ã£o do pagamento'}
                 </h3>
                 {!acompanhamentoPremium.confirmado ? (
                   <>
@@ -851,7 +854,7 @@ export default function Apoie({ user, perfil }) {
                           <strong>
                             {formatarHoraBr(acompanhamentoPremium.confirmadoAt, { seVazio: '' })}
                           </strong>
-                          . Pode fechar com segurança.
+                          . Pode fechar com seguranÃ§a.
                         </>
                       )}
                   </p>
@@ -878,7 +881,7 @@ export default function Apoie({ user, perfil }) {
                       }
                     }
                   >
-                    {acompanhamentoPremium.confirmado ? 'Fechar confirmação' : 'Parar acompanhamento'}
+                    {acompanhamentoPremium.confirmado ? 'Fechar confirmaÃ§Ã£o' : 'Parar acompanhamento'}
                   </button>
                 </div>
               </div>
@@ -890,10 +893,10 @@ export default function Apoie({ user, perfil }) {
               onClick={abrirAssinaturaPremium}
             >
               {carregandoId === 'premium'
-                ? 'Abrindo checkout…'
+                ? 'Abrindo checkoutâ€¦'
                 : premiumAtivo
                   ? 'Renovar Premium (30 dias)'
-                  : `Assinar Premium — ${labelPrecoPremium(precoSeguro)}`}
+                  : `Assinar Premium â€” ${labelPrecoPremium(precoSeguro)}`}
             </button>
           </div>
 
@@ -906,12 +909,12 @@ export default function Apoie({ user, perfil }) {
           <div className="apoie-doacao-livre">
             <h2 className="apoie-doacao-livre-titulo">
               {creatorOffer
-                ? `Doação livre para ${creatorOffer.creatorName} (Pix / checkout)`
-                : 'Doação livre (Pix / checkout)'}
+                ? `DoaÃ§Ã£o livre para ${creatorOffer.creatorName} (Pix / checkout)`
+                : 'DoaÃ§Ã£o livre (Pix / checkout)'}
             </h2>
             <p className="apoie-doacao-livre-desc">
-              Escolha o valor (mínimo <strong>R$ 1,00</strong>). Abre o mesmo checkout seguro do Mercado Pago.
-              {creatorOffer ? ` Nesta sessão o apoio vai para ${creatorOffer.creatorName}.` : ''}
+              Escolha o valor (mÃ­nimo <strong>R$ 1,00</strong>). Abre o mesmo checkout seguro do Mercado Pago.
+              {creatorOffer ? ` Nesta sessÃ£o o apoio vai para ${creatorOffer.creatorName}.` : ''}
             </p>
             {!user && (
               <p className="apoie-premium-login-hint">
@@ -931,7 +934,7 @@ export default function Apoie({ user, perfil }) {
                 value={valorLivre}
                 onChange={(e) => setValorLivre(e.target.value)}
                 disabled={carregandoId !== null || !user}
-                aria-label="Valor da doação em reais"
+                aria-label="Valor da doaÃ§Ã£o em reais"
               />
               <button
                 type="button"
@@ -939,7 +942,7 @@ export default function Apoie({ user, perfil }) {
                 disabled={carregandoId !== null || !user}
                 onClick={abrirDoacaoLivre}
               >
-                {carregandoId === 'livre' ? 'Abrindo…' : 'Doar este valor'}
+                {carregandoId === 'livre' ? 'Abrindoâ€¦' : 'Doar este valor'}
               </button>
             </div>
             {erroValorLivre && (
@@ -954,8 +957,8 @@ export default function Apoie({ user, perfil }) {
               <strong>API:</strong> {erroCheckoutPlanos}
               <span className="apoie-checkout-erro-hint">
                 {' '}
-                Se abriu outra aba com o link <code>mpago.la</code>, esse é o plano B. Token: gere de novo em
-                Mercado Pago → Credenciais → Access Token (produção ou teste) e rode{' '}
+                Se abriu outra aba com o link <code>mpago.la</code>, esse Ã© o plano B. Token: gere de novo em
+                Mercado Pago â†’ Credenciais â†’ Access Token (produÃ§Ã£o ou teste) e rode{' '}
                 <code>firebase functions:secrets:set MP_ACCESS_TOKEN</code> + deploy da function.
               </span>
             </p>
@@ -974,7 +977,7 @@ export default function Apoie({ user, perfil }) {
                   disabled={carregandoId !== null || !user}
                   onClick={() => abrirPagamento(plano)}
                 >
-                  {carregandoId === plano.id ? 'Abrindo…' : `APOIAR ${plano.precoLabel}`}
+                  {carregandoId === plano.id ? 'Abrindoâ€¦' : `APOIAR ${plano.precoLabel}`}
                 </button>
               </div>
             ))}
@@ -982,8 +985,8 @@ export default function Apoie({ user, perfil }) {
 
           <p className="apoie-nota">
             <i className="fa-solid fa-shield-check" /> Checkout oficial do Mercado Pago.{' '}
-            <strong>Premium:</strong> após o pagamento aprovado você recebe e-mail de confirmação e, perto do
-            fim dos 30 dias, um lembrete para renovar. <strong>Doações:</strong> agradecimento no site (modal),
+            <strong>Premium:</strong> apÃ³s o pagamento aprovado vocÃª recebe e-mail de confirmaÃ§Ã£o e, perto do
+            fim dos 30 dias, um lembrete para renovar. <strong>DoaÃ§Ãµes:</strong> agradecimento no site (modal),
             sem e-mail automatico. <strong>Membership do criador:</strong> ativa acesso antecipado somente para o autor assinado.
           </p>
 
@@ -993,16 +996,16 @@ export default function Apoie({ user, perfil }) {
               <li>
                 <i className="fa-solid fa-crown" /> <strong>Assinatura Premium ({labelPrecoPremium()}):</strong>{' '}
                 regalias de
-                membro (lista acima), por 30 dias renováveis.
+                membro (lista acima), por 30 dias renovÃ¡veis.
               </li>
               <li>
-                <i className="fa-solid fa-heart" /> <strong>P / M / G e doação livre:</strong> apoio à obra —
-                sem regalias automáticas no site; seu nome pode entrar nos créditos combinando no Discord.
+                <i className="fa-solid fa-heart" /> <strong>P / M / G e doaÃ§Ã£o livre:</strong> apoio Ã  obra â€”
+                sem regalias automÃ¡ticas no site; seu nome pode entrar nos crÃ©ditos combinando no Discord.
               </li>
             </ul>
             <div className="discord-notice-box">
               <p>
-                Após o apoio, envie o comprovante no nosso <strong>Discord</strong>. Irei anotar sua alma
+                ApÃ³s o apoio, envie o comprovante no nosso <strong>Discord</strong>. Irei anotar sua alma
                 para os agradecimentos oficiais.
               </p>
             </div>

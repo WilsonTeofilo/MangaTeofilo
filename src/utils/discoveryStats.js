@@ -1,9 +1,6 @@
 import { get, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
-import {
-  WORK_FAVORITES_CANON_KEY,
-  WORK_FAVORITES_LEGACY_KEY,
-} from '../../shared/readerPublicProfile.js';
+import { WORK_FAVORITES_CANON_KEY } from '../../shared/readerPublicProfile.js';
 
 import { functions } from '../services/firebase';
 
@@ -41,8 +38,6 @@ export async function applyChapterReadDelta(db, {
   creatorId: _creatorId,
   amount = 1,
   viewerUid = '',
-  chapterNumber = 0,
-  chapterTitle = '',
 }) {
   const delta = Number(amount || 0);
   if (!chapterId || !workId || !delta) return;
@@ -53,8 +48,6 @@ export async function applyChapterReadDelta(db, {
     workId,
     chapterId,
     viewerUid: vu,
-    chapterNumber,
-    chapterTitle,
     delta: sign,
   });
 }
@@ -80,9 +73,6 @@ export async function applyChapterLikeDelta(db, { chapterId, workId, creatorId: 
 
 export async function alreadyFavorited(db, uid, workId) {
   if (!uid || !workId) return false;
-  const [legacy, canon] = await Promise.all([
-    get(ref(db, `usuarios/${uid}/${WORK_FAVORITES_LEGACY_KEY}/${workId}`)),
-    get(ref(db, `usuarios/${uid}/${WORK_FAVORITES_CANON_KEY}/${workId}`)),
-  ]);
-  return legacy.exists() || canon.exists();
+  const canon = await get(ref(db, `usuarios/${uid}/${WORK_FAVORITES_CANON_KEY}/${workId}`));
+  return canon.exists();
 }

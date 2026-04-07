@@ -97,7 +97,7 @@ export default function CreatorApplicationModal({
   const [birthDate, setBirthDate] = useState('');
   const [birthDateDraft, setBirthDateDraft] = useState('');
   const [legalFullName, setLegalFullName] = useState('');
-  /** CPF do documento (mÃ¡scara igual ao campo PIX) â€” omitido quando chave PIX jÃ¡ Ã© CPF. */
+  /** CPF do documento (máscara igual ao campo PIX) — omitido quando chave PIX já é CPF. */
   const [documentCpfDraft, setDocumentCpfDraft] = useState('');
   const [payoutPixType, setPayoutPixType] = useState('cpf');
   const [pixKeyDraft, setPixKeyDraft] = useState('');
@@ -127,7 +127,7 @@ export default function CreatorApplicationModal({
   const showFormError = useCallback((message) => {
     setFeedbackDialog({
       kind: 'error',
-      message: String(message || '').trim() || 'NÃ£o foi possÃ­vel continuar.',
+      message: String(message || '').trim() || 'Não foi possível continuar.',
     });
   }, []);
 
@@ -259,7 +259,7 @@ export default function CreatorApplicationModal({
     }
   }, [open, variant]);
 
-  /** Fluxo mangakÃ¡: abriu pedido de monetizaÃ§Ã£o mas jÃ¡ Ã© menor pela data â€” explica na hora. */
+  /** Fluxo mangaká: abriu pedido de monetização mas já é menor pela data — explica na hora. */
   useEffect(() => {
     if (variant === 'modal' && !open) return;
     if (intent !== 'mangaka_monetize' || !minorInForm) {
@@ -271,7 +271,7 @@ export default function CreatorApplicationModal({
     setUnderageMonetizationModalOpen(true);
   }, [open, variant, intent, minorInForm]);
 
-  /** /creators com perfil jÃ¡ em Â«monetizarÂ» e menor â€” aviso ao entrar. */
+  /** /creators com perfil já em Â«monetizarÂ» e menor — aviso ao entrar. */
   useEffect(() => {
     if (variant !== 'page') {
       pageMonetizeMinorAutoRef.current = false;
@@ -448,8 +448,8 @@ export default function CreatorApplicationModal({
       cancelled = true;
       remoteProfileImageElRef.current = null;
     };
-    // creatorProfileImageAdjustment: sÃ³ leitura inicial ao carregar arquivo; previews atualizam noutro efeito.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps mÃ­nimas para nÃ£o reprocessar imagem a cada zoom
+    // creatorProfileImageAdjustment: só leitura inicial ao carregar arquivo; previews atualizam noutro efeito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps mínimas para não reprocessar imagem a cada zoom
   }, [creatorProfileImageFile, initial.existingProfileImageUrl, initial.profileImageCrop, open, variant, showFormError]);
 
   useEffect(() => {
@@ -511,7 +511,7 @@ export default function CreatorApplicationModal({
     setFeedbackDialog(null);
     successAfterDismissRef.current = null;
     if (String(displayName || '').trim().length < 3) {
-      showFormError('Informe um nome artÃ­stico com pelo menos 3 caracteres.');
+      showFormError('Informe um nome artístico com pelo menos 3 caracteres.');
       return;
     }
     const bioTrim = String(bio || '').trim();
@@ -522,7 +522,7 @@ export default function CreatorApplicationModal({
       return;
     }
     if (bioTrim.length > CREATOR_BIO_MAX_LENGTH) {
-      showFormError(`A bio pode ter no mÃ¡ximo ${CREATOR_BIO_MAX_LENGTH} caracteres.`);
+      showFormError(`A bio pode ter no máximo ${CREATOR_BIO_MAX_LENGTH} caracteres.`);
       return;
     }
     const existingPhotoRaw = String(initial.existingProfileImageUrl || '').trim();
@@ -534,12 +534,12 @@ export default function CreatorApplicationModal({
     }
     const birthIsoFinal = parseBirthDateFlexible(birthDateDraft, birthDate);
     if (!parseBirthDateLocal(birthIsoFinal)) {
-      showFormError('Informe sua data de nascimento em dia/mÃªs/ano (ex.: 28/12/2001).');
+      showFormError('Informe sua data de nascimento em dia/mês/ano (ex.: 28/12/2001).');
       return;
     }
     const age = ageFromBirthDateLocal(birthIsoFinal);
     if (age == null) {
-      showFormError('Data de nascimento invÃ¡lida.');
+      showFormError('Data de nascimento inválida.');
       return;
     }
     const wantsMonetize = monetizationPreference === 'monetize';
@@ -556,12 +556,12 @@ export default function CreatorApplicationModal({
     let docCpfDigits = '';
     if (wantsMonetize) {
       if (age < 18) {
-        showFormError('Menores de 18 anos nÃ£o podem Solicitar monetização nesta plataforma.');
+        showFormError('Menores de 18 anos não podem Solicitar monetização nesta plataforma.');
         return;
       }
       if (!legalFullNameHasMinThreeWords(legalFullName)) {
         showFormError(
-          'Para monetizar, informe nome completo legal com pelo menos trÃªs partes (ex.: Nome Sobrenome Filho).'
+          'Para monetizar, informe nome completo legal com pelo menos três partes (ex.: Nome Sobrenome Filho).'
         );
         return;
       }
@@ -574,19 +574,19 @@ export default function CreatorApplicationModal({
           showFormError(
             documentCpfNormalized.length === 0
               ? 'Informe o CPF do documento (mesmo formato do PIX).'
-              : documentCpfFeedback.message || 'CPF do documento invÃ¡lido.'
+              : documentCpfFeedback.message || 'CPF do documento inválido.'
           );
           return;
         }
       }
       if (!isValidBrazilianCpfDigits(docCpfDigits)) {
-        showFormError('Para monetizar, informe um CPF vÃ¡lido (documento).');
+        showFormError('Para monetizar, informe um CPF válido (documento).');
         return;
       }
       pixNorm = normalizePixKeyForStorage(payoutPixType, pixKeyDraft);
       const pixFb = validateNormalizedPixKey(payoutPixType, pixNorm);
       if (!pixFb.ok) {
-        showFormError(pixFb.message || 'Chave PIX invÃ¡lida.');
+        showFormError(pixFb.message || 'Chave PIX inválida.');
         return;
       }
       if (!acceptFinancialTerms) {
@@ -623,14 +623,14 @@ export default function CreatorApplicationModal({
             : undefined,
       });
       const r = submitResult && typeof submitResult === 'object' ? submitResult : null;
-      const title = String(r?.successTitle || '').trim() || 'ConcluÃ­do';
+      const title = String(r?.successTitle || '').trim() || 'Concluído';
       const body =
         String(r?.successBody || '').trim() ||
-        'Sua solicitaÃ§Ã£o foi registrada. VocÃª pode fechar esta janela quando quiser.';
+        'Sua solicitação foi registrada. Você pode fechar esta janela quando quiser.';
       successAfterDismissRef.current = typeof r?.afterDismiss === 'function' ? r.afterDismiss : null;
       setFeedbackDialog({ kind: 'success', title, body });
     } catch (err) {
-      showFormError(err?.message || 'NÃ£o foi possÃ­vel enviar agora.');
+      showFormError(err?.message || 'Não foi possível enviar agora.');
     }
   }, [
     displayName,
@@ -676,20 +676,20 @@ export default function CreatorApplicationModal({
           aria-labelledby="creator-app-underage-title"
         >
           <h2 id="creator-app-underage-title" className="creator-app-underage-dialog__title">
-            MonetizaÃ§Ã£o indisponÃ­vel (idade)
+            Monetização indisponível (idade)
           </h2>
           <div className="creator-app-underage-dialog__body">
             <p>
               Na MangaTeofilo, <strong>repasses financeiros</strong> (CPF, chave PIX, contrato de criador) exigem{' '}
-              <strong>maioridade â€” 18 anos ou mais</strong>, por lei e polÃ­tica da plataforma.
+              <strong>maioridade — 18 anos ou mais</strong>, por lei e política da plataforma.
             </p>
             <p>
-              VocÃª pode continuar <strong>publicando</strong> e montando seu perfil de criador normalmente. Quando for
-              maior de idade, volte e solicite monetizaÃ§Ã£o aqui ou no seu perfil.
+              Você pode continuar <strong>publicando</strong> e montando seu perfil de criador normalmente. Quando for
+              maior de idade, volte e solicite monetização aqui ou no seu perfil.
             </p>
             <p className="creator-app-modal__hint">
-              Verifique se a <strong>data de nascimento</strong> do formulÃ¡rio estÃ¡ correta (formato dia/mÃªs/ano). Dados
-              errados tambÃ©m impedem liberar esta etapa.
+              Verifique se a <strong>data de nascimento</strong> do formulário está correta (formato dia/mês/ano). Dados
+              errados também impedem liberar esta etapa.
             </p>
           </div>
           <div className="creator-app-underage-dialog__actions">
@@ -723,7 +723,7 @@ export default function CreatorApplicationModal({
           aria-labelledby="creator-app-feedback-title"
         >
           <h2 id="creator-app-feedback-title" className="creator-app-feedback-dialog__title">
-            {feedbackDialog.kind === 'error' ? 'Revise o formulÃ¡rio' : feedbackDialog.title}
+            {feedbackDialog.kind === 'error' ? 'Revise o formulário' : feedbackDialog.title}
           </h2>
           <div className="creator-app-feedback-dialog__body">
             <p>{feedbackDialog.kind === 'error' ? feedbackDialog.message : feedbackDialog.body}</p>
@@ -744,7 +744,7 @@ export default function CreatorApplicationModal({
 
   const isMangakaMonetizeIntent = intent === 'mangaka_monetize';
   const monetizationAllowed = ageInForm != null && ageInForm >= 18;
-  /** Mostrar bloco legal sempre em Â«monetizarÂ», exceto menor confirmado; submit ainda exige 18+ e data vÃ¡lida. */
+  /** Mostrar bloco legal sempre em Â«monetizarÂ», exceto menor confirmado; submit ainda exige 18+ e data válida. */
   const showMonetizationCompliance = monetizationPreference === 'monetize' && !minorInForm;
 
   const handleMonetizeToggleClick = () => {
@@ -815,7 +815,7 @@ export default function CreatorApplicationModal({
           </div>
           {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl) && !creatorProfileImageFile ? (
             <p className="creator-app-modal__hint" style={{ marginTop: 8 }}>
-              Sua foto atual do perfil serÃ¡ usada neste envio. Use &quot;Escolher foto&quot; sÃ³ se quiser trocar por outra
+              Sua foto atual do perfil será usada neste envio. Use &quot;Escolher foto&quot; só se quiser trocar por outra
               imagem.
             </p>
           ) : null}
@@ -852,7 +852,7 @@ export default function CreatorApplicationModal({
                     </strong>
                     <span>
                       {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl)
-                        ? 'Se a prÃ©via nÃ£o abrir, use Â«Escolher fotoÂ» â€” o envio ainda pode usar a URL do seu perfil.'
+                        ? 'Se a prévia não abrir, use Â«Escolher fotoÂ» — o envio ainda pode usar a URL do seu perfil.'
                         : 'Retrato 3:4 para o perfil e hero reutilizado no estilo Manga Plus Creators.'}
                     </span>
                   </div>
@@ -1006,7 +1006,7 @@ export default function CreatorApplicationModal({
           {isMangakaMonetizeIntent ? 'Pedido' : 'Objetivo'}
           {isMangakaMonetizeIntent ? (
             <p className="creator-app-modal__hint" style={{ marginTop: 6 }}>
-              MonetizaÃ§Ã£o na plataforma â€” dados legais e PIX abaixo seguem para revisÃ£o do time antes de liberar
+              Monetização na plataforma — dados legais e PIX abaixo seguem para revisão do time antes de liberar
               repasses.
             </p>
           ) : (
@@ -1029,14 +1029,14 @@ export default function CreatorApplicationModal({
               </div>
               <p className="creator-app-modal__hint">
                 {minorInForm
-                  ? 'VocÃª pode publicar, mas nÃ£o pode monetizar devido Ã  idade. ConteÃºdo e repasse financeiro ficam separados por seguranÃ§a jurÃ­dica.'
+                  ? 'Você pode publicar, mas não pode monetizar devido à idade. Conteúdo e repasse financeiro ficam separados por segurança jurídica.'
                   : monetizationPreference === 'monetize' && !monetizationAllowed
-                    ? 'Preencha uma data de nascimento vÃ¡lida (18+) para enviar com monetizaÃ§Ã£o â€” os dados legais aparecem abaixo.'
+                    ? 'Preencha uma data de nascimento válida (18+) para enviar com monetização — os dados legais aparecem abaixo.'
                     : !birthIsoEffective
                       ? 'Informe a data de nascimento para concluir a candidatura.'
                       : monetizationPreference === 'monetize'
-                        ? 'Publicar e receber via plataforma sÃ£o caminhos diferentes: com monetizaÃ§Ã£o, pedimos dados legais e de repasse.'
-                        : 'Modo apenas publicar: seu perfil de criador pode ser liberado na hora, sem repasses atÃ© vocÃª Solicitar monetização depois.'}
+                        ? 'Publicar e receber via plataforma são caminhos diferentes: com monetização, pedimos dados legais e de repasse.'
+                        : 'Modo apenas publicar: seu perfil de criador pode ser liberado na hora, sem repasses até você Solicitar monetização depois.'}
               </p>
             </>
           )}
@@ -1044,7 +1044,7 @@ export default function CreatorApplicationModal({
 
         {showMonetizationCompliance ? (
           <div className="creator-app-modal__compliance">
-            <p className="creator-app-modal__section-title">Dados para monetizaÃ§Ã£o (maiores de 18)</p>
+            <p className="creator-app-modal__section-title">Dados para monetização (maiores de 18)</p>
             <label className="creator-app-modal__label">
               Nome completo (documento)
               <input
@@ -1106,7 +1106,7 @@ export default function CreatorApplicationModal({
                     ? 'E-mail'
                     : payoutPixType === 'phone'
                       ? 'Telefone (com DDD)'
-                      : 'Chave aleatÃ³ria (UUID)'}
+                      : 'Chave aleatória (UUID)'}
                 {payoutPixType === 'random' ? (
                   <input
                     type="text"
@@ -1137,7 +1137,7 @@ export default function CreatorApplicationModal({
               {pixKeyDraft.length > 0 ? (
                 pixKeyFeedback.ok ? (
                   <p className="creator-app-modal__pix-feedback creator-app-modal__pix-feedback--ok" role="status">
-                    Chave vÃ¡lida â€” serÃ¡ salva sem mÃ¡scara.
+                    Chave válida — será salva sem máscara.
                   </p>
                 ) : (
                   <p className="creator-app-modal__pix-feedback creator-app-modal__pix-feedback--err" role="alert">
@@ -1146,17 +1146,17 @@ export default function CreatorApplicationModal({
                 )
               ) : (
                 <p className="creator-app-modal__hint">
-                  O valor enviado ao servidor fica normalizado (sem pontuaÃ§Ã£o de CPF/telefone).
+                  O valor enviado ao servidor fica normalizado (sem pontuação de CPF/telefone).
                 </p>
               )}
               {payoutPixType === 'cpf' ? (
                 <p className="creator-app-modal__hint" style={{ marginTop: 10 }}>
-                  Este CPF Ã© o mesmo do documento para repasse â€” nÃ£o pedimos um segundo campo.
+                  Este CPF é o mesmo do documento para repasse — não pedimos um segundo campo.
                 </p>
               ) : null}
               {payoutPixType !== 'cpf' ? (
                 <label className="creator-app-modal__label" style={{ marginTop: 14 }}>
-                  CPF (documento â€” mesmo formato do PIX)
+                  CPF (documento — mesmo formato do PIX)
                   <input
                     type="text"
                     className="creator-app-modal__input"
@@ -1170,7 +1170,7 @@ export default function CreatorApplicationModal({
                   {documentCpfDraft.replace(/\D/g, '').length > 0 ? (
                     documentCpfFeedback.ok ? (
                       <p className="creator-app-modal__pix-feedback creator-app-modal__pix-feedback--ok" role="status">
-                        CPF do documento vÃ¡lido.
+                        CPF do documento válido.
                       </p>
                     ) : (
                       <p className="creator-app-modal__pix-feedback creator-app-modal__pix-feedback--err" role="alert">
@@ -1178,7 +1178,7 @@ export default function CreatorApplicationModal({
                       </p>
                     )
                   ) : (
-                    <p className="creator-app-modal__hint">Mesma mÃ¡scara do CPF na chave PIX (sÃ³ nÃºmeros).</p>
+                    <p className="creator-app-modal__hint">Mesma máscara do CPF na chave PIX (só números).</p>
                   )}
                 </label>
               ) : null}
@@ -1187,13 +1187,13 @@ export default function CreatorApplicationModal({
         ) : null}
 
         <label className="creator-app-modal__label">
-          Nome artÃ­stico
+          Nome artístico
           <input
             className="creator-app-modal__input"
             value={displayName}
             maxLength={60}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Como vocÃª quer aparecer publicamente"
+            placeholder="Como você quer aparecer publicamente"
           />
         </label>
 
@@ -1204,18 +1204,18 @@ export default function CreatorApplicationModal({
             value={bio}
             maxLength={CREATOR_BIO_MAX_LENGTH}
             onChange={(e) => setBio(e.target.value.slice(0, CREATOR_BIO_MAX_LENGTH))}
-            placeholder="Explique em 1 ou 2 linhas quem vocÃª Ã© e o que cria."
+            placeholder="Explique em 1 ou 2 linhas quem você é e o que cria."
             rows={3}
           />
           <p className="creator-app-modal__hint">
-            MÃ­nimo{' '}
+            Mínimo{' '}
             {monetizationPreference === 'monetize' ? CREATOR_BIO_MIN_LENGTH : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY}{' '}
             caracteres
-            {monetizationPreference === 'monetize' ? ' (com monetizaÃ§Ã£o).' : ' (sÃ³ publicar).'}
+            {monetizationPreference === 'monetize' ? ' (com monetização).' : ' (só publicar).'}
           </p>
         </label>
 
-        <p className="creator-app-modal__section-title">Redes sociais (pelo menos uma vÃ¡lida)</p>
+        <p className="creator-app-modal__section-title">Redes sociais (pelo menos uma válida)</p>
         <div className="creator-app-modal__row">
           <label className="creator-app-modal__label">
             Instagram
@@ -1252,7 +1252,7 @@ export default function CreatorApplicationModal({
               onChange={(e) => setAcceptFinancialTerms(e.target.checked)}
             />
             <span>
-              Li e aceito os termos financeiros e de repasse relacionados Ã  monetizaÃ§Ã£o na plataforma.
+              Li e aceito os termos financeiros e de repasse relacionados à monetização na plataforma.
             </span>
           </label>
         ) : null}

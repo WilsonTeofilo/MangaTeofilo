@@ -1,77 +1,12 @@
 import { ref, get, set, update } from 'firebase/database';
 import { getIdToken, reload } from 'firebase/auth';
 import { db } from './services/firebase';
-import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME, isAdminUser } from './constants';
-import {
-  USUARIOS_DEPRECATED_KEYS,
-  USUARIOS_PUBLICOS_DEPRECATED_KEYS,
-} from './config/userDeprecatedFields';
-import {
-  buildUsuarioBaseRecord,
-  buildUsuarioMissingFieldsPatch,
-  buildUsuarioPublicoPatch,
-} from './config/userProfileSchema';
+import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME } from './constants';
+import { buildUsuarioBaseRecord, buildUsuarioMissingFieldsPatch } from './config/userProfileSchema';
 
 export async function refreshAuthUser(user) {
   await reload(user);
   await getIdToken(user, true);
-}
-
-export async function cleanupDeprecatedUsuarioFields(uid) {
-  const hasPriv = USUARIOS_DEPRECATED_KEYS.length > 0;
-  const hasPub = USUARIOS_PUBLICOS_DEPRECATED_KEYS.length > 0;
-  if (!uid || (!hasPriv && !hasPub)) return;
-
-  if (hasPriv) {
-    const userRef = ref(db, `usuarios/${uid}`);
-    const snap = await get(userRef);
-    if (snap.exists()) {
-      const data = snap.val() || {};
-      const patch = {};
-      for (const key of USUARIOS_DEPRECATED_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          patch[`usuarios/${uid}/${key}`] = null;
-        }
-      }
-      if (Object.keys(patch).length) await update(ref(db), patch);
-    }
-  }
-
-  if (hasPub) {
-    const pubRef = ref(db, `usuarios_publicos/${uid}`);
-    const pubSnap = await get(pubRef);
-    if (pubSnap.exists()) {
-      const pubData = pubSnap.val() || {};
-      const pubPatch = {};
-      for (const key of USUARIOS_PUBLICOS_DEPRECATED_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(pubData, key)) {
-          pubPatch[`usuarios_publicos/${uid}/${key}`] = null;
-        }
-      }
-      if (Object.keys(pubPatch).length) await update(ref(db), pubPatch);
-    }
-  }
-}
-
-async function sincronizarPublico(uid, userName, userAvatar, accountType, signupIntent = 'reader', userHandle = '') {
-  const publicoRef = ref(db, `usuarios_publicos/${uid}`);
-  const publicoSnap = await get(publicoRef);
-  const patch = buildUsuarioPublicoPatch(publicoSnap.exists() ? publicoSnap.val() || {} : {}, {
-    uid,
-    userName,
-    userAvatar,
-    accountType,
-    signupIntent,
-    userHandle: String(userHandle || '').trim().toLowerCase(),
-    now: Date.now(),
-  });
-  if (Object.keys(patch).length) {
-    const rootPatch = {};
-    for (const [key, value] of Object.entries(patch)) {
-      rootPatch[`usuarios_publicos/${uid}/${key}`] = value;
-    }
-    await update(ref(db), rootPatch);
-  }
 }
 
 export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares, statusInicial = 'pendente') {
@@ -79,7 +14,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   const snapshot = await get(userRef);
   const agora = Date.now();
   const avatar = fotoUrl || (listaAvatares && listaAvatares[0]) || AVATAR_FALLBACK;
-  const status = isAdminUser(usuario) ? 'ativo' : statusInicial;
+  const status = statusInicial;
   const email = String(usuario?.email || '').trim().toLowerCase();
 
   if (!snapshot.exists()) {
@@ -92,15 +27,6 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
       now: agora,
     });
     await set(userRef, record);
-    await sincronizarPublico(
-      usuario.uid,
-      record.userName,
-      record.userAvatar,
-      record.accountType,
-      record.signupIntent,
-      ''
-    );
-
     if (status === 'ativo') {
       await update(ref(db), {
         [`usuarios/${usuario.uid}/status`]: 'ativo',
@@ -128,13 +54,6 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
     await update(ref(db), rootPatch);
   }
 
-  const nomePub = patch.userName || atual.userName || DEFAULT_USER_DISPLAY_NAME;
-  const avatarPub = patch.userAvatar || atual.userAvatar || avatar;
-  const accountPub = patch.accountType || atual.accountType || 'comum';
-  const signupIntentPub = patch.signupIntent || atual.signupIntent || 'reader';
-  const handlePub = String(patch.userHandle || atual.userHandle || '').trim().toLowerCase();
-  await sincronizarPublico(usuario.uid, nomePub, avatarPub, accountPub, signupIntentPub, handlePub);
-
   return { ...atual, ...patch };
 }
 
@@ -154,7 +73,6 @@ export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) 
     listaAvatares.length ? listaAvatares : [fallbackAvatar],
     'ativo'
   );
-  await cleanupDeprecatedUsuarioFields(usuario.uid);
   return perfil;
 }
 

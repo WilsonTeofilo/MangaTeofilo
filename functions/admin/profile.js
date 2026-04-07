@@ -17,11 +17,9 @@ async function reconcileStaffRtdbRoleFromMangaka(uid, ctx) {
   if (!uSnap.exists()) return false;
   const role = String(uSnap.val()?.role || '').toLowerCase();
   if (role !== 'mangaka') return false;
-  const now = Date.now();
   await db.ref().update({
     [`usuarios/${uid}/role`]: 'user',
     [`usuarios/${uid}/signupIntent`]: 'reader',
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
   });
   return true;
 }
@@ -70,7 +68,6 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
     admin: Boolean(ctx),
     creator: creatorOnly,
     super: ctx?.super === true,
-    legacy: ctx?.legacy === true,
     mangaka: creatorOnly,
     panelRole,
     permissions: ctx?.permissions || {},

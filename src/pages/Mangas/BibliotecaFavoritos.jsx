@@ -12,7 +12,6 @@ import { capituloLiberadoParaUsuario } from '../../utils/capituloLancamento';
 import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { removeWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
-import { syncReaderPublicFavoritesMirror } from '../../utils/readerPublicProfile';
 import './BibliotecaFavoritos.css';
 
 function pathObraPublica(obra, obraIdFallback) {
@@ -90,11 +89,6 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     });
     return () => unsub();
   }, []);
-
-  useEffect(() => {
-    if (!user?.uid || favoritosLoadedFor !== user.uid) return;
-    void syncReaderPublicFavoritesMirror(db, user.uid).catch(() => {});
-  }, [favoritosCanon, favoritosLoadedFor, user?.uid]);
 
   const cards = useMemo(() => {
     const favoritosIds = Object.keys(favoritosMap || {});

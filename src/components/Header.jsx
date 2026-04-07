@@ -4,12 +4,11 @@ import { signOut } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from '../services/firebase';
-import { AVATAR_FALLBACK, isAdminUser } from '../constants';
+import { AVATAR_FALLBACK } from '../constants';
 import { canAccessAdminPath, canAccessCreatorPath } from '../auth/adminPermissions';
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
 import {
-  effectiveCreatorMonetizationStatus,
-  resolveCreatorMonetizationStatusFromDb,
+  resolveEffectiveCreatorMonetizationStatusFromDb,
 } from '../utils/creatorMonetizationUi';
 import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../store/cartStore';
 import { getPodCartDraft, POD_CART_CHANGED_EVENT } from '../store/podCartStore';
@@ -18,19 +17,6 @@ import './HeaderV2.css';
 /** Menu hambúrguer só em viewport típica de telemóvel / tablet estreito — não em PC com janela estreita até ~laptop 13". */
 const MOBILE_BREAKPOINT = 768;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
-const ADMIN_CREATOR_QUEUE_SEEN_KEY = 'shito:admin-creator-queue-seen';
-const ADMIN_SUPPORT_QUEUE_SEEN_KEY = 'shito:admin-support-queue-seen';
-
-function readSeenCount(storageKey) {
-  if (typeof window === 'undefined') return 0;
-  const raw = Number(window.localStorage.getItem(storageKey) || 0);
-  return Number.isFinite(raw) ? raw : 0;
-}
-
-function writeSeenCount(storageKey, value) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(storageKey, String(Math.max(0, Number(value || 0))));
-}
 
 export default function Header({ usuario, perfil, adminAccess }) {
   const navigate = useNavigate();
@@ -40,8 +26,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [headerNotifications, setHeaderNotifications] = useState([]);
   const [selectedNotification, setSelectedNotification] = useState(null);
-  const [adminCreatorQueueCount, setAdminCreatorQueueCount] = useState(0);
-  const [adminSupportQueueCount, setAdminSupportQueueCount] = useState(0);
   const [storeCartItems, setStoreCartItems] = useState(() => getCartItems());
   const [podCartActive, setPodCartActive] = useState(() => Boolean(getPodCartDraft()));
   const notificationIdsSeenRef = useRef(new Set());
@@ -55,10 +39,10 @@ export default function Header({ usuario, perfil, adminAccess }) {
     []
   );
 
-  const isAdmin = Boolean(adminAccess?.canAccessAdmin ?? isAdminUser(usuario));
+  const isAdmin = adminAccess?.canAccessAdmin === true;
   /** Alinha a App.jsx: perfil RTDB = mangaka antes do callable devolver `isMangaka`. */
   const creatorNavAccess = useMemo(() => {
-    if (adminAccess?.superAdmin || adminAccess?.byAllowlist) {
+    if (adminAccess?.canAccessAdmin === true) {
       return { ...adminAccess, isMangaka: false };
     }
     if (adminAccess?.canAccessAdmin && adminAccess?.profileLoaded && adminAccess?.isMangaka !== true) {
@@ -84,12 +68,8 @@ export default function Header({ usuario, perfil, adminAccess }) {
     AVATAR_FALLBACK;
 
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
-  const resolvedCreatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(perfil);
   const creatorMonetizationIsActive =
-    effectiveCreatorMonetizationStatus(
-      perfil?.creatorMonetizationPreference,
-      resolvedCreatorMonetizationStatus
-    ) === 'active';
+    resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active';
 
   /** Candidatura publica: quem ja abre ADMIN (Criadores etc.) nao precisa do atalho CREATORS. */
   const showCreatorsNav = !isMangakaPanel && !canSeeAdminWorkspace;
@@ -363,48 +343,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
   }, [usuario?.uid]);
 
   useEffect(() => {
-    if (!canSeeAdminWorkspace) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAdminCreatorQueueCount(0);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
-      const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
-      const pending = rows.filter((item) => {
-        const s = String(item?.creatorApplicationStatus || '').trim().toLowerCase();
-        if (s === 'requested') return true;
-        return false;
-      }).length;
-      setAdminCreatorQueueCount(pending);
-    });
-    return () => unsub();
-  }, [canSeeAdminWorkspace]);
-
-  useEffect(() => {
-    if (!canSeeAdminWorkspace) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAdminSupportQueueCount(0);
-      return () => {};
-    }
-    const supportPaths = ['sac/tickets', 'suporte/tickets', 'support/tickets', 'tickets'];
-    const totals = new Map();
-    const unsubs = supportPaths.map((path) =>
-      onValue(ref(db, path), (snapshot) => {
-        const rows = snapshot.exists() ? Object.values(snapshot.val() || {}) : [];
-        const openItems = rows.filter((item) => {
-          const status = String(item?.status || item?.state || '').trim().toLowerCase();
-          return !['closed', 'resolved', 'done', 'archived'].includes(status);
-        }).length;
-        totals.set(path, openItems);
-        setAdminSupportQueueCount([...totals.values()].reduce((sum, value) => sum + Number(value || 0), 0));
-      })
-    );
-    return () => {
-      unsubs.forEach((unsub) => unsub());
-    };
-  }, [canSeeAdminWorkspace]);
-
-  useEffect(() => {
     if (!usuario?.uid) return;
     if (typeof window === 'undefined' || typeof Notification === 'undefined') return;
     if (Notification.permission !== 'granted') return;
@@ -431,68 +369,20 @@ export default function Header({ usuario, perfil, adminAccess }) {
       };
     });
   }, [headerNotifications, navigate, usuario?.uid]);
-  const adminQueueNotifications = useMemo(() => {
-    if (!canSeeAdminWorkspace) return [];
-    const items = [];
-    if (adminCreatorQueueCount > 0) {
-      const seen = readSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY);
-      items.push({
-        id: 'admin-creator-queue',
-        type: 'admin_creator_queue',
-        title: adminCreatorQueueCount === 1 ? '1 solicitacao de creator pendente' : `${adminCreatorQueueCount} solicitacoes de creator pendentes`,
-        message: 'Clique para abrir a fila de aprovacao de creators.',
-        targetPath: '/admin/criadores',
-        read: adminCreatorQueueCount <= seen,
-        priority: 2,
-        createdAt: 9999999999999,
-        updatedAt: 9999999999999,
-      });
-    }
-    if (adminSupportQueueCount > 0) {
-      const seen = readSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY);
-      items.push({
-        id: 'admin-support-queue',
-        type: 'admin_support_queue',
-        title: adminSupportQueueCount === 1 ? '1 chamado de SAC pendente' : `${adminSupportQueueCount} chamados de SAC pendentes`,
-        message: 'Clique para revisar a fila de suporte da plataforma.',
-        targetPath: '/admin/dashboard',
-        read: adminSupportQueueCount <= seen,
-        priority: 2,
-        createdAt: 9999999999998,
-        updatedAt: 9999999999998,
-      });
-    }
-    return items;
-  }, [adminCreatorQueueCount, adminSupportQueueCount, canSeeAdminWorkspace]);
-
   const allNotifications = useMemo(() => {
-    const list = [...adminQueueNotifications, ...headerNotifications];
+    const list = [...headerNotifications];
     list.sort((a, b) => {
       const priorityDiff = Number(b.priority || 0) - Number(a.priority || 0);
       if (priorityDiff !== 0) return priorityDiff;
       return Number(b.createdAt || b.updatedAt || 0) - Number(a.createdAt || a.updatedAt || 0);
     });
     return list.slice(0, 16);
-  }, [adminQueueNotifications, headerNotifications]);
+  }, [headerNotifications]);
 
   const unreadNotificationsCount = allNotifications.filter((item) => item.read !== true).length;
 
   const openNotificationTarget = async (item) => {
     if (!item?.id) return;
-    if (item.type === 'admin_creator_queue') {
-      writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
-      navigate(item.targetPath || '/admin/criadores');
-      setNotificationsOpen(false);
-      setMenuAberto(false);
-      return;
-    }
-    if (item.type === 'admin_support_queue') {
-      writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
-      navigate(item.targetPath || '/admin/dashboard');
-      setNotificationsOpen(false);
-      setMenuAberto(false);
-      return;
-    }
     try {
       if (item.read !== true) {
         await markUserNotificationRead({ notificationId: item.id });
@@ -506,8 +396,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
   const handleMarkAllNotificationsRead = async () => {
     try {
       await markUserNotificationRead({ markAll: true });
-      writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
-      writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
     } catch (error) {
       console.error('Erro ao marcar notificacoes como lidas:', error);
     }
@@ -520,13 +408,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
     }
     if (!item?.id) return;
     try {
-      if (item.type === 'admin_creator_queue') {
-        writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
-      } else if (item.type === 'admin_support_queue') {
-        writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
-      } else {
-        await deleteUserNotification({ notificationId: item.id });
-      }
+      await deleteUserNotification({ notificationId: item.id });
       setSelectedNotification((current) => (current?.id === item.id ? null : current));
     } catch (error) {
       console.error('Erro ao deletar notificacao:', error);
@@ -539,8 +421,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
       if (hasUserNotifications) {
         await deleteUserNotification({ deleteAll: true });
       }
-      writeSeenCount(ADMIN_CREATOR_QUEUE_SEEN_KEY, adminCreatorQueueCount);
-      writeSeenCount(ADMIN_SUPPORT_QUEUE_SEEN_KEY, adminSupportQueueCount);
       setSelectedNotification(null);
     } catch (error) {
       console.error('Erro ao deletar todas as notificacoes:', error);

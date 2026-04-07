@@ -1,4 +1,4 @@
-import { getAdminAuthContext, ADMIN_REGISTRY_PATH, SUPER_ADMIN_UIDS } from '../adminRbac.js';
+﻿import { getAdminAuthContext, listStaffUids } from '../adminRbac.js';
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { pushUserNotification } from '../notificationPush.js';
@@ -12,6 +12,7 @@ import {
   assembleCreatorRecordForRtdb,
   legalFullNameHasMinThreeWords,
   legalFullNameHasNoDigits,
+  readCreatorStatsFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../creatorRecord.js';
 import { coercePayoutPixType, normalizePixPayoutKey, validatePixPayout } from '../pixKey.js';
@@ -21,22 +22,7 @@ async function notifyCreatorRequestAdmins(
   db,
   { applicantUid, displayName, monetizationPreference, monetizationOnly = false }
 ) {
-  const registrySnap = await db.ref(ADMIN_REGISTRY_PATH).get();
-  const superAdminIds = (() => {
-    if (SUPER_ADMIN_UIDS instanceof Set) return [...SUPER_ADMIN_UIDS];
-    if (Array.isArray(SUPER_ADMIN_UIDS)) return SUPER_ADMIN_UIDS;
-    if (SUPER_ADMIN_UIDS && typeof SUPER_ADMIN_UIDS[Symbol.iterator] === 'function') {
-      return [...SUPER_ADMIN_UIDS];
-    }
-    return [];
-  })();
-  const adminIds = new Set(superAdminIds);
-  if (registrySnap.exists()) {
-    for (const [uid, row] of Object.entries(registrySnap.val() || {})) {
-      const role = String(row?.role || '').trim().toLowerCase();
-      if (role && role !== 'mangaka') adminIds.add(uid);
-    }
-  }
+  const adminIds = new Set(await listStaffUids());
 
   const applicantName = String(displayName || 'Novo creator').trim() || 'Novo creator';
   const wantsMonetize = String(monetizationPreference || '').trim().toLowerCase() === 'monetize';
@@ -104,11 +90,15 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     );
   }
   const userRef = db.ref(`usuarios/${uid}`);
-  const snap = await userRef.get();
+  const [snap, creatorStatsSnap] = await Promise.all([
+    userRef.get(),
+    db.ref(`creators/${uid}/stats`).get(),
+  ]);
   if (!snap.exists()) {
     throw new HttpsError('failed-precondition', 'Perfil do usuario nao encontrado.');
   }
   const row = snap.val() || {};
+  const creatorStatsRow = creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {};
   const now = Date.now();
   const statusAtual = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
   if (statusAtual === 'requested') {
@@ -116,10 +106,20 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   }
 
   const payload = request.data && typeof request.data === 'object' ? request.data : {};
-  const displayName = String(payload.displayName || row?.creatorDisplayName || row?.userName || '').trim();
-  const bioShort = String(payload.bioShort || row?.creatorBio || '').trim();
-  const instagramRaw = String(payload.instagramUrl || row?.instagramUrl || '').trim();
-  const youtubeRaw = String(payload.youtubeUrl || row?.youtubeUrl || '').trim();
+  const creatorProfileRow =
+    row?.creator?.profile && typeof row.creator.profile === 'object' ? row.creator.profile : {};
+  const creatorSocialRow =
+    row?.creator?.social && typeof row.creator.social === 'object' ? row.creator.social : {};
+  const displayName = String(
+    payload.displayName || creatorProfileRow.displayName || row?.userName || ''
+  ).trim();
+  const bioShort = String(payload.bioShort || creatorProfileRow.bio || '').trim();
+  const instagramRaw = String(
+    payload.instagramUrl || creatorSocialRow.instagram || ''
+  ).trim();
+  const youtubeRaw = String(
+    payload.youtubeUrl || creatorSocialRow.youtube || ''
+  ).trim();
   const instagramUrl = normalizeCreatorSocialUrl(instagramRaw, ['instagram.com']);
   const youtubeUrl = normalizeCreatorSocialUrl(youtubeRaw, ['youtube.com', 'youtu.be']);
   let profileImageUrl = String(payload.profileImageUrl || row?.creatorApplication?.profileImageUrl || '').trim();
@@ -278,24 +278,10 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
       });
       await db.ref().update({
         [`usuarios/${uid}/creator`]: creatorDocM,
-        [`usuarios/${uid}/creatorDisplayName`]: displayName,
-        [`usuarios/${uid}/creatorBio`]: bioShort,
-        [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
-        [`usuarios/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
         [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
         [`usuarios/${uid}/creatorCompliance`]: compliance,
-        [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
-        [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
         [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
         [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
-        [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
-        [`usuarios/${uid}/creatorProfile/monetizationStatus`]: nextMonetizationStatus,
-        [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: nextMonetizationStatus === 'active',
-        [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: nextMonetizationStatus === 'active',
-        [`usuarios/${uid}/creatorProfile/isApproved`]: true,
-        [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
-        [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
-        [`usuarios_publicos/${uid}/updatedAt`]: now,
       });
       return {
         ok: true,
@@ -320,25 +306,11 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     });
     const monetizationPatch = {
       [`usuarios/${uid}/creator`]: creatorDocM,
-      [`usuarios/${uid}/creatorDisplayName`]: displayName,
-      [`usuarios/${uid}/creatorBio`]: bioShort,
-      [`usuarios/${uid}/creatorMonetizationPreference`]: 'monetize',
-      [`usuarios/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
       [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
       [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
       [`usuarios/${uid}/creatorCompliance`]: compliance,
-      [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
-      [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
       [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
       [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
-      [`usuarios/${uid}/creatorProfile/monetizationPreference`]: 'monetize',
-      [`usuarios/${uid}/creatorProfile/monetizationStatus`]: nextMonetizationStatus,
-      [`usuarios/${uid}/creatorProfile/monetizationEnabled`]: nextMonetizationStatus === 'active',
-      [`usuarios/${uid}/creatorProfile/isMonetizationActive`]: nextMonetizationStatus === 'active',
-      [`usuarios/${uid}/creatorProfile/isApproved`]: nextMonetizationStatus === 'active',
-      [`usuarios/${uid}/creatorProfile/updatedAt`]: now,
-      [`usuarios_publicos/${uid}/creatorMonetizationStatus`]: nextMonetizationStatus,
-      [`usuarios_publicos/${uid}/updatedAt`]: now,
     };
     if (!Number(row?.creatorRequestedAt || 0)) {
       monetizationPatch[`usuarios/${uid}/creatorRequestedAt`] = now;
@@ -398,7 +370,10 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   });
 
   if (monetizationPreference === 'monetize') {
-    const approvalGate = evaluateCreatorApplicationApprovalGate(row);
+    const approvalGate = evaluateCreatorApplicationApprovalGate({
+      ...row,
+      creatorStats: readCreatorStatsFromDb(row, creatorStatsRow),
+    });
     if (!approvalGate.ok) {
       throw new HttpsError(
         'failed-precondition',
@@ -412,20 +387,14 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
       [`usuarios/${uid}/creator`]: creatorDocSubmit,
       [`usuarios/${uid}/signupIntent`]: 'creator',
       [`usuarios/${uid}/creatorApplication`]: creatorApplication,
-      [`usuarios/${uid}/creatorDisplayName`]: displayName,
-      [`usuarios/${uid}/creatorBio`]: bioShort,
-      [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
-      [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
-      [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
-      [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
       [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
       [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
       [`usuarios/${uid}/creatorBannerUrl`]: null,
-      [`usuarios_publicos/${uid}/creatorBannerUrl`]: null,
+      [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: null,
       [`usuarios/${uid}/birthDate`]: birthDateRaw,
       [`usuarios/${uid}/birthYear`]: Number.isInteger(birthYearFromDate) ? birthYearFromDate : null,
-      [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
-      [`usuarios_publicos/${uid}/updatedAt`]: now,
+      [`usuarios/${uid}/publicProfile/signupIntent`]: 'creator',
+      [`usuarios/${uid}/publicProfile/updatedAt`]: now,
       [`usuarios/${uid}/creatorTermsAccepted`]: true,
       [`usuarios/${uid}/creatorCompliance`]: null,
     };
@@ -449,17 +418,11 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     [`usuarios/${uid}/signupIntent`]: 'creator',
     [`usuarios/${uid}/creatorApplicationStatus`]: 'requested',
     [`usuarios/${uid}/creatorApplication`]: creatorApplication,
-    [`usuarios/${uid}/creatorDisplayName`]: displayName,
-    [`usuarios/${uid}/creatorBio`]: bioShort,
-    [`usuarios/${uid}/creatorMonetizationPreference`]: monetizationPreference,
-    [`usuarios/${uid}/creatorMonetizationStatus`]: 'disabled',
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
-    [`usuarios/${uid}/instagramUrl`]: instagramUrl || null,
-    [`usuarios/${uid}/youtubeUrl`]: youtubeUrl || null,
     [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
     [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
     [`usuarios/${uid}/creatorBannerUrl`]: null,
-    [`usuarios_publicos/${uid}/creatorBannerUrl`]: null,
+    [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: null,
     [`usuarios/${uid}/birthDate`]: birthDateRaw,
     [`usuarios/${uid}/birthYear`]: Number.isInteger(birthYearFromDate) ? birthYearFromDate : null,
     [`usuarios/${uid}/creatorRequestedAt`]: now,
@@ -471,8 +434,8 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     [`usuarios/${uid}/creatorModerationBy`]: null,
     [`usuarios/${uid}/creatorModeratedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios_publicos/${uid}/signupIntent`]: 'creator',
-    [`usuarios_publicos/${uid}/updatedAt`]: now,
+    [`usuarios/${uid}/publicProfile/signupIntent`]: 'creator',
+    [`usuarios/${uid}/publicProfile/updatedAt`]: now,
     [`usuarios/${uid}/creatorTermsAccepted`]: true,
     [`usuarios/${uid}/creatorCompliance`]: compliance || null,
   };
@@ -494,3 +457,4 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   });
   return { ok: true, status: 'requested', application: creatorApplication };
 });
+

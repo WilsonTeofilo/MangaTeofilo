@@ -1,8 +1,10 @@
-/**
- * Camada unificada de liquidação: split explícito + ledger canônico (financas/unified*).
- * Webhook + GET /v1/payments/{id} são fonte de verdade; metadata guia o tipo/source.
+﻿/**
+ * Canonical settlement layer for approved payments.
  *
- * Ordem: lock leve → applyExplicit (idempotente) → unifiedLedger → unifiedPayments final.
+ * It computes the split and applies it once to the real ledger:
+ * - creatorData/*
+ * - financas/creatorRevenueEvents
+ * - financas/creatorRevenueSummary
  */
 
 import { logger } from 'firebase-functions';
@@ -12,8 +14,6 @@ import {
   applyExplicitApprovedFinancialSettlement,
 } from './creatorDataLedger.js';
 
-const PROCESSING_STALE_MS = 10 * 60 * 1000;
-
 /** @typedef {'STORE_MEMBERSHIP' | 'CREATOR_MEMBERSHIP' | 'DONATION'} UnifiedTransactionType */
 
 /**
@@ -22,8 +22,8 @@ const PROCESSING_STALE_MS = 10 * 60 * 1000;
  * @returns {'platform' | 'creator_link'}
  */
 export function normalizeUnifiedSource(rawSource, creatorIdHint) {
-  const s = String(rawSource || '').toLowerCase().trim();
-  if (s === 'creator_link' || s === 'platform') return s;
+  const source = String(rawSource || '').toLowerCase().trim();
+  if (source === 'creator_link' || source === 'platform') return source;
   return sanitizeCreatorId(creatorIdHint) ? 'creator_link' : 'platform';
 }
 
@@ -33,33 +33,29 @@ export function normalizeUnifiedSource(rawSource, creatorIdHint) {
  * @param {number} grossBRL
  */
 export function computeUnifiedSplit(unifiedType, source, grossBRL) {
-  const g = round2(grossBRL);
-  const src = source === 'creator_link' ? 'creator_link' : 'platform';
-  const t = String(unifiedType || '').toUpperCase();
+  const gross = round2(grossBRL);
+  const normalizedSource = source === 'creator_link' ? 'creator_link' : 'platform';
+  const type = String(unifiedType || '').toUpperCase();
   let platformPct = 1;
   let creatorPct = 0;
-  if (t === 'STORE_MEMBERSHIP') {
-    if (src === 'creator_link') {
+
+  if (type === 'STORE_MEMBERSHIP') {
+    if (normalizedSource === 'creator_link') {
       platformPct = 0.85;
       creatorPct = 0.15;
-    } else {
-      platformPct = 1;
-      creatorPct = 0;
     }
-  } else if (t === 'CREATOR_MEMBERSHIP') {
+  } else if (type === 'CREATOR_MEMBERSHIP') {
     platformPct = 0.2;
     creatorPct = 0.8;
-  } else if (t === 'DONATION') {
-    if (src === 'creator_link') {
+  } else if (type === 'DONATION') {
+    if (normalizedSource === 'creator_link') {
       platformPct = 0.2;
       creatorPct = 0.8;
-    } else {
-      platformPct = 1;
-      creatorPct = 0;
     }
   }
-  const platformAmount = round2(g * platformPct);
-  const creatorAmount = round2(Math.max(0, g - platformAmount));
+
+  const platformAmount = round2(gross * platformPct);
+  const creatorAmount = round2(Math.max(0, gross - platformAmount));
   return { platformAmount, creatorAmount, platformPct, creatorPct };
 }
 
@@ -80,135 +76,70 @@ export function computeUnifiedSplit(unifiedType, source, grossBRL) {
  * @returns {Promise<{ ok: boolean, duplicate?: boolean, reason?: string }>}
  */
 export async function tryCommitUnifiedApprovedSettlement(db, input) {
-  const pid = String(input.mpPaymentId || '').trim();
+  const paymentId = String(input.mpPaymentId || '').trim();
   const userId = String(input.userId || '').trim();
-  if (!pid || !userId) {
-    logger.warn('unified settlement: missing paymentId or userId', { pid, userId });
+  if (!paymentId || !userId) {
+    logger.warn('settlement: missing paymentId or userId', { paymentId, userId });
     return { ok: false, reason: 'missing_ids' };
   }
+
   const gross = round2(input.grossBRL);
   if (!Number.isFinite(gross) || gross <= 0) {
-    logger.warn('unified settlement: invalid gross', { pid, gross });
+    logger.warn('settlement: invalid gross', { paymentId, gross });
     return { ok: false, reason: 'invalid_gross' };
   }
-  const src = input.source === 'creator_link' ? 'creator_link' : 'platform';
-  const ut = String(input.unifiedType || '').toUpperCase();
-  let cid = sanitizeCreatorId(input.creatorId);
-  const { platformAmount, creatorAmount, platformPct, creatorPct } = computeUnifiedSplit(ut, src, gross);
 
-  let platformAmt = platformAmount;
-  let creatorAmt = creatorAmount;
-  if (creatorAmt > 0 && !cid) {
-    logger.warn('unified settlement: creator share sem creator_id — consolidando na plataforma', {
-      pid,
-      ut,
+  const source = input.source === 'creator_link' ? 'creator_link' : 'platform';
+  const unifiedType = String(input.unifiedType || '').toUpperCase();
+  let creatorId = sanitizeCreatorId(input.creatorId);
+  const { platformAmount, creatorAmount, platformPct, creatorPct } = computeUnifiedSplit(
+    unifiedType,
+    source,
+    gross
+  );
+
+  let platformFeeBRL = platformAmount;
+  let creatorNetBRL = creatorAmount;
+  if (creatorNetBRL > 0 && !creatorId) {
+    logger.warn('settlement: creator share without creatorId, consolidating to platform', {
+      paymentId,
+      unifiedType,
     });
-    platformAmt = round2(platformAmt + creatorAmt);
-    creatorAmt = 0;
+    platformFeeBRL = round2(platformFeeBRL + creatorNetBRL);
+    creatorNetBRL = 0;
   }
-  if (ut === 'STORE_MEMBERSHIP' && src === 'platform') {
-    cid = null;
-    if (creatorAmt > 0) {
-      platformAmt = round2(platformAmt + creatorAmt);
-      creatorAmt = 0;
+
+  if (unifiedType === 'STORE_MEMBERSHIP' && source === 'platform') {
+    creatorId = null;
+    if (creatorNetBRL > 0) {
+      platformFeeBRL = round2(platformFeeBRL + creatorNetBRL);
+      creatorNetBRL = 0;
     }
   }
 
-  const payRef = db.ref(`financas/unifiedPayments/${pid}`);
-  const doneSnap = await payRef.get();
-  const doneVal = doneSnap.val();
-  if (doneVal && typeof doneVal === 'object' && doneVal.ledgerWritten === true) {
-    return { ok: false, duplicate: true };
-  }
-
-  const trx = await payRef.transaction((curr) => {
-    const c = curr && typeof curr === 'object' ? curr : {};
-    if (c.ledgerWritten === true) return undefined;
-    const proc = Number(c.processingAt || 0);
-    if (proc && Date.now() - proc < PROCESSING_STALE_MS) return undefined;
-    return {
-      ...c,
-      mp_payment_id: pid,
-      processingAt: Date.now(),
-    };
-  });
-  if (!trx.committed) {
-    const prev = trx.snapshot?.val();
-    if (prev && typeof prev === 'object' && prev.ledgerWritten === true) {
-      return { ok: false, duplicate: true };
-    }
-    return { ok: false, reason: 'contention' };
-  }
-
-  const record = {
-    mp_payment_id: pid,
-    user_id: userId,
-    type: ut,
-    creator_id: cid || null,
-    source: src,
-    amount_total: gross,
-    platform_amount: platformAmt,
-    creator_amount: creatorAmt,
-    platform_pct: platformPct,
-    creator_pct: creatorPct,
-    status: 'approved',
+  const result = await applyExplicitApprovedFinancialSettlement(db, {
+    creatorId,
+    buyerUid: userId,
+    paymentId,
     currency: String(input.currency || 'BRL'),
-    created_at: Date.now(),
-  };
+    grossBRL: gross,
+    creatorNetBRL,
+    platformFeeBRL,
+    creatorDataPaymentType: String(input.creatorDataPaymentType || 'other'),
+    extra: {
+      unifiedType,
+      source,
+      platformPct,
+      creatorPct,
+      ...(input.extra && typeof input.extra === 'object' ? input.extra : {}),
+    },
+    orderId: input.orderId || null,
+    entryKey: `unified_${unifiedType}_${paymentId}`,
+  });
 
-  const extra = {
-    unifiedType: ut,
-    source: src,
-    platformPct,
-    creatorPct,
-    ...(input.extra && typeof input.extra === 'object' ? input.extra : {}),
-  };
-
-  try {
-    await applyExplicitApprovedFinancialSettlement(db, {
-      creatorId: cid,
-      buyerUid: userId,
-      paymentId: pid,
-      currency: String(input.currency || 'BRL'),
-      grossBRL: gross,
-      creatorNetBRL: creatorAmt,
-      platformFeeBRL: platformAmt,
-      creatorDataPaymentType: String(input.creatorDataPaymentType || 'other'),
-      extra,
-      orderId: input.orderId || null,
-      entryKey: `unified_${ut}_${pid}`,
-    });
-
-    await db.ref(`financas/unifiedLedger/${pid}`).set({
-      payment_id: pid,
-      mp_payment_id: pid,
-      user_id: userId,
-      creator_id: cid || null,
-      platform_amount: platformAmt,
-      creator_amount: creatorAmt,
-      type: ut,
-      source: src,
-      currency: String(input.currency || 'BRL'),
-      created_at: Date.now(),
-      creatorDataPaymentType: String(input.creatorDataPaymentType || ''),
-    });
-
-    await payRef.update({
-      ...record,
-      ledgerWritten: true,
-      processingAt: null,
-    });
-  } catch (e) {
-    logger.error('unified settlement failed', { pid, error: e?.message });
-    const msg = String(e?.message || '');
-    if (!msg.includes('apply_explicit_lock_contention')) {
-      try {
-        await payRef.update({ processingAt: null });
-      } catch (err) {
-        logger.warn('unified settlement: falha ao limpar processingAt', { pid, error: err?.message });
-      }
-    }
-    throw e;
+  if (!result?.ok) {
+    if (result?.duplicate) return { ok: false, duplicate: true };
+    return { ok: false, reason: result?.reason || 'contention' };
   }
 
   return { ok: true };

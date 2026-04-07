@@ -1,66 +1,46 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 
-import {
-  CREATOR_LEVEL_META,
-  computeCreatorLevel,
-  getGapsUntilMonetization,
-  getProgressTowardsNextLevel,
-  meetsMonetizationLevel,
-} from '../../utils/creatorProgression';
 import './CreatorDashboardPanel.css';
 
 const nf = new Intl.NumberFormat('pt-BR');
 
 /**
- * Card compacto reutilizável (nível + desbloqueios + próximo).
- * @param {{ followers: number, views: number, likes: number, className?: string }} props
+ * Compact level card. It only renders the progress snapshot the UI received.
  */
-export default function CreatorLevelBadgeCard({ followers, views, likes, className = '' }) {
-  const metrics = useMemo(() => ({ followers, views, likes }), [followers, views, likes]);
-  const level = useMemo(() => computeCreatorLevel(metrics), [metrics]);
-  const meta = CREATOR_LEVEL_META[level] || CREATOR_LEVEL_META[0];
-  const canEarn = meetsMonetizationLevel(metrics);
-  const next = useMemo(() => getProgressTowardsNextLevel(metrics), [metrics]);
-  const gapsMono = useMemo(() => getGapsUntilMonetization(metrics), [metrics]);
+export default function CreatorLevelBadgeCard({ progressVm, className = '' }) {
+  const vm = progressVm;
 
-  const nextMeta = next.nextLevel != null ? CREATOR_LEVEL_META[next.nextLevel] : null;
+  if (!vm) return null;
 
+  const nextMeta = vm.nextLevelMeta;
   const gapLines = useMemo(() => {
-    if (next.nextLevel == null) return [];
-    if (next.nextLevel === 2) {
-      return gapsMono.map((g) => `Faltam ${nf.format(g.left)} ${g.label}`);
-    }
-    return (next.rows || [])
-      .map((r) => {
-        const left = Math.max(0, r.target - r.current);
-        if (left <= 0) return null;
-        return `Faltam ${nf.format(left)} ${String(r.label).toLowerCase()}`;
-      })
-      .filter(Boolean);
-  }, [next, gapsMono]);
+    if (!nextMeta) return [];
+    const rows = vm.nextLevel === 2 ? vm.monetizationGapRows : vm.nextLevelGapRows;
+    return rows.map((row) => `Faltam ${nf.format(row.left)} ${row.label}`);
+  }, [nextMeta, vm.monetizationGapRows, vm.nextLevel, vm.nextLevelGapRows]);
 
   return (
     <div className={`creator-lvl-card ${className}`.trim()}>
       <div className="creator-lvl-card__head">
         <h3 className="creator-lvl-card__title">
-          Nível {level} — {meta.title} {level >= 2 ? '🔓' : ''}
+          Nivel {vm.level} - {vm.meta.title} {vm.level >= 2 ? '💵' : ''}
         </h3>
       </div>
 
-      {canEarn ? (
+      {vm.monetizationThresholdReached ? (
         <ul className="creator-lvl-card__unlocks">
-          <li>Ganhar com vendas e repasses (com monetização ok)</li>
-          <li>Vender mangá físico na loja com repasse</li>
+          <li>Ganhar com vendas e repasses (com monetizacao ok)</li>
+          <li>Vender manga fisico na loja com repasse</li>
         </ul>
       ) : (
         <p style={{ margin: '0 0 10px', fontSize: '0.86rem', color: '#94a3b8' }}>
-          Suba até <strong>Monetizado</strong> nas métricas da plataforma para liberar a loja com repasse.
+          Suba ate <strong>Monetizado</strong> nas metricas da plataforma para liberar a loja com repasse.
         </p>
       )}
 
-      {nextMeta && next.nextLevel != null ? (
+      {nextMeta ? (
         <>
-          <p className="creator-lvl-card__next">Próximo nível: {nextMeta.title}</p>
+          <p className="creator-lvl-card__next">Proximo nivel: {nextMeta.title}</p>
           {gapLines.length ? (
             <ul className="creator-lvl-card__gaps">
               {gapLines.map((text) => (
@@ -71,7 +51,7 @@ export default function CreatorLevelBadgeCard({ followers, views, likes, classNa
         </>
       ) : (
         <p className="creator-lvl-card__next" style={{ textTransform: 'none', letterSpacing: 'normal' }}>
-          Você está no topo do sistema de níveis por enquanto.
+          Voce esta no topo do sistema de niveis por enquanto.
         </p>
       )}
     </div>

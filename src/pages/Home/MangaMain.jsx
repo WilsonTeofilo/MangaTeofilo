@@ -14,6 +14,7 @@ import KokuinLegacyLandingSection from '../../components/KokuinLegacyLandingSect
 import { getLastRead, getReadHistory, subscribeReadingProgress } from '../../utils/readingProgressLocal';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
+import { buildPublicProfilesMapFromUsuarios } from '../../utils/publicUserProfile';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
@@ -90,8 +91,8 @@ export default function MangaMain({ user }) {
   }, []);
 
   useEffect(() => {
-    const unsub = onValue(ref(db, 'usuarios_publicos'), (snapshot) => {
-      setCreatorsMap(snapshot.exists() ? snapshot.val() || {} : {});
+    const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
+      setCreatorsMap(snapshot.exists() ? buildPublicProfilesMapFromUsuarios(snapshot.val() || {}) : {});
     });
     return () => unsub();
   }, []);

@@ -1,10 +1,10 @@
+﻿import { resolvePublicProfileAvatarUrl } from './publicUserProfile';
+
 /**
- * URL da imagem usada no hero público do criador (avatar; banner manual foi removido).
+ * URL da imagem usada no hero publico do criador (avatar; banner manual foi removido).
  */
 export function creatorPublicHeroImageUrl(perfilPublico) {
-  const fromProfile = String(perfilPublico?.creatorProfile?.avatarUrl || '').trim();
-  const fromUser = String(perfilPublico?.userAvatar || '').trim();
-  const u = fromProfile || fromUser;
+  const u = resolvePublicProfileAvatarUrl(perfilPublico, { mode: 'creator', fallback: '' });
   if (u.length > 4 && /^https?:\/\//i.test(u)) return u;
   return '/assets/fotos/shito.jpg';
 }

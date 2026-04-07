@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, ref } from 'firebase/database';
-import { httpsCallable } from 'firebase/functions';
+﻿import React, { useEffect, useMemo, useState } from 'react';
+import { equalTo, onValue, orderByChild, query, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
-import { db, functions } from '../../services/firebase';
+import { db } from '../../services/firebase';
 import { toRecordList } from '../../utils/firebaseRecordList';
-import { effectiveCreatorMonetizationStatus } from '../../utils/creatorMonetizationUi';
+import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
 import './CreatorFrame.css';
 
 function safeNumber(value) {
@@ -107,23 +106,14 @@ export default function CreatorAudiencePage({ user, perfil }) {
   const navigate = useNavigate();
   const uid = String(user?.uid || '').trim();
   const creatorMonetizationIsActive =
-    effectiveCreatorMonetizationStatus(
-      perfil?.creatorMonetizationPreference,
-      perfil?.creatorMonetizationStatus
-    ) === 'active';
+    resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active';
   const [range, setRange] = useState('30d');
-  const [backfillBusy, setBackfillBusy] = useState(false);
-  const [backfillMessage, setBackfillMessage] = useState('');
   const [creatorStats, setCreatorStats] = useState(null);
   const [dailyStats, setDailyStats] = useState({});
   const [membersIndex, setMembersIndex] = useState({});
   const [worksMap, setWorksMap] = useState({});
   const [chaptersMap, setChaptersMap] = useState({});
   const [retentionMap, setRetentionMap] = useState({});
-  const creatorAudienceBackfill = useMemo(
-    () => httpsCallable(functions, 'creatorAudienceBackfill'),
-    []
-  );
 
   useEffect(() => {
     if (!uid) return () => {};
@@ -131,15 +121,19 @@ export default function CreatorAudiencePage({ user, perfil }) {
       onValue(ref(db, `creators/${uid}/stats`), (snap) => setCreatorStats(snap.exists() ? snap.val() || {} : {})),
       onValue(ref(db, `creatorStatsDaily/${uid}`), (snap) => setDailyStats(snap.exists() ? snap.val() || {} : {})),
       onValue(ref(db, `creators/${uid}/membersIndex`), (snap) => setMembersIndex(snap.exists() ? snap.val() || {} : {})),
-      onValue(ref(db, 'obras'), (snap) => setWorksMap(snap.exists() ? snap.val() || {} : {})),
-      onValue(ref(db, 'capitulos'), (snap) => setChaptersMap(snap.exists() ? snap.val() || {} : {})),
+      onValue(query(ref(db, 'obras'), orderByChild('creatorId'), equalTo(uid)), (snap) =>
+        setWorksMap(snap.exists() ? snap.val() || {} : {})
+      ),
+      onValue(query(ref(db, 'capitulos'), orderByChild('creatorId'), equalTo(uid)), (snap) =>
+        setChaptersMap(snap.exists() ? snap.val() || {} : {})
+      ),
     ];
     return () => unsubs.forEach((unsub) => unsub());
   }, [uid]);
 
   const creatorWorks = useMemo(() => {
-    return toRecordList(worksMap).filter((work) => String(work?.creatorId || '').trim() === uid);
-  }, [uid, worksMap]);
+    return toRecordList(worksMap);
+  }, [worksMap]);
 
   const creatorWorkIds = useMemo(
     () => new Set(creatorWorks.map((work) => String(work.id || '').trim().toLowerCase())),
@@ -149,6 +143,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
   useEffect(() => {
     if (!uid) return () => {};
     const workIds = creatorWorks.map((w) => String(w.id || '').trim()).filter(Boolean);
+    setRetentionMap({});
     if (!workIds.length) {
       setRetentionMap({});
       return () => {};
@@ -166,13 +161,8 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
   const creatorChapters = useMemo(() => {
     return toRecordList(chaptersMap)
-      .filter((chapter) => {
-        if (String(chapter?.creatorId || '').trim() === uid) return true;
-        const workId = String(chapter?.obraId || chapter?.mangaId || '').trim().toLowerCase();
-        return creatorWorkIds.has(workId);
-      })
       .sort((a, b) => safeNumber(a?.numero) - safeNumber(b?.numero));
-  }, [uid, chaptersMap, creatorWorkIds]);
+  }, [chaptersMap]);
 
   const filteredDailyRows = useMemo(() => {
     const keys = filterDateKeys(
@@ -188,29 +178,17 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
   const totals = useMemo(() => {
     const stats = creatorStats || {};
-    const fallbackFollowers = safeNumber(
-      perfil?.creatorProfile?.stats?.followersCount || perfil?.stats?.followersCount
-    );
-    const fallbackViews = safeNumber(
-      perfil?.creatorProfile?.stats?.totalViews || perfil?.stats?.totalViews
-    );
-    const fallbackLikes = safeNumber(
-      perfil?.creatorProfile?.stats?.totalLikes || perfil?.stats?.totalLikes
-    );
-    const fallbackComments = safeNumber(
-      perfil?.creatorProfile?.stats?.totalComments || perfil?.stats?.totalComments
-    );
     const activeMembers = Object.values(membersIndex || {}).filter((row) => safeNumber(row?.memberUntil) > Date.now()).length;
     return {
-      followersCount: safeNumber(stats?.followersCount || fallbackFollowers),
-      totalViews: safeNumber(stats?.totalViews || fallbackViews),
+      followersCount: safeNumber(stats?.followersCount),
+      totalViews: safeNumber(stats?.totalViews),
       uniqueReaders: safeNumber(stats?.uniqueReaders),
-      likesTotal: safeNumber(stats?.likesTotal || fallbackLikes),
-      commentsTotal: safeNumber(stats?.commentsTotal || fallbackComments),
+      likesTotal: safeNumber(stats?.likesTotal),
+      commentsTotal: safeNumber(stats?.commentsTotal),
       membersCount: activeMembers || safeNumber(stats?.membersCount),
       revenueTotal: safeNumber(stats?.revenueTotal),
     };
-  }, [creatorStats, membersIndex, perfil]);
+  }, [creatorStats, membersIndex]);
 
   const periodSummary = useMemo(() => {
     return filteredDailyRows.reduce(
@@ -408,21 +386,6 @@ export default function CreatorAudiencePage({ user, perfil }) {
     return lines.slice(0, 4);
   }, [periodChange, retentionRows, topWorks]);
 
-  const handleRunBackfill = async () => {
-    setBackfillBusy(true);
-    setBackfillMessage('');
-    try {
-      const { data } = await creatorAudienceBackfill({ creatorId: uid });
-      setBackfillMessage(
-        `Backfill concluído: ${data?.worksCount || 0} obras, ${data?.chaptersCount || 0} capítulos e ${data?.dailyRows || 0} linhas diárias recompostas.`
-      );
-    } catch (error) {
-      setBackfillMessage(error?.message || 'Não foi possível reconstruir a audiência agora.');
-    } finally {
-      setBackfillBusy(false);
-    }
-  };
-
   return (
     <div className="creator-frame-page">
       <section className="creator-frame-shell">
@@ -436,9 +399,6 @@ export default function CreatorAudiencePage({ user, perfil }) {
             </p>
           </div>
           <div className="creator-frame-actions">
-            <button type="button" className="creator-frame-btn" onClick={handleRunBackfill} disabled={backfillBusy}>
-              {backfillBusy ? 'Reconstruindo...' : 'Rodar backfill'}
-            </button>
             {creatorMonetizationIsActive ? <button type="button" className="creator-frame-btn" onClick={() => navigate('/creator/promocoes')}>
               Ver monetização
             </button> : null}
@@ -447,7 +407,6 @@ export default function CreatorAudiencePage({ user, perfil }) {
             </button>
           </div>
         </header>
-        {backfillMessage ? <p className="creator-inline-feedback">{backfillMessage}</p> : null}
 
         <section className="creator-frame-notes">
           <article className="creator-frame-note">
@@ -466,8 +425,8 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
         <section className="creator-audience-filters">
           {[
-            { id: '7d', label: 'Últimos 7 dias' },
-            { id: '30d', label: 'Últimos 30 dias' },
+            { id: '7d', label: 'Ãšltimos 7 dias' },
+            { id: '30d', label: 'Ãšltimos 30 dias' },
             { id: 'all', label: 'Tudo' },
           ].map((item) => (
             <button
@@ -565,7 +524,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
                     </div>
                     <div>
                       <strong>{formatCompactNumber(chapter.views)} views</strong>
-                      <span>{chapter.likes} likes · {chapter.comments} comentários</span>
+                      <span>{chapter.likes} likes Â· {chapter.comments} comentários</span>
                     </div>
                   </li>
                 ))}
@@ -589,7 +548,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
                 <li key={work.id}>
                   <div>
                     <strong>{work.title}</strong>
-                    <span>{formatCompactNumber(work.views)} views · {work.likes} likes · {work.comments} comentários</span>
+                    <span>{formatCompactNumber(work.views)} views Â· {work.likes} likes Â· {work.comments} comentários</span>
                   </div>
                   <div>
                     <strong>{formatPercent(work.estimatedConversion)}</strong>
@@ -648,3 +607,4 @@ export default function CreatorAudiencePage({ user, perfil }) {
     </div>
   );
 }
+

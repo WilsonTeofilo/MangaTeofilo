@@ -85,7 +85,7 @@ export function normalizePublicHandle(profile) {
  * Uma linha: Â«Nome (@handle)Â». Se sÃ³ existe handle, mostra `@handle`.
  * Objetos de admin / callable costumam ter userName, creatorDisplayName, userHandle, creatorProfile.
  */
-export function formatUserDisplayWithHandle(creatorPublicProfile) {
+export function formatUserDisplayWithHandle(creatorPublicProfile, fallback = 'Leitor') {
   const p = publicRowShape(creatorPublicProfile);
   const handle = normalizePublicHandle(p);
   const name = firstNonPlaceholder([
@@ -96,7 +96,7 @@ export function formatUserDisplayWithHandle(creatorPublicProfile) {
     if (!name || name.toLowerCase() === handle.toLowerCase()) return `@${handle}`;
     return `${name} (@${handle})`;
   }
-  return name || 'Leitor';
+  return name || fallback;
 }
 
 /** Alias para linhas de admin / pedidos quando o snapshot mistura campos do usuario e do perfil publico. */
@@ -111,8 +111,8 @@ export function formatUserDisplayFromMixed(row) {
 export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = null, fallback = 'Autor' } = {}) {
   const p = creatorPublicProfile;
   const o = obra;
-  const handle = normalizePublicHandle(p);
-  if (handle) return handle;
+  const formattedLine = formatUserDisplayWithHandle(p, '');
+  if (formattedLine) return formattedLine;
   const resolved = firstNonPlaceholder([
     resolvePublicProfileDisplayName(p, ''),
     p?.userHandle,

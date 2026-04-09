@@ -22,6 +22,7 @@ import {
 } from './auth/adminPermissions';
 import { APP_ROLE, resolveAppRole, resolveCreatorRoleBootstrap } from './auth/appRoles';
 import { syncAuthenticatedUserProfile } from './userProfileSyncV2';
+import { parseBirthDateLocal } from './utils/birthDateAge';
 import {
   buildCreatorOnboardingSteps,
   creatorOnboardingIsRequiredComplete,
@@ -62,7 +63,6 @@ const CreatorStorePage = lazy(() => import('./pages/Criador/CreatorStorePage.jsx
 const CreatorWorksPage = lazy(() => import('./pages/Criador/CreatorWorksPage.jsx'));
 const CreatorChaptersPage = lazy(() => import('./pages/Criador/CreatorChaptersPage.jsx'));
 const CreatorChapterEditorPage = lazy(() => import('./pages/Criador/CreatorChapterEditorPage.jsx'));
-const AdminPanel = lazy(() => import('./pages/Admin/AdminPanel.jsx'));
 const CapitulosAdminHub = lazy(() => import('./pages/Admin/CapitulosAdminHub.jsx'));
 const ObrasAdmin = lazy(() => import('./pages/Admin/ObrasAdmin.jsx'));
 const AvatarAdmin = lazy(() => import('./pages/Admin/AvatarAdmin.jsx'));
@@ -192,7 +192,7 @@ function AppRoutes() {
     return () => {
       ativo = false;
     };
-  }, [usuario, perfilUsuario?.role, perfilUsuario?.creatorApplicationStatus]);
+  }, [usuario?.uid]);
 
   if (carregando) {
     return <div className="shito-app-splash" aria-hidden="true" />;
@@ -232,6 +232,11 @@ function AppRoutes() {
     !usuario || adminAccess.profileLoaded || creatorRoleFromResolvedBootstrap;
   const canAccessAdminWorkspace = isAdmin && resolvedAppRole === APP_ROLE.ADMIN;
   const canAccessCreator = canAccessCreatorPath('/creator', accessForCreatorRouting);
+  const hasBirthDateOnProfile = Boolean(parseBirthDateLocal(String(perfilUsuario?.birthDate || '').trim()));
+  const requiresBirthDateCompletion =
+    Boolean(podeAcessarApp) &&
+    resolvedAppRole !== APP_ROLE.ADMIN &&
+    !hasBirthDateOnProfile;
   const creatorOnboardingSteps = buildCreatorOnboardingSteps({
     uid: usuario?.uid,
     perfilDb: perfilUsuario || {},
@@ -253,10 +258,17 @@ function AppRoutes() {
     trafficSource === 'promo_email' ||
     trafficSource === 'promo_admin' ||
     trafficSource === 'chapter_email';
+  const birthDateGuardBypass =
+    location.pathname === '/login' ||
+    location.pathname === '/perfil' ||
+    location.pathname.startsWith('/creator/onboarding');
 
   // Segurança UX: se o tracking abrir na home, empurra para /apoie mantendo query.
   if (location.pathname === '/' && cameFromPromoTracking) {
     return <Navigate to={`/apoie${location.search || ''}`} replace />;
+  }
+  if (requiresBirthDateCompletion && !birthDateGuardBypass) {
+    return <Navigate to="/perfil?required=birthDate" replace />;
   }
 
   return (
@@ -523,7 +535,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/manga') ? (
-                <AdminPanel adminAccess={adminAccess} workspace="admin" />
+                <Navigate to="/admin/capitulos" replace />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -856,3 +868,4 @@ export default function App() {
     </Router>
   );
 }
+

@@ -4,8 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
-import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
-import { applyVipDiscount, normalizeStoreConfig, STORE_DEFAULT_CONFIG } from '../../config/store';
+import { normalizeStoreConfig, STORE_DEFAULT_CONFIG } from '../../config/store';
 import { clearCart, getCartItems, removeFromCart, updateCartQuantity } from '../../store/cartStore';
 import { openStoreCheckout } from '../../utils/storeCheckout';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
@@ -46,13 +45,11 @@ export default function LojaCarrinho({ user, perfil }) {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [shippingQuote, setShippingQuote] = useState(null);
-  /** Preços por linha e subtotal devolvidos por `quoteStoreShipping` (autoridade para exibição). */
   const [serverCartPricing, setServerCartPricing] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingService, setShippingService] = useState('PAC');
   const [podDraft, setPodDraft] = useState(() => getPodCartDraft());
 
-  const vip = descontoVipLojaAtivo(perfil, user);
   const buyerMissingFields = useMemo(
     () => getStoreBuyerProfileMissingFields(perfil?.buyerProfile),
     [perfil?.buyerProfile]
@@ -90,56 +87,52 @@ export default function LojaCarrinho({ user, perfil }) {
   const detailed = useMemo(() => {
     return cartItems
       .map((item) => {
-        const p = products[item.productId];
-        if (!p) return null;
-        const basePrice = Number(p.isOnSale && Number(p.promoPrice) > 0 ? p.promoPrice : p.price || 0);
-        const unitPrice = applyVipDiscount(basePrice, p, config.vipDiscountPct, vip);
-        const sz = item.size || '';
-        const type = String(p.type || 'manga').toLowerCase();
-        const sizes = Array.isArray(p.sizes) ? p.sizes.map((s) => String(s || '').trim()).filter(Boolean) : [];
-        if (type === 'roupa' && sizes.length && !sizes.includes(sz)) {
-          return { ...item, product: p, unitPrice, lineTotal: 0, invalidSize: true };
+        const product = products[item.productId];
+        if (!product) return null;
+        const publicUnitPrice = Number(
+          product.isOnSale && Number(product.promoPrice) > 0 ? product.promoPrice : product.price || 0
+        );
+        const size = item.size || '';
+        const type = String(product.type || 'manga').toLowerCase();
+        const sizes = Array.isArray(product.sizes)
+          ? product.sizes.map((entry) => String(entry || '').trim()).filter(Boolean)
+          : [];
+        if (type === 'roupa' && sizes.length && !sizes.includes(size)) {
+          return { ...item, product, publicUnitPrice, invalidSize: true };
         }
         return {
           ...item,
-          product: p,
-          unitPrice,
-          lineTotal: Math.round(unitPrice * item.quantity * 100) / 100,
+          product,
+          publicUnitPrice,
           invalidSize: false,
         };
       })
       .filter(Boolean);
-  }, [cartItems, products, config.vipDiscountPct, vip]);
+  }, [cartItems, products]);
 
-  const hasInvalid = detailed.some((l) => l.invalidSize);
+  const hasInvalid = detailed.some((line) => line.invalidSize);
   const selectedShippingOption = useMemo(
     () => shippingQuote?.options?.find((option) => option.serviceCode === shippingService) || null,
     [shippingQuote, shippingService]
   );
   const priceByLineKey = useMemo(() => {
-    const m = new Map();
+    const map = new Map();
     for (const row of serverCartPricing?.pricedLines || []) {
-      m.set(lineKey(row.productId, row.size || ''), row);
+      map.set(lineKey(row.productId, row.size || ''), row);
     }
-    return m;
+    return map;
   }, [serverCartPricing]);
 
-  const subtotal = useMemo(() => {
-    const clientSub = detailed.filter((l) => !l.invalidSize).reduce((sum, line) => sum + line.lineTotal, 0);
-    if (
-      serverCartPricing != null &&
-      Number.isFinite(Number(serverCartPricing.subtotal)) &&
-      shippingQuote &&
+  const checkoutTotalsReady = Boolean(
+    serverCartPricing != null &&
+      Number.isFinite(Number(serverCartPricing?.subtotal)) &&
+      selectedShippingOption &&
       !hasInvalid &&
       detailed.length > 0
-    ) {
-      return Number(serverCartPricing.subtotal);
-    }
-    return clientSub;
-  }, [detailed, serverCartPricing, shippingQuote, hasInvalid]);
-
-  const shipping = Number(selectedShippingOption?.priceBrl || 0);
-  const total = Math.round((subtotal + shipping) * 100) / 100;
+  );
+  const subtotal = checkoutTotalsReady ? Number(serverCartPricing.subtotal) : null;
+  const shipping = checkoutTotalsReady ? Number(selectedShippingOption?.priceBrl || 0) : null;
+  const total = checkoutTotalsReady ? Math.round(((subtotal || 0) + (shipping || 0)) * 100) / 100 : null;
 
   const hasStore = detailed.length > 0;
   const hasPod = Boolean(podDraft);
@@ -150,14 +143,15 @@ export default function LojaCarrinho({ user, perfil }) {
       if (!user?.uid || !detailed.length || hasInvalid || buyerMissingFields.length) {
         setShippingQuote(null);
         setServerCartPricing(null);
+        setShippingLoading(false);
         return;
       }
       setShippingLoading(true);
       try {
         const items = detailed.map((line) => {
-          const o = { productId: line.productId, quantity: line.quantity };
-          if (line.size) o.size = line.size;
-          return o;
+          const payload = { productId: line.productId, quantity: line.quantity };
+          if (line.size) payload.size = line.size;
+          return payload;
         });
         const { data } = await quoteStoreShipping({ items });
         if (!active) return;
@@ -165,7 +159,7 @@ export default function LojaCarrinho({ user, perfil }) {
         setShippingQuote(quote);
         setShippingService(quote?.defaultServiceCode || 'PAC');
         if (data?.subtotal != null && Array.isArray(data?.pricedLines)) {
-          setServerCartPricing({ subtotal: data.subtotal, pricedLines: data.pricedLines });
+          setServerCartPricing({ subtotal: Number(data.subtotal), pricedLines: data.pricedLines });
         } else {
           setServerCartPricing(null);
         }
@@ -198,6 +192,10 @@ export default function LojaCarrinho({ user, perfil }) {
       setErro('Escolha PAC ou SEDEX antes de finalizar.');
       return;
     }
+    if (!checkoutTotalsReady) {
+      setErro('Aguarde a cotacao do frete para o servidor confirmar subtotal e total finais.');
+      return;
+    }
     if (!config.acceptingOrders) {
       setErro('Pedidos estao temporariamente fechados.');
       return;
@@ -206,9 +204,9 @@ export default function LojaCarrinho({ user, perfil }) {
     setErro('');
     try {
       const items = detailed.map((line) => {
-        const o = { productId: line.productId, quantity: line.quantity };
-        if (line.size) o.size = line.size;
-        return o;
+        const payload = { productId: line.productId, quantity: line.quantity };
+        if (line.size) payload.size = line.size;
+        return payload;
       });
       const url = await openStoreCheckout(functions, items, shippingService);
       clearCart();
@@ -231,18 +229,18 @@ export default function LojaCarrinho({ user, perfil }) {
 
       {!user?.uid ? (
         <p className="loja-shipping-hint">
-            Voc? pode montar o carrinho da loja sem conta. Para calcular frete e pagar produtos, entre e complete os dados de
-          entrega no perfil. O lote de mang? f?sico exige login para pagar.
+          Voce pode montar o carrinho da loja sem conta. Para calcular frete e pagar produtos, entre e complete os dados de
+          entrega no perfil. O lote de manga fisico exige login para pagar.
         </p>
       ) : null}
 
       {!hasPod && !hasStore ? (
         <section className="loja-empty">
-          <p>Seu carrinho est? vazio.</p>
+          <p>Seu carrinho esta vazio.</p>
           <p className="loja-shipping-hint" style={{ marginTop: 12 }}>
-            <Link to="/loja">Ir ? loja</Link>
-            {' ? '}
-            <Link to="/print-on-demand?iniciar=1">Montar mang? f?sico</Link>
+            <Link to="/loja">Ir a loja</Link>
+            {' ou '}
+            <Link to="/print-on-demand?iniciar=1">Montar manga fisico</Link>
           </p>
         </section>
       ) : null}
@@ -250,13 +248,12 @@ export default function LojaCarrinho({ user, perfil }) {
       {hasPod ? (
         <section className="pod-checkout-card" style={{ marginBottom: 22 }}>
           <h2 className="pod-checkout-section-title" style={{ marginTop: 0 }}>
-            Mang? f?sico (lote sob demanda)
+            Manga fisico (lote sob demanda)
           </h2>
           {!user?.uid ? (
             <p className="loja-shipping-hint">
-              H? um lote salvo neste aparelho.{' '}
-              <Link to={buildLoginUrlWithRedirect('/loja/carrinho')}>Entre na conta</Link> para revisar e pagar com
-              seguran?a.
+              Ha um lote salvo neste aparelho. <Link to={buildLoginUrlWithRedirect('/loja/carrinho')}>Entre na conta</Link>{' '}
+              para revisar e pagar com seguranca.
             </p>
           ) : (
             <>
@@ -302,7 +299,7 @@ export default function LojaCarrinho({ user, perfil }) {
                   Remover lote
                 </button>
                 <Link className="pod-checkout-btn pod-checkout-btn--ghost" to="/print-on-demand?iniciar=1">
-                  Editar configura??o
+                  Editar configuracao
                 </Link>
               </div>
               <Link
@@ -319,7 +316,7 @@ export default function LojaCarrinho({ user, perfil }) {
 
       {hasStore && hasPod ? (
         <p className="loja-shipping-hint" role="status">
-          Loja e mang? f?sico usam checkouts diferentes (cada um com seu pagamento no Mercado Pago).
+          Loja e manga fisico usam checkouts diferentes, cada um com seu proprio pagamento no Mercado Pago.
         </p>
       ) : null}
 
@@ -329,62 +326,62 @@ export default function LojaCarrinho({ user, perfil }) {
             Produtos da loja
           </h2>
           {detailed.map((line) => {
-            const pk = lineKey(line.productId, line.size);
-            const srv = priceByLineKey.get(pk);
-            const unitPrice = srv ? srv.unitPrice : line.unitPrice;
-            const lineTotal = srv ? srv.lineTotal : line.lineTotal;
+            const key = lineKey(line.productId, line.size);
+            const serverLine = priceByLineKey.get(key);
+            const unitPrice = serverLine ? Number(serverLine.unitPrice || 0) : Number(line.publicUnitPrice || 0);
+            const lineTotal = serverLine ? Number(serverLine.lineTotal || 0) : null;
             return (
-            <article key={pk} className="loja-cart-item">
-              <img
-                src={(Array.isArray(line.product.images) && line.product.images[0]) || '/assets/fotos/shito.jpg'}
-                alt=""
-              />
-              <div>
-                <h3>{line.product.title}</h3>
-                {line.size ? <p className="loja-cart-size">Tam.: {line.size}</p> : null}
-                {line.invalidSize ? <p className="loja-error">Escolha tamanho valido (edite no produto).</p> : null}
-                <p>R$ {unitPrice.toFixed(2)} / un</p>
-              </div>
-              <input
-                type="number"
-                min={1}
-                max={maxCartQtyForProduct(line.product)}
-                value={line.quantity}
-                onChange={(e) =>
-                  setCartItems(updateCartQuantity(line.productId, Number(e.target.value || 1), line.size || ''))
-                }
-              />
-              <strong>R$ {line.invalidSize ? '--' : lineTotal.toFixed(2)}</strong>
-              <button type="button" onClick={() => setCartItems(removeFromCart(line.productId, line.size || ''))}>
-                Remover
-              </button>
-            </article>
+              <article key={key} className="loja-cart-item">
+                <img
+                  src={(Array.isArray(line.product.images) && line.product.images[0]) || '/assets/fotos/shito.jpg'}
+                  alt=""
+                />
+                <div>
+                  <h3>{line.product.title}</h3>
+                  {line.size ? <p className="loja-cart-size">Tam.: {line.size}</p> : null}
+                  {line.invalidSize ? <p className="loja-error">Escolha um tamanho valido no produto antes de pagar.</p> : null}
+                  <p>R$ {unitPrice.toFixed(2)} / un</p>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={maxCartQtyForProduct(line.product)}
+                  value={line.quantity}
+                  onChange={(e) =>
+                    setCartItems(updateCartQuantity(line.productId, Number(e.target.value || 1), line.size || ''))
+                  }
+                />
+                <strong>{line.invalidSize ? '--' : lineTotal != null ? `R$ ${lineTotal.toFixed(2)}` : 'Subtotal no frete'}</strong>
+                <button type="button" onClick={() => setCartItems(removeFromCart(line.productId, line.size || ''))}>
+                  Remover
+                </button>
+              </article>
             );
           })}
           <footer className="loja-cart-footer">
             <div className="loja-cart-totals">
               <div>
-                Subtotal: R$ {subtotal.toFixed(2)}
-                {serverCartPricing && shippingQuote ? (
-                  <span className="loja-shipping-hint" style={{ display: 'block', marginTop: 4 }}>
-                    Valores das linhas e subtotal conferidos pelo servidor na cotação de frete; total cobrado segue o checkout.
-                  </span>
-                ) : null}
+                {subtotal != null ? `Subtotal: R$ ${subtotal.toFixed(2)}` : 'Subtotal final pendente da cotacao do servidor'}
+                <span className="loja-shipping-hint" style={{ display: 'block', marginTop: 4 }}>
+                  O servidor confirma linhas, subtotal, frete e total finais antes do checkout.
+                </span>
               </div>
               {selectedShippingOption ? (
                 <div>
                   {selectedShippingOption.label}: R$ {Number(selectedShippingOption.priceBrl || 0).toFixed(2)}
                   {Number(selectedShippingOption.discountBrl || 0) > 0
-                    ? ` ? Voc? economizou R$ ${Number(selectedShippingOption.discountBrl || 0).toFixed(2)}`
+                    ? ` - Voce economizou R$ ${Number(selectedShippingOption.discountBrl || 0).toFixed(2)}`
                     : ''}
                 </div>
               ) : null}
-              <div className="loja-cart-total-final">Total: R$ {total.toFixed(2)}</div>
+              <div className="loja-cart-total-final">
+                {total != null ? `Total: R$ ${total.toFixed(2)}` : 'Total final sera liberado apos a cotacao do frete'}
+              </div>
             </div>
             <p className="loja-shipping-hint">
-              Frete por UF (tabela fixa) + R$ 2 por unidade extra; SEDEX usa acréscimo sobre a mesma base. Prazo conforme UF.
-              Sudeste, Sul e Centro-Oeste: com subtotal a partir de R$ 165 ou 3+ unidades, até 30% de desconto só no frete (teto
-              R$ 20).
+              Frete por UF com tabela fixa, mais R$ 2 por unidade extra. O SEDEX usa acrescimo sobre a mesma base. Em Sudeste,
+              Sul e Centro-Oeste, com subtotal a partir de R$ 165 ou 3 ou mais unidades, o backend aplica ate 30% de desconto no
+              frete, com teto de R$ 20.
             </p>
             {shippingQuote ? (
               <div className="loja-shipping-options">
@@ -406,13 +403,11 @@ export default function LojaCarrinho({ user, perfil }) {
                 ))}
               </div>
             ) : null}
-            {shippingLoading ? <p className="loja-shipping-hint">Calculando PAC e SEDEX...</p> : null}
+            {shippingLoading ? <p className="loja-shipping-hint">Calculando PAC e SEDEX no servidor...</p> : null}
             {erro ? <p className="loja-error">{erro}</p> : null}
             {user?.uid && buyerMissingFields.length ? (
               <div className="loja-banner loja-banner--erro loja-banner--with-cta loja-cart__buyer-hint" role="status">
-                <p className="loja-banner__text">
-                  Para comprar, complete no perfil: {buyerMissingFields.join(', ')}.
-                </p>
+                <p className="loja-banner__text">Para comprar, complete no perfil: {buyerMissingFields.join(', ')}.</p>
                 <Link className="loja-banner__cta" to={`/perfil#${PERFIL_LOJA_DADOS_HASH}`}>
                   Completar cadastro
                 </Link>
@@ -421,7 +416,7 @@ export default function LojaCarrinho({ user, perfil }) {
             <button
               type="button"
               className="loja-btn-buy"
-              disabled={loading || hasInvalid || shippingLoading || !selectedShippingOption}
+              disabled={loading || hasInvalid || shippingLoading || !checkoutTotalsReady}
               onClick={handleCheckout}
             >
               {loading ? 'Abrindo checkout...' : 'Finalizar compra da loja'}

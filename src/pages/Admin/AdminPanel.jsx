@@ -4,6 +4,7 @@ import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'fi
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 
 import { db, storage, auth } from '../../services/firebase';
+import { resolveAdminAccess } from '../../auth/adminAccess';
 import {
   normalizarObraId,
   obterObraIdCapitulo,
@@ -26,9 +27,9 @@ import {
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_INPUT_IMAGE_SIZE_BYTES = 7 * 1024 * 1024;
-const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
-const TARGET_IMAGE_SIZE_BYTES = 2.2 * 1024 * 1024;
+const MAX_INPUT_IMAGE_SIZE_BYTES = Math.round(3.5 * 1024 * 1024);
+const MAX_COMPRESSED_IMAGE_SIZE_BYTES = 500 * 1024;
+const TARGET_IMAGE_SIZE_BYTES = 420 * 1024;
 const MAX_IMAGE_DIMENSION_PX = 2400;
 const CAPA_ASPECT_W = 16;
 const CAPA_ASPECT_H = 9;
@@ -46,8 +47,8 @@ function normalizarCapaAjuste(raw, dims = null) {
 
 function validarImagemUpload(file, label = 'arquivo') {
   if (!file) return `${label} não encontrado.`;
-  if (!IMAGE_TYPES.includes(file.type)) return `${label} invalido. Use JPG, PNG ou WEBP.`;
-  if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 7MB.`;
+  if (!IMAGE_TYPES.includes(file.type)) return `${label} inválido. Use JPG, PNG ou WEBP.`;
+  if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 3,5 MB.`;
   return '';
 }
 
@@ -166,7 +167,7 @@ async function comprimirImagemParaUpload(file) {
   }
 
   if (!melhorBlob || melhorBlob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-    throw new Error('Não foi possível otimizar a imagem para até 5 MB. Tente outra imagem.');
+    throw new Error('Não foi possível otimizar a imagem para ficar entre 250 KB e 500 KB. Tente outra imagem.');
   }
 
   return new File(
@@ -201,7 +202,7 @@ async function processarCapaParaUpload(file, ajuste = { zoom: 1, x: 0, y: 0 }) {
   }
 
   if (!blob || blob.size > MAX_COMPRESSED_IMAGE_SIZE_BYTES) {
-    throw new Error('Não foi possível otimizar a capa para até 5 MB. Tente outra imagem.');
+    throw new Error('Não foi possível otimizar a capa para ficar entre 250 KB e 500 KB. Tente outra imagem.');
   }
 
   return new File([blob], nomeArquivoComExtensao(file.name, '.webp'), {
@@ -510,9 +511,33 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const user = auth.currentUser;
-  const chaptersHubPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
   const isCreatorWorkspace = workspace === 'creator';
   const isMangaka = Boolean(adminAccess?.isMangaka);
+  const workspaceConfig = useMemo(() => {
+    if (isCreatorWorkspace) {
+      return {
+        chaptersHubPath: '/creator/capitulos',
+        worksPath: '/creator/obras',
+        canAccessWorkspace: isMangaka,
+        headerSuffix: ' - ESTÚDIO DE CAPÍTULOS',
+        backLabel: 'Voltar para meus capítulos',
+        emptyStateTitle: 'Escolha uma obra antes de abrir o editor',
+        emptyStateCopy:
+          'O fluxo creator precisa de uma obra definida para criar ou editar capítulo. Volte ao hub para escolher uma obra ou entre em Minhas obras para criar a base primeiro.',
+      };
+    }
+    return {
+      chaptersHubPath: '/admin/capitulos',
+      worksPath: '/admin/obras',
+      canAccessWorkspace: Boolean(adminAccess?.canAccessAdmin),
+      headerSuffix: ' - FORJA DO AUTOR',
+      backLabel: 'Voltar capítulos',
+      emptyStateTitle: 'Selecione uma obra antes de editar',
+      emptyStateCopy:
+        'O editor precisa de uma obra válida no contexto atual. Volte ao hub de capítulos e abra o fluxo pela obra correta.',
+    };
+  }, [adminAccess?.canAccessAdmin, isCreatorWorkspace, isMangaka]);
+  const { chaptersHubPath, worksPath, canAccessWorkspace } = workspaceConfig;
   const obraQueryId = String(searchParams.get('obra') || '').trim();
   const obraIdSelecionada = obraQueryId ? normalizarObraId(obraQueryId) : '';
   const capituloEditQueryId = String(searchParams.get('edit') || '').trim();
@@ -531,7 +556,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
   const [capitulos, setCapitulos] = useState([]);
   const [obras, setObras] = useState([]);
-  /** Evita redirect falso: antes do 1Âº snapshot, o fallback da obra copiava creatorId legado (Shito). */
+  /** Evita redirect falso: antes do 1o snapshot, o fallback da obra copiava creatorId legado (Shito). */
   const [obrasSnapshotReady, setObrasSnapshotReady] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -546,7 +571,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const [capaFileLabel, setCapaFileLabel] = useState('');
 
   useEffect(() => {
-    if (!adminAccess?.canAccessAdmin) {
+    if (!canAccessWorkspace) {
       navigate('/');
       return;
     }
@@ -585,7 +610,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       unsubscribe();
       unsubObras();
     };
-  }, [user, navigate, adminAccess?.canAccessAdmin]);
+  }, [canAccessWorkspace, user, navigate]);
 
   const previewsPaginasSelecionadas = useMemo(
     () =>
@@ -621,7 +646,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     return {
       id: obraIdSelecionada,
       slug: obraIdSelecionada,
-      titulo: 'Obra nao encontrada',
+      titulo: 'Obra não encontrada',
       tituloCurto: '',
       creatorId: '',
     };
@@ -662,6 +687,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     chaptersHubPath,
   ]);
 
+  const creatorEditorNeedsWorkSelection =
+    isCreatorWorkspace && !obraIdSelecionada;
+  const creatorEditorHasUnknownWork =
+    isCreatorWorkspace &&
+    Boolean(obraIdSelecionada) &&
+    obrasSnapshotReady &&
+    !obras.some((obra) => normalizarObraId(obra.id) === obraIdSelecionada);
+
   const capitulosDaObra = useMemo(
     () =>
       capitulos
@@ -701,8 +734,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     const etapa4 = Boolean(String(titulo || '').trim() && Number(numeroCapitulo) > 0);
     const etapa5 = etapa1 && etapa2 && etapa3 && etapa4;
     return [
-      { id: 1, label: 'Upload (capa e páginas)', ok: etapa1 },
-      { id: 2, label: 'Organizar páginas', ok: etapa2 },
+      { id: 1, label: 'Upload (capa e paginas)', ok: etapa1 },
+      { id: 2, label: 'Organizar paginas', ok: etapa2 },
       { id: 3, label: 'Ajustar capa', ok: etapa3 },
       { id: 4, label: 'Revisar metadados', ok: etapa4 },
       { id: 5, label: 'Publicar', ok: etapa5 },
@@ -712,6 +745,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const etapaOrganizacaoCompleta = totalPaginasAtual > 0;
   const etapaCapaCompleta = Boolean(capaCapitulo || capituloEditando?.capaUrl);
   const etapaRevisaoCompleta = Boolean(String(titulo || '').trim() && Number(numeroCapitulo) > 0);
+  const tituloNormalizado = String(titulo || '').trim();
+  const numeroCapituloNormalizado = Number(numeroCapitulo);
   const etapaLiberadaMax = useMemo(() => {
     if (!etapaUploadCompleta) return 1;
     if (!etapaOrganizacaoCompleta) return 2;
@@ -728,6 +763,69 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     const destino = Math.max(1, Math.min(5, Number(etapaDestino) || 1));
     setEtapaAtiva(Math.min(destino, etapaLiberadaMax));
   }, [etapaLiberadaMax]);
+
+  const mensagemBloqueioEtapa = useCallback((etapaDestino) => {
+    const destino = Math.max(1, Math.min(5, Number(etapaDestino) || 1));
+    if (destino <= etapaLiberadaMax) return '';
+    if (!etapaUploadCompleta) {
+      return 'Envie uma capa válida e pelo menos uma página antes de avançar.';
+    }
+    if (!etapaOrganizacaoCompleta) {
+      return 'Adicione e organize ao menos uma página antes de seguir.';
+    }
+    if (!etapaCapaCompleta) {
+      return 'Selecione a capa do capítulo antes de seguir.';
+    }
+    if (!tituloNormalizado && (!Number.isFinite(numeroCapituloNormalizado) || numeroCapituloNormalizado <= 0)) {
+      return 'Faltam o título e o número do capítulo.';
+    }
+    if (!tituloNormalizado) {
+      return 'Falta preencher o título do capítulo.';
+    }
+    if (!Number.isFinite(numeroCapituloNormalizado) || numeroCapituloNormalizado <= 0) {
+      return 'Falta preencher um número de capítulo válido.';
+    }
+    return 'Complete a etapa atual antes de avançar.';
+  }, [
+    etapaLiberadaMax,
+    etapaUploadCompleta,
+    etapaOrganizacaoCompleta,
+    etapaCapaCompleta,
+    tituloNormalizado,
+    numeroCapituloNormalizado,
+  ]);
+
+  const tentarIrParaEtapa = useCallback((etapaDestino) => {
+    const bloqueio = mensagemBloqueioEtapa(etapaDestino);
+    if (bloqueio) {
+      setErroModal(bloqueio);
+      return;
+    }
+    irParaEtapa(etapaDestino);
+  }, [irParaEtapa, mensagemBloqueioEtapa]);
+
+  const ensureMangakaClaimForWrite = useCallback(async (actionLabel = 'gravar este capítulo') => {
+    if (!isMangaka || !user) return true;
+    try {
+      const refreshedAccess = await resolveAdminAccess(user, { force: true });
+      await user.getIdToken(true);
+      if (refreshedAccess?.isMangaka) return true;
+      setErroModal(
+        `Sua permissão de criador ainda não foi sincronizada para ${actionLabel}. Saia e entre novamente ou recarregue o painel para concluir a liberação.`
+      );
+      return false;
+    } catch (claimErr) {
+      setErroModal(
+        `Não foi possível confirmar sua permissão de criador antes de ${actionLabel}. Atualize o painel e tente novamente.`
+      );
+      console.warn('[AdminPanel] mangaka claim refresh failed', {
+        actionLabel,
+        err: String(claimErr?.message || claimErr || ''),
+        uid: user?.uid || '',
+      });
+      return false;
+    }
+  }, [isMangaka, user]);
 
   useEffect(() => {
     return () => {
@@ -937,7 +1035,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     }
     setArquivosPaginas((prev) => [...prev, ...novos]);
     if (capaCapitulo || capituloEditando?.capaUrl) {
-      setEtapaAtiva(2);
+      tentarIrParaEtapa(2);
     }
   };
 
@@ -954,7 +1052,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setCapaAjuste(ajustePadrao);
     setCapaAjusteInicial(ajustePadrao);
     if (totalPaginasAtual > 0) {
-      setEtapaAtiva(2);
+      tentarIrParaEtapa(2);
     }
   };
 
@@ -1041,9 +1139,30 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setLoading(true);
     setProgressoMsg('Sincronizando...');
     try {
+      if (!(await ensureMangakaClaimForWrite(editandoId ? 'salvar o capítulo' : 'criar o capítulo'))) {
+        throw new Error('Permissão de criador não sincronizada.');
+      }
       const numeroNormalizado = parseInt(numeroCapitulo, 10);
+      const tituloSanitizado = String(titulo || '').trim();
+      if (!tituloSanitizado) {
+        throw new Error('Título do capítulo obrigatório.');
+      }
       if (!Number.isFinite(numeroNormalizado) || numeroNormalizado <= 0) {
         throw new Error('Número do capítulo inválido.');
+      }
+      if (!obraIdSelecionada || !obraSelecionada?.id || !obraSelecionada?.titulo) {
+        throw new Error('Selecione uma obra válida antes de salvar o capítulo.');
+      }
+      const creatorIdObra = String(obraCreatorId(obraSelecionada) || '').trim();
+      if (!creatorIdObra) {
+        throw new Error('A obra selecionada está sem criador vinculado. Corrija a obra antes de lançar capítulo.');
+      }
+      const totalPaginasPersistidas = paginasExistentes.length + arquivosPaginas.length;
+      if (!editandoId && totalPaginasPersistidas <= 0) {
+        throw new Error('Adicione pelo menos uma página antes de lançar o capítulo.');
+      }
+      if (!capaCapitulo && !capituloEditando?.capaUrl) {
+        throw new Error('Selecione a capa do capítulo antes de publicar.');
       }
       const jaExisteMesmoNumeroNaObra = capitulos.some((cap) => (
         cap.id !== editandoId &&
@@ -1085,13 +1204,13 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
 
       const dados = {
-        titulo,
+        titulo: tituloSanitizado,
         numero: numeroNormalizado,
         obraId: obraIdSelecionada,
         workId: obraIdSelecionada,
         obraTitulo: String(obraSelecionada?.tituloCurto || obraSelecionada?.titulo || obraIdSelecionada),
         dataUpload: new Date().toISOString(),
-        creatorId: obraCreatorId(obraSelecionada),
+        creatorId: creatorIdObra,
       };
 
       let publicMs = null;
@@ -1114,13 +1233,21 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
 
       if (editandoId) {
+        if (
+          !dados.capaUrl &&
+          !capituloEditando?.capaUrl &&
+          !(Array.isArray(dados.paginas) && dados.paginas.length > 0) &&
+          !(Array.isArray(paginasExistentes) && paginasExistentes.length > 0)
+        ) {
+          throw new Error('Capítulo inválido: é obrigatório manter capa e pelo menos uma página.');
+        }
         await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
         if (capaStoragePath) {
           await safeDeleteStorageObject(storage, capaAnterior);
         }
       } else {
-        if (!urlCapa || (paginasUpload.length === 0 && arquivosPaginas.length === 0)) {
-            throw new Error("Obrigatório: Capa + Arquivos.");
+        if (!urlCapa || paginasUpload.length === 0) {
+            throw new Error('Obrigatório: capa e páginas válidas.');
         }
         await set(push(dbRef(db, 'capitulos')), dados);
       }
@@ -1187,6 +1314,9 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setLoading(true);
     setProgressoMsg(`Apagando fragmento ${cap.numero}...`);
     try {
+      if (!(await ensureMangakaClaimForWrite('apagar o capítulo'))) {
+        throw new Error('Permissão de criador não sincronizada.');
+      }
       const arquivos = [
         cap.capaStoragePath,
         cap.capaUrl,
@@ -1224,14 +1354,51 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       <header className="admin-header">
         <h1>
           {(obraSelecionada?.tituloCurto || 'Obra').toUpperCase()}
-          {isMangaka ? ' - ESTUDIO DE CAPITULOS' : isCreatorWorkspace ? ' - OPERACAO DE CAPITULOS' : ' - FORJA DO AUTOR'}
+          {isCreatorWorkspace && !isMangaka ? ' - OPERAÇÃO DE CAPÍTULOS' : workspaceConfig.headerSuffix}
         </h1>
         <button className="btn-voltar" onClick={() => navigate(chaptersHubPath)}>
-          {isMangaka ? 'Voltar para meus capitulos' : 'Voltar capítulos'}
+          {isCreatorWorkspace && !isMangaka ? 'Voltar capítulos' : workspaceConfig.backLabel}
         </button>
       </header>
 
       <main className="admin-container">
+        {creatorEditorNeedsWorkSelection ? (
+          <section className="admin-editor-empty-state" role="status">
+            <div className="admin-editor-empty-state__card">
+              <p className="admin-editor-empty-state__eyebrow">Editor creator</p>
+              <h2>{workspaceConfig.emptyStateTitle}</h2>
+              <p>{workspaceConfig.emptyStateCopy}</p>
+              <div className="admin-editor-empty-state__actions">
+                <button type="button" className="btn-voltar" onClick={() => navigate(chaptersHubPath)}>
+                  Voltar ao hub de capítulos
+                </button>
+                <button type="button" className="btn-voltar" onClick={() => navigate(worksPath)}>
+                  Ir para minhas obras
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : creatorEditorHasUnknownWork ? (
+          <section className="admin-editor-empty-state" role="status">
+            <div className="admin-editor-empty-state__card">
+              <p className="admin-editor-empty-state__eyebrow">Obra inválida</p>
+              <h2>Essa obra não foi resolvida no seu catálogo</h2>
+              <p>
+                O editor creator não vai salvar nada enquanto a obra não for reconhecida como parte do
+                seu catálogo. Volte ao hub e entre pelo fluxo correto.
+              </p>
+              <div className="admin-editor-empty-state__actions">
+                <button type="button" className="btn-voltar" onClick={() => navigate(chaptersHubPath)}>
+                  Voltar ao hub de capítulos
+                </button>
+                <button type="button" className="btn-voltar" onClick={() => navigate(worksPath)}>
+                  Ver minhas obras
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <>
         <section className="admin-obra-context">
           <p>Obra selecionada</p>
           <strong>{obraSelecionada?.titulo || obraIdSelecionada}</strong>
@@ -1244,10 +1411,10 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
               : `${isMangaka ? 'Criar capítulo' : 'Criar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}
           </h2>
           
-          <form onSubmit={handleSubmit} className="admin-form">
+          <form onSubmit={handleSubmit} className="admin-form" noValidate>
             <div className="input-row">
-              <input type="number" placeholder="NÂº" value={numeroCapitulo} onChange={(e) => setNumeroCapitulo(e.target.value)} required />
-              <input type="text" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} required />
+              <input type="number" placeholder="Nº" value={numeroCapitulo} onChange={(e) => setNumeroCapitulo(e.target.value)} />
+              <input type="text" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
             </div>
 
             <div className="lancamento-block">
@@ -1284,7 +1451,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                   type="button"
                   className={`editor-step-chip${etapaAtiva === n ? ' active' : ''}`}
                   disabled={n > etapaLiberadaMax}
-                  onClick={() => irParaEtapa(n)}
+                  onClick={() => tentarIrParaEtapa(n)}
                 >
                   {n === 1 && '1. Upload'}
                   {n === 2 && '2. Organizar'}
@@ -1352,7 +1519,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                     <div className="cirurgia-header">
                       <div className="cirurgia-info">
                         <h3>Páginas atuais ({paginasExistentes.length})</h3>
-                    <p>{isMangaka ? 'Reordene paginas, revise e troque trechos sem perder o fluxo.' : 'Arraste para reordenar, visualize em modal e troque páginas pontuais.'}</p>
+                    <p>{isMangaka ? 'Reordene páginas, revise e troque trechos sem perder o fluxo.' : 'Arraste para reordenar, visualize em modal e troque páginas pontuais.'}</p>
                       </div>
                     </div>
                     <div className="paginas-edit-grid">
@@ -1376,7 +1543,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                   <div className="cirurgia-header">
                     <div className="cirurgia-info">
                       <h3>Pré-visualização das novas páginas ({arquivosPaginas.length})</h3>
-                      <p>{isMangaka ? 'Confira as novas paginas antes de publicar.' : 'Cards com thumbnail, preview em modal, remoção e reorder por arraste.'}</p>
+                      <p>{isMangaka ? 'Confira as novas páginas antes de publicar.' : 'Cards com thumbnail, preview em modal, remoção e reorder por arraste.'}</p>
                     </div>
                   </div>
                   {arquivosPaginas.length > 0 ? (
@@ -1526,7 +1693,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 <div className="review-checklist">
                   {checklistPublicacao.map((item) => (
                     <div key={item.id} className={`review-check-item ${item.ok ? 'ok' : 'pendente'}`}>
-                      <span>{item.ok ? 'âœ“' : 'â€¢'}</span>
+                      <span>{item.ok ? 'OK' : 'Pendente'}</span>
                       <p>Etapa {item.id}: {item.label}</p>
                     </div>
                   ))}
@@ -1534,7 +1701,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 <div className="review-kpis">
                   <span><strong>Status:</strong> {statusRevisao}</span>
                   <span><strong>Páginas:</strong> {totalPaginasAtual}</span>
-                  <span><strong>Novas páginas:</strong> {arquivosPaginas.length}</span>
+                  <span><strong>Novas paginas:</strong> {arquivosPaginas.length}</span>
                   <span><strong>Lançamento:</strong> {publicReleaseAtInput?.trim() || 'Imediato'}</span>
                 </div>
                 <div className="capa-preview-mask capa-preview-mask--resultado">
@@ -1585,22 +1752,22 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 type="button"
                 className="btn-cancel"
                 disabled={etapaAtiva <= 1}
-                onClick={() => irParaEtapa(etapaAtiva - 1)}
+                onClick={() => tentarIrParaEtapa(etapaAtiva - 1)}
               >
                 Etapa anterior
               </button>
               <button
                 type="button"
                 className="btn-edit"
-                disabled={etapaAtiva >= etapaLiberadaMax}
-                onClick={() => irParaEtapa(etapaAtiva + 1)}
+                disabled={etapaAtiva >= 5}
+                onClick={() => tentarIrParaEtapa(etapaAtiva + 1)}
               >
                 Próxima etapa
               </button>
             </div>
 
             <div className="form-actions form-actions--sticky">
-              <button type="submit" className="btn-save" disabled={loading || etapaAtiva !== 5}>
+              <button type="submit" className="btn-save" disabled={loading}>
                 {loading ? 'PROCESSANDO...' : editandoId ? 'SALVAR ALTERAÇÕES' : 'LANÇAR CAPÍTULO'}
               </button>
               {editandoId && (
@@ -1617,7 +1784,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         </section>
 
         <section className="list-section">
-          <h2>{isMangaka ? 'Capitulos publicados nesta obra' : 'Capítulos da obra'}</h2>
+          <h2>{isMangaka ? 'Capítulos publicados nesta obra' : 'Capítulos da obra'}</h2>
           <div className="capitulos-grid">
             {capitulosDaObra.length === 0 ? (
               <p className="editor-empty">
@@ -1654,10 +1821,16 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
             })}
           </div>
         </section>
+          </>
+        )}
       </main>
     </div>
   );
 }
+
+
+
+
 
 
 

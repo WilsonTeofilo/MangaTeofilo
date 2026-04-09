@@ -158,7 +158,7 @@ export const notifyNewChapter = onValueWritten(
 
 export const notifyScheduledChapterReleases = onSchedule(
   {
-    schedule: 'every 10 minutes',
+    schedule: 'every 6 minutes',
     timeZone: 'America/Sao_Paulo',
     memory: '256MiB',
     timeoutSeconds: 120,

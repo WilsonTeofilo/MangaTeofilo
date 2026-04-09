@@ -1,7 +1,4 @@
-/**
- * Ciclo semanal, missões, XP visual, boost — sem metas de monetização da plataforma.
- */
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
 import { formatRemainingShort } from '../../utils/creatorEngagementCycle';
@@ -17,13 +14,13 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
       maximumFractionDigits: 1,
     });
     const rest = formatRemainingShort(cycleVm.boostRemainingMs);
-    return `Boost ${mul}× no feed${rest ? ` · acaba em ${rest}` : ''}`;
+    return `Boost ${mul}x no feed${rest ? ` · acaba em ${rest}` : ''}`;
   }, [cycleVm]);
 
   if (!cycleVm) {
     return (
       <div className="creator-dash creator-dash--missions">
-        <p className="creator-dash__mono-lead">Carregando suas missões…</p>
+        <p className="creator-dash__mono-lead">Carregando suas missões...</p>
       </div>
     );
   }
@@ -32,16 +29,18 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
   const poolSize = Number(cycleVm.poolSize) || cycleVm.missions?.length || 0;
   const doneCount = Number(cycleVm.doneCount) || 0;
   const metaOk = need > 0 && doneCount >= need;
+  const missingCount = Math.max(0, need - doneCount);
+  const allDone = poolSize > 0 && doneCount >= poolSize;
   const pluralNeed = need === 1 ? 'missão' : 'missões';
   const pluralPool = poolSize === 1 ? 'opção' : 'opções';
 
   return (
     <div className="creator-dash creator-dash--missions">
       <header className="creator-dash__intro creator-dash__intro--missions">
-        <h2 className="creator-dash__intro-title">Missões &amp; XP</h2>
+        <h2 className="creator-dash__intro-title">Missões e XP</h2>
         <p className="creator-dash__intro-sub">
-          Desafios semanais para manter ritmo e ganhar destaque no feed. Isso aqui não libera dinheiro — é separado das
-          metas de monetização.
+          Desafios semanais para manter ritmo e ganhar visibilidade. Isso não mexe com monetização:
+          aqui você sobe de fase, ganha XP e destrava bônus de destaque.
         </p>
       </header>
 
@@ -58,7 +57,7 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
             Você está na <strong>fase {cycleVm.cycleLevel}</strong> de <strong>5</strong>.
           </p>
           <div className="creator-dash__cycle-progress-top">
-            <span className="creator-dash__cycle-progress-label">Andamento da meta desta fase</span>
+            <span className="creator-dash__cycle-progress-label">Andamento da fase atual</span>
             <span className="creator-dash__cycle-progress-pct">{cycleVm.pct}%</span>
           </div>
           <div
@@ -67,34 +66,35 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
             aria-valuenow={cycleVm.pct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`${doneCount} de ${need} missões necessárias concluídas`}
+            aria-label={`${doneCount} de ${need} missões obrigatórias concluídas`}
           >
             <div className="creator-dash__cycle-fill creator-dash__cycle-fill--cyan" style={{ width: `${cycleVm.pct}%` }} />
           </div>
           <p className="creator-dash__cycle-nudge">{cycleVm.nudge}</p>
-          <p className="creator-dash__cycle-xp">XP que você já somou nesta semana: +{nf.format(cycleVm.xpVisualTotal)}</p>
+          <p className="creator-dash__cycle-xp">XP somado nesta semana: +{nf.format(cycleVm.xpVisualTotal)}</p>
         </section>
 
         <section className="creator-dash__panel creator-dash__panel--missions" aria-label="Lista de missões">
           <h3 className="creator-dash__panel-eyebrow">Escolha o que fazer</h3>
           <div className="creator-missions__rule" role="note">
-            <strong>
-              {need} de {poolSize}
-            </strong>
+            <strong>Missões concluídas: {doneCount}/{poolSize}</strong>
             <p>
-              Nesta fase você precisa concluir <strong>{need}</strong> {pluralNeed}. Na lista existem{' '}
-              <strong>{poolSize}</strong> {pluralPool} diferentes — <strong>não precisa fazer todas</strong>, só escolher
-              as que couberem no seu ritmo (por exemplo capítulo + likes, ou só views e likes).
+              Nesta fase existem <strong>{poolSize}</strong> {pluralPool}. Você não precisa fazer todas:
+              escolha as que fizerem sentido no seu ritmo.
+            </p>
+            <p>
+              Para subir de nível, precisa fechar <strong>{need}/{poolSize}</strong>. Se completar as{' '}
+              <strong>{poolSize}/{poolSize}</strong>, ganha bônus para a próxima fase.
             </p>
           </div>
           <p className="creator-dash__missions-hint creator-dash__missions-hint--muted">
-            Quando cumprir, o sistema marca sozinho. Capítulo novo conta como uma missão inteira.
+            O sistema marca sozinho quando a meta bate. Capítulo novo conta como uma missão inteira.
           </p>
           <ul className="creator-dash__mission-list">
             {cycleVm.missions.map((m) => (
               <li key={m.id} className={`creator-dash__mission-row${m.done ? ' is-done' : ''}`}>
                 <span className="creator-dash__mission-check" aria-hidden="true">
-                  {m.done ? '✔' : '□'}
+                  {m.done ? '[x]' : '[ ]'}
                 </span>
                 <span className="creator-dash__mission-label">{m.label}</span>
                 <span className="creator-dash__mission-xp">+{m.xp} XP</span>
@@ -104,27 +104,13 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
           <p className={`creator-dash__missions-foot${metaOk ? ' is-complete' : ''}`}>
             {metaOk ? (
               <>
-                <strong>Meta desta fase cumprida.</strong> Você fechou {doneCount} de {need} {pluralNeed} necessárias
-                {poolSize > need ? ` (${poolSize} ${pluralPool} no total).` : '.'}
+                <strong>Fase pronta para subir.</strong> Você concluiu {doneCount} de {need} {pluralNeed} obrigatórias.
+                {allDone ? ' Bônus extra liberado por fechar todas as opções.' : null}
               </>
             ) : (
               <>
-                <strong>
-                  {doneCount}/{need}
-                </strong>{' '}
-                missões necessárias concluídas
-                {poolSize > need ? (
-                  <>
-                    {' '}
-                    · na lista há <strong>{poolSize}</strong> {pluralPool} no total
-                  </>
-                ) : null}
-                {need > 0 ? (
-                  <>
-                    {' '}
-                    · faltam <strong>{Math.max(0, need - doneCount)}</strong>
-                  </>
-                ) : null}
+                <strong>{missingCount}</strong> {missingCount === 1 ? 'missão falta' : 'missões faltam'} para subir de
+                nível. A lista total desta fase tem <strong>{poolSize}</strong> {pluralPool}.
               </>
             )}
           </p>
@@ -133,7 +119,7 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
         <section className="creator-dash__panel creator-dash__panel--missions" aria-label="Próxima recompensa">
           <h3 className="creator-dash__panel-eyebrow">Próxima recompensa</h3>
           <p className="creator-dash__next-reward-sub">
-            Quando fechar a <strong>fase {cycleVm.cycleLevel}</strong>, você desbloqueia:
+            Quando fechar a <strong>fase {cycleVm.cycleLevel}</strong>, você destrava:
           </p>
           <ul className="creator-dash__next-reward-list">
             {cycleVm.nextRewardLines.map((line) => (
@@ -155,18 +141,18 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
             </div>
           ) : (
             <p className="creator-dash__active-empty">
-              Nenhum boost ligado agora. Fechar a fase atual libera o próximo bônus de visibilidade.
+              Nenhum boost ativo agora. Fechar a fase atual libera o próximo bônus de visibilidade.
             </p>
           )}
           {cycleVm.badgeTier > 0 ? (
             <div className="creator-dash__active-pill creator-dash__active-pill--badge">
-              <span aria-hidden="true">🏅</span>
-              <span>Selo de engajamento (nível {cycleVm.badgeTier}) — ajuda um pouco no ranking e no perfil</span>
+              <span aria-hidden="true">[badge]</span>
+              <span>Selo de engajamento (nível {cycleVm.badgeTier}) com impacto leve no ranking e no perfil</span>
             </div>
           ) : null}
           {cycleVm.spotlightActive ? (
             <div className="creator-dash__active-pill creator-dash__active-pill--spot">
-              <span aria-hidden="true">✨</span>
+              <span aria-hidden="true">[spotlight]</span>
               <span>Destaque temporário na vitrine</span>
             </div>
           ) : null}
@@ -174,10 +160,10 @@ export default function CreatorMissionsXpPanel({ cycleVm }) {
 
         <footer className="creator-dash__footer">
           <Link className="creator-dash__cta creator-dash__cta--cyan" to="/creator/monetizacao">
-            Metas de monetização (outra tela)
+            Metas de monetização
           </Link>
           <p className="creator-dash__legal">
-            Missões e XP não liberam repasse. Monetização continua no perfil e nas metas da plataforma.
+            Missões e XP não liberam repasse financeiro. Monetização continua em outra trilha.
           </p>
         </footer>
       </div>

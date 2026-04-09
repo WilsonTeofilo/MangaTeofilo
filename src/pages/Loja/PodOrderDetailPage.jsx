@@ -285,7 +285,7 @@ export default function PodOrderDetailPage({ user }) {
         >
           {paymentExpired ? (
             <p>
-              <strong>Reserva encerrada.</strong> O prazo de 3 horas para pagamento passou. Este pedido será cancelado
+              <strong>Reserva encerrada.</strong> O prazo de 24 horas para pagamento passou. Este pedido será cancelado
               automaticamente em breve — monte um novo lote no carrinho se ainda quiser produzir.
             </p>
           ) : (

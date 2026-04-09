@@ -1,18 +1,29 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, ref as dbRef } from 'firebase/database';
+﻿import React, { useEffect, useMemo, useState } from 'react';
+import { onValue, query, orderByChild, equalTo, ref as dbRef } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
 import { auth, db } from '../../services/firebase';
-import {
-  obterObraIdCapitulo,
-  obraCreatorId,
-} from '../../config/obras';
+import { obraCreatorId } from '../../config/obras';
 import './CapitulosAdminHub.css';
 
 function toSortedObras(raw) {
   return Object.entries(raw || {})
     .map(([id, data]) => ({ id, ...(data || {}) }))
     .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+}
+
+function toRecordList(raw) {
+  return Object.entries(raw || {}).map(([id, data]) => ({ id, ...(data || {}) }));
+}
+
+function mergeCapitulosLists(...lists) {
+  const map = new Map();
+  lists.flat().forEach((item) => {
+    const id = String(item?.id || '').trim();
+    if (!id) return;
+    map.set(id, item);
+  });
+  return Array.from(map.values());
 }
 
 export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) {
@@ -22,67 +33,119 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   const editorPathBase = workspace === 'creator' ? '/creator/editor' : '/admin/manga';
   const obrasPath = workspace === 'creator' ? '/creator/obras' : '/admin/obras';
   const isCreatorWorkspace = workspace === 'creator';
+  const canAccessWorkspace = isCreatorWorkspace ? isMangaka : Boolean(adminAccess?.canAccessAdmin);
   const [loading, setLoading] = useState(true);
   const [obras, setObras] = useState([]);
   const [allCapitulos, setAllCapitulos] = useState([]);
   const [obraId, setObraId] = useState('');
 
   useEffect(() => {
-    if (!adminAccess?.canAccessAdmin) {
+    if (!canAccessWorkspace) {
       navigate('/');
       return;
     }
-    const unsubObras = onValue(dbRef(db, 'obras'), (snapshot) => {
-      const list = toSortedObras(snapshot.exists() ? snapshot.val() : {});
-      const visivel =
-        isMangaka && user?.uid
-          ? list.filter((o) => obraCreatorId(o) === user.uid)
-          : list;
-      setObras(visivel);
-      setObraId((curr) => {
-        if (visivel.some((o) => o.id === curr)) return curr;
-        return visivel[0]?.id || '';
-      });
-      setLoading(false);
-    }, () => {
-      setObras([]);
-      setObraId('');
-      setLoading(false);
-    });
-    const unsubCaps = onValue(dbRef(db, 'capitulos'), (snapshot) => {
-      const list = snapshot.exists()
-        ? Object.entries(snapshot.val() || {}).map(([id, data]) => ({ id, ...(data || {}) }))
-        : [];
-      setAllCapitulos(list);
-    }, () => {
-      setAllCapitulos([]);
-    });
+
+    const unsubObras = onValue(
+      dbRef(db, 'obras'),
+      (snapshot) => {
+        const list = toSortedObras(snapshot.exists() ? snapshot.val() : {});
+        const visibleObras =
+          isCreatorWorkspace && user?.uid
+            ? list.filter((obra) => obraCreatorId(obra) === user.uid)
+            : list;
+
+        setObras(visibleObras);
+        setObraId((current) => {
+          if (visibleObras.some((obra) => obra.id === current)) return current;
+          return visibleObras[0]?.id || '';
+        });
+        setLoading(false);
+      },
+      () => {
+        setObras([]);
+        setObraId('');
+        setLoading(false);
+      }
+    );
+
     return () => {
       unsubObras();
-      unsubCaps();
     };
-  }, [navigate, user, adminAccess?.canAccessAdmin, isMangaka]);
+  }, [canAccessWorkspace, isCreatorWorkspace, navigate, user?.uid]);
 
-  const capitulos = useMemo(() => {
-    if (!isMangaka || !user?.uid) return allCapitulos;
-    const mineObraIds = new Set(obras.map((o) => o.id));
-    return allCapitulos.filter((cap) => {
-      if (String(cap.creatorId || '') === user.uid) return true;
-      const oid = obterObraIdCapitulo(cap);
-      return mineObraIds.has(oid);
-    });
-  }, [isMangaka, user?.uid, allCapitulos, obras]);
+  useEffect(() => {
+    if (!canAccessWorkspace) {
+      setAllCapitulos([]);
+      return () => {};
+    }
+
+    if (isCreatorWorkspace) {
+      if (!user?.uid) {
+        setAllCapitulos([]);
+        return () => {};
+      }
+
+      const unsubCreator = onValue(
+        query(dbRef(db, 'capitulos'), orderByChild('creatorId'), equalTo(user.uid)),
+        (snapshot) => {
+          setAllCapitulos(toRecordList(snapshot.exists() ? snapshot.val() : {}));
+        },
+        () => {
+          setAllCapitulos([]);
+        }
+      );
+
+      return () => unsubCreator();
+    }
+
+    if (!obraId) {
+      setAllCapitulos([]);
+      return () => {};
+    }
+
+    let workList = [];
+    let obraList = [];
+    const syncCaps = () => setAllCapitulos(mergeCapitulosLists(workList, obraList));
+
+    const unsubWork = onValue(
+      query(dbRef(db, 'capitulos'), orderByChild('workId'), equalTo(obraId)),
+      (snapshot) => {
+        workList = toRecordList(snapshot.exists() ? snapshot.val() : {});
+        syncCaps();
+      },
+      () => {
+        workList = [];
+        syncCaps();
+      }
+    );
+
+    const unsubObra = onValue(
+      query(dbRef(db, 'capitulos'), orderByChild('obraId'), equalTo(obraId)),
+      (snapshot) => {
+        obraList = toRecordList(snapshot.exists() ? snapshot.val() : {});
+        syncCaps();
+      },
+      () => {
+        obraList = [];
+        syncCaps();
+      }
+    );
+
+    return () => {
+      unsubWork();
+      unsubObra();
+    };
+  }, [canAccessWorkspace, isCreatorWorkspace, obraId, user?.uid]);
 
   const obraAtual = useMemo(
-    () => obras.find((o) => o.id === obraId) || null,
+    () => obras.find((obra) => obra.id === obraId) || null,
     [obras, obraId]
   );
 
-  const capitulosObra = useMemo(() => {
-    return capitulos
-      .filter((cap) => obterObraIdCapitulo(cap) === obraId)
-      .sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0));
-  }, [capitulos, obraId]);
+  const capitulosObra = useMemo(
+    () => [...allCapitulos].sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0)),
+    [allCapitulos]
+  );
 
   const capsSemWorkId = useMemo(
     () => capitulosObra.filter((cap) => !String(cap.workId || '').trim()).length,
@@ -100,7 +163,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
             {isMangaka
               ? 'Selecione uma obra sua e publique sem depender do admin.'
               : isCreatorWorkspace
-                ? 'Acompanhe e edite capitulos no dominio creator, com supervisao quando permitido.'
+                ? 'Acompanhe e edite capítulos no domínio creator, com supervisão quando permitido.'
                 : 'Selecione a obra primeiro. Depois crie ou edite capítulos dela.'}
           </p>
         </div>
@@ -138,7 +201,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
         </div>
         <div className="capitulos-admin-hub__selected">
           <strong>{obraAtual?.titulo || obraAtual?.id || 'Nenhuma obra selecionada'}</strong>
-          <span>{obraAtual ? (obraAtual.isPublished ? 'Publicada' : 'Oculta') : 'Sem catalogo ativo'}</span>
+          <span>{obraAtual ? (obraAtual.isPublished ? 'Publicada' : 'Oculta') : 'Sem catálogo ativo'}</span>
         </div>
       </section>
 
@@ -155,7 +218,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
         </header>
         {!capitulosObra.length ? (
           <p className="capitulos-admin-hub__empty">
-            {isMangaka ? 'Nenhum capitulo ainda. Publique o primeiro para tirar a obra do zero.' : 'Nenhum capítulo ainda. Crie o primeiro.'}
+            {isMangaka ? 'Nenhum capítulo ainda. Publique o primeiro para tirar a obra do zero.' : 'Nenhum capítulo ainda. Crie o primeiro.'}
           </p>
         ) : (
           <div className="capitulos-admin-hub__rows">

@@ -68,7 +68,7 @@ function isCreatorProfileStorageAssetForUser(uid, pathOrUrl) {
 export default function Perfil({
   user,
   adminAccess = emptyAdminAccess(),
-  /** Equipe com painel admin: nunca layout creator, só conta leitor. */
+  /** Equipe com painel admin: nunca layout creator, so conta leitor. */
   suppressCreatorProfileUi = false,
 }) {
   const navigate = useNavigate();
@@ -117,8 +117,7 @@ export default function Perfil({
   const [usernameCheck, setUsernameCheck] = useState({ status: 'idle', message: '' });
   const [underageMonetizeModalOpen, setUnderageMonetizeModalOpen] = useState(false);
   const [readerProfilePublicDraft, setReaderProfilePublicDraft] = useState(false);
-  const [readerPublicAvatarUrl, setReaderPublicAvatarUrl] = useState('');
-  /** Evita trocar foto de autor por avatar da loja sem intenção (painel fechado + cadeado). */
+  /** Evita trocar foto de autor por avatar da loja sem intencao (painel fechado + cadeado). */
   const [lojaAvatarAuthorUnlocked, setLojaAvatarAuthorUnlocked] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
   const mangakaBirthInputRef = useRef(null);
@@ -137,6 +136,8 @@ export default function Perfil({
     }
   });
   const isStaffAdmin = adminAccess.canAccessAdmin === true && adminAccess.isMangaka !== true;
+  const mustCompleteBirthDate =
+    new URLSearchParams(location.search || '').get('required') === 'birthDate';
 
   useEffect(() => {
     const hash = String(location.hash || '').replace(/^#/, '');
@@ -150,6 +151,21 @@ export default function Perfil({
     }, 220);
     return () => window.clearTimeout(t);
   }, [location.hash, location.pathname]);
+
+  useEffect(() => {
+    if (!mustCompleteBirthDate) return;
+    const iso = parseBirthDateFlexible(birthDateDraft, birthDate);
+    if (parseBirthDateLocal(iso)) return;
+    setMensagem({
+      texto: 'Preencha sua data de nascimento para continuar usando a conta.',
+      tipo: 'erro',
+    });
+    const t = window.setTimeout(() => {
+      mangakaBirthInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      mangakaBirthInputRef.current?.focus?.();
+    }, 220);
+    return () => window.clearTimeout(t);
+  }, [mustCompleteBirthDate, birthDate, birthDateDraft]);
 
   useEffect(() => {
     const carregarPerfil = async () => {
@@ -208,8 +224,9 @@ export default function Perfil({
       setBuyerAddressLine1(buyerProfile.addressLine1);
       setBuyerAddressLine2(buyerProfile.addressLine2);
       const ua = String(perfil.userAvatar || '').trim();
+      const readerAvatar = String(perfil.readerProfileAvatarUrl || '').trim();
       const authPhoto = String(user.photoURL || '').trim();
-      const resolvedAvatar = ua || authPhoto;
+      const resolvedAvatar = ua || readerAvatar || authPhoto;
       savedUserAvatarRef.current = resolvedAvatar;
       if (resolvedAvatar) {
         setAvatarSelecionado(resolvedAvatar);
@@ -217,8 +234,6 @@ export default function Perfil({
       setReaderProfilePublicDraft(
         adminAccess.isMangaka ? true : Boolean(perfil.readerProfilePublic)
       );
-      const rpa = String(perfil.readerProfileAvatarUrl || '').trim();
-      setReaderPublicAvatarUrl(rpa);
     };
 
     if (!user) {
@@ -254,6 +269,8 @@ export default function Perfil({
           if (urls.includes(p)) return p;
           if (!p && saved) return saved;
           if (saved && p === saved) return p;
+          if (/^https:\/\//i.test(p) && p.length > 12) return p;
+          if (/^https:\/\//i.test(saved) && saved.length > 12) return saved;
           if (mangakaAvatarPreserveRef.current && /^https:\/\//i.test(p) && p.length > 12) return p;
           return data[0].url;
         });
@@ -284,7 +301,7 @@ export default function Perfil({
     creatorMonetizationPreference,
     creatorMonetizationStatus
   );
-  /** Já aprovado pela equipe (ou equivalente) — religar monetização não pede formulário de novo. */
+  /** Ja aprovado pela equipe (ou equivalente) - religar monetizacao não pede formulário de novo. */
   const hasMonetizationClearance = useMemo(() => {
     if (perfilDb?.creator?.monetization?.isApproved === true) return true;
     if (String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved') return true;
@@ -335,7 +352,7 @@ export default function Perfil({
   const membershipCriadorAtiva = false;
   const membershipsCriadorAtivas = [];
   const formatarTempoRestanteAssinatura = () => ({ ativo: false, texto: '' });
-  const formatarDataLongaBr = (value, { seVazio = '—' } = {}) => (value ? String(value) : seVazio);
+  const formatarDataLongaBr = (value, { seVazio = '-' } = {}) => (value ? String(value) : seVazio);
 
   useEffect(() => {
     if (!listaAvatares.length) return;
@@ -374,14 +391,14 @@ export default function Perfil({
       setUsernameCheck({ status: 'invalid', message: v.message });
       return undefined;
     }
-    setUsernameCheck({ status: 'checking', message: 'Verificando…' });
+    setUsernameCheck({ status: 'checking', message: 'Verificando...' });
     const t = window.setTimeout(() => {
       get(ref(db, `usernames/${norm}`))
         .then((snap) => {
           if (snap.exists() && snap.val() !== user.uid) {
-            setUsernameCheck({ status: 'taken', message: 'Já em uso' });
+            setUsernameCheck({ status: 'taken', message: 'Ja em uso' });
           } else {
-            setUsernameCheck({ status: 'ok', message: 'Disponível' });
+            setUsernameCheck({ status: 'ok', message: 'Disponivel' });
           }
         })
         .catch(() => setUsernameCheck({ status: 'idle', message: '' }));
@@ -397,7 +414,7 @@ export default function Perfil({
       : String(novoNome || '').trim();
     if (!accountDisplayName) {
       setMensagem({
-        texto: adminAccess.isMangaka ? 'Defina o nome público do criador.' : 'Dê um nome à sua alma!',
+        texto: adminAccess.isMangaka ? 'Defina o nome publico do criador.' : 'De um nome a sua alma!',
         tipo: 'erro',
       });
       return;
@@ -407,7 +424,7 @@ export default function Perfil({
     const wantHandlePreview = normalizeUsernameInput(userHandleDraft);
     if (!lockedHandlePreview && !wantHandlePreview && !isStaffAdmin) {
       setMensagem({
-        texto: 'Defina um @username único (só letras minúsculas, números e _). Ele não poderá ser alterado depois.',
+        texto: 'Defina um @username unico (so letras minusculas, numeros e _). Ele nao podera ser alterado depois.',
         tipo: 'erro',
       });
       return;
@@ -426,7 +443,7 @@ export default function Perfil({
           Boolean(String(perfilDb?.userHandle || '').trim()) || Boolean(normalizeUsernameInput(userHandleDraft));
         if (!handleOk) {
           setMensagem({
-            texto: 'Para ativar o perfil público de leitor, defina um @username único e salve.',
+            texto: 'Para ativar o perfil publico de leitor, defina um @username unico e salve.',
             tipo: 'erro',
           });
           return;
@@ -436,6 +453,13 @@ export default function Perfil({
 
     const birthIsoForSave = parseBirthDateFlexible(birthDateDraft, birthDate);
     const birthDraftHasDigits = birthDateDraft.replace(/\D/g, '').length > 0;
+    if (!isStaffAdmin && !parseBirthDateLocal(birthIsoForSave)) {
+      setMensagem({
+        texto: 'Data de nascimento obrigatoria. Use dia/mes/ano (ex.: 28/12/2001).',
+        tipo: 'erro',
+      });
+      return;
+    }
     if (birthDraftHasDigits && !parseBirthDateLocal(birthIsoForSave)) {
       setMensagem({ texto: 'Data de nascimento invalida. Use dia/mes/ano (ex.: 28/12/2001).', tipo: 'erro' });
       return;
@@ -466,7 +490,7 @@ export default function Perfil({
         membershipPrice > CREATOR_MEMBERSHIP_PRICE_MAX_BRL)
     ) {
       setMensagem({
-        texto: `Defina o valor da membership entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00 (acesso antecipado às suas obras).`,
+        texto: `Defina o valor da membership entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00 (acesso antecipado as suas obras).`,
         tipo: 'erro',
       });
       return;
@@ -478,7 +502,7 @@ export default function Perfil({
         suggestedDonation > CREATOR_MEMBERSHIP_PRICE_MAX_BRL)
     ) {
       setMensagem({
-        texto: `Defina a doação sugerida entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00.`,
+        texto: `Defina a doacao sugerida entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00.`,
         tipo: 'erro',
       });
       return;
@@ -522,7 +546,7 @@ export default function Perfil({
           });
           finalAvatar = await getDownloadURL(fileRef);
         } catch (avErr) {
-          setMensagem({ texto: avErr?.message || 'Não foi possível processar a foto.', tipo: 'erro' });
+          setMensagem({ texto: avErr?.message || 'Nao foi possivel processar a foto.', tipo: 'erro' });
           setLoading(false);
           return;
         }
@@ -640,7 +664,7 @@ export default function Perfil({
 
       if (!existingHandle && !wantHandle && !isStaffAdmin) {
         setMensagem({
-          texto: 'Defina um @username único (só letras minúsculas, números e _). Ele não poderá ser alterado depois.',
+          texto: 'Defina um @username unico (so letras minusculas, numeros e _). Ele nao podera ser alterado depois.',
           tipo: 'erro',
         });
         setLoading(false);
@@ -655,13 +679,13 @@ export default function Perfil({
           return;
         }
         if (!isStaffAdmin && usernameCheck.status === 'taken') {
-          setMensagem({ texto: 'Este @username já está em uso.', tipo: 'erro' });
+          setMensagem({ texto: 'Este @username ja esta em uso.', tipo: 'erro' });
           setLoading(false);
           return;
         }
         const takenSnap = await get(ref(db, `usernames/${wantHandle}`));
         if (takenSnap.exists() && takenSnap.val() !== user.uid) {
-          setMensagem({ texto: 'Este @username já está em uso.', tipo: 'erro' });
+          setMensagem({ texto: 'Este @username ja esta em uso.', tipo: 'erro' });
           setLoading(false);
           return;
         }
@@ -671,7 +695,7 @@ export default function Perfil({
 
       const persistedHandle = existingHandle || claimedNewHandle || '';
 
-      // 1. Atualiza no Firebase Auth (mangaka: mesmo texto que nome público)
+      // 1. Atualiza no Firebase Auth (mangaka: mesmo texto que nome publico)
       await updateProfile(user, {
         displayName: accountDisplayName,
         photoURL: finalAvatar,
@@ -827,7 +851,7 @@ export default function Perfil({
 
       setMensagem({
         texto: creatorMonetizationRequestNeedsModal
-          ? 'Perfil salvo. Para pedir monetização, use o formulário de creator e envie nome legal, CPF e chave PIX. Até lá, você continua publicando normalmente, só sem repasse financeiro.'
+          ? 'Perfil salvo. Para pedir monetizacao, use o formulário de creator e envie nome legal, CPF e chave PIX. Ate la, voce continua publicando normalmente, so sem repasse financeiro.'
           : 'Perfil atualizado com sucesso!',
         tipo: 'sucesso',
       });
@@ -854,7 +878,7 @@ export default function Perfil({
       await navigator.clipboard.writeText(creatorSupportUrl);
       setMensagem({ texto: 'Link de apoio copiado.', tipo: 'sucesso' });
     } catch {
-      setMensagem({ texto: 'Não foi possível copiar o link agora.', tipo: 'erro' });
+      setMensagem({ texto: 'Nao foi possivel copiar o link agora.', tipo: 'erro' });
     }
   };
 
@@ -878,7 +902,7 @@ export default function Perfil({
           className="perfil-input"
           value={buyerCpf}
           onChange={(e) => setBuyerCpf(e.target.value.replace(/\D+/g, '').slice(0, 11))}
-          placeholder="Apenas números"
+          placeholder="Apenas numeros"
         />
       </div>
       <div className="input-group">
@@ -889,7 +913,7 @@ export default function Perfil({
           className="perfil-input"
           value={buyerPhone}
           onChange={(e) => setBuyerPhone(e.target.value.replace(/\D+/g, '').slice(0, 11))}
-          placeholder="DDD + número (só dígitos)"
+          placeholder="DDD + numero (so digitos)"
         />
       </div>
       <div className="input-group">
@@ -900,7 +924,7 @@ export default function Perfil({
           className="perfil-input"
           value={buyerPostalCode}
           onChange={(e) => setBuyerPostalCode(e.target.value.replace(/\D+/g, '').slice(0, 8))}
-          placeholder="8 dígitos, sem traço"
+          placeholder="8 digitos, sem traco"
         />
       </div>
       <div className="input-group">
@@ -914,7 +938,7 @@ export default function Perfil({
           <option value="">Selecione o estado</option>
           {BRAZILIAN_STATES.map(({ uf, name }) => (
             <option key={uf} value={uf}>
-              {uf} — {name}
+              {uf} - {name}
             </option>
           ))}
         </select>
@@ -940,13 +964,13 @@ export default function Perfil({
         />
       </div>
       <div className="input-group">
-        <label>Endereço</label>
+        <label>Endereco</label>
         <input
           type="text"
           className="perfil-input"
           value={buyerAddressLine1}
           onChange={(e) => setBuyerAddressLine1(e.target.value)}
-          placeholder="Rua, número e complemento"
+          placeholder="Rua, numero e complemento"
         />
       </div>
       <div className="input-group">
@@ -981,8 +1005,8 @@ export default function Perfil({
       <div className="input-group perfil-creator-section-title">
         <label>Dados para compra na loja</label>
         <p className="perfil-loja-dados-hint">
-          <strong>Opcional</strong> — só para <strong>compras</strong> na loja (entrega física). Pode salvar o perfil com
-          tudo em branco; na hora de pagar, o checkout exige endereço e documentos válidos.
+          <strong>Opcional</strong> - so para <strong>compras</strong> na loja (entrega fisica). Pode salvar o perfil com
+          tudo em branco; na hora de pagar, o checkout exige endereco e documentos validos.
         </p>
       </div>
       {lojaBuyerDisclosureBody}
@@ -1015,7 +1039,7 @@ export default function Perfil({
                 {(creatorHandleLocked || normalizeUsernameInput(userHandleDraft)) ? (
                   <p className="perfil-creator-hero__handle">
                     @
-                    {creatorHandleLocked || normalizeUsernameInput(userHandleDraft) || '…'}
+                    {creatorHandleLocked || normalizeUsernameInput(userHandleDraft) || '...'}
                   </p>
                 ) : null}
                 <p className="perfil-creator-hero__meta">{creatorStatusLabel}</p>
@@ -1025,7 +1049,7 @@ export default function Perfil({
                     className="perfil-creator-hero__btn perfil-creator-hero__btn--primary"
                     onClick={() => navigate(creatorPublicPath)}
                   >
-                    Ver página pública
+                    Ver pagina publica
                   </button>
                   <div className="perfil-creator-hero__actions-secondary">
                     {creatorMonetizationStatusEffective === 'active' ? (
@@ -1052,14 +1076,14 @@ export default function Perfil({
 
           <div className="perfil-creator-cta-card perfil-creator-progress-links" id="creator-level">
             <p className="perfil-creator-progress-links__lead">
-              Acompanhe seu crescimento na plataforma e complete missões semanais para ganhar destaque.
+              Acompanhe seu crescimento na plataforma e complete missoes semanais para ganhar destaque.
             </p>
             <div className="perfil-creator-progress-links__row">
               <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate('/creator/monetizacao')}>
-                Abrir monetização
+                Abrir monetizacao
               </button>
               <button type="button" className="perfil-mangaka-apoio-copy" onClick={() => navigate('/creator/missoes')}>
-                Abrir missões &amp; XP
+                Abrir missoes &amp; XP
               </button>
             </div>
           </div>
@@ -1070,10 +1094,10 @@ export default function Perfil({
             <section className="perfil-creator-section" aria-labelledby="perfil-section-identidade">
               <header className="perfil-creator-section-head">
                 <h2 id="perfil-section-identidade" className="perfil-creator-section-heading">
-                  Identidade pública
+                  Identidade publica
                 </h2>
                 <p className="perfil-creator-section-sub">
-                  O que os leitores veem no seu perfil de autor — nome, bio, redes e foto.
+                  O que os leitores veem no seu perfil de autor - nome, bio, redes e foto.
                 </p>
               </header>
 
@@ -1094,14 +1118,14 @@ export default function Perfil({
               </div>
 
               <div className="input-group">
-                <label>BIO PÚBLICA</label>
+                <label>BIO PUBLICA</label>
                 <textarea
                   className="perfil-input"
                   rows={4}
                   value={creatorBio}
                   maxLength={CREATOR_BIO_MAX_LENGTH}
                   onChange={(e) => setCreatorBio(e.target.value.slice(0, CREATOR_BIO_MAX_LENGTH))}
-                  placeholder="Conta um pouco do seu universo, do seu traço e do que você publica por aqui."
+                  placeholder="Conta um pouco do seu universo, do seu traco e do que voce publica por aqui."
                 />
               </div>
 
@@ -1127,31 +1151,6 @@ export default function Perfil({
                 />
               </div>
 
-              <section className="perfil-creator-section perfil-creator-section--compact" aria-labelledby="perfil-unified-reader">
-                <header className="perfil-creator-section-head">
-                  <h2 id="perfil-unified-reader" className="perfil-creator-section-heading">
-                    Leituras no mesmo perfil
-                  </h2>
-                  <p className="perfil-creator-section-sub">
-                    Quem te segue vê suas obras na aba <strong>Obras</strong> e o que você curte na aba{' '}
-                    <strong>Curtidas</strong> — um único link público, como em perfis de autor em outras plataformas. A
-                    foto usada nas curtidas é a mesma da sua identidade de autor (abaixo), salvo se você usar só URL/arquivo
-                    próprio.
-                  </p>
-                  {user?.uid ? (
-                    <p className="perfil-mangaka-apoio-label" style={{ marginTop: 10 }}>
-                      <button
-                        type="button"
-                        className="perfil-mangaka-apoio-copy"
-                        onClick={() => navigate(`${creatorPublicPath}?tab=likes`)}
-                      >
-                        Abrir meu perfil público (obras e curtidas)
-                      </button>
-                    </p>
-                  ) : null}
-                </header>
-              </section>
-
               <div className="perfil-loja-avatar-gate">
                 <button
                   type="button"
@@ -1164,20 +1163,20 @@ export default function Perfil({
                   </span>
                   <span>
                     {lojaAvatarAuthorUnlocked
-                      ? 'Fechar escolha de avatar da loja'
-                      : 'Usar estampa da loja como foto de autor (opcional)'}
+                      ? 'Fechar grade de avatares prontos'
+                      : 'Usar avatar pronto da loja (opcional)'}
                   </span>
                 </button>
                 {!lojaAvatarAuthorUnlocked ? (
                   <p className="perfil-loja-avatar-gate__hint">
-                    Abra só se quiser trocar sua foto atual por um avatar pronto. Quem tem Premium continua podendo usar
-                    avatares premium da loja também como membro.
+                    Abra so se quiser trocar sua foto atual por um avatar pronto. Quem tem Premium continua podendo usar
+                    avatares premium da loja tambem como membro.
                   </p>
                 ) : (
                   <div className="avatar-selection-section perfil-loja-avatar-gate__grid">
                     <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
                       Toque em uma estampa para aplicar na <strong>foto de autor</strong> ao salvar o perfil (substitui
-                      URL/arquivo se você escolher uma daqui).
+                      URL/arquivo se voce escolher uma daqui).
                     </p>
                     <div className="avatar-options-grid">
                       {listaAvatares.map((item, i) => {
@@ -1208,7 +1207,7 @@ export default function Perfil({
                               }
                             }}
                             title={
-                              bloqueado ? 'Disponível apenas para conta Premium ativa' : 'Usar como foto de autor'
+                              bloqueado ? 'Disponivel apenas para conta Premium ativa' : 'Usar como foto de autor'
                             }
                           >
                             <img
@@ -1233,7 +1232,7 @@ export default function Perfil({
               <div className="input-group">
                 <label>FOTO DE PERFIL</label>
                 <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
-                  A capa pública reaproveita a mesma foto com um leve blur. Envie arquivo ou cole uma URL HTTPS.
+                  A capa publica reaproveita a mesma foto com um leve blur. Envie arquivo ou cole uma URL HTTPS.
                 </p>
                 <input
                   type="url"
@@ -1264,13 +1263,13 @@ export default function Perfil({
                 <h2 id="perfil-section-conta" className="perfil-creator-section-heading">
                   Conta
                 </h2>
-                <p className="perfil-creator-section-sub">Username único, data de nascimento e e-mail promocional.</p>
+                <p className="perfil-creator-section-sub">Username unico, data de nascimento e e-mail promocional.</p>
               </header>
 
               <div className="input-group" id="username-handle">
                 <label>USERNAME (@)</label>
                 <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
-                  Único na plataforma. Depois de salvo, não altera. URL:{' '}
+                  Unico na plataforma. Depois de salvo, nao altera. URL:{' '}
                   <strong>{SITE_ORIGIN.replace(/^https?:\/\//, '')}/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
                 </p>
                 <input
@@ -1345,7 +1344,7 @@ export default function Perfil({
                     checked={notifyPromotions}
                     onChange={(e) => setNotifyPromotions(e.target.checked)}
                   />
-                  Receber promoções e campanhas por e-mail
+                  Receber promocoes e campanhas por e-mail
                 </label>
               </div>
               <div className="input-group perfil-creator-notify-row">
@@ -1355,7 +1354,7 @@ export default function Perfil({
                     checked={notifyCommentSocial}
                     onChange={(e) => setNotifyCommentSocial(e.target.checked)}
                   />
-                  Avisos no app quando alguém curtir ou responder seus comentários em capítulos
+                  Avisos no app quando alguem curtir ou responder seus comentarios em capitulos
                 </label>
               </div>
             </section>
@@ -1363,30 +1362,30 @@ export default function Perfil({
             <section className="perfil-creator-section" aria-labelledby="perfil-section-monetizacao">
               <header className="perfil-creator-section-head">
                 <h2 id="perfil-section-monetizacao" className="perfil-creator-section-heading">
-                  Monetização
+                  Monetizacao
                 </h2>
                 <p className="perfil-creator-section-sub">
-                  Aprovação da equipe é feita uma vez. Depois, você liga ou desliga repasses quando quiser.
+                  Aprovacao da equipe e feita uma vez. Depois, voce liga ou desliga repasses quando quiser.
                 </p>
               </header>
 
               <div className="perfil-creator-monetization-card">
                 {creatorMonetizationStatus === 'blocked_underage' || monetizacaoBloqueadaPorIdade ? (
                   <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--warn">
-                    <strong>Status:</strong> indisponível por idade (18+ para repasse).
+                    <strong>Status:</strong> indisponivel por idade (18+ para repasse).
                   </p>
                 ) : creatorMonetizationStatusEffective === 'active' ? (
                   <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--on">
-                    <strong>Status:</strong> ativa — recebendo repasses.
+                    <strong>Status:</strong> ativa - recebendo repasses.
                   </p>
                 ) : hasMonetizationClearance &&
                   normalizeCreatorMonetizationPreference(creatorMonetizationPreference) === 'publish_only' ? (
                   <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> desligada — você só publica; repasse está pausado.
+                    <strong>Status:</strong> desligada - voce so publica; repasse esta pausado.
                   </p>
                 ) : (
                   <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> desligada — ative para pedir ou concluir cadastro de repasse.
+                    <strong>Status:</strong> desligada - ative para pedir ou concluir cadastro de repasse.
                   </p>
                 )}
 
@@ -1397,7 +1396,7 @@ export default function Perfil({
                       className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
                       onClick={handleDesativarMonetizacaoClick}
                     >
-                      Desativar monetização
+                      Desativar monetizacao
                     </button>
                   ) : (
                     <button
@@ -1406,14 +1405,14 @@ export default function Perfil({
                       onClick={handleMonetizarContaClick}
                       disabled={monetizacaoBloqueadaPorIdade}
                     >
-                      Ativar monetização
+                      Ativar monetizacao
                     </button>
                   )}
                 </div>
 
                 {needsFirstMonetizationApplication ? (
                   <p className="perfil-mangaka-apoio-label" style={{ marginTop: 12 }}>
-                    Na primeira vez, abrimos o formulário com nome legal, CPF e PIX. Depois de aprovado, não precisa enviar
+                    Na primeira vez, abrimos o formulário com nome legal, CPF e PIX. Depois de aprovado, nao precisa enviar
                     de novo para religar.
                   </p>
                 ) : null}
@@ -1423,7 +1422,7 @@ export default function Perfil({
               creatorMonetizationStatusEffective === 'active' ? (
                 <>
                   <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 12 }}>
-                    Membership nas suas obras (não é Premium do site). Valores entre R$ {CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e
+                    Membership nas suas obras (nao e Premium do site). Valores entre R$ {CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e
                     R$ {CREATOR_MEMBERSHIP_PRICE_MAX_BRL}.
                   </p>
                   <div className="input-group">
@@ -1449,7 +1448,7 @@ export default function Perfil({
                   </div>
 
                   <div className="input-group">
-                    <label>DOAÇÃO SUGERIDA NO APOIO (R$)</label>
+                    <label>DOACAO SUGERIDA NO APOIO (R$)</label>
                     <input
                       type="text"
                       className="perfil-input"
@@ -1472,7 +1471,7 @@ export default function Perfil({
                   Dados de entrega (opcional)
                 </h2>
                 <p className="perfil-creator-section-sub">
-                  Só para compras físicas na loja. Pode deixar em branco até a hora do checkout.
+                  So para compras fisicas na loja. Pode deixar em branco ate a hora do checkout.
                 </p>
               </header>
               {lojaBuyerDisclosureBody}
@@ -1502,29 +1501,29 @@ export default function Perfil({
             >
               <div className="perfil-modal" role="dialog" aria-modal="true" aria-labelledby="perfil-underage-mz-title">
                 <h2 id="perfil-underage-mz-title" className="perfil-modal__title">
-                  Monetização indisponível (idade)
+                  Monetizacao indisponivel (idade)
                 </h2>
                 <div className="perfil-modal__body">
                   <p>
                     Na MangaTeofilo, <strong>repasses financeiros</strong> (CPF, chave PIX, contrato de criador) exigem{' '}
-                    <strong>maioridade (18 anos ou mais)</strong>, por exigência legal e política da plataforma.
+                    <strong>maioridade (18 anos ou mais)</strong>, por exigencia legal e politica da plataforma.
                   </p>
                   {isUnderageByBirthYear ? (
                     <p>
-                      A <strong>data de nascimento</strong> que você informou acima indica menos de 18 anos. Você pode
+                      A <strong>data de nascimento</strong> que voce informou acima indica menos de 18 anos. Voce pode
                       continuar <strong>publicando obras</strong> normalmente; quando for maior de idade, volte aqui e
-                      solicite monetização.
+                      solicite monetizacao.
                     </p>
                   ) : null}
                   {creatorMonetizationStatus === 'blocked_underage' ? (
                     <p>
-                      Sua conta está com monetização <strong>bloqueada por idade</strong> no cadastro. Se a data de
-                      nascimento estiver errada, corrija o campo <strong>Data de nascimento</strong> nesta página, salve o
-                      perfil e aguarde análise da equipe, se aplicável.
+                      Sua conta esta com monetizacao <strong>bloqueada por idade</strong> no cadastro. Se a data de
+                      nascimento estiver errada, corrija o campo <strong>Data de nascimento</strong> nesta pagina, salve o
+                      perfil e aguarde analise da equipe, se aplicavel.
                     </p>
                   ) : null}
                   <p className="perfil-modal__hint">
-                    Dúvidas ou correção de dados: use o suporte da plataforma ou fale com a equipe pelo canal oficial.
+                    Duvidas ou correcao de dados: use o suporte da plataforma ou fale com a equipe pelo canal oficial.
                   </p>
                 </div>
                 <div className="perfil-modal__actions">
@@ -1556,18 +1555,18 @@ export default function Perfil({
     <main className="perfil-page">
       <div className="perfil-card">
         <h1 className="perfil-title">Meu perfil</h1>
-        <p className="perfil-subtitle">Atualize seus dados e preferências da conta.</p>
+        <p className="perfil-subtitle">Atualize seus dados e preferencias da conta.</p>
 
         {!adminAccess.isMangaka && !adminAccess.canAccessAdmin ? (
           <div className="perfil-mangaka-apoio">
             <p className="perfil-mangaka-apoio-label">
-              Quer publicar por aqui? O perfil de criador abre página pública, catálogo seu, capítulos, painel
-              financeiro e membership por autor. O cadastro é numa página só — sem modal.
+              Quer publicar por aqui? O perfil de criador abre pagina publica, catalogo seu, capitulos, painel
+              financeiro e membership por autor. O cadastro e numa pagina so - sem modal.
             </p>
             {creatorApplicationStatus === 'requested' ? (
               <>
                 <p className="perfil-mangaka-apoio-label">
-                  Sua solicitação está em análise. Você pode abrir o mesmo fluxo para revisar o que enviou.
+                  Sua solicitacao esta em analise. Voce pode abrir o mesmo fluxo para revisar o que enviou.
                 </p>
                 <div className="perfil-mangaka-apoio-row">
                   <button
@@ -1582,15 +1581,15 @@ export default function Perfil({
             ) : null}
             {creatorApplicationStatus === 'approved' ? (
               <p className="perfil-mangaka-apoio-label">
-                Seu acesso de criador foi aprovado. Se o painel ainda não mudou, recarregue a página para atualizar
-                as permissões da sua conta.
+                Seu acesso de criador foi aprovado. Se o painel ainda nao mudou, recarregue a pagina para atualizar
+                as permissoes da sua conta.
               </p>
             ) : null}
             {creatorApplicationStatus === 'rejected' ? (
               <>
                 <p className="perfil-mangaka-apoio-label">
-                  Sua última solicitação foi recusada. {creatorReviewReason ? `Motivo: ${creatorReviewReason}. ` : ''}
-                  Ajuste os dados e envie de novo pela página de onboarding.
+                  Sua ultima solicitacao foi recusada. {creatorReviewReason ? `Motivo: ${creatorReviewReason}. ` : ''}
+                  Ajuste os dados e envie de novo pela pagina de onboarding.
                 </p>
                 <div className="perfil-mangaka-apoio-row">
                   <button
@@ -1619,8 +1618,8 @@ export default function Perfil({
                   creatorApplicationStatus !== 'approved' &&
                   creatorApplicationStatus !== 'rejected') ? (
                   <p className="perfil-mangaka-apoio-label perfil-mangaka-apoio-label--full">
-                    Cadastro de criador em andamento. Pode sair e voltar quando quiser — os dados ficam salvos na sua
-                    conta até você enviar.
+                    Cadastro de criador em andamento. Pode sair e voltar quando quiser - os dados ficam salvos na sua
+                    conta ate voce enviar.
                   </p>
                 ) : null}
                 <button
@@ -1655,21 +1654,21 @@ export default function Perfil({
           </div>
 
           <div className="input-group">
-            <label>NOME DE EXIBIÇÃO</label>
+            <label>NOME DE EXIBICAO</label>
             <input
               type="text"
               className="perfil-input"
               value={novoNome}
               onChange={(e) => setNovoNome(e.target.value)}
               maxLength={DISPLAY_NAME_MAX_LENGTH}
-              placeholder="Ex.: como você quer ser chamado na plataforma"
+              placeholder="Ex.: como voce quer ser chamado na plataforma"
             />
           </div>
 
           <div className="input-group" id="username-handle-reader">
             <label>USERNAME (@)</label>
             <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
-              Identificador único. Não pode ser alterado depois de salvo. Link:{' '}
+              Identificador unico. Nao pode ser alterado depois de salvo. Link:{' '}
               <strong>{SITE_ORIGIN.replace(/^https?:\/\//, '')}/@{normalizeUsernameInput(userHandleDraft) || 'seuuser'}</strong>
             </p>
             <input
@@ -1710,6 +1709,7 @@ export default function Perfil({
           <div className="input-group">
             <label>DATA DE NASCIMENTO</label>
             <input
+              ref={mangakaBirthInputRef}
               type="text"
               inputMode="numeric"
               autoComplete="bday"
@@ -1747,7 +1747,7 @@ export default function Perfil({
               value={gender}
               onChange={(e) => setGender(e.target.value)}
             >
-              <option value="nao_informado">Prefiro não informar</option>
+              <option value="nao_informado">Prefiro nao informar</option>
               <option value="masculino">Masculino</option>
               <option value="feminino">Feminino</option>
               <option value="outro">Outro</option>
@@ -1779,9 +1779,9 @@ export default function Perfil({
             <div className="input-group perfil-premium-linha">
               <label>ASSINATURA PREMIUM</label>
               <p className="perfil-premium-msg">
-                Ativa até{' '}
+                Ativa ate{' '}
                 <strong>
-                  {formatarDataLongaBr(premiumEntitlement.memberUntil, { seVazio: '—' })}
+                  {formatarDataLongaBr(premiumEntitlement.memberUntil, { seVazio: '-' })}
                 </strong>
                 .
               </p>
@@ -1806,7 +1806,7 @@ export default function Perfil({
                   {membershipsCriadorAtivas.map((item) => (
                     <li key={item.creatorId}>
                       <strong>{item.creatorName || item.creatorId}</strong> ate{' '}
-                      <span>{formatarDataLongaBr(item.memberUntil, { seVazio: '—' })}</span>
+                      <span>{formatarDataLongaBr(item.memberUntil, { seVazio: '-' })}</span>
                     </li>
                   ))}
                 </ul>
@@ -1823,10 +1823,10 @@ export default function Perfil({
                   checked={readerProfilePublicDraft}
                   onChange={(e) => setReaderProfilePublicDraft(e.target.checked)}
                 />
-                Perfil de leitor visível publicamente
+                Perfil de leitor visivel publicamente
               </label>
               <p className="perfil-mangaka-apoio-label" style={{ marginTop: 8 }}>
-                Outros usuários veem seu @username, avatar da loja abaixo e a lista de obras que você favoritou.
+                Outros usuarios veem seu @username, avatar da loja abaixo e a lista de obras que voce favoritou.
               </p>
               {readerProfilePublicDraft && user?.uid ? (
                 <button
@@ -1835,7 +1835,7 @@ export default function Perfil({
                   style={{ marginTop: 8 }}
                   onClick={() => navigate(`/criador/${encodeURIComponent(user.uid)}?tab=likes`)}
                 >
-                  Abrir meu perfil de leitor
+                  Abrir meu perfil publico de leitor
                 </button>
               ) : null}
             </div>
@@ -1843,7 +1843,7 @@ export default function Perfil({
               <label>ESCOLHA SEU NOVO VISUAL</label>
               {!podeUsarAvatarPremium && (
                 <p className="avatar-premium-hint">
-                  Avatares com selo <strong>Premium</strong> aparecem para você visualizar, mas só podem ser usados
+                  Avatares com selo <strong>Premium</strong> aparecem para voce visualizar, mas so podem ser usados
                   por assinantes ativos.
                 </p>
               )}
@@ -1865,7 +1865,7 @@ export default function Perfil({
                     >
                       <img
                         src={item.url}
-                        alt={`Opção ${i + 1}`}
+                        alt={`Opcao ${i + 1}`}
                         onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
                       />
                       {normalizarAcessoAvatar(item) === 'premium' && (
@@ -1878,15 +1878,15 @@ export default function Perfil({
               </div>
               <p className="avatar-selection-summary">
                 {podeUsarAvatarPremium
-                  ? `Você pode usar todos os ${listaAvatares.length} avatares disponíveis.`
-                  : `Disponíveis na sua conta: ${avataresLiberados.length} de ${listaAvatares.length}.`}
+                  ? `Voce pode usar todos os ${listaAvatares.length} avatares disponíveis.`
+                  : `Disponiveis na sua conta: ${avataresLiberados.length} de ${listaAvatares.length}.`}
               </p>
             </div>
             </>
           ) : (
             <p className="perfil-mangaka-apoio-label" style={{ marginTop: 8 }}>
-              Criadores usam arquivo ou URL acima; a grade da loja só aparece em Identidade pública, atrás do painel com
-              cadeado, para não sobrescrever sua arte sem querer.
+              Criadores usam arquivo ou URL acima; a grade da loja so aparece em Identidade publica, atras do painel com
+              cadeado, para nao sobrescrever sua arte sem querer.
             </p>
           )}
 
@@ -1897,7 +1897,7 @@ export default function Perfil({
                 checked={notifyPromotions}
                 onChange={(e) => setNotifyPromotions(e.target.checked)}
               />
-              Receber promoções e campanhas por e-mail
+              Receber promocoes e campanhas por e-mail
             </label>
           </div>
           <div className="input-group notify-group">
@@ -1907,7 +1907,7 @@ export default function Perfil({
                 checked={notifyCommentSocial}
                 onChange={(e) => setNotifyCommentSocial(e.target.checked)}
               />
-              Avisos no app quando alguém curtir ou responder seus comentários em capítulos
+              Avisos no app quando alguem curtir ou responder seus comentarios em capitulos
             </label>
           </div>
 
@@ -1917,7 +1917,7 @@ export default function Perfil({
 
           <div className="perfil-actions">
             <button type="submit" className="btn-save-perfil" disabled={loading}>
-              {loading ? 'SINCRONIZANDO...' : 'SALVAR ALTERAÇÕES'}
+              {loading ? 'SINCRONIZANDO...' : 'SALVAR ALTERACOES'}
             </button>
             <button type="button" className="btn-cancel-perfil" onClick={() => navigate('/')}>
               CANCELAR
@@ -1928,3 +1928,6 @@ export default function Perfil({
     </main>
   );
 }
+
+
+

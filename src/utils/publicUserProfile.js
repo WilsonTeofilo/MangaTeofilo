@@ -1,6 +1,7 @@
 export {
   buildPublicProfileFromUsuarioRow,
   buildPublicProfilesMapFromUsuarios,
+  isCreatorPublicProfile,
   resolvePublicProfileAvatarUrl,
   resolvePublicProfileBio,
   resolvePublicProfileDisplayName,

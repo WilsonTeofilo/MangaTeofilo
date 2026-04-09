@@ -54,7 +54,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
       setOrders(list);
     } catch {
       setOrders([]);
-      setMsg('Nao foi possivel carregar pedidos.');
+      setMsg('Não foi possível carregar pedidos.');
     }
   }
 
@@ -166,11 +166,11 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
     <main className="admin-loja-pedidos">
       <header className="admin-loja-pedidos__head">
         <div>
-          <h1>{isMangaka ? 'Pedidos dos meus produtos' : 'Operacao da loja'}</h1>
+          <h1>{isMangaka ? 'Pedidos dos meus produtos' : 'Operação da loja'}</h1>
           <p className="admin-loja-pedidos__sub">
             {isMangaka
-              ? 'Voce acompanha so a sua parte. Pedido misto fica protegido para o admin geral.'
-              : 'Painel operacional para produzir, enviar e liberar repasse sem abrir pagina nova.'}
+              ? 'Voc? acompanha s? a sua parte. Pedido misto fica protegido para o admin geral.'
+              : 'Painel operacional para produzir, enviar e liberar repasse sem abrir p?gina nova.'}
           </p>
         </div>
         <div className="admin-loja-pedidos__actions">
@@ -182,7 +182,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
 
       <section className="admin-loja-pedidos__kpis">
         <article><span>Aguardando</span><strong>{stats.pending}</strong></article>
-        <article><span>Em producao</span><strong>{stats.inProduction}</strong></article>
+        <article><span>Em produção</span><strong>{stats.inProduction}</strong></article>
         <article><span>Enviados</span><strong>{stats.shipped}</strong></article>
         <article><span>Receita</span><strong>R$ {stats.revenue.toFixed(2)}</strong></article>
       </section>
@@ -193,7 +193,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por pedido, cliente, rastreio ou serviÃ§oâ€¦"
+          placeholder="Buscar por pedido, cliente, rastreio ou servi?o..."
         />
       </div>
 
@@ -220,7 +220,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
 
         <aside className="admin-loja-pedidos__detail">
           {!detail ? (
-            <p className="admin-loja-pedidos__hint">Selecione um pedido para abrir o drawer lateral.</p>
+            <p className="admin-loja-pedidos__hint">Selecione um pedido para abrir o painel lateral.</p>
           ) : (
             <>
               <h2>Pedido #{detail.id.slice(-8).toUpperCase()}</h2>
@@ -228,7 +228,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
               <p><strong>Status:</strong> {formatLojaOrderStatusPt(detail.status)}</p>
               <p><strong>Repasse:</strong> {formatLojaPayoutStatusPt(detail.payoutStatus)}</p>
               <p><strong>Criado:</strong> {formatarDataHoraBr(Number(detail.createdAt || 0))}</p>
-              {detail.shippingAddress ? <p><strong>Endereco:</strong> {detail.shippingAddress.addressLine1}, {detail.shippingAddress.neighborhood} - {detail.shippingAddress.city}/{detail.shippingAddress.state}</p> : null}
+              {detail.shippingAddress ? <p><strong>Endere?o:</strong> {detail.shippingAddress.addressLine1}, {detail.shippingAddress.neighborhood} - {detail.shippingAddress.city}/{detail.shippingAddress.state}</p> : null}
               <div className="admin-loja-pedidos__money">
                 <div>Subtotal: R$ {(isMangaka ? creatorTotal(detail, creatorUid) : Number(detail.subtotal ?? detail.total ?? 0)).toFixed(2)}</div>
                 {!isMangaka ? <div>{detail.shippingMethod || 'PAC'}: R$ {Number(detail.shippingBrl || 0).toFixed(2)}</div> : null}
@@ -236,7 +236,7 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
                 {!isMangaka && Number(detail.shippingDeliveryDays) > 0 ? <div>Prazo estimado: {Number(detail.shippingDeliveryDays)} dias</div> : null}
                 <div className="admin-loja-pedidos__total">Total: R$ {(isMangaka ? creatorTotal(detail, creatorUid) : Number(detail.total || 0)).toFixed(2)}</div>
               </div>
-              {detailTemItensDeOutroCriador ? <p className="admin-loja-pedidos__hint-small">Pedido misto: leitura liberada, mutacao global bloqueada.</p> : null}
+              {detailTemItensDeOutroCriador ? <p className="admin-loja-pedidos__hint-small">Pedido misto: leitura liberada, mutação global bloqueada.</p> : null}
               <h3>Itens</h3>
               <ul className="admin-loja-pedidos__items">
                 {detailItems.map((it, i) => (<li key={`${it.productId}-${i}`}>{it.title} x {it.quantity}{it.size ? ` (${it.size})` : ''} - R$ {Number(it.lineTotal || 0).toFixed(2)}</li>))}
@@ -255,10 +255,10 @@ export default function AdminLojaPedidos({ user, adminAccess }) {
                 <input type="text" className="admin-loja-pedidos__tracking-input" value={trackingDraft} onChange={(e) => setTrackingDraft(e.target.value)} placeholder="Ex.: AA123456789BR" autoComplete="off" disabled={!canMutateDetail} />
                 <button type="button" onClick={() => saveTracking()} disabled={!canMutateDetail}>Salvar rastreio</button>
               </div>
-              <h3>Acoes</h3>
+              <h3>Ações</h3>
               <div className="admin-loja-pedidos__status-btns">
                 <button type="button" onClick={() => setStatus(detail.id, 'paid')} disabled={!canMutateDetail}>Recebido</button>
-                <button type="button" onClick={() => setStatus(detail.id, 'in_production')} disabled={!canMutateDetail}>Iniciar producao</button>
+                <button type="button" onClick={() => setStatus(detail.id, 'in_production')} disabled={!canMutateDetail}>Iniciar produção</button>
                 <button type="button" onClick={() => setStatus(detail.id, 'shipped')} disabled={!canMutateDetail}>Marcar como enviado</button>
                 <button type="button" onClick={() => setStatus(detail.id, 'delivered')} disabled={!canMutateDetail}>Marcar como entregue</button>
                 <button type="button" className="admin-loja-pedidos__btn-cancel" onClick={() => setStatus(detail.id, 'cancelled')} disabled={!canMutateDetail}>Cancelar</button>

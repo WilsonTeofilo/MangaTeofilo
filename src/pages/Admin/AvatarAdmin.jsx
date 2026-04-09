@@ -1,11 +1,11 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get, onValue, push, ref as dbRef, remove, set, update } from 'firebase/database';
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { auth, db, storage } from '../../services/firebase';
-import { AVATAR_FALLBACK } from '../../constants';
+import { AVATAR_FALLBACK, AVATARES_BUNDLED } from '../../constants';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { emptyAdminAccess } from '../../auth/adminAccess';
 import { normalizarAcessoAvatar } from '../../utils/avatarAccess';
@@ -18,7 +18,7 @@ function ModalErro({ mensagem, aoFechar }) {
   return (
     <div className="modal-overlay">
       <div className="modal-content">
-        <div className="modal-header">âš ï¸ OPERAÃ‡ÃƒO BLOQUEADA</div>
+        <div className="modal-header">OPERACAO BLOQUEADA</div>
         <div className="modal-body">
           <p>{mensagem}</p>
         </div>
@@ -28,11 +28,95 @@ function ModalErro({ mensagem, aoFechar }) {
   );
 }
 
+function isBundledAvatarUrl(url) {
+  return /^\/assets\/avatares\/ava\d+\.webp$/i.test(String(url || '').trim());
+}
+
+function toSafeNumber(value, fallback = 0) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function getAvatarCatalogKey(item) {
+  const url = String(item?.url || '').trim();
+  const storagePath = String(item?.storagePath || '').trim();
+  if (isBundledAvatarUrl(url)) return `bundled:${url}`;
+  if (storagePath) return `storage:${storagePath}`;
+  if (url) return `url:${url}`;
+  return `id:${String(item?.id || '').trim()}`;
+}
+
+function preferAvatarRecord(current, candidate) {
+  const currentHasUrl = Boolean(String(current?.url || '').trim());
+  const candidateHasUrl = Boolean(String(candidate?.url || '').trim());
+  if (currentHasUrl !== candidateHasUrl) return candidateHasUrl;
+
+  const currentHasStorage = Boolean(String(current?.storagePath || '').trim());
+  const candidateHasStorage = Boolean(String(candidate?.storagePath || '').trim());
+  if (currentHasStorage !== candidateHasStorage) return candidateHasStorage;
+
+  const currentUpdated = Math.max(toSafeNumber(current?.updatedAt), toSafeNumber(current?.createdAt));
+  const candidateUpdated = Math.max(toSafeNumber(candidate?.updatedAt), toSafeNumber(candidate?.createdAt));
+  if (currentUpdated !== candidateUpdated) return candidateUpdated > currentUpdated;
+
+  return String(candidate?.id || '').localeCompare(String(current?.id || '')) < 0;
+}
+
+function normalizeAvatarRows(data) {
+  const deduped = new Map();
+  const staleIds = [];
+  const brokenIds = [];
+
+  Object.entries(data || {}).forEach(([id, valores]) => {
+    const row = {
+      id,
+      ...(valores && typeof valores === 'object' ? valores : {}),
+    };
+    const key = getAvatarCatalogKey(row);
+    const hasValidUrl = Boolean(String(row.url || '').trim());
+    if (!hasValidUrl) {
+      brokenIds.push(id);
+    }
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, row);
+      return;
+    }
+    if (preferAvatarRecord(existing, row)) {
+      staleIds.push(existing.id);
+      deduped.set(key, row);
+      return;
+    }
+    staleIds.push(id);
+  });
+
+  const list = [...deduped.values()]
+    .map((item) => ({
+      ...item,
+      hasValidUrl: Boolean(String(item.url || '').trim()),
+      previewUrl: String(item.url || '').trim() || AVATAR_FALLBACK,
+    }))
+    .sort((a, b) => {
+      const aOrder = typeof a.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
+      const bOrder = typeof b.order === 'number' ? b.order : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      const aUpdated = Math.max(toSafeNumber(a.updatedAt), toSafeNumber(a.createdAt));
+      const bUpdated = Math.max(toSafeNumber(b.updatedAt), toSafeNumber(b.createdAt));
+      return bUpdated - aUpdated;
+    });
+
+  return {
+    list,
+    staleCount: staleIds.length,
+    brokenCount: brokenIds.length,
+  };
+}
+
 export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(auth.currentUser);
 
   const [avatares, setAvatares] = useState([]);
+  const [catalogHealth, setCatalogHealth] = useState({ staleCount: 0, brokenCount: 0 });
   const [avatarUploads, setAvatarUploads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [progressoMsg, setProgressoMsg] = useState('');
@@ -43,7 +127,12 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
   const [uploadAcesso, setUploadAcesso] = useState('publico');
   const [filtroAcesso, setFiltroAcesso] = useState('todos');
   const activeTasksRef = useRef([]);
+  const replaceInputsRef = useRef({});
   const canManageAvatars = canAccessAdminPath('/admin/avatares', adminAccess);
+  const hasBundledGap = useMemo(
+    () => AVATARES_BUNDLED.some((item) => !avatares.some((avatar) => String(avatar.url || '').trim() === item.url)),
+    [avatares]
+  );
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (current) => {
@@ -63,17 +152,15 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
       const data = snapshot.val();
       if (!data) {
         setAvatares([]);
+        setCatalogHealth({ staleCount: 0, brokenCount: 0 });
         return;
       }
-      const lista = Object.entries(data)
-        .map(([id, valores]) => ({ id, ...valores }))
-        .sort((a, b) => {
-          const aOrder = typeof a.order === 'number' ? a.order : Number.MAX_SAFE_INTEGER;
-          const bOrder = typeof b.order === 'number' ? b.order : Number.MAX_SAFE_INTEGER;
-          if (aOrder !== bOrder) return aOrder - bOrder;
-          return (b.createdAt || 0) - (a.createdAt || 0);
-        });
-      setAvatares(lista);
+      const normalized = normalizeAvatarRows(data);
+      setAvatares(normalized.list);
+      setCatalogHealth({
+        staleCount: normalized.staleCount,
+        brokenCount: normalized.brokenCount,
+      });
     });
 
     return () => unsub();
@@ -96,6 +183,109 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
     if (file.type !== 'image/webp') return 'Apenas arquivos WebP sao permitidos para avatar.';
     if (file.size > 1024 * 1024) return 'Avatar muito grande. Limite: 1MB.';
     return '';
+  };
+
+  const importarAvataresLocais = async () => {
+    if (!canManageAvatars) {
+      setErroModal('Sessao de admin invalida para importar avatares locais.');
+      return;
+    }
+    setLoading(true);
+    setProgressoMsg('Importando avatares locais do projeto...');
+    setPorcentagem(0);
+    try {
+      const existentesSnap = await get(dbRef(db, 'avatares'));
+      const existentes = existentesSnap.val() || {};
+      const bundledByUrl = new Map(AVATARES_BUNDLED.map((item) => [item.url, item]));
+      const usedByUrl = new Map(
+        Object.entries(existentes).map(([id, row]) => [String(row?.url || '').trim(), { id, row: row || {} }])
+      );
+      const patch = {};
+      AVATARES_BUNDLED.forEach((item, index) => {
+        const existing = usedByUrl.get(item.url);
+        const id = existing?.id || item.id;
+        patch[`avatares/${id}`] = {
+          ...(existing?.row || {}),
+          url: item.url,
+          storagePath: null,
+          createdAt: Number(existing?.row?.createdAt || Date.now()),
+          updatedAt: Date.now(),
+          active: true,
+          order: index,
+          access: item.access,
+          source: 'bundled',
+          label: item.label,
+        };
+      });
+      Object.entries(existentes).forEach(([id, row]) => {
+        const current = row && typeof row === 'object' ? row : {};
+        const currentUrl = String(current.url || '').trim();
+        const bundledLike =
+          current.source === 'bundled' ||
+          id.startsWith('bundled_') ||
+          isBundledAvatarUrl(currentUrl);
+        if (!bundledLike) return;
+        if (!currentUrl || !bundledByUrl.has(currentUrl)) {
+          patch[`avatares/${id}`] = null;
+        }
+      });
+      await update(dbRef(db), patch);
+      setProgressoMsg('Avatares locais importados para o banco.');
+      setTimeout(() => setProgressoMsg(''), 2200);
+    } catch (err) {
+      setErroModal(`Nao foi possivel importar os avatares locais: ${err.message}`);
+    } finally {
+      setLoading(false);
+      setPorcentagem(0);
+    }
+  };
+
+  const syncAvatarReferences = async ({ oldUrl, nextUrl }) => {
+    const avatarUrl = String(oldUrl || '').trim();
+    const replacementAvatarUrl = String(nextUrl || '').trim() || AVATAR_FALLBACK;
+    if (!avatarUrl || avatarUrl === replacementAvatarUrl) return;
+
+    const usuariosSnap = await get(dbRef(db, 'usuarios'));
+    const usuarios = usuariosSnap.val() || {};
+    const updates = {};
+
+    Object.entries(usuarios).forEach(([uid, row]) => {
+      if (!row || typeof row !== 'object') return;
+      if (String(row.userAvatar || '').trim() === avatarUrl) {
+        updates[`usuarios/${uid}/userAvatar`] = replacementAvatarUrl;
+      }
+      if (String(row.readerProfileAvatarUrl || '').trim() === avatarUrl) {
+        updates[`usuarios/${uid}/readerProfileAvatarUrl`] = replacementAvatarUrl;
+      }
+      if (String(row?.publicProfile?.userAvatar || '').trim() === avatarUrl) {
+        updates[`usuarios/${uid}/publicProfile/userAvatar`] = replacementAvatarUrl;
+      }
+      if (String(row?.publicProfile?.readerProfileAvatarUrl || '').trim() === avatarUrl) {
+        updates[`usuarios/${uid}/publicProfile/readerProfileAvatarUrl`] = replacementAvatarUrl;
+      }
+    });
+
+    if (Object.keys(updates).length) {
+      await update(dbRef(db), updates);
+    }
+  };
+
+  const uploadAvatarFileToPath = async ({ file, path }) => {
+    const fileRef = storageRef(storage, path);
+    const task = uploadBytesResumable(fileRef, file, {
+      contentType: 'image/webp',
+      customMetadata: {
+        uploadedBy: user?.uid || '',
+      },
+    });
+    activeTasksRef.current.push(task);
+
+    await new Promise((resolve, reject) => {
+      task.on('state_changed', undefined, reject, resolve);
+    });
+
+    const url = await getDownloadURL(task.snapshot.ref);
+    return { url, storagePath: path };
   };
 
   const handleSelecionarArquivos = (e) => {
@@ -279,44 +469,98 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
   const handleRemoverAvatar = async (avatarId) => {
     if (!window.confirm('Remover este avatar da lista?')) return;
     try {
+      await auth.currentUser?.getIdToken?.(true);
       const avatar = avatares.find((a) => a.id === avatarId);
+      if (!avatar) {
+        await remove(dbRef(db, `avatares/${avatarId}`));
+        setProgressoMsg('Registro de avatar removido.');
+        setTimeout(() => setProgressoMsg(''), 2200);
+        return;
+      }
       const avatarUrl = String(avatar?.url || '').trim();
       const fallbackAvatarUrl =
-        String(avatares.find((item) => item.id !== avatarId)?.url || '').trim() || AVATAR_FALLBACK;
-      const updates = {};
+        String(
+          avatares.find((item) => item.id !== avatarId && normalizarAcessoAvatar(item) === 'publico' && item.hasValidUrl)?.url ||
+          avatares.find((item) => item.id !== avatarId && item.hasValidUrl)?.url ||
+          ''
+        ).trim() || AVATAR_FALLBACK;
+      const warnings = [];
 
-      if (avatarUrl) {
-        const usuariosSnap = await get(dbRef(db, 'usuarios'));
-        const usuarios = usuariosSnap.val() || {};
-
-        Object.entries(usuarios).forEach(([uid, row]) => {
-          if (!row || typeof row !== 'object') return;
-          if (String(row.userAvatar || '').trim() === avatarUrl) {
-            updates[`usuarios/${uid}/userAvatar`] = fallbackAvatarUrl;
-          }
-          if (String(row.readerProfileAvatarUrl || '').trim() === avatarUrl) {
-            updates[`usuarios/${uid}/readerProfileAvatarUrl`] = fallbackAvatarUrl;
-          }
-          if (String(row?.publicProfile?.userAvatar || '').trim() === avatarUrl) {
-            updates[`usuarios/${uid}/publicProfile/userAvatar`] = fallbackAvatarUrl;
-          }
-          if (String(row?.publicProfile?.readerProfileAvatarUrl || '').trim() === avatarUrl) {
-            updates[`usuarios/${uid}/publicProfile/readerProfileAvatarUrl`] = fallbackAvatarUrl;
-          }
-        });
-      }
-
-      if (Object.keys(updates).length) {
-        await update(dbRef(db), updates);
+      try {
+        await syncAvatarReferences({ oldUrl: avatarUrl, nextUrl: fallbackAvatarUrl });
+      } catch (err) {
+        warnings.push(`referencias: ${err.message}`);
       }
 
       const storageTarget = String(avatar?.storagePath || avatar?.url || '').trim();
-      if (storageTarget) {
-        await safeDeleteStorageObject(storage, storageTarget);
+      if (storageTarget && !isBundledAvatarUrl(storageTarget)) {
+        try {
+          await safeDeleteStorageObject(storage, storageTarget);
+        } catch (err) {
+          warnings.push(`storage: ${err.message}`);
+        }
       }
       await remove(dbRef(db, `avatares/${avatarId}`));
+      setProgressoMsg(
+        warnings.length
+          ? `Avatar removido, mas houve limpeza parcial (${warnings.join(' | ')}).`
+          : 'Avatar removido com limpeza no Storage e nos perfis.'
+      );
+      setTimeout(() => setProgressoMsg(''), 2200);
     } catch (err) {
       setErroModal(`Nao foi possivel remover avatar: ${err.message}`);
+    }
+  };
+
+  const handleSubstituirAvatar = async (avatarId, file) => {
+    const erroArquivo = validarAvatarWebp(file);
+    if (erroArquivo) {
+      setErroModal(erroArquivo);
+      return;
+    }
+
+    const avatarAtual = avatares.find((item) => item.id === avatarId);
+    if (!avatarAtual) {
+      setErroModal('Avatar alvo nao encontrado para substituicao.');
+      return;
+    }
+
+    setLoading(true);
+    setProgressoMsg('Substituindo avatar...');
+    setPorcentagem(0);
+    activeTasksRef.current = [];
+
+    try {
+      await auth.currentUser?.getIdToken?.(true);
+      const oldUrl = String(avatarAtual.url || '').trim();
+      const oldStoragePath = String(avatarAtual.storagePath || '').trim();
+      const nextStoragePath = `avatares/${avatarId}_${Date.now()}.webp`;
+      const { url: nextUrl, storagePath } = await uploadAvatarFileToPath({
+        file,
+        path: nextStoragePath,
+      });
+
+      await update(dbRef(db), {
+        [`avatares/${avatarId}/url`]: nextUrl,
+        [`avatares/${avatarId}/storagePath`]: storagePath,
+        [`avatares/${avatarId}/updatedAt`]: Date.now(),
+      });
+
+      await syncAvatarReferences({ oldUrl, nextUrl });
+
+      if (oldStoragePath && oldStoragePath !== storagePath) {
+        await safeDeleteStorageObject(storage, oldStoragePath);
+      }
+
+      setProgressoMsg('Avatar substituido com sucesso.');
+      setTimeout(() => setProgressoMsg(''), 2200);
+    } catch (err) {
+      setErroModal(`Nao foi possivel substituir avatar: ${err.message}`);
+    } finally {
+      activeTasksRef.current = [];
+      setLoading(false);
+      const input = replaceInputsRef.current[avatarId];
+      if (input) input.value = '';
     }
   };
 
@@ -354,7 +598,7 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
     const acesso = nextAccess === 'premium' ? 'premium' : 'publico';
     try {
       await update(dbRef(db, `avatares/${avatarId}`), { access: acesso });
-      setProgressoMsg(`Avatar marcado como ${acesso === 'premium' ? 'Premium' : 'PÃºblico'}.`);
+      setProgressoMsg(`Avatar marcado como ${acesso === 'premium' ? 'Premium' : 'Publico'}.`);
       setTimeout(() => setProgressoMsg(''), 1800);
     } catch (err) {
       setErroModal(`Nao foi possivel atualizar acesso do avatar: ${err.message}`);
@@ -432,8 +676,18 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
             <p>
               Totais: <strong>{avatares.length}</strong> avatares | Publicos:{' '}
               <strong>{avataresPublicos.length}</strong> | Premium:{' '}
-              <strong>{avataresPremium.length}</strong>
+              <strong>{avataresPremium.length}</strong> | Duplicados ocultos:{' '}
+              <strong>{catalogHealth.staleCount}</strong> | Registros sem imagem:{' '}
+              <strong>{catalogHealth.brokenCount}</strong>
             </p>
+            <button
+              type="button"
+              className="btn-save"
+              disabled={loading}
+              onClick={importarAvataresLocais}
+            >
+              {hasBundledGap ? 'IMPORTAR AVATARES LOCAIS' : 'REIMPORTAR AVATARES LOCAIS'}
+            </button>
             <div className="avatar-filter-chips" role="group" aria-label="Filtro por acesso">
               <button
                 type="button"
@@ -480,11 +734,11 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
                   <div className="avatar-upload-row-top">
                     <strong title={item.nome}>{item.nome}</strong>
                     <span>
-                      {item.status === 'sucesso' && 'âœ… SUCESSO'}
-                      {item.status === 'erro' && 'âŒ ERRO'}
-                      {item.status === 'cancelado' && 'âš ï¸ CANCELADO'}
-                      {item.status === 'enviando' && 'â³ UPLOAD...'}
-                      {item.status === 'na_fila' && 'ðŸ“¦ NA FILA'}
+                      {item.status === 'sucesso' && 'SUCESSO'}
+                      {item.status === 'erro' && 'ERRO'}
+                      {item.status === 'cancelado' && 'CANCELADO'}
+                      {item.status === 'enviando' && 'UPLOAD...'}
+                      {item.status === 'na_fila' && 'NA FILA'}
                     </span>
                   </div>
                   {(item.status === 'enviando' || item.status === 'na_fila') && (
@@ -512,7 +766,16 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
                 onDragEnd={() => setDraggingAvatarId(null)}
                 style={{ cursor: 'grab' }}
               >
-                <img src={item.url} alt="Avatar" />
+                <img
+                  src={item.previewUrl}
+                  alt={item.label || 'Avatar'}
+                  onError={(e) => {
+                    e.currentTarget.src = AVATAR_FALLBACK;
+                  }}
+                />
+                {!item.hasValidUrl && (
+                  <small className="avatar-record-warning">Registro sem imagem valida</small>
+                )}
                 <small className={`avatar-access-badge ${acessoAtual}`}>
                   {acessoAtual === 'premium' ? 'PREMIUM' : 'PUBLICO'}
                 </small>
@@ -520,6 +783,7 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
                 <label className="avatar-access-select">
                   Acesso:
                   <select
+                    disabled={loading}
                     value={acessoAtual}
                     onChange={(e) => handleAlterarAcessoAvatar(item.id, e.target.value)}
                   >
@@ -529,7 +793,30 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
                 </label>
                 <button
                   type="button"
+                  className="btn-save"
+                  disabled={loading}
+                  onClick={() => replaceInputsRef.current[item.id]?.click()}
+                >
+                  SUBSTITUIR
+                </button>
+                <input
+                  type="file"
+                  accept="image/webp"
+                  hidden
+                  ref={(node) => {
+                    replaceInputsRef.current[item.id] = node;
+                  }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleSubstituirAvatar(item.id, file);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
                   className="btn-delete"
+                  disabled={loading}
                   onClick={() => handleRemoverAvatar(item.id)}
                 >
                   REMOVER
@@ -543,4 +830,12 @@ export default function AvatarAdmin({ adminAccess = emptyAdminAccess() }) {
     </div>
   );
 }
+
+
+
+
+
+
+
+
 

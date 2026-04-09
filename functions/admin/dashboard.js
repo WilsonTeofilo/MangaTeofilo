@@ -42,6 +42,12 @@ function round2(value) {
   return Math.round(toNum(value, 0) * 100) / 100;
 }
 
+function canonicalPremiumMemberUntil(profile = {}) {
+  const raw = profile?.userEntitlements?.global;
+  const value = raw?.memberUntil ?? raw?.premiumUntil;
+  return toNum(value, 0);
+}
+
 function buildUserLabel(uid, usuarios, usuariosPublicos) {
   const pub = usuariosPublicos[uid] || {};
   const priv = usuarios[uid] || {};
@@ -82,7 +88,7 @@ function buildAdvancedAnalytics(events, usuarios, usuariosPublicos, period, nowM
     const tipo = String(event?.tipo || '');
     const userBase = buildUserLabel(uid, usuarios, usuariosPublicos);
     const profile = usuarios[uid] || {};
-    const memberUntil = toNum(profile?.memberUntil, 0);
+    const memberUntil = canonicalPremiumMemberUntil(profile);
     const isActive = memberUntil > nowMs;
 
     if (tipo === 'premium_aprovado') {

@@ -63,9 +63,10 @@ export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) 
   const snapshot = await get(userRef);
   const atual = snapshot.exists() ? snapshot.val() || {} : {};
   const persistedAvatar = String(atual.userAvatar || '').trim();
+  const persistedReaderAvatar = String(atual.readerProfileAvatarUrl || '').trim();
   const fallbackAvatar = usuario.photoURL || listaAvatares[0] || AVATAR_FALLBACK;
   /** Nunca preferir Auth sobre avatar já salvo no RTDB (ex.: preset da plataforma vs foto Google). */
-  const fotoParaRegistro = persistedAvatar || fallbackAvatar;
+  const fotoParaRegistro = persistedAvatar || persistedReaderAvatar || fallbackAvatar;
   const perfil = await ensureUsuarioRecord(
     usuario,
     usuario.displayName || DEFAULT_USER_DISPLAY_NAME,

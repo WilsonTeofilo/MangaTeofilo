@@ -5,9 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { db, functions } from '../../services/firebase';
 import { addToCart, cartCount, getCartItems } from '../../store/cartStore';
-import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import {
-  applyVipDiscount,
   getProductCollectionKey,
   getProductDropLabel,
   getStoreProductBadges,
@@ -37,7 +35,6 @@ export default function LojaProduto({ user, perfil }) {
   const [serverPricing, setServerPricing] = useState(null);
   const [shippingService, setShippingService] = useState('PAC');
 
-  const vip = descontoVipLojaAtivo(perfil, user);
   const buyerMissingFields = useMemo(
     () => getStoreBuyerProfileMissingFields(perfil?.buyerProfile),
     [perfil?.buyerProfile]
@@ -46,7 +43,7 @@ export default function LojaProduto({ user, perfil }) {
   const type = String(product?.type || 'manga').toLowerCase();
   const inventoryMode = String(product?.inventoryMode || 'stock').trim().toLowerCase();
   const sizes = Array.isArray(product?.sizes)
-    ? product.sizes.map((s) => String(s || '').trim()).filter(Boolean)
+    ? product.sizes.map((entry) => String(entry || '').trim()).filter(Boolean)
     : [];
   const managedStock = inventoryMode !== 'on_demand';
   const stock = Math.max(0, Number(product?.stock || 0));
@@ -69,18 +66,16 @@ export default function LojaProduto({ user, perfil }) {
   useEffect(() => {
     if (!product) return;
     if (sizes.length && !sizes.includes(size)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSize(sizes[0]);
     }
-  }, [product, size]);
+  }, [product, size, sizes]);
 
   const images = useMemo(() => {
     if (!product || !Array.isArray(product.images)) return [];
-    return product.images.map((u) => String(u || '').trim()).filter(Boolean);
+    return product.images.map((url) => String(url || '').trim()).filter(Boolean);
   }, [product]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setImgIdx(0);
   }, [id, images.length]);
 
@@ -125,7 +120,7 @@ export default function LojaProduto({ user, perfil }) {
     return (
       <main className="loja-page">
         <section className="loja-empty">
-          <h1>Produto n�o encontrado</h1>
+          <h1>Produto nao encontrado</h1>
           <button type="button" onClick={() => navigate('/loja')}>
             Voltar para loja
           </button>
@@ -135,18 +130,18 @@ export default function LojaProduto({ user, perfil }) {
   }
 
   const basePrice = Number(product.isOnSale && Number(product.promoPrice) > 0 ? product.promoPrice : product.price || 0);
-  const finalPriceClient = applyVipDiscount(basePrice, product, config.vipDiscountPct, vip);
-  const finalPrice = serverPricing?.pricedLine?.unitPrice ?? finalPriceClient;
-  const finalSubtotal = serverPricing?.subtotal ?? Math.round(finalPrice * qty * 100) / 100;
+  const finalPrice = Number(serverPricing?.pricedLine?.unitPrice ?? basePrice);
+  const finalSubtotal = Number.isFinite(Number(serverPricing?.subtotal)) ? Number(serverPricing.subtotal) : null;
   const badges = getStoreProductBadges(product);
   const mainImg = images.length ? images[Math.min(imgIdx, images.length - 1)] : '/assets/fotos/shito.jpg';
   const collectionLine = getProductCollectionKey(product);
   const dropLine = getProductDropLabel(product);
   const selectedShippingOption = shippingQuote?.options?.find((option) => option.serviceCode === shippingService) || null;
+  const checkoutPricingReady = Boolean(serverPricing?.pricedLine && finalSubtotal != null && selectedShippingOption);
   const canBuyNow =
     config.acceptingOrders &&
     !loadingCheckout &&
-    Boolean(selectedShippingOption) &&
+    checkoutPricingReady &&
     (!managedStock || stock > 0);
 
   async function handleComprarAgora() {
@@ -161,6 +156,10 @@ export default function LojaProduto({ user, perfil }) {
     }
     if (!selectedShippingOption) {
       setErr('Escolha PAC ou SEDEX antes de finalizar.');
+      return;
+    }
+    if (!checkoutPricingReady) {
+      setErr('Aguarde a cotacao do frete para o servidor confirmar subtotal e total finais.');
       return;
     }
     if (!config.acceptingOrders) {
@@ -195,14 +194,14 @@ export default function LojaProduto({ user, perfil }) {
           </div>
           {images.length > 1 ? (
             <div className="loja-product-thumbs" role="tablist" aria-label="Imagens do produto">
-              {images.map((src, i) => (
+              {images.map((src, index) => (
                 <button
                   key={src}
                   type="button"
                   role="tab"
-                  aria-selected={i === imgIdx}
-                  className={`loja-product-thumb ${i === imgIdx ? 'loja-product-thumb--active' : ''}`}
-                  onClick={() => setImgIdx(i)}
+                  aria-selected={index === imgIdx}
+                  className={`loja-product-thumb ${index === imgIdx ? 'loja-product-thumb--active' : ''}`}
+                  onClick={() => setImgIdx(index)}
                 >
                   <img src={src} alt="" />
                 </button>
@@ -210,9 +209,9 @@ export default function LojaProduto({ user, perfil }) {
             </div>
           ) : null}
           <div className="loja-card-badges loja-card-badges--product">
-            {badges.map((b) => (
-              <span key={b.key} className={`loja-badge loja-badge--${b.key}`}>
-                {b.label}
+            {badges.map((badge) => (
+              <span key={badge.key} className={`loja-badge loja-badge--${badge.key}`}>
+                {badge.label}
               </span>
             ))}
           </div>
@@ -223,12 +222,14 @@ export default function LojaProduto({ user, perfil }) {
           <h1 className="loja-product-title">{product.title}</h1>
           <p className="loja-product-desc">{product.description || 'Sem descricao'}</p>
           <ul className="loja-product-trust" aria-label="Informacoes do produto">
-            <li>Edicao artesanal ? producao limitada</li>
-            <li>Envio pelos Correios apos confirmacao do pagamento</li>
+            <li>Edicao artesanal com producao limitada.</li>
+            <li>Envio pelos Correios apos a confirmacao do pagamento.</li>
             {managedStock && stock > 0 && stock <= 12 ? (
-              <li className="loja-product-trust--scarcity">Restam poucas unidades - {stock} em estoque</li>
+              <li className="loja-product-trust--scarcity">Restam poucas unidades: {stock} em estoque.</li>
             ) : null}
-            {!managedStock ? <li className="loja-product-trust--scarcity">Produto sob demanda - sem limite por estoque local</li> : null}
+            {!managedStock ? (
+              <li className="loja-product-trust--scarcity">Produto sob demanda, sem limite por estoque local.</li>
+            ) : null}
           </ul>
           {product.obra ? (
             <p className="loja-product-meta">
@@ -240,12 +241,19 @@ export default function LojaProduto({ user, perfil }) {
               <span className="loja-price-old">R$ {Number(product.price).toFixed(2)}</span>
             ) : null}
             <strong>R$ {finalPrice.toFixed(2)}</strong>
-            {vip && product.isVIPDiscountEnabled && finalPrice < basePrice ? <span className="loja-price-vip">VIP</span> : null}
+            {product.isVIPDiscountEnabled && serverPricing?.pricedLine && finalPrice < basePrice ? (
+              <span className="loja-price-vip">VIP</span>
+            ) : null}
           </div>
-          <p className="loja-shipping-hint">Subtotal atual: R$ {finalSubtotal.toFixed(2)}</p>
           <p className="loja-shipping-hint">
-            PAC ou SEDEX: tabela fixa por UF + R$ 2 por unidade extra. Em Sudeste, Sul e Centro-Oeste, com subtotal a partir de
-            R$ 165 ou 3+ unidades no pedido, at� 30% de desconto s� no frete (teto R$ 20).
+            {finalSubtotal != null
+              ? `Subtotal confirmado pelo servidor: R$ ${finalSubtotal.toFixed(2)}`
+              : 'Subtotal e frete finais sao calculados pelo servidor depois da cotacao.'}
+          </p>
+          <p className="loja-shipping-hint">
+            PAC ou SEDEX usam tabela fixa por UF, mais R$ 2 por unidade extra. Em Sudeste, Sul e Centro-Oeste, o backend aplica
+            ate 30% de desconto no frete, com teto de R$ 20, quando o subtotal chega a R$ 165 ou o pedido tem 3 ou mais
+            unidades.
           </p>
           <p className={`loja-stock ${managedStock && stock > 0 && stock <= 12 ? 'loja-stock--low' : ''}`}>
             {managedStock ? `Estoque: ${stock}` : 'Disponibilidade: sob demanda'}
@@ -255,9 +263,9 @@ export default function LojaProduto({ user, perfil }) {
             <label className="loja-size-label">
               Tamanho
               <select value={size} onChange={(e) => setSize(e.target.value)} className="loja-size-select">
-                {sizes.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
+                {sizes.map((entry) => (
+                  <option key={entry} value={entry}>
+                    {entry}
                   </option>
                 ))}
               </select>
@@ -283,11 +291,12 @@ export default function LojaProduto({ user, perfil }) {
               ))}
             </div>
           ) : null}
+          {!user?.uid ? (
+            <p className="loja-shipping-hint">Entre na conta para cotar frete e liberar o checkout desta compra.</p>
+          ) : null}
           {buyerMissingFields.length ? (
             <div className="loja-banner loja-banner--erro loja-banner--with-cta loja-produto__buyer-hint" role="status">
-              <p className="loja-banner__text">
-                Antes de comprar, complete no perfil: {buyerMissingFields.join(', ')}.
-              </p>
+              <p className="loja-banner__text">Antes de comprar, complete no perfil: {buyerMissingFields.join(', ')}.</p>
               <Link className="loja-banner__cta" to={`/perfil#${PERFIL_LOJA_DADOS_HASH}`}>
                 Completar cadastro
               </Link>
@@ -306,12 +315,7 @@ export default function LojaProduto({ user, perfil }) {
                 onChange={(e) => setQty(Math.max(1, Math.min(maxQty, Number(e.target.value || 1))))}
               />
             </label>
-            <button
-              type="button"
-              className="loja-btn-buy"
-              disabled={!canBuyNow}
-              onClick={handleComprarAgora}
-            >
+            <button type="button" className="loja-btn-buy" disabled={!canBuyNow} onClick={handleComprarAgora}>
               Comprar agora
             </button>
             <button

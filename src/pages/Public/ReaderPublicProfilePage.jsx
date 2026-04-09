@@ -4,7 +4,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom';
 
 import { db } from '../../services/firebase';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
-import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
+import { buildPublicProfileFromUsuarioRow, isCreatorPublicProfile } from '../../utils/publicUserProfile';
 import './ReaderPublicProfile.css';
 
 /**
@@ -65,5 +65,6 @@ export default function ReaderPublicProfilePage() {
     );
   }
 
-  return <Navigate to={`/criador/${encodeURIComponent(uid)}?tab=likes`} replace />;
+  const tab = isCreatorPublicProfile(pub) ? 'works' : 'likes';
+  return <Navigate to={`/criador/${encodeURIComponent(uid)}?tab=${tab}`} replace />;
 }

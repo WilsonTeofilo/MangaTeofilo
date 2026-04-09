@@ -8,6 +8,16 @@ export const LISTA_AVATARES = Array.from(
   (_, i) => `/assets/avatares/ava${i + 1}.webp`
 );
 
+export const AVATARES_BUNDLED = LISTA_AVATARES.map((url, index) => ({
+  id: `bundled_ava${index + 1}`,
+  label: `Avatar ${index + 1}`,
+  url,
+  access: 'publico',
+  active: true,
+  order: index,
+  source: 'bundled',
+}));
+
 export const AVATAR_FALLBACK = "/assets/avatares/ava1.webp";
 
 /** Apelido exibido quando o usuario ainda nao definiu nome. */

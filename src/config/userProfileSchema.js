@@ -9,6 +9,21 @@ function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj || {}, key);
 }
 
+function hasCanonicalCreatorState(source = {}) {
+  const creator = source?.creator && typeof source.creator === 'object' ? source.creator : {};
+  const creatorStatus = asNonEmptyString(source.creatorStatus, '').toLowerCase();
+  const creatorMonetizationStatus = asNonEmptyString(source.creatorMonetizationStatus, '').toLowerCase();
+  const role = asNonEmptyString(source.role || source.panelRole, 'user').toLowerCase();
+  return (
+    creatorStatus === 'active' ||
+    creatorStatus === 'onboarding' ||
+    creatorMonetizationStatus === 'active' ||
+    role === 'mangaka' ||
+    role === 'creator' ||
+    creator.isApproved === true
+  );
+}
+
 export function buildUsuarioBaseRecord({
   uid,
   email = '',
@@ -64,41 +79,53 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
   const instagramUrl = asNonEmptyString(creatorSocial.instagram || source.instagramUrl, '');
   const youtubeUrl = asNonEmptyString(creatorSocial.youtube || source.youtubeUrl, '');
   const userAvatar = asNonEmptyString(source.userAvatar, AVATAR_FALLBACK);
+  const creatorStatus = asNonEmptyString(source.creatorStatus, '');
+  const signupIntent = asNonEmptyString(source.signupIntent, 'reader');
+  const isCreatorProfile = hasCanonicalCreatorState(source);
 
   return {
     uid: asNonEmptyString(uidOverride || source.uid, ''),
-    userName: asNonEmptyString(source.userName, creatorDisplayName || DEFAULT_USER_DISPLAY_NAME),
+    userName: asNonEmptyString(source.userName, DEFAULT_USER_DISPLAY_NAME),
     userHandle,
     userAvatar,
+    isCreatorProfile,
     accountType: asNonEmptyString(source.accountType, 'comum'),
-    signupIntent: asNonEmptyString(source.signupIntent, 'reader'),
+    signupIntent,
     status: asNonEmptyString(source.status, ''),
-    creatorDisplayName,
+    creatorDisplayName: isCreatorProfile ? creatorDisplayName : '',
     creatorUsername: userHandle,
-    creatorBio,
-    creatorBannerUrl: asNonEmptyString(source.creatorBannerUrl, ''),
-    instagramUrl,
-    youtubeUrl,
+    creatorBio: isCreatorProfile ? creatorBio : '',
+    creatorBannerUrl: isCreatorProfile ? asNonEmptyString(source.creatorBannerUrl, '') : '',
+    instagramUrl: isCreatorProfile ? instagramUrl : '',
+    youtubeUrl: isCreatorProfile ? youtubeUrl : '',
     readerProfilePublic: source.readerProfilePublic === true,
     readerProfileAvatarUrl: asNonEmptyString(source.readerProfileAvatarUrl, userAvatar),
     readerSince: Number(source.createdAt || source.readerSince || 0) || 0,
-    creatorStatus: asNonEmptyString(source.creatorStatus, ''),
-    creatorMembershipEnabled: source.creatorMembershipEnabled === true,
+    creatorStatus: isCreatorProfile ? creatorStatus : '',
+    creatorMembershipEnabled: isCreatorProfile && source.creatorMembershipEnabled === true,
     creatorMembershipPriceBRL:
-      source.creatorMembershipPriceBRL == null ? null : Number(source.creatorMembershipPriceBRL),
+      isCreatorProfile && source.creatorMembershipPriceBRL != null
+        ? Number(source.creatorMembershipPriceBRL)
+        : null,
     creatorDonationSuggestedBRL:
-      source.creatorDonationSuggestedBRL == null ? null : Number(source.creatorDonationSuggestedBRL),
+      isCreatorProfile && source.creatorDonationSuggestedBRL != null
+        ? Number(source.creatorDonationSuggestedBRL)
+        : null,
     updatedAt:
       Number(source?.creator?.meta?.updatedAt || source.updatedAt || source.lastLogin || source.createdAt || 0) || 0,
-    creatorProfile: {
-      displayName: creatorDisplayName,
-      username: userHandle,
-      bioFull: creatorBio,
-      socialLinks: {
-        instagramUrl,
-        youtubeUrl,
-      },
-    },
+    ...(isCreatorProfile
+      ? {
+          creatorProfile: {
+            displayName: creatorDisplayName,
+            username: userHandle,
+            bioFull: creatorBio,
+            socialLinks: {
+              instagramUrl,
+              youtubeUrl,
+            },
+          },
+        }
+      : {}),
   };
 }
 

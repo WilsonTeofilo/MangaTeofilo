@@ -13,6 +13,7 @@ import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
 import {
   buildPublicProfileFromUsuarioRow,
+  isCreatorPublicProfile,
   resolvePublicProfileAvatarUrl,
   resolvePublicProfileBio,
   resolvePublicProfileSocialLinks,
@@ -247,19 +248,16 @@ export default function CreatorPublicProfilePage({ user }) {
   }, [creatorStatsRow, obrasComStats, perfilPublico]);
 
   const readerPublic = isReaderPublicProfileEffective(perfilPublico);
-  const creatorStatus = String(perfilPublico?.creatorStatus || '').trim().toLowerCase();
-  const hasWriterProfile =
-    creatorStatus === 'active' ||
-    creatorStatus === 'onboarding' ||
-    (perfilPublico?.creatorProfile && typeof perfilPublico.creatorProfile === 'object') ||
-    obras.length > 0;
+  const hasWriterProfile = isCreatorPublicProfile(perfilPublico);
   const profileMode = hasWriterProfile ? 'writer' : readerPublic ? 'reader' : 'none';
 
   const formattedPublic = formatUserDisplayWithHandle(perfilPublico);
   const publicLine =
     formattedPublic !== 'Leitor'
       ? formattedPublic
-      : (obras[0]?.creatorName ? String(obras[0].creatorName) : '') || (profileMode === 'writer' ? 'Escritor' : 'Leitor');
+      : profileMode === 'writer'
+        ? 'Escritor'
+        : 'Leitor';
   const writerBio = resolvePublicProfileBio(perfilPublico, 'writer');
   const readerBio = resolvePublicProfileBio(perfilPublico, 'reader');
   const bio = profileMode === 'writer' ? writerBio : readerBio;
@@ -343,7 +341,7 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Criador nÃ£o encontrado</h1>
+          <h1>Criador não encontrado</h1>
           <p>O link publico informado esta incompleto.</p>
         </section>
       </main>
@@ -360,8 +358,8 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Perfil indisponÃ­vel</h1>
-          <p>Este perfil pÃºblico nÃ£o estÃ¡ acessÃ­vel no momento.</p>
+          <h1>Perfil indisponível</h1>
+          <p>Este perfil público não está acessível no momento.</p>
         </section>
       </main>
     );
@@ -372,7 +370,7 @@ export default function CreatorPublicProfilePage({ user }) {
       <main className="criador-page">
         <section className="criador-empty">
           <h1>Perfil privado</h1>
-          <p>Este usuÃ¡rio nÃ£o deixou o perfil pÃºblico disponÃ­vel.</p>
+          <p>Este usuário não deixou o perfil público disponível.</p>
         </section>
       </main>
     );
@@ -384,7 +382,7 @@ export default function CreatorPublicProfilePage({ user }) {
         open={followBrowserPushModalOpen}
         permission={followBrowserPushPermission}
         title="Avisos no navegador"
-        description="VocÃª passou a seguir este criador. Quer receber notificaÃ§Ã£o aqui no navegador quando sair capÃ­tulo novo?"
+        description="Você passou a seguir este criador. Quer receber notificação aqui no navegador quando sair capítulo novo?"
         onClose={() => setFollowBrowserPushModalOpen(false)}
       />
       <section className={`criador-hero criador-hero--blur-backdrop${profileMode === 'reader' ? ' criador-hero--reader' : ''}`}>
@@ -439,7 +437,7 @@ export default function CreatorPublicProfilePage({ user }) {
               </button>
             )}
             <button type="button" className="is-secondary" onClick={() => navigate('/works')}>
-              CatÃ¡logo geral
+              Catálogo geral
             </button>
           </div>
           {followMessage ? <p className="criador-hero__support-copy">{followMessage}</p> : null}
@@ -452,23 +450,23 @@ export default function CreatorPublicProfilePage({ user }) {
                 </article>
                 <article>
                   <strong>{obrasComStats.length}</strong>
-                  <span>obras pÃºblicas</span>
+                  <span>obras públicas</span>
                 </article>
                 <article>
                   <strong>{creatorStats.totalViews}</strong>
                   <span>views (obras)</span>
                 </article>
                 <article>
-                  <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : 'â€”'}</strong>
-                  <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponÃ­vel'}</span>
+                  <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : '—'}</strong>
+                  <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponível'}</span>
                 </article>
               </div>
               <p className="criador-hero__support-copy">
-                Seguir este escritor ajuda a plataforma a destacar lanÃ§amentos e novidades quando estiverem ativas.
+                Seguir este escritor ajuda a plataforma a destacar lançamentos e novidades quando estiverem ativas.
               </p>
               {!supportEnabled ? (
                 <p className="criador-hero__support-copy">
-                  Este escritor estÃ¡ em modo â€œsÃ³ publicarâ€. Apoio e membership ainda nÃ£o estÃ£o disponÃ­veis.
+                  Este escritor está em modo "só publicar". Apoio e membership ainda não estão disponíveis.
                 </p>
               ) : null}
             </>
@@ -485,18 +483,18 @@ export default function CreatorPublicProfilePage({ user }) {
                 </article>
                 <article>
                   <strong>{readerPublic ? 'ativo' : 'fechado'}</strong>
-                  <span>perfil pÃºblico</span>
+                  <span>perfil público</span>
                 </article>
               </div>
               <p className="criador-hero__support-copy">
-                Este perfil pÃºblico de leitor mostra apenas os dados bÃ¡sicos disponibilizados pelo usuÃ¡rio.
+                Este perfil público de leitor mostra apenas os dados básicos disponibilizados pelo usuário.
               </p>
             </>
           )}
           {membershipEnabled ? (
             <p className="criador-hero__support-copy">
-              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias â€” acesso antecipado nas obras
-              deste escritor. DoaÃ§Ã£o sugerida: {formatarPrecoBrl(donationSuggested)}.
+              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias — acesso antecipado nas obras
+              deste escritor. Doação sugerida: {formatarPrecoBrl(donationSuggested)}.
             </p>
           ) : null}
           {redes.length ? (
@@ -514,7 +512,7 @@ export default function CreatorPublicProfilePage({ user }) {
 
       <nav
         className={`criador-profile-tabs${profileMode === 'reader' ? ' criador-profile-tabs--reader' : ''}`}
-        aria-label="SeÃ§Ãµes do perfil"
+        aria-label="Seções do perfil"
       >
         {profileMode === 'writer' ? (
           <button
@@ -541,7 +539,7 @@ export default function CreatorPublicProfilePage({ user }) {
           </div>
           <div className="criador-support-card">
             <p>
-              <strong>{formatarPrecoBrl(membershipPrice)}</strong> / 30 dias â€” membros ganham acesso antecipado aos
+              <strong>{formatarPrecoBrl(membershipPrice)}</strong> / 30 dias — membros ganham acesso antecipado aos
               capitulos deste autor nas obras vinculadas.
             </p>
             <ul className="criador-support-benefits">
@@ -571,7 +569,7 @@ export default function CreatorPublicProfilePage({ user }) {
             </div>
           </div>
           {!obrasSorted.length ? (
-            <p className="criador-section__empty">Nenhuma obra pÃºblica cadastrada ainda.</p>
+            <p className="criador-section__empty">Nenhuma obra pública cadastrada ainda.</p>
           ) : (
             <div className="criador-obras-grid">
               {obrasSorted.map((obra) => {
@@ -615,12 +613,12 @@ export default function CreatorPublicProfilePage({ user }) {
       {profileTab === 'likes' ? (
         <section className="criador-section criador-section--favorites" aria-labelledby="criador-curtidas-title">
           <div className="criador-section__head">
-            <h2 id="criador-curtidas-title">{profileMode === 'writer' ? 'Obras curtidas' : 'Biblioteca pÃºblica'}</h2>
+            <h2 id="criador-curtidas-title">{profileMode === 'writer' ? 'Obras curtidas' : 'Biblioteca pública'}</h2>
           </div>
           {!readerPublic ? (
-            <p className="criador-section__empty">Este usuÃ¡rio nÃ£o exibe curtidas publicamente.</p>
+            <p className="criador-section__empty">Este usuário não exibe curtidas publicamente.</p>
           ) : !favoritesList.length ? (
-            <p className="criador-section__empty">Biblioteca pÃºblica indisponÃ­vel nesta versÃ£o.</p>
+            <p className="criador-section__empty">Biblioteca pública indisponível nesta versão.</p>
           ) : (
             <div className="criador-favorites-grid">
               {favoritesList.map((fav) => (

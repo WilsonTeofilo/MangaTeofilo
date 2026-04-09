@@ -5,7 +5,10 @@ import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 
 import { auth, db, storage } from '../../services/firebase';
+import { resolveAdminAccess } from '../../auth/adminAccess';
 import { formatarDataHoraBr } from '../../utils/datasBr';
+import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
+import { normalizeUsernameInput } from '../../utils/usernameValidation';
 import {
   normalizarObraId,
   obterObraIdCapitulo,
@@ -247,7 +250,7 @@ function estiloEditorImagem(dim, ajuste = { zoom: 1, x: 0, y: 0 }, editorConfig 
   return buildResponsiveCropStyle(dim, ajuste, editorConfig.outputW, editorConfig.outputH);
 }
 
-function emptyForm() {
+function buildEmptyForm(defaultCreatorId = '') {
   return {
     id: '',
     titulo: '',
@@ -263,8 +266,69 @@ function emptyForm() {
     status: 'ongoing',
     isPublished: false,
     archived: false,
-    adminCreatorId: '',
+    adminCreatorId: String(defaultCreatorId || '').trim(),
   };
+}
+
+function pickCreatorDisplayName(row = {}) {
+  const publicProfile = row && typeof row.publicProfile === 'object' ? row.publicProfile : {};
+  const creator = row && typeof row.creator === 'object' ? row.creator : {};
+  return String(
+    publicProfile.creatorDisplayName ||
+      publicProfile.userName ||
+      creator.displayName ||
+      row.creatorDisplayName ||
+      row.userName ||
+      row.userHandle ||
+      ''
+  ).trim();
+}
+
+function buildCreatorDirectory(rows = {}) {
+  const map = new Map();
+  Object.entries(rows || {}).forEach(([uid, data]) => {
+    const handle = normalizeUsernameInput(uid);
+    const ownerUid = String(data || '').trim();
+    const entry = {
+      uid: ownerUid,
+      handle,
+      displayName: handle ? '@' + handle : '',
+      avatarUrl: '',
+      isCreator: false,
+    };
+    if (entry.uid) map.set(entry.uid, entry);
+  });
+  return [...map.values()].sort((a, b) =>
+    String(a.displayName || a.uid).localeCompare(String(b.displayName || b.uid), 'pt-BR', { sensitivity: 'base' })
+  );
+}
+
+function formatCreatorLookupOption(entry) {
+  if (!entry) return '';
+  const handlePart = entry.handle ? '@' + entry.handle : entry.uid;
+  const namePart = entry.displayName && entry.displayName !== handlePart ? ' - ' + entry.displayName : '';
+  return handlePart + namePart;
+}
+
+function normalizeCreatorLookupQuery(rawValue) {
+  return String(rawValue || '').trim();
+}
+
+function resolveCreatorLookupValue(rawValue, directory = []) {
+  const raw = normalizeCreatorLookupQuery(rawValue);
+  if (!raw) return null;
+  const normalized = raw.toLowerCase();
+  const compact = normalizeUsernameInput(raw);
+  return (
+    directory.find((entry) => {
+      if (!entry) return false;
+      if (String(entry.uid || '').toLowerCase() === normalized) return true;
+      if (entry.handle && String(entry.handle).toLowerCase() === compact) return true;
+      if (entry.displayName && String(entry.displayName).toLowerCase() === normalized) return true;
+      if (formatCreatorLookupOption(entry).toLowerCase() === normalized) return true;
+      return false;
+    }) || null
+  );
 }
 
 export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
@@ -273,15 +337,22 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const isMangaka = Boolean(adminAccess?.isMangaka);
   const chaptersPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
   const isCreatorWorkspace = workspace === 'creator';
+  const canAccessWorkspace = isCreatorWorkspace ? isMangaka : Boolean(adminAccess?.canAccessAdmin);
   const [loading, setLoading] = useState(true);
+  const [obrasSnapshotReady, setObrasSnapshotReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [obras, setObras] = useState([]);
   const [obrasTodas, setObrasTodas] = useState([]);
   const [obraSelecionadaId, setObraSelecionadaId] = useState('');
-  const [form, setForm] = useState(emptyForm());
+  const defaultCreatorUid = isMangaka && user?.uid ? user.uid : '';
+  const [form, setForm] = useState(() => buildEmptyForm(defaultCreatorUid));
+  const [creatorLookupInput, setCreatorLookupInput] = useState(() => String(defaultCreatorUid).trim());
+  const [creatorDirectory, setCreatorDirectory] = useState([]);
+  const [creatorWorkspaceProfile, setCreatorWorkspaceProfile] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
   const [erro, setErro] = useState('');
   const [ok, setOk] = useState('');
+  const [saveAttempted, setSaveAttempted] = useState(false);
   const [saveErrorModal, setSaveErrorModal] = useState({ open: false, lines: [] });
   const [saveToast, setSaveToast] = useState({ visible: false, text: '' });
   const [capaArquivo, setCapaArquivo] = useState(null);
@@ -299,16 +370,18 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const saveToastTimerRef = useRef(null);
 
   useEffect(() => {
-    if (!adminAccess?.canAccessAdmin) {
+    if (!canAccessWorkspace) {
       navigate('/');
       return;
     }
+    setObrasSnapshotReady(false);
     const obrasRef = dbRef(db, 'obras');
     const unsub = onValue(obrasRef, (snapshot) => {
       if (!snapshot.exists()) {
         setObras([]);
         setObrasTodas([]);
         setObraSelecionadaId('');
+        setObrasSnapshotReady(true);
         setLoading(false);
         return;
       }
@@ -320,7 +393,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       lista.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
       setObrasTodas(lista);
       const visivel =
-        isMangaka && user?.uid
+        isCreatorWorkspace && user?.uid
           ? lista.filter((o) => obraCreatorId(o) === user.uid)
           : lista;
       setObras(visivel);
@@ -329,10 +402,116 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         if (lista.some((obra) => obra.id === curr)) return curr;
         return '';
       });
+      setObrasSnapshotReady(true);
       setLoading(false);
     });
     return () => unsub();
-  }, [navigate, user, adminAccess?.canAccessAdmin, isMangaka]);
+  }, [canAccessWorkspace, isCreatorWorkspace, navigate, user]);
+
+  useEffect(() => {
+    if (!canAccessWorkspace || isMangaka) {
+      setCreatorDirectory([]);
+      return undefined;
+    }
+    let cancelled = false;
+    get(dbRef(db, 'usernames'))
+      .then((snapshot) => {
+        if (cancelled) return;
+        setCreatorDirectory(buildCreatorDirectory(snapshot.val() || {}));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCreatorDirectory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccessWorkspace, isMangaka]);
+
+  useEffect(() => {
+    if (!canAccessWorkspace || !isMangaka || !user?.uid) {
+      setCreatorWorkspaceProfile(null);
+      return () => {};
+    }
+    let cancelled = false;
+    get(dbRef(db, `usuarios/${user.uid}`))
+      .then((snapshot) => {
+        if (cancelled) return;
+        const perfilPublico = buildPublicProfileFromUsuarioRow(snapshot.val() || {}, user.uid);
+        const handle = normalizeUsernameInput(perfilPublico?.userHandle || '');
+        const displayName = String(
+          perfilPublico?.creatorDisplayName ||
+            perfilPublico?.userName ||
+            user.displayName ||
+            (handle ? '@' + handle : 'Sua conta')
+        ).trim();
+        setCreatorWorkspaceProfile({
+          uid: user.uid,
+          handle,
+          displayName,
+          avatarUrl: String(
+            perfilPublico?.userAvatar ||
+              perfilPublico?.readerProfileAvatarUrl ||
+              user.photoURL ||
+              ''
+          ).trim(),
+          isCreator: perfilPublico?.isCreatorProfile === true,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCreatorWorkspaceProfile({
+          uid: user.uid,
+          handle: '',
+          displayName: String(user.displayName || 'Sua conta').trim() || 'Sua conta',
+          avatarUrl: String(user.photoURL || '').trim(),
+          isCreator: true,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccessWorkspace, isMangaka, user?.displayName, user?.photoURL, user?.uid]);
+
+  useEffect(() => {
+    if (isMangaka || !form.adminCreatorId) return () => {};
+    let cancelled = false;
+    get(dbRef(db, `usuarios/${form.adminCreatorId}`))
+      .then((snapshot) => {
+        if (cancelled || !snapshot.exists()) return;
+        const perfilPublico = buildPublicProfileFromUsuarioRow(snapshot.val() || {}, form.adminCreatorId);
+        setCreatorDirectory((prev) => {
+          const map = new Map(prev.map((entry) => [entry.uid, entry]));
+          const current = map.get(form.adminCreatorId) || {
+            uid: form.adminCreatorId,
+            handle: normalizeUsernameInput(perfilPublico?.userHandle || ''),
+          };
+          map.set(form.adminCreatorId, {
+            ...current,
+            displayName:
+              String(
+                perfilPublico?.creatorDisplayName ||
+                  perfilPublico?.userName ||
+                  current.displayName ||
+                  (current.handle ? '@' + current.handle : form.adminCreatorId)
+              ).trim(),
+            avatarUrl: String(
+              perfilPublico?.userAvatar || perfilPublico?.readerProfileAvatarUrl || current.avatarUrl || ''
+            ).trim(),
+            isCreator: perfilPublico?.isCreatorProfile === true,
+          });
+          return [...map.values()].sort((a, b) =>
+            String(a.displayName || a.uid).localeCompare(String(b.displayName || b.uid), 'pt-BR', {
+              sensitivity: 'base',
+            })
+          );
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [form.adminCreatorId, isMangaka]);
 
   const obrasMap = useMemo(() => {
     const map = new Map();
@@ -451,6 +630,48 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     });
   }, []);
 
+  const blockSave = useCallback((reason, lines, extra = {}) => {
+    const payload = Array.isArray(lines)
+      ? lines.map((item) => String(item || '').trim()).filter(Boolean)
+      : [String(lines || '').trim()].filter(Boolean);
+    const finalLines = payload.length ? payload : ['Não foi possível salvar a obra.'];
+    setSaveAttempted(true);
+    setErro(finalLines.join(' '));
+    openSaveErrorModal(finalLines);
+    console.warn('[ObrasAdmin] save blocked', {
+      reason,
+      workspace,
+      isMangaka,
+      editandoId,
+      obraSelecionadaId,
+      uid: user?.uid || '',
+      ...extra,
+    });
+    return false;
+  }, [editandoId, isMangaka, obraSelecionadaId, openSaveErrorModal, user?.uid, workspace]);
+
+  const ensureMangakaClaimForWrite = useCallback(async (actionLabel = 'gravar este conteúdo') => {
+    if (!isMangaka || !user) return true;
+    try {
+      const refreshedAccess = await resolveAdminAccess(user, { force: true });
+      await user.getIdToken(true);
+      if (refreshedAccess?.isMangaka) return true;
+      blockSave('mangaka-claim-not-synced', [
+        `Sua permissão de criador ainda não foi sincronizada para ${actionLabel}.`,
+        'Saia e entre novamente ou recarregue o painel para concluir a liberação.',
+      ]);
+      return false;
+    } catch (claimErr) {
+      blockSave('mangaka-claim-refresh-failed', [
+        `Não foi possível confirmar sua permissão de criador antes de ${actionLabel}.`,
+        'Atualize o painel e tente novamente.',
+      ], {
+        claimErr: String(claimErr?.message || claimErr || ''),
+      });
+      return false;
+    }
+  }, [blockSave, isMangaka, user]);
+
   const showSaveToast = useCallback((text) => {
     const t = String(text || '').trim();
     if (!t) return;
@@ -484,23 +705,23 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
 
   const iniciarNovo = () => {
     clearMsgs();
+    setSaveAttempted(false);
     setEditandoId(null);
     setObraSelecionadaId('');
-    setForm(emptyForm());
+    setForm(buildEmptyForm(defaultCreatorUid));
+    setCreatorLookupInput(String(defaultCreatorUid).trim());
     setCapaArquivo(null);
     setBannerArquivo(null);
     setCapaAjuste(normalizarAjusteObra());
     setBannerAjuste(normalizarAjusteObra());
   };
 
-  const creatorUidOptions = useMemo(() => {
-    const set = new Set();
-    obrasTodas.forEach((o) => {
-      const c = String(obraCreatorId(o) || '').trim();
-      if (c) set.add(c);
-    });
-    return [...set].sort();
-  }, [obrasTodas]);
+  const resolvedCreatorLookup = useMemo(() => {
+    if (isMangaka) return null;
+    return resolveCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory);
+  }, [creatorDirectory, creatorLookupInput, form.adminCreatorId, isMangaka]);
+  const creatorLookupQuery = useMemo(() => normalizeCreatorLookupQuery(creatorLookupInput), [creatorLookupInput]);
+  const creatorNeedsSelection = !isMangaka && !!creatorLookupQuery && !resolvedCreatorLookup;
 
   const toggleGenre = (genreId) => {
     const id = String(genreId || '').trim().toLowerCase();
@@ -518,11 +739,17 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const editarObra = (obraId) => {
     clearMsgs();
     const obra = obrasMap.get(obraId);
-    if (!obra) return;
-    if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
-      setErro('Você só pode editar obras que você criou.');
+    if (!obra) {
+      blockSave('missing-work-for-edit', ['A obra selecionada não foi encontrada no catálogo atual. Atualize a lista e tente novamente.'], {
+        obraId,
+      });
       return;
     }
+    if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
+      blockSave('creator-cannot-edit-foreign-work', ['Você só pode editar obras que você criou.'], { obraId });
+      return;
+    }
+    setSaveAttempted(false);
     setEditandoId(obraId);
     setObraSelecionadaId(obraId);
     const genres = parseObraGenreIdsForForm(obra);
@@ -530,7 +757,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     const tagsArr = Array.isArray(rawTags) ? rawTags : rawTags && typeof rawTags === 'object' ? Object.values(rawTags) : [];
     const tagsSanitized = normalizeTagsFromInput(tagsArr.join(', '));
     const mainGRaw = String(obra.mainGenre || '').trim().toLowerCase();
-    const mainG = OBRAS_WORK_GENRE_IDS.includes(mainGRaw) ? mainGRaw : '';
+      const mainG = OBRAS_WORK_GENRE_IDS.includes(mainGRaw) ? mainGRaw : '';
+      const creatorUid = !isMangaka ? obraCreatorId(obra) : '';
+      const creatorEntry = !isMangaka ? resolveCreatorLookupValue(creatorUid, creatorDirectory) : null;
     setForm({
       id: obraId,
       titulo: obra.titulo || '',
@@ -546,18 +775,29 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       status: normalizeStatusForForm(obra.status),
       isPublished: obra.isPublished === true,
       archived: obraEstaArquivada(obra),
-      adminCreatorId: !isMangaka ? obraCreatorId(obra) : '',
-    });
+      adminCreatorId: creatorUid,
+      });
+      if (!isMangaka) {
+        setCreatorLookupInput(creatorEntry ? formatCreatorLookupOption(creatorEntry) : '');
+      }
     setCapaArquivo(null);
     setBannerArquivo(null);
     setCapaAjuste(normalizarAjusteObra(obra.capaAjuste));
     setBannerAjuste(normalizarAjusteObra(obra.bannerAjuste));
   };
 
+  const handleCreatorLookupChange = (rawValue) => {
+    const raw = String(rawValue || '');
+    const resolved = resolveCreatorLookupValue(raw, creatorDirectory);
+    setCreatorLookupInput(raw);
+    setForm((prev) => ({
+      ...prev,
+      adminCreatorId: resolved?.uid || '',
+    }));
+  };
   const carregarObraSelecionada = () => {
     if (!obraSelecionadaId) {
-      setErro('Selecione uma obra para editar, ou clique em "Criar nova obra".');
-      openSaveErrorModal([
+      blockSave('missing-selected-work-for-edit', [
         'Selecione uma obra para editar, ou clique em "Criar nova obra".',
       ]);
       return;
@@ -566,8 +806,38 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   };
 
   const salvarObra = async () => {
-    if (saveInFlightRef.current) return;
+    setSaveAttempted(true);
+    if (saveInFlightRef.current) {
+      blockSave('save-already-running', [
+        'Já existe um salvamento em andamento para esta obra.',
+        'Espere o processo atual terminar antes de tentar novamente.',
+      ], {
+        workspace,
+        editandoId,
+        obraSelecionadaId,
+      });
+      return;
+    }
     clearMsgs();
+    if (!canAccessWorkspace) {
+      blockSave('workspace-access-denied', ['Sem permissão para salvar neste painel.']);
+      return;
+    }
+    if (!user?.uid) {
+      blockSave('missing-auth-user', ['Faça login novamente antes de salvar a obra.']);
+      return;
+    }
+    if (!(await ensureMangakaClaimForWrite(editandoId ? 'salvar a obra' : 'criar a obra'))) {
+      return;
+    }
+    if (loading) {
+      blockSave('catalog-still-loading', ['Aguarde o carregamento do catálogo antes de salvar.']);
+      return;
+    }
+    if (!obrasSnapshotReady) {
+      blockSave('obras-snapshot-not-ready', ['Aguarde o carregamento completo das obras antes de salvar.']);
+      return;
+    }
     const v = validateObraWorkForm({
       titulo: form.titulo,
       sinopse: form.sinopse,
@@ -588,25 +858,40 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       adminCreatorId: form.adminCreatorId,
     });
     if (!v.ok) {
-      setErro(v.errors.join(' '));
-      openSaveErrorModal(v.errors.length ? v.errors : ['Corrija os campos destacados.']);
+      blockSave('obra-form-validation', v.errors.length ? v.errors : ['Corrija os campos destacados.'], {
+        validationErrors: v.errors,
+      });
       return;
     }
     const slugNovo = v.slug;
     const recordSlug = obraSlugFromTitle(form.titulo);
     if (isMangaka && user?.uid && editandoId && obraCreatorId(obrasMap.get(editandoId)) !== user.uid) {
-      setErro('Sem permissão para alterar esta obra.');
-      openSaveErrorModal(['Sem permissão para alterar esta obra.']);
+      blockSave('creator-cannot-save-foreign-work', ['Sem permissão para alterar esta obra.']);
+      return;
+    }
+    const creatorLookupResolved = !isMangaka
+      ? resolveCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory)
+      : null;
+    if (!isMangaka && !creatorLookupResolved) {
+      blockSave('missing-author-resolution', [
+        'Selecione um autor válido pelo @username antes de salvar.',
+        'A obra só pode ser vinculada quando o autor for encontrado no diretório de usernames.',
+      ], {
+        creatorLookupInput,
+      });
       return;
     }
     let creatorIdResolved;
     if (isMangaka && user?.uid) {
       creatorIdResolved = user.uid;
-    } else if (editandoId && obrasMap.has(editandoId)) {
-      const fromForm = String(form.adminCreatorId || '').trim();
-      creatorIdResolved = isValidCreatorUid(fromForm) ? fromForm : obraCreatorId(obrasMap.get(editandoId));
     } else {
-      creatorIdResolved = String(form.adminCreatorId || '').trim();
+      creatorIdResolved = String(creatorLookupResolved?.uid || '').trim();
+    }
+    if (!isValidCreatorUid(creatorIdResolved)) {
+      blockSave('invalid-resolved-author', ['Autor da obra inválido. Resolva um @username válido antes de salvar.'], {
+        creatorIdResolved,
+      });
+      return;
     }
     const ownerUidStorage = segmentoStorageOwnerUid(creatorIdResolved);
     const obraStorageSegment = sanitizarSegmentoStorage(editandoId || slugNovo, 'obra');
@@ -718,6 +1003,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       const msg = `Falha ao salvar obra: ${mensagemErroFirebase(e)}`;
       setErro(msg);
       openSaveErrorModal([msg]);
+      console.error('[ObrasAdmin] save failed', {
+        workspace,
+        editandoId,
+        obraSelecionadaId,
+        uid: user?.uid || '',
+        error: e,
+      });
     } finally {
       saveInFlightRef.current = false;
       setSaving(false);
@@ -732,8 +1024,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     if (!file) return;
     const erroValid = validarImagemUpload(file, 'Capa');
     if (erroValid) {
-      setErro(erroValid);
-      openSaveErrorModal([erroValid]);
+      blockSave('invalid-cover-file', [erroValid]);
       return;
     }
     setErro('');
@@ -745,8 +1036,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     if (!file) return;
     const erroValid = validarImagemUpload(file, 'Banner');
     if (erroValid) {
-      setErro(erroValid);
-      openSaveErrorModal([erroValid]);
+      blockSave('invalid-banner-file', [erroValid]);
       return;
     }
     setErro('');
@@ -973,6 +1263,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       setErro('Sem permissão.');
       return;
     }
+    if (!(await ensureMangakaClaimForWrite('alterar a publicação da obra'))) {
+      return;
+    }
     try {
       await update(dbRef(db, `obras/${obra.id}`), {
         isPublished: !(obra.isPublished === true),
@@ -987,6 +1280,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     clearMsgs();
     if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
       setErro('Sem permissão para apagar esta obra.');
+      return;
+    }
+    if (!(await ensureMangakaClaimForWrite('apagar a obra'))) {
       return;
     }
     if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) {
@@ -1104,7 +1400,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               {editandoId
                 ? `Modo atual: editando "${form.titulo || editandoId}"`
                 : isMangaka
-                  ? 'Modo atual: preparando uma nova obra para seu catalogo'
+                  ? 'Modo atual: preparando uma nova obra para seu catálogo'
                   : 'Modo atual: criando nova obra'}
             </p>
           </section>
@@ -1115,7 +1411,11 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
               <p>{isMangaka ? 'Defina como sua obra vai aparecer para os leitores.' : 'Defina a identidade principal da obra.'}</p>
             </header>
             {!validationLive.ok && validationLive.errors.length > 0 ? (
-              <ul className="obra-validation-errors" aria-live="polite">
+              <ul
+                className="obra-validation-errors"
+                aria-live={saveAttempted ? 'assertive' : 'polite'}
+                data-save-attempted={saveAttempted ? 'true' : 'false'}
+              >
                 {validationLive.errors.map((msg) => (
                   <li key={msg}>{msg}</li>
                 ))}
@@ -1123,31 +1423,66 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
             ) : null}
             {!isMangaka ? (
               <label className="obra-field-full">
-                Autor da obra (UID Firebase){!editandoId ? ' *' : ''}
+                Autor da obra{!editandoId ? ' *' : ''}
                 <input
                   type="text"
-                  list="obra-creator-uid-options"
+                  list="obra-creator-options"
                   autoComplete="off"
-                  value={form.adminCreatorId}
-                  onChange={(e) => setForm((p) => ({ ...p, adminCreatorId: e.target.value }))}
-                  placeholder="Cole o UID do criador"
+                  value={creatorLookupInput}
+                  onChange={(e) => handleCreatorLookupChange(e.target.value)}
+                  placeholder="Digite o @username do autor"
                 />
-                <datalist id="obra-creator-uid-options">
-                  {creatorUidOptions.map((uid) => (
-                    <option key={uid} value={uid} />
+                <datalist id="obra-creator-options">
+                  {creatorDirectory.map((entry) => (
+                    <option key={entry.uid} value={formatCreatorLookupOption(entry)} />
                   ))}
                 </datalist>
                 <small className="field-help">
                   {!editandoId
-                    ? 'Obrigatório: deve ser o UID real do criador no Firebase Auth (sugestões vêm de obras já cadastradas).'
-                    : 'Você pode reatribuir a obra a outro criador alterando o UID. Valor atual = dono gravado no banco (ou UID legado da plataforma).'}
+                    ? 'Busque o autor por @username. A interface resolve o usuário e salva o uid internamente.'
+                    : 'Você pode reatribuir a obra buscando pelo @username do autor.'}
                 </small>
+                {resolvedCreatorLookup ? (
+                  <div className="obra-author-preview" role="status" aria-live="polite">
+                    <img
+                      className="obra-author-preview__avatar"
+                      src={resolvedCreatorLookup.avatarUrl || '/assets/fotos/shito.jpg'}
+                      alt={resolvedCreatorLookup.displayName || resolvedCreatorLookup.handle || 'Autor selecionado'}
+                    />
+                    <div className="obra-author-preview__meta">
+                      <strong>{resolvedCreatorLookup.displayName || 'Autor selecionado'}</strong>
+                      <span>{resolvedCreatorLookup.handle ? '@' + resolvedCreatorLookup.handle : 'Sem @username público'}</span>
+                      <small>{resolvedCreatorLookup.isCreator ? 'Perfil de creator ativo' : 'Conta encontrada no diretório'}</small>
+                    </div>
+                  </div>
+                ) : creatorNeedsSelection ? (
+                  <small className="field-help" style={{ color: '#ffb3b3' }}>
+                    Autor não encontrado. Escolha um resultado válido pelo @username antes de salvar.
+                  </small>
+                ) : form.adminCreatorId ? (
+                  <small className="field-help" style={{ color: '#ffb3b3' }}>
+                    O autor atual desta obra não foi resolvido no diretório. Reselecione um autor antes de salvar.
+                  </small>
+                ) : null}
               </label>
             ) : null}
             {isMangaka ? (
-              <p className="field-help obra-field-full" style={{ marginBottom: '12px' }}>
-                Autor vinculado: sua conta ({user?.uid || '—'}).
-              </p>
+              <div className="obra-author-preview obra-field-full" role="status" aria-live="polite" style={{ marginBottom: '12px' }}>
+                <img
+                  className="obra-author-preview__avatar"
+                  src={creatorWorkspaceProfile?.avatarUrl || '/assets/fotos/shito.jpg'}
+                  alt={creatorWorkspaceProfile?.displayName || creatorWorkspaceProfile?.handle || 'Autor vinculado'}
+                />
+                <div className="obra-author-preview__meta">
+                  <strong>{creatorWorkspaceProfile?.displayName || 'Autor vinculado'}</strong>
+                  <span>
+                    {creatorWorkspaceProfile?.handle
+                      ? '@' + creatorWorkspaceProfile.handle
+                      : 'Sem @username público'}
+                  </span>
+                  <small>Autor vinculado: sua conta. O vínculo técnico continua salvo só internamente.</small>
+                </div>
+              </div>
             ) : null}
             <div className="obra-grid">
               <label>
@@ -1484,7 +1819,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
             <button
               type="button"
               className="btn-pri"
-              disabled={saving || !validationLive.ok}
+              disabled={saving}
               onClick={salvarObra}
             >
               {saving ? 'Salvando...' : editandoId ? 'Salvar alterações' : 'Criar obra'}
@@ -1587,3 +1922,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     </main>
   );
 }
+
+
+

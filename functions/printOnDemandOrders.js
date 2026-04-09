@@ -561,7 +561,7 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
   await orderRef.set(order);
   await pushPodOrderEvent(db, orderId, {
     type: 'order_created',
-    message: 'Pedido criado — aguardando pagamento (reserva de 3 horas).',
+    message: 'Pedido criado - aguardando pagamento (reserva de 24 horas).',
     actor: 'system',
   });
   return { orderId, order };
@@ -915,10 +915,10 @@ export const adminPatchPrintOnDemandOrderSuper = onCall({ region: 'us-central1' 
   return { ok: true };
 });
 
-/** Cancela reservas pending após 3h sem pagamento (alinhado a `POD_PENDING_PAYMENT_TTL_MS`). */
+/** Cancela reservas pending após 24h sem pagamento (alinhado a `POD_PENDING_PAYMENT_TTL_MS`). */
 export const expirePrintOnDemandPendingPayments = onSchedule(
   {
-    schedule: 'every 5 minutes',
+    schedule: 'every 24 hours',
     timeZone: 'America/Sao_Paulo',
     memory: '256MiB',
     timeoutSeconds: 120,
@@ -940,14 +940,14 @@ export const expirePrintOnDemandPendingPayments = onSchedule(
         status: 'cancelled',
         cancelledAt: now,
         autoCancelled: true,
-        cancelReasonCode: 'payment_timeout_3h',
+        cancelReasonCode: 'payment_timeout_24h',
         adminCancellationReason:
-          'Pedido cancelado automaticamente: prazo de 3 horas para pagamento sem confirmacao.',
+          'Pedido cancelado automaticamente: prazo de 24 horas para pagamento sem confirmacao.',
         updatedAt: now,
       });
       await pushPodOrderEvent(db, id, {
         type: 'auto_expired',
-        message: 'Reserva expirada (3h sem pagamento).',
+        message: 'Reserva expirada (24h sem pagamento).',
         actor: 'system',
       });
       const uid = String(r.creatorUid || '');

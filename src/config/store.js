@@ -40,7 +40,7 @@ export const STORE_DEFAULT_CONFIG = {
   /** Texto opcional exibido após compra (ex.: benefício no site). */
   postPurchaseThanks: '',
   /** Hero da loja (vitrine marca). */
-  heroEyebrow: 'MangaTeofilo Â· Loja do universo',
+  heroEyebrow: 'MangaTeofilo ? Loja do universo',
   heroTitle: 'KOKUIN COLLECTION',
   heroSubtitle: 'Peças e edições do universo — streetwear, minimal e identidade de marca.',
   shippingRegions: normalizeShippingRegions({}),

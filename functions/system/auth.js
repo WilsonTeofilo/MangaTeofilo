@@ -64,6 +64,19 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function getUserAuthMethods(userRecord) {
+  const providerIds = new Set(
+    Array.isArray(userRecord?.providerData)
+      ? userRecord.providerData.map((item) => String(item?.providerId || '').trim()).filter(Boolean)
+      : []
+  );
+  return {
+    userExists: Boolean(userRecord),
+    hasPassword: Boolean(userRecord?.passwordHash) || providerIds.has('password') || providerIds.has('email'),
+    hasGoogle: providerIds.has('google.com'),
+  };
+}
+
 function profileHasRetainedHistory(profile) {
   if (!profile || typeof profile !== 'object') return false;
   return Boolean(
@@ -247,7 +260,7 @@ async function deleteUserEverywhere(uid, profile = null, publicProfile = null) {
 }
 
 const EMAIL_BRAND_TITLE = 'MangaTeofilo';
-const EMAIL_BRAND_TAGLINE = 'Sua plataforma de mangÃ¡s favorito';
+const EMAIL_BRAND_TAGLINE = 'Sua plataforma de mangás favorita';
 
 function buildLoginEmailHtml(code, isNewUser) {
   return `<!DOCTYPE html>
@@ -266,19 +279,19 @@ function buildLoginEmailHtml(code, isNewUser) {
           <tr>
             <td style="padding:36px 40px;text-align:center;">
               <p style="color:#aaa;font-size:14px;margin:0 0 24px;">
-                ${isNewUser ? 'Uma nova alma estÃ¡ prestes a despertar.' : 'Bem-vindo de volta ao MangaTeofilo.'}
+                ${isNewUser ? 'Uma nova alma está prestes a despertar.' : 'Bem-vindo de volta ao MangaTeofilo.'}
               </p>
-              <p style="color:#fff;font-size:14px;margin:0 0 16px;">Seu cÃ³digo de acesso:</p>
+              <p style="color:#fff;font-size:14px;margin:0 0 16px;">Seu código de acesso:</p>
               <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:20px;margin:0 auto 24px;">
                 <span style="font-size:36px;font-weight:900;letter-spacing:10px;color:#ffcc00;">${code}</span>
               </div>
               <p style="color:#666;font-size:13px;margin:0 0 8px;">Expira em <strong style="color:#aaa">10 minutos</strong></p>
-              <p style="color:#666;font-size:12px;margin:0;">NÃ£o compartilhe este cÃ³digo com ninguÃ©m.</p>
+              <p style="color:#666;font-size:12px;margin:0;">Não compartilhe este código com ninguém.</p>
             </td>
           </tr>
           <tr>
             <td style="padding:16px 40px 24px;text-align:center;border-top:1px solid #1a1a1a;">
-              <p style="color:#444;font-size:11px;margin:0;">Se vocÃª nÃ£o solicitou este cÃ³digo, ignore este e-mail.</p>
+              <p style="color:#444;font-size:11px;margin:0;">Se você não solicitou este código, ignore este e-mail.</p>
             </td>
           </tr>
         </table>
@@ -290,7 +303,7 @@ function buildLoginEmailHtml(code, isNewUser) {
 
 export const cleanupUsers = onSchedule(
   {
-    schedule: 'every 15 minutes',
+    schedule: 'every 24 hours',
     timeZone: 'America/Sao_Paulo',
     memory: '256MiB',
     timeoutSeconds: 120,
@@ -357,7 +370,7 @@ export const sendLoginCode = onRequest(
   async (req, res) => {
     await handleCors(req, res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
-    if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'Metodo nao permitido' }); return; }
+    if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'Método não permitido.' }); return; }
 
     try {
       const body = parseBody(req);
@@ -365,22 +378,30 @@ export const sendLoginCode = onRequest(
       const signupExplicit = body.signup === true || body.signup === 'true';
       const normEmail = normalizeEmail(email);
       if (!normEmail || !normEmail.includes('@') || !normEmail.includes('.')) {
-        res.status(400).json({ ok: false, error: 'E-mail invalido.' });
+        res.status(400).json({ ok: false, error: 'E-mail inválido.' });
         return;
       }
 
-      let userExists = false;
+      let userRecord = null;
       try {
-        await getAuth().getUserByEmail(normEmail);
-        userExists = true;
+        userRecord = await getAuth().getUserByEmail(normEmail);
       } catch (authErr) {
         if (authErr?.code !== 'auth/user-not-found') throw authErr;
       }
+      const { userExists, hasPassword, hasGoogle } = getUserAuthMethods(userRecord);
       if (!userExists && !signupExplicit) {
         res.status(400).json({
           ok: false,
           code: 'NO_AUTH_USER',
-          error: 'Nenhuma conta com este e-mail. Use login com Google se foi assim que entrou, ou toque em criar conta para receber o cÃ³digo.',
+          error: 'Nenhuma conta com este e-mail. Use login com Google se foi assim que entrou, ou toque em criar conta para receber o código.',
+        });
+        return;
+      }
+      if (userExists && !signupExplicit && hasGoogle && !hasPassword) {
+        res.status(409).json({
+          ok: false,
+          code: 'GOOGLE_ONLY_AUTH',
+          error: 'Este e-mail já está vinculado a login com Google. Use "Conectar com Google" para entrar.',
         });
         return;
       }
@@ -390,7 +411,7 @@ export const sendLoginCode = onRequest(
         await assertLoginCodeRateLimits(db, loginCodeKey(normEmail), req);
       } catch (rlErr) {
         if (rlErr?.code === 'RATE_LIMIT') {
-          res.status(429).json({ ok: false, error: 'Muitas solicitacoes. Aguarde antes de pedir outro codigo.' });
+          res.status(429).json({ ok: false, error: 'Muitas solicitações. Aguarde antes de pedir outro código.' });
           return;
         }
         throw rlErr;
@@ -406,27 +427,21 @@ export const sendLoginCode = onRequest(
         attempts: 0,
       });
 
-      let isNewUser = false;
-      try {
-        await getAuth().getUserByEmail(normEmail);
-      } catch (err) {
-        if (err?.code === 'auth/user-not-found') isNewUser = true;
-        else throw err;
-      }
+      const isNewUser = !userExists;
 
       await getTransporter().sendMail({
         from: getSmtpFrom(),
         to: normEmail,
-        subject: isNewUser ? 'Seu cÃ³digo para cadastrar no MangaTeofilo' : 'Seu cÃ³digo de acesso ao MangaTeofilo',
-        text: `Seu cÃ³digo de acesso Ã©: ${code}\n\nEle vale por 10 minutos. NÃ£o compartilhe.\n\nSe nÃ£o pediu, ignore.`,
+        subject: isNewUser ? 'Seu código para cadastrar no MangaTeofilo' : 'Seu código de acesso ao MangaTeofilo',
+        text: `Seu código de acesso é: ${code}\n\nEle vale por 10 minutos. Não compartilhe.\n\nSe não pediu, ignore.`,
         html: buildLoginEmailHtml(code, isNewUser),
       });
 
-      logger.info(`Codigo enviado para ${normEmail} | novo: ${isNewUser}`);
-      res.status(200).json({ ok: true, isNewUser });
+      logger.info(`Código enviado para ${normEmail} | novo: ${isNewUser}`);
+      res.status(200).json({ ok: true, isNewUser, userExists, hasPassword, hasGoogle });
     } catch (err) {
       logger.error('Erro em sendLoginCode:', err?.message || String(err));
-      res.status(500).json({ ok: false, error: 'Falha ao enviar codigo. Tente novamente.' });
+      res.status(500).json({ ok: false, error: 'Falha ao enviar código. Tente novamente.' });
     }
   }
 );
@@ -440,7 +455,7 @@ export const verifyLoginCode = onRequest(
   async (req, res) => {
     await handleCors(req, res);
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
-    if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'Metodo nao permitido' }); return; }
+    if (req.method !== 'POST') { res.status(405).json({ ok: false, error: 'Método não permitido.' }); return; }
 
     try {
       const { email, code } = parseBody(req);
@@ -448,7 +463,7 @@ export const verifyLoginCode = onRequest(
       const codeStr = String(code || '').trim();
 
       if (!normEmail || !normEmail.includes('@') || codeStr.length !== 6) {
-        res.status(400).json({ ok: false, error: 'Dados invalidos.' });
+        res.status(400).json({ ok: false, error: 'Dados inválidos.' });
         return;
       }
 
@@ -457,7 +472,7 @@ export const verifyLoginCode = onRequest(
         await assertVerifyLoginCodeRateLimits(db, loginCodeKey(normEmail), req);
       } catch (rlErr) {
         if (rlErr?.code === 'RATE_LIMIT') {
-          res.status(429).json({ ok: false, error: 'Muitas tentativas de validacao. Aguarde antes de tentar novamente.' });
+          res.status(429).json({ ok: false, error: 'Muitas tentativas de validação. Aguarde antes de tentar novamente.' });
           return;
         }
         throw rlErr;
@@ -466,7 +481,7 @@ export const verifyLoginCode = onRequest(
       const snap = await cRef.get();
 
       if (!snap.exists()) {
-        res.status(400).json({ ok: false, error: 'Codigo invalido ou expirado.' });
+        res.status(400).json({ ok: false, error: 'Código inválido ou expirado.' });
         return;
       }
 
@@ -476,34 +491,44 @@ export const verifyLoginCode = onRequest(
 
       if (!dados.expiresAt || now > Number(dados.expiresAt)) {
         await cRef.remove();
-        res.status(400).json({ ok: false, error: 'Codigo expirado. Peca um novo.' });
+        res.status(400).json({ ok: false, error: 'Código expirado. Peça um novo.' });
         return;
       }
       if (attempts >= 5) {
         await cRef.remove();
-        res.status(429).json({ ok: false, error: 'Muitos erros. Peca um novo codigo.' });
+        res.status(429).json({ ok: false, error: 'Muitos erros. Peça um novo código.' });
         return;
       }
       if (dados.code !== codeStr) {
         await cRef.update({ attempts: attempts + 1 });
-        res.status(400).json({ ok: false, error: `Codigo incorreto. ${4 - attempts} tentativa(s) restante(s).` });
+        res.status(400).json({ ok: false, error: `Código incorreto. ${4 - attempts} tentativa(s) restante(s).` });
         return;
       }
 
       await cRef.remove();
-      let isNewUser = false;
+      let userRecord = null;
       try {
-        await getAuth().getUserByEmail(normEmail);
+        userRecord = await getAuth().getUserByEmail(normEmail);
       } catch (err) {
-        if (err?.code === 'auth/user-not-found') isNewUser = true;
-        else throw err;
+        if (err?.code !== 'auth/user-not-found') throw err;
+      }
+      const { userExists, hasPassword, hasGoogle } = getUserAuthMethods(userRecord);
+      const isNewUser = !userExists;
+
+      if (!isNewUser && hasGoogle && !hasPassword) {
+        res.status(409).json({
+          ok: false,
+          code: 'GOOGLE_ONLY_AUTH',
+          error: 'Este e-mail já está cadastrado com login pelo Google. Use "Conectar com Google".',
+        });
+        return;
       }
 
-      logger.info(`Codigo verificado para ${normEmail} | novo: ${isNewUser}`);
-      res.status(200).json({ ok: true, isNewUser });
+      logger.info(`Código verificado para ${normEmail} | novo: ${isNewUser}`);
+      res.status(200).json({ ok: true, isNewUser, userExists, hasPassword, hasGoogle });
     } catch (err) {
       logger.error('Erro em verifyLoginCode:', err?.message || String(err));
-      res.status(500).json({ ok: false, error: 'Falha ao validar codigo. Tente novamente.' });
+      res.status(500).json({ ok: false, error: 'Falha ao validar código. Tente novamente.' });
     }
   }
 );

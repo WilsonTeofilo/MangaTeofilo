@@ -129,12 +129,10 @@ export default function Header({ usuario, perfil, adminAccess }) {
       const conteudoMenuBits = [];
       const adminObrasOk = canAccessAdminPath('/admin/obras', adminAccess);
       const adminCapitulosOk = canAccessAdminPath('/admin/capitulos', adminAccess);
-      const adminEditorOk = canAccessAdminPath('/admin/manga', adminAccess);
-      if (adminObrasOk || adminCapitulosOk || adminEditorOk) {
+      if (adminObrasOk || adminCapitulosOk) {
         conteudoMenuBits.push({ type: 'heading', label: 'Conteudo global' });
         if (adminObrasOk) conteudoMenuBits.push({ label: 'Obras', path: '/admin/obras' });
         if (adminCapitulosOk) conteudoMenuBits.push({ label: 'Capitulos', path: '/admin/capitulos' });
-        if (adminEditorOk) conteudoMenuBits.push({ label: 'Editor global', path: '/admin/manga' });
       }
 
       menus.push({

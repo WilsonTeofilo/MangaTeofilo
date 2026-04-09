@@ -141,30 +141,9 @@ function toMs(value) {
 
 function normalizePremiumEntitlement(profile = {}) {
   const raw = profile?.userEntitlements?.global;
-  const rawExists =
-    raw &&
-    typeof raw === 'object' &&
-    (typeof raw.isPremium === 'boolean' ||
-      typeof raw.memberUntil === 'number' ||
-      typeof raw.premiumUntil === 'number' ||
-      String(raw.status || '').trim().length > 0);
-
-  const fallbackUntil = rawExists ? 0 : toMs(profile?.memberUntil);
-  const fallbackStatus =
-    rawExists
-      ? 'inativo'
-      : String(profile?.membershipStatus || (fallbackUntil > Date.now() ? 'ativo' : 'inativo'))
-          .trim()
-          .toLowerCase() || 'inativo';
-  const fallbackIsPremium =
-    !rawExists &&
-    String(profile?.accountType || '').trim().toLowerCase() === 'premium' &&
-    fallbackStatus === 'ativo' &&
-    fallbackUntil > Date.now();
-
-  const memberUntil = toMs(raw?.memberUntil || raw?.premiumUntil || fallbackUntil);
-  const status = String(raw?.status || fallbackStatus).trim().toLowerCase() || 'inativo';
-  const isPremium = raw?.isPremium === true || (fallbackIsPremium && status === 'ativo' && memberUntil > Date.now());
+  const memberUntil = toMs(raw?.memberUntil || raw?.premiumUntil);
+  const status = String(raw?.status || (memberUntil > Date.now() ? 'ativo' : 'inativo')).trim().toLowerCase() || 'inativo';
+  const isPremium = raw?.isPremium === true;
 
   return {
     isPremium: Boolean(isPremium && memberUntil > Date.now() && status === 'ativo'),
@@ -1133,6 +1112,8 @@ export const assinaturasPremiumDiario = onSchedule(
       const statusMembro = premiumEntitlement.status;
       const mu = premiumEntitlement.memberUntil;
       const premiumProjectionStillActive =
+        premiumEntitlement.isPremium === true ||
+        statusMembro === 'ativo' ||
         String(profile?.accountType || 'comum').toLowerCase() === 'premium' ||
         String(profile?.membershipStatus || '').trim().toLowerCase() === 'ativo';
       const appStatus = profile?.status;

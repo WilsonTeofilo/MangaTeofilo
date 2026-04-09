@@ -20,7 +20,7 @@ import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada, obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
-import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
+import { formatUserDisplayWithHandle, normalizePublicHandle } from '../../utils/publicCreatorName';
 import {
   buildPublicProfileFromUsuarioRow,
   resolvePublicProfileAvatarUrl,
@@ -309,7 +309,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
   const abrirCriador = () => {
     const alvo = obraParaExibir || obra;
-    navigate(`/criador/${encodeURIComponent(obraCreatorId(alvo))}`);
+    const creatorId = String(obraCreatorId(alvo) || '').trim();
+    if (!creatorId) return;
+    navigate(`/criador/${encodeURIComponent(creatorId)}`);
   };
 
   const salvarAvisosObra = async () => {
@@ -374,8 +376,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   }
 
   const creatorUidObra = obraCreatorId(obraParaExibir);
-  const creatorHandle = String(creatorProfile?.userHandle || '').trim().toLowerCase();
-  const creatorPorLabel = formatUserDisplayWithHandle(creatorProfile);
+  const creatorHandle = normalizePublicHandle(creatorProfile);
+  const creatorPorLabel = formatUserDisplayWithHandle(creatorProfile, 'Autor');
   const obraViews = Number(obraParaExibir.viewsCount || obraParaExibir.visualizacoes || 0);
   const obraLikes = Number(obraParaExibir.likesCount || obraParaExibir.curtidas || 0);
 
@@ -461,14 +463,18 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
               <button type="button" className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`} onClick={toggleFavorito}>
                 {isFavorito ? 'â˜… Desfavoritar' : 'â˜† Favoritar'}
               </button>
-              <Link className="btn-obra-fav-page" to={`/criador/${encodeURIComponent(creatorUidObra)}`}>
-                Ver criador
-              </Link>
+              {creatorUidObra ? (
+                <Link className="btn-obra-fav-page" to={`/criador/${encodeURIComponent(creatorUidObra)}`}>
+                  Ver criador
+                </Link>
+              ) : null}
             </div>
             <nav className="obra-seo-nav" aria-label="NavegaÃ§Ã£o do catÃ¡logo">
               <Link to="/works">Mais mangÃ¡s para ler online</Link>
               <span aria-hidden="true"> Â· </span>
-              <Link to={`/criador/${encodeURIComponent(creatorUidObra)}`}>PÃ¡gina do autor</Link>
+              {creatorUidObra ? (
+                <Link to={`/criador/${encodeURIComponent(creatorUidObra)}`}>PÃ¡gina do autor</Link>
+              ) : null}
             </nav>
             {user?.uid ? (
               <div className="obra-notify-box">

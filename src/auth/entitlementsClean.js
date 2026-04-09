@@ -3,7 +3,8 @@
  *
  * PREMIUM DA PLATAFORMA (global)
  * - Canonico: `usuarios/{uid}/userEntitlements/global`
- * - Projecao compat: `usuarios/{uid}`: accountType, membershipStatus, memberUntil
+ * - Projecao compat legada: `usuarios/{uid}`: accountType, membershipStatus, memberUntil
+ * - Novos fluxos nao devem decidir acesso usando esses campos top-level.
  * - Beneficios: remocao de anuncios, perks globais e cosmeticos globais.
  * - Nao libera conteudo antecipado de criadores.
  *

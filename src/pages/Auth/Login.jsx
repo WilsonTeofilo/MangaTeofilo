@@ -8,7 +8,6 @@ import {
   signInWithPopup,
   sendPasswordResetEmail,
   signOut,
-  fetchSignInMethodsForEmail,
 } from 'firebase/auth';
 import { ref, get, onValue, update } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
@@ -148,7 +147,7 @@ export default function Login() {
   };
   // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');
-  /** Após código: usuário tem senha no site e também Google — mostrar alternativa */
+  /** Após codigo: usuario tem senha no site e tambem Google — mostrar alternativa */
   const [mostrarGoogleComoAlternativa, setMostrarGoogleComoAlternativa] = useState(false);
   const [email,           setEmail]           = useState('');
   const [code,            setCode]            = useState('');
@@ -164,7 +163,7 @@ export default function Login() {
   const [listaAvatares,   setListaAvatares]   = useState(LISTA_AVATARES);
   const [selectedAvatar,  setSelectedAvatar]  = useState(LISTA_AVATARES[0] || AVATAR_FALLBACK);
   const [signupIntent,    setSignupIntent]    = useState('reader');
-  /** Fluxo explícito "criar conta" — envia código mesmo sem usuário no Auth */
+  /** Fluxo explícito "criar conta" — envia codigo mesmo sem usuario no Auth */
   const [signupCodeMode, setSignupCodeMode]    = useState(false);
   const lastCodeWasSignupRef = useRef(false);
 
@@ -177,7 +176,7 @@ export default function Login() {
 
   const validarEmailComDica = (rawEmail) => {
     const norm = normalizeLoginEmail(rawEmail);
-    if (!norm) return { ok: false, message: 'Informe um e-mail válido.' };
+    if (!norm) return { ok: false, message: 'Informe um e-mail valido.' };
     if (norm.includes('@gmail') && !norm.endsWith('@gmail.com') && !norm.endsWith('@googlemail.com')) {
       return {
         ok: false,
@@ -196,12 +195,12 @@ export default function Login() {
     ];
     for (const [bad, good] of domainTypos) {
       if (norm.endsWith(bad)) {
-        return { ok: false, message: `Confira o domínio do e-mail (ex.: …${good}).` };
+        return { ok: false, message: `Confira o dominio do e-mail (ex.: ...${good}).` };
       }
     }
     const emailRegex = /^[\w-.]+@[\w-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(norm)) {
-      return { ok: false, message: 'Informe um e-mail válido (ex: usuario@email.com).' };
+      return { ok: false, message: 'Informe um e-mail valido (ex: usuario@email.com).' };
     }
     return { ok: true, email: norm };
   };
@@ -293,7 +292,7 @@ export default function Login() {
   };
 
   /**
-   * Envia código por e-mail. `signupExplicit`: true = cadastro novo (servidor envia mesmo sem Auth).
+   * Envia codigo por e-mail. `signupExplicit`: true = cadastro novo (servidor envia mesmo sem Auth).
    * Retorna true se ok.
    */
   const enviarCodigoLogin = async (signupExplicit = false) => {
@@ -312,46 +311,6 @@ export default function Login() {
     const emailNorm = validacao.email;
     setEmail(emailNorm);
 
-    if (!signupExplicit) {
-      try {
-        const methods = await fetchSignInMethodsForEmail(auth, emailNorm);
-        const temGoogle = methods.includes('google.com');
-        const temSenhaSite = methods.includes('password');
-
-        if (temGoogle && !temSenhaSite) {
-          setStep('existing-google');
-          setSignupCodeMode(false);
-          setError('');
-          setInfo(
-            'Este e-mail já está cadastrado com login pelo Google. A senha do Gmail não vale aqui — use «Conectar com Google». Não há perfil com e-mail e senha neste site para esse endereço.'
-          );
-          return false;
-        }
-
-        if (methods.length === 0) {
-          setSignupCodeMode(true);
-          setError('');
-          setInfo(
-            'Não encontramos conta com este e-mail no MangaTeofilo. Se você já entrou com Google, use o botão Google. Para cadastrar com e-mail, use «Receber código para criar conta» abaixo (evita gastar e-mail à toa).'
-          );
-          return false;
-        }
-
-        if (temGoogle && temSenhaSite) {
-          setInfo('Esta conta tem Google e senha no site — você pode usar o código ou qualquer um dos dois.');
-        } else {
-          setInfo('');
-        }
-      } catch {
-        setSignupCodeMode(true);
-        setError('');
-        setInfo(
-          'Não conseguimos consultar o e-mail agora. Se é cadastro novo, use «Receber código para criar conta». Se já tem conta, use Google ou tente de novo em instantes.'
-        );
-        return false;
-      }
-    }
-
     setLoading(true);
     setError('');
     try {
@@ -360,17 +319,37 @@ export default function Login() {
         signup: signupExplicit === true,
       });
       if (!resp.ok || !data.ok) {
-        const msg =
-          data?.code === 'NO_AUTH_USER'
-            ? String(data.error || 'Nenhuma conta com este e-mail.')
-            : data.error || 'Não foi possível enviar o código.';
-        throw new Error(msg);
+        if (!signupExplicit && data?.code === 'NO_AUTH_USER') {
+          setSignupCodeMode(true);
+          setError('');
+          setInfo(
+            'Não encontramos conta com este e-mail no MangaTeofilo. Se você já entrou com Google, use "Conectar com Google". Para cadastrar com e-mail, use "Receber código para criar conta" abaixo.'
+          );
+          return false;
+        }
+        if (!signupExplicit && data?.code === 'GOOGLE_ONLY_AUTH') {
+          setStep('existing-google');
+          setSignupCodeMode(false);
+          setError('');
+          setInfo(
+            String(
+              data.error ||
+                'Este e-mail já está cadastrado com login pelo Google. Use "Conectar com Google".'
+            )
+          );
+          return false;
+        }
+        throw new Error(data.error || 'Não foi possível enviar o código.');
       }
 
       registerAttemptResult('sendCode', true);
       lastCodeWasSignupRef.current = signupExplicit === true;
       setSignupCodeMode(false);
-      setInfo('Código enviado! Confira seu e-mail (e spam) e digite abaixo.');
+      setInfo(
+        data?.hasGoogle && data?.hasPassword
+          ? 'Código enviado. Esta conta aceita Google e senha do site; confira o e-mail e siga.'
+          : 'Código enviado. Confira seu e-mail (e spam) e digite abaixo.'
+      );
       setResendCooldown(45);
       return true;
     } catch (err) {
@@ -381,7 +360,6 @@ export default function Login() {
       setLoading(false);
     }
   };
-
   const handleSendCode = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -404,7 +382,7 @@ export default function Login() {
     await enviarCodigoLogin(lastCodeWasSignupRef.current === true);
   };
 
-  // --- FLUXO: 2) VALIDAR CÓDIGO ────────────────────────────────────────────
+  // --- FLUXO: 2) VALIDAR CODIGO ────────────────────────────────────────────
   const handleVerifyCode = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -444,15 +422,8 @@ export default function Login() {
         return;
       }
 
-      let methods = [];
-      try {
-        methods = await fetchSignInMethodsForEmail(auth, emailNorm);
-      } catch {
-        methods = [];
-      }
-
-      const temSenhaSite = methods.includes('password');
-      const temGoogle = methods.includes('google.com');
+      const temSenhaSite = data?.hasPassword === true;
+      const temGoogle = data?.hasGoogle === true;
 
       if (temSenhaSite) {
         setStep('existing-password');
@@ -460,7 +431,7 @@ export default function Login() {
         setMostrarGoogleComoAlternativa(temGoogle);
         setInfo(
           temGoogle
-            ? 'Digite a senha que você cadastrou neste site. Ela não é a mesma da conta Google — ou use Conectar com Google abaixo.'
+            ? 'Digite a senha que você cadastrou neste site. Ela não é a mesma da conta Google — ou use "Conectar com Google" abaixo.'
             : 'Bem-vindo de volta! Digite a senha que você cadastrou no site.'
         );
         return;
@@ -476,7 +447,7 @@ export default function Login() {
       setPassword('');
       setMostrarGoogleComoAlternativa(false);
       setInfo(
-        'Digite a senha cadastrada neste site, se você criou uma. Se entra só com Google, use o botão Conectar com Google na primeira tela — a senha do Gmail não é usada aqui.'
+        'Digite a senha cadastrada neste site, se você criou uma. Se entra só com Google, use "Conectar com Google" na primeira tela — a senha do Gmail não é usada aqui.'
       );
     } catch (err) {
       registerAttemptResult('verifyCode', false);
@@ -517,6 +488,7 @@ export default function Login() {
         displayName: displayName.trim(),
         photoURL:    avatarSeguro,
       });
+      await refreshAuthUser(cred.user);
 
       const perfil = await ensureUsuarioRecord(
         cred.user,
@@ -541,7 +513,7 @@ export default function Login() {
       setInfo(
         signupIntent === 'creator'
           ? 'Conta criada! Abrindo o cadastro de criador em pagina dedicada.'
-          : 'Conta criada! Bem-vindo à Tempestade.'
+          : 'Conta criada! Bem-vindo a Tempestade.'
       );
       if (signupIntent === 'creator') {
         navigate('/creator/onboarding', { replace: true });
@@ -617,7 +589,7 @@ export default function Login() {
       let msg = base[err.code] || `Erro ao entrar: ${err.code || err.message}`;
       if (['auth/wrong-password', 'auth/invalid-credential', 'auth/user-not-found'].includes(err.code)) {
         msg +=
-          ' Se você criou a conta com Google, a senha do Gmail não funciona aqui — volte e use Conectar com Google.';
+          ' Se você criou a conta com Google, a senha do Gmail não funciona aqui — volte e use "Conectar com Google".';
       }
       setError(msg);
     } finally {
@@ -690,7 +662,7 @@ export default function Login() {
             {signupCodeMode ? (
               <div className="login-signup-code-hint">
                 <p className="login-info-inline">
-                  Primeiro acesso com este e-mail? Receba o código só para cadastro (não gasta tentativa de quem já tem conta).
+                  Primeiro acesso com este e-mail? Receba o código só para cadastro, sem gastar tentativa de quem já tem conta.
                 </p>
                 <button
                   type="button"
@@ -814,7 +786,7 @@ export default function Login() {
                     onClick={() => setSignupIntent('creator')}
                   >
                     <strong>Quero ser mangaka</strong>
-                    <span>Cria a conta agora e envia a solicitacao de creator logo depois, com revisao humana.</span>
+                    <span>Cria a conta agora e envia a solicitação de creator logo depois, com revisão humana.</span>
                   </button>
                 </div>
               </div>
@@ -823,7 +795,7 @@ export default function Login() {
                 <i className="fa-solid fa-user" />
                 <input
                   type="text"
-                  placeholder="Nome do Usuário"
+                  placeholder="Nome do usuário"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   maxLength={DISPLAY_NAME_MAX_LENGTH}
@@ -1019,3 +991,6 @@ export default function Login() {
     </main>
   );
 }
+
+
+

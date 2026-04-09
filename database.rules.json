@@ -344,9 +344,13 @@
             ".write": false
           },
           "stats": {
-            ".read": "auth != null && auth.uid === $uid",
+            ".read": false,
             ".write": false
           }
+        },
+        "creatorMemberships": {
+          ".read": false,
+          ".write": false
         },
         "creator": {
           "profile": {

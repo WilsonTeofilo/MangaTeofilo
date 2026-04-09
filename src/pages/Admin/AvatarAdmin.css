@@ -83,18 +83,41 @@
 }
 
 .avatar-admin-grid {
-  gap: 12px !important;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)) !important;
+  gap: 14px !important;
+  align-items: start !important;
 }
 
 .avatar-admin-card {
   border-color: rgba(255, 255, 255, 0.1) !important;
   background: #141414 !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  min-height: 100% !important;
+  padding: 10px !important;
 }
 
 .avatar-admin-card.dragging {
   border-color: rgba(255, 204, 0, 0.45) !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55) !important;
+}
+
+.avatar-admin-card img {
+  display: block !important;
+  width: 100% !important;
+  min-height: 168px !important;
+  background: #0c0c0c !important;
+}
+
+.avatar-record-warning {
+  display: inline-block;
+  width: fit-content;
+  border: 1px solid rgba(255, 120, 120, 0.35);
+  background: rgba(255, 120, 120, 0.1);
+  color: #ffb0b0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.64rem;
+  font-weight: 700;
 }
 
 .avatar-access-badge.publico {
@@ -111,4 +134,39 @@
   border-color: #303030 !important;
   background: #0f0f0f !important;
   color: #f1f1f1 !important;
+}
+
+@media (max-width: 900px) {
+  .avatar-admin-toolbar {
+    align-items: stretch !important;
+  }
+
+  .avatar-admin-toolbar > .btn-save {
+    width: 100% !important;
+  }
+
+  .avatar-filter-chips {
+    flex-wrap: wrap !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .avatar-admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .avatar-admin-card {
+    padding: 8px !important;
+  }
+
+  .avatar-admin-card img {
+    min-height: 132px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .avatar-admin-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

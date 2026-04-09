@@ -5,9 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { db, functions } from '../../services/firebase';
 import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../../store/cartStore';
-import {
-  applyVipDiscount,
-  getStoreProductBadges,
+import {  getStoreProductBadges,
   groupStoreProductsByCollection,
   normalizeProductCategory,
   normalizeStoreConfig,
@@ -254,7 +252,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
             <span className="loja-vip-strip__icon" aria-hidden="true">
               ?
             </span>
-            <p className="loja-vip-strip__text">Membros VIP recebem desconto exclusivo nos produtos marcados.</p>
+            <p className="loja-vip-strip__text">Membros VIP veem os produtos marcados aqui, mas o desconto final e confirmado no checkout.</p>
           </div>
         ) : null}
 
@@ -273,7 +271,6 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
               <div className="loja-grid--store">
                 {items.map((p) => {
                   const basePrice = Number(p.isOnSale && Number(p.promoPrice) > 0 ? p.promoPrice : p.price || 0);
-                  const finalPrice = applyVipDiscount(basePrice, p, config.vipDiscountPct, vip);
                   const badges = getStoreProductBadges(p);
                   const img = (Array.isArray(p.images) && p.images[0]) || '/assets/fotos/shito.jpg';
                   const outOfStock = Number(p.stock || 0) <= 0;
@@ -323,9 +320,9 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
                           {p.isOnSale === true && Number(p.promoPrice) > 0 && Number(p.price) > Number(p.promoPrice) ? (
                             <span className="loja-pcard__priceOld">R$ {Number(p.price).toFixed(2)}</span>
                           ) : null}
-                          <span className="loja-pcard__price">R$ {finalPrice.toFixed(2)}</span>
-                          {vip && p.isVIPDiscountEnabled === true && finalPrice < basePrice ? (
-                            <span className="loja-pcard__vipTag">VIP</span>
+                          <span className="loja-pcard__price">R$ {basePrice.toFixed(2)}</span>
+                          {vip && p.isVIPDiscountEnabled === true ? (
+                            <span className="loja-pcard__vipTag">VIP no checkout</span>
                           ) : null}
                         </div>
                         <div className="loja-pcard__touch-actions">
@@ -355,3 +352,4 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
     </main>
   );
 }
+

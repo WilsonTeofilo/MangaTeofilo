@@ -56,7 +56,7 @@ export const PERSONAL_UNIT_BRL = {
 export const PLATFORM_APPROVAL_SLA_DAYS = 2;
 export const PERSONAL_DELIVERY_BUFFER_DAYS = 12;
 
-export const POD_PENDING_PAYMENT_TTL_MS = 3 * 60 * 60 * 1000;
+export const POD_PENDING_PAYMENT_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const PRODUCTION_TIME_RULES = {
   [BOOK_FORMAT.TANKOBON]: {

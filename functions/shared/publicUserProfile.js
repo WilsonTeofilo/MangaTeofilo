@@ -14,6 +14,27 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(normalized) ? normalized : fallback;
 }
 
+function hasMeaningfulCreatorFields(source = {}) {
+  return Boolean(
+    String(source.creatorDisplayName || '').trim() ||
+      String(source.creatorBio || '').trim() ||
+      String(source.instagramUrl || '').trim() ||
+      String(source.youtubeUrl || '').trim() ||
+      String(source.creatorBannerUrl || '').trim()
+  );
+}
+
+function hasNestedCreatorProfileData(profile = {}) {
+  return Boolean(
+    String(profile.displayName || '').trim() ||
+      String(profile.bio || '').trim() ||
+      String(profile.bioFull || '').trim() ||
+      String(profile.bioShort || '').trim() ||
+      String(profile.username || '').trim() ||
+      String(profile.avatarUrl || '').trim()
+  );
+}
+
 export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
   const root = asObject(row);
   const source = asObject(root.publicProfile).uid || Object.keys(asObject(root.publicProfile)).length
@@ -48,48 +69,66 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
     source.youtubeUrl || sourceCreatorSocial.youtubeUrl || privateCreatorSocial.youtube || root.youtubeUrl
   );
   const userAvatar = asString(source.userAvatar || root.userAvatar, AVATAR_FALLBACK);
-  const creatorProfile = {
-    ...sourceCreatorProfile,
-    displayName: creatorDisplayName,
-    username: asString(sourceCreatorProfile.username || userHandle).toLowerCase(),
-    bioFull: creatorBio,
-    socialLinks: {
-      ...sourceCreatorSocial,
-      instagramUrl,
-      youtubeUrl,
-    },
-  };
+  const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
+  const signupIntent = asString(source.signupIntent || root.signupIntent, 'reader').toLowerCase();
+  const role = asString(root.role || source.role, 'user').toLowerCase();
+  const isCreatorProfile =
+    creatorStatus === 'active' ||
+    creatorStatus === 'onboarding' ||
+    signupIntent === 'creator' ||
+    role === 'mangaka' ||
+    hasMeaningfulCreatorFields(source) ||
+    hasMeaningfulCreatorFields(root) ||
+    hasNestedCreatorProfileData(sourceCreatorProfile) ||
+    hasNestedCreatorProfileData(privateCreatorProfile);
+  const creatorProfile = isCreatorProfile
+    ? {
+        ...sourceCreatorProfile,
+        displayName: creatorDisplayName,
+        username: asString(sourceCreatorProfile.username || userHandle).toLowerCase(),
+        bioFull: creatorBio,
+        socialLinks: {
+          ...sourceCreatorSocial,
+          instagramUrl,
+          youtubeUrl,
+        },
+      }
+    : null;
 
   return {
     ...source,
     uid: asString(uidOverride || source.uid),
-    userName: asString(source.userName, creatorDisplayName || 'Leitor'),
+    userName: asString(source.userName || root.userName, 'Leitor'),
     userHandle,
     userAvatar,
     accountType: asString(source.accountType, 'comum'),
-    signupIntent: asString(source.signupIntent, 'reader'),
+    signupIntent,
     status: asString(source.status),
-    creatorDisplayName,
+    creatorDisplayName: isCreatorProfile ? creatorDisplayName : '',
     creatorUsername: userHandle,
-    creatorBio,
-    creatorBannerUrl: asString(source.creatorBannerUrl),
+    creatorBio: isCreatorProfile ? creatorBio : '',
+    creatorBannerUrl: isCreatorProfile ? asString(source.creatorBannerUrl) : '',
     instagramUrl,
     youtubeUrl,
     readerProfilePublic: source.readerProfilePublic === true,
     readerProfileAvatarUrl: asString(source.readerProfileAvatarUrl, userAvatar),
     readerSince: asNumber(source.readerSince || root.createdAt || root.readerSince || source.createdAt, 0),
-    creatorStatus: asString(source.creatorStatus),
-    creatorMembershipEnabled: source.creatorMembershipEnabled === true,
+    creatorStatus: isCreatorProfile ? creatorStatus : '',
+    creatorMembershipEnabled: isCreatorProfile && source.creatorMembershipEnabled === true,
     creatorMembershipPriceBRL:
-      source.creatorMembershipPriceBRL == null ? null : Number(source.creatorMembershipPriceBRL),
+      isCreatorProfile && source.creatorMembershipPriceBRL != null
+        ? Number(source.creatorMembershipPriceBRL)
+        : null,
     creatorDonationSuggestedBRL:
-      source.creatorDonationSuggestedBRL == null ? null : Number(source.creatorDonationSuggestedBRL),
+      isCreatorProfile && source.creatorDonationSuggestedBRL != null
+        ? Number(source.creatorDonationSuggestedBRL)
+        : null,
     updatedAt:
       asNumber(
         source.updatedAt || root?.creator?.meta?.updatedAt || root.updatedAt || root.lastLogin || root.createdAt,
         0
       ),
-    creatorProfile,
+    ...(creatorProfile ? { creatorProfile } : {}),
   };
 }
 

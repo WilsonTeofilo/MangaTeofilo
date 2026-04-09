@@ -6,9 +6,11 @@ import { createPortal } from 'react-dom';
 
 import { auth, db, storage } from '../../services/firebase';
 import { resolveAdminAccess } from '../../auth/adminAccess';
+import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
 import { normalizeUsernameInput } from '../../utils/usernameValidation';
+import { isTrustedPlatformAssetUrl } from '../../utils/trustedAssetUrls';
 import {
   normalizarObraId,
   obterObraIdCapitulo,
@@ -101,7 +103,8 @@ function normalizarAjusteObra(raw, dims = null, editorConfig = BANNER_EDITOR_CON
   };
 }
 
-const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/pjpeg'];
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
 /** Meta de peso após processar (~250–500 KB; WebP gerado no navegador; JPG/PNG de entrada ok). */
 const OBRA_WEBP_TARGET_MAX = 500 * 1024;
 const OBRA_WEBP_HARD_MAX = 560 * 1024;
@@ -116,7 +119,11 @@ const BANNER_EDITOR_CONFIG = {
 
 function validarImagemUpload(file, label = 'Imagem') {
   if (!file) return `${label} não encontrado.`;
-  if (!IMAGE_TYPES.includes(file.type)) return `${label} inválido. Use JPG, PNG ou WEBP.`;
+  const fileType = String(file.type || '').trim().toLowerCase();
+  const fileName = String(file.name || '').trim().toLowerCase();
+  const hasAllowedMime = !fileType || IMAGE_TYPES.includes(fileType);
+  const hasAllowedExtension = IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+  if (!hasAllowedMime && !hasAllowedExtension) return `${label} inválida. Use JPG, PNG ou WEBP.`;
   if (file.size > MAX_COVER_UPLOAD_BYTES) {
     return `${label} é grande demais (máx. 1,2 MB). Comprima ou escolha outra imagem.`;
   }
@@ -337,7 +344,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const isMangaka = Boolean(adminAccess?.isMangaka);
   const chaptersPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
   const isCreatorWorkspace = workspace === 'creator';
-  const canAccessWorkspace = isCreatorWorkspace ? isMangaka : Boolean(adminAccess?.canAccessAdmin);
+  const canAccessWorkspace = isCreatorWorkspace
+    ? isMangaka
+    : canAccessAdminPath('/admin/obras', adminAccess);
   const [loading, setLoading] = useState(true);
   const [obrasSnapshotReady, setObrasSnapshotReady] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -768,8 +777,8 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       genres,
       mainGenre: mainG && genres.includes(mainG) ? mainG : genres[0] || '',
       tagsRaw: tagsSanitized.join(', '),
-      capaUrl: obra.capaUrl || '',
-      bannerUrl: obra.bannerUrl || '',
+      capaUrl: isTrustedPlatformAssetUrl(obra.capaUrl, { allowLocalAssets: true }) ? obra.capaUrl : '',
+      bannerUrl: isTrustedPlatformAssetUrl(obra.bannerUrl, { allowLocalAssets: true }) ? obra.bannerUrl : '',
       seoTitle: obra.seoTitle || '',
       seoKeywords: obra.seoKeywords || tagsToSeoKeywords(tagsSanitized),
       status: normalizeStatusForForm(obra.status),
@@ -909,8 +918,12 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       genres: v.genres,
       mainGenre: String(form.mainGenre || '').trim(),
       tags: tagsFinal,
-      capaUrl: String(form.capaUrl || '').trim(),
-      bannerUrl: String(form.bannerUrl || '').trim(),
+      capaUrl: isTrustedPlatformAssetUrl(String(form.capaUrl || '').trim(), { allowLocalAssets: true })
+        ? String(form.capaUrl || '').trim()
+        : '',
+      bannerUrl: isTrustedPlatformAssetUrl(String(form.bannerUrl || '').trim(), { allowLocalAssets: true })
+        ? String(form.bannerUrl || '').trim()
+        : '',
       seoTitle: (seoTitleTrim || tituloTrim).slice(0, SEO_TITLE_MAX),
       seoDescription: v.seoDescription,
       seoKeywords: kwRaw.slice(0, SEO_KEYWORDS_MAX),
@@ -1027,7 +1040,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       blockSave('invalid-cover-file', [erroValid]);
       return;
     }
-    setErro('');
+    clearMsgs();
+    closeSaveErrorModal();
+    setSaveAttempted(false);
     setCapaArquivo(file);
     setCapaAjuste(normalizarAjusteObra());
   };
@@ -1039,7 +1054,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       blockSave('invalid-banner-file', [erroValid]);
       return;
     }
-    setErro('');
+    clearMsgs();
+    closeSaveErrorModal();
+    setSaveAttempted(false);
     setBannerArquivo(file);
     setBannerAjuste(normalizarAjusteObra());
   };
@@ -1635,13 +1652,16 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                   </label>
                 </div>
                 <details>
-                  <summary>Usar URL externa (opcional)</summary>
+                  <summary>URL manual da plataforma (opcional)</summary>
                   <input
                     type="url"
                     value={form.capaUrl}
                     onChange={(e) => setForm((p) => ({ ...p, capaUrl: e.target.value }))}
-                    placeholder="https://..."
+                    placeholder="Cole apenas uma URL do Storage da plataforma"
                   />
+                  <small className="field-help">
+                    Links externos foram bloqueados para evitar tracker e troca de arquivo fora da plataforma.
+                  </small>
                 </details>
               </div>
               <div className="obra-media-card">
@@ -1697,13 +1717,16 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
                   </label>
                 </div>
                 <details>
-                  <summary>Usar URL externa (opcional)</summary>
+                  <summary>URL manual da plataforma (opcional)</summary>
                   <input
                     type="url"
                     value={form.bannerUrl}
                     onChange={(e) => setForm((p) => ({ ...p, bannerUrl: e.target.value }))}
-                    placeholder="https://..."
+                    placeholder="Cole apenas uma URL do Storage da plataforma"
                   />
+                  <small className="field-help">
+                    Links externos foram bloqueados para evitar tracker e troca de arquivo fora da plataforma.
+                  </small>
                 </details>
               </div>
               <aside className="obra-preview obra-preview--in-media">

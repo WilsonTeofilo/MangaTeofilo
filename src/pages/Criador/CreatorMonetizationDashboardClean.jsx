@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import { onValue, push, ref as dbRef, remove, set } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
-import { db } from '../../services/firebase';
+import { db, functions } from '../../services/firebase';
 import {
   resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../../utils/creatorMonetizationUi';
 import { formatarDataHoraBr } from '../../utils/datasBr';
+import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import './CreatorFrame.css';
+
+const creatorRequestPixPayout = httpsCallable(functions, 'creatorRequestPixPayout');
 
 function toList(val) {
   if (!val || typeof val !== 'object') return [];
@@ -28,18 +32,32 @@ function monetizationModeLabel(preference, status) {
   if (pref !== 'monetize') return 'Apenas publicar';
   if (norm === 'active') return 'Ganhos liberados';
   if (norm === 'blocked_underage') return 'Bloqueada por idade';
-  return 'Configuração pendente';
+  return 'Solicitação em análise';
 }
 
-export default function CreatorMonetizationDashboard({ user }) {
+function describeMonetizationStatus(status) {
+  if (status === 'active') {
+    return 'Sua conta já pode receber por apoios, membros e vendas da loja.';
+  }
+  if (status === 'blocked_underage') {
+    return 'Sua conta pode publicar normalmente, mas os ganhos ficam bloqueados por idade.';
+  }
+  return 'Sua conta está no modo apenas publicar. Quando bater as metas, você poderá enviar sua solicitação de monetização.';
+}
+
+export default function CreatorMonetizationDashboardClean({ user }) {
   const navigate = useNavigate();
   const uid = String(user?.uid || '').trim();
   const [perfil, setPerfil] = useState(null);
   const [payments, setPayments] = useState([]);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [balance, setBalance] = useState(null);
+  const [payoutRequests, setPayoutRequests] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [promoTitle, setPromoTitle] = useState('');
   const [promoDescription, setPromoDescription] = useState('');
+  const [payoutAmountDraft, setPayoutAmountDraft] = useState('');
+  const [payoutNotesDraft, setPayoutNotesDraft] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -47,17 +65,27 @@ export default function CreatorMonetizationDashboard({ user }) {
     if (!uid) return () => {};
     const unsubs = [
       onValue(dbRef(db, `usuarios/${uid}`), (snap) => setPerfil(snap.exists() ? snap.val() : null)),
-      onValue(dbRef(db, `creatorData/${uid}/payments`), (snap) => setPayments(toList(snap.exists() ? snap.val() : {}))),
-      onValue(dbRef(db, `creatorData/${uid}/subscriptions`), (snap) => setSubscriptions(toList(snap.exists() ? snap.val() : {}))),
-      onValue(dbRef(db, `creatorData/${uid}/promotions`), (snap) => setPromotions(toList(snap.exists() ? snap.val() : {}))),
+      onValue(dbRef(db, `creatorData/${uid}/payments`), (snap) =>
+        setPayments(toList(snap.exists() ? snap.val() : {}))
+      ),
+      onValue(dbRef(db, `creatorData/${uid}/subscriptions`), (snap) =>
+        setSubscriptions(toList(snap.exists() ? snap.val() : {}))
+      ),
+      onValue(dbRef(db, `creatorData/${uid}/balance`), (snap) =>
+        setBalance(snap.exists() ? snap.val() || null : null)
+      ),
+      onValue(dbRef(db, `creatorData/${uid}/payoutRequests`), (snap) =>
+        setPayoutRequests(toList(snap.exists() ? snap.val() : {}))
+      ),
+      onValue(dbRef(db, `creatorData/${uid}/promotions`), (snap) =>
+        setPromotions(toList(snap.exists() ? snap.val() : {}))
+      ),
     ];
     return () => unsubs.forEach((unsub) => unsub());
   }, [uid]);
 
   const monetizationPreference = resolveCreatorMonetizationPreferenceFromDb(perfil);
-  const monetizationStatusResolved = resolveCreatorMonetizationStatusFromDb(perfil || {});
-  const monetizationStatus = monetizationStatusResolved || 'disabled';
-  const modeLabel = monetizationModeLabel(monetizationPreference, monetizationStatus);
+  const monetizationStatus = resolveCreatorMonetizationStatusFromDb(perfil || {}) || 'disabled';
 
   const paymentSummary = useMemo(() => {
     const summary = {
@@ -117,6 +145,44 @@ export default function CreatorMonetizationDashboard({ user }) {
     [promotions]
   );
 
+  const pendingPayoutRequests = useMemo(
+    () =>
+      payoutRequests
+        .filter((row) => String(row.status || '').trim().toLowerCase() === 'pending')
+        .sort((a, b) => Number(b.requestedAt || 0) - Number(a.requestedAt || 0)),
+    [payoutRequests]
+  );
+
+  const availableForPayout = Number(balance?.availableBRL || 0);
+
+  async function handleRequestPayout(e) {
+    e.preventDefault();
+    if (!uid) return;
+    const parsed = String(payoutAmountDraft || '').trim().replace(',', '.');
+    const amount = parsed ? Number(parsed) : availableForPayout;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage('Informe um valor valido para solicitar o repasse.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const { data } = await creatorRequestPixPayout({
+        amount,
+        notes: String(payoutNotesDraft || '').trim() || null,
+      });
+      setPayoutAmountDraft('');
+      setPayoutNotesDraft('');
+      setMessage(
+        `Solicitacao enviada em ${formatCurrency(data?.amount || amount)}. A equipe vai revisar esse pedido.`
+      );
+    } catch (err) {
+      setMessage(mensagemErroCallable(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleCreatePromotion(e) {
     e.preventDefault();
     const title = String(promoTitle || '').trim();
@@ -151,17 +217,11 @@ export default function CreatorMonetizationDashboard({ user }) {
 
   return (
     <>
-      <section className={`creator-state-card is-${monetizationStatus || 'disabled'}`}>
+      <section className={`creator-state-card is-${monetizationStatus}`}>
         <div>
           <p className="creator-state-card__eyebrow">Estado atual</p>
-          <h2>{modeLabel}</h2>
-            <p>
-              {monetizationStatus === 'active'
-                ? 'Sua conta já pode receber por apoios, membros e vendas da loja.'
-                : monetizationStatus === 'blocked_underage'
-                  ? 'Sua conta pode publicar normalmente, mas os ganhos ficam bloqueados por idade.'
-                  : 'Sua conta está no modo só publicar. Quando bater as metas, você poderá liberar os ganhos no perfil.'}
-            </p>
+          <h2>{monetizationModeLabel(monetizationPreference, monetizationStatus)}</h2>
+          <p>{describeMonetizationStatus(monetizationStatus)}</p>
         </div>
         <div className="creator-frame-actions">
           <button type="button" className="creator-frame-btn" onClick={() => navigate('/perfil')}>
@@ -170,13 +230,92 @@ export default function CreatorMonetizationDashboard({ user }) {
         </div>
       </section>
 
+      <section className="creator-grid-two">
+        <article className="creator-panel-card">
+          <div className="creator-panel-head">
+            <div>
+              <p className="creator-frame-eyebrow">Repasse</p>
+              <h2>Solicitar saque</h2>
+            </div>
+          </div>
+          <ul className="creator-data-list">
+            <li><span>Saldo disponivel</span><strong>{formatCurrency(availableForPayout)}</strong></li>
+            <li><span>Pendente para repasse</span><strong>{formatCurrency(balance?.pendingPayoutBRL || 0)}</strong></li>
+            <li><span>Ja pago</span><strong>{formatCurrency(balance?.paidOutBRL || 0)}</strong></li>
+          </ul>
+          <form className="creator-inline-form" onSubmit={handleRequestPayout}>
+            <input
+              value={payoutAmountDraft}
+              onChange={(e) => setPayoutAmountDraft(e.target.value)}
+              inputMode="decimal"
+              placeholder={availableForPayout > 0 ? String(availableForPayout.toFixed(2)) : '0.00'}
+              disabled={busy || monetizationStatus !== 'active' || pendingPayoutRequests.length > 0 || availableForPayout <= 0}
+            />
+            <textarea
+              rows={3}
+              value={payoutNotesDraft}
+              onChange={(e) => setPayoutNotesDraft(e.target.value)}
+              placeholder="Observacao opcional para a equipe"
+              disabled={busy || monetizationStatus !== 'active' || pendingPayoutRequests.length > 0 || availableForPayout <= 0}
+            />
+            <button
+              type="submit"
+              className="creator-frame-btn is-primary"
+              disabled={busy || monetizationStatus !== 'active' || pendingPayoutRequests.length > 0 || availableForPayout <= 0}
+            >
+              {busy ? 'Enviando...' : 'Solicitar repasse'}
+            </button>
+          </form>
+          {message ? <p className="creator-inline-feedback">{message}</p> : null}
+          {monetizationStatus !== 'active' ? (
+            <p className="creator-empty-copy">O saque so libera quando sua monetizacao estiver aprovada e ativa.</p>
+          ) : null}
+          {pendingPayoutRequests.length ? (
+            <p className="creator-empty-copy">Ja existe uma solicitacao pendente. Aguarde a revisao da equipe.</p>
+          ) : null}
+          {!pendingPayoutRequests.length && monetizationStatus === 'active' && !(availableForPayout > 0) ? (
+            <p className="creator-empty-copy">Seu saldo ainda nao atingiu valor disponivel para repasse.</p>
+          ) : null}
+        </article>
+
+        <article className="creator-panel-card">
+          <div className="creator-panel-head">
+            <div>
+              <p className="creator-frame-eyebrow">Fila atual</p>
+              <h2>Solicitacoes de repasse</h2>
+            </div>
+          </div>
+          {!payoutRequests.length ? (
+            <p className="creator-empty-copy">Nenhuma solicitacao registrada ainda.</p>
+          ) : (
+            <ul className="creator-activity-list">
+              {[...payoutRequests]
+                .sort((a, b) => Number(b.requestedAt || b.reviewedAt || 0) - Number(a.requestedAt || a.reviewedAt || 0))
+                .slice(0, 8)
+                .map((row) => (
+                  <li key={row.id}>
+                    <div>
+                      <strong>{formatCurrency(row.amount || 0)}</strong>
+                      <span>{String(row.status || 'pending')}</span>
+                    </div>
+                    <div>
+                      <strong>{formatarDataHoraBr(row.requestedAt || row.reviewedAt, { seVazio: 'agora' })}</strong>
+                      <span>{row.payoutId ? `PIX ${row.payoutId}` : 'aguardando equipe'}</span>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </article>
+      </section>
+
       <section className="creator-metrics-grid">
         <article className="creator-metric-card">
           <span>Receita total registrada</span>
           <strong>{formatCurrency(paymentSummary.total)}</strong>
         </article>
         <article className="creator-metric-card">
-          <span>Membership</span>
+          <span>Membros</span>
           <strong>{formatCurrency(paymentSummary.membership)}</strong>
         </article>
         <article className="creator-metric-card">
@@ -198,11 +337,11 @@ export default function CreatorMonetizationDashboard({ user }) {
             </div>
           </div>
           <ul className="creator-data-list">
-            <li><span>Membership do criador</span><strong>{formatCurrency(paymentSummary.membership)}</strong></li>
+            <li><span>Membros do criador</span><strong>{formatCurrency(paymentSummary.membership)}</strong></li>
             <li><span>Apoios e doações</span><strong>{formatCurrency(paymentSummary.support)}</strong></li>
             <li><span>Loja</span><strong>{formatCurrency(paymentSummary.store)}</strong></li>
             <li><span>Bônus de Premium</span><strong>{formatCurrency(paymentSummary.premiumAttribution)}</strong></li>
-            <li><span>Ajustes / estornos</span><strong>{formatCurrency(paymentSummary.refunds)}</strong></li>
+            <li><span>Ajustes e estornos</span><strong>{formatCurrency(paymentSummary.refunds)}</strong></li>
           </ul>
         </article>
 
@@ -270,12 +409,21 @@ export default function CreatorMonetizationDashboard({ user }) {
           <div className="creator-panel-head">
             <div>
               <p className="creator-frame-eyebrow">Promoções</p>
-              <h2>Campanhas do creator</h2>
+              <h2>Campanhas do criador</h2>
             </div>
           </div>
           <form className="creator-inline-form" onSubmit={handleCreatePromotion}>
-            <input value={promoTitle} onChange={(e) => setPromoTitle(e.target.value)} placeholder="Título da promoção" />
-            <textarea rows={3} value={promoDescription} onChange={(e) => setPromoDescription(e.target.value)} placeholder="Detalhe opcional para sua equipe e sua rotina" />
+            <input
+              value={promoTitle}
+              onChange={(e) => setPromoTitle(e.target.value)}
+              placeholder="Título da promoção"
+            />
+            <textarea
+              rows={3}
+              value={promoDescription}
+              onChange={(e) => setPromoDescription(e.target.value)}
+              placeholder="Detalhe opcional para sua equipe e sua rotina"
+            />
             <button type="submit" className="creator-frame-btn is-primary" disabled={busy}>
               {busy ? 'Salvando...' : 'Criar promoção'}
             </button>
@@ -293,7 +441,11 @@ export default function CreatorMonetizationDashboard({ user }) {
                   </div>
                   <div>
                     <strong>{formatarDataHoraBr(promo.createdAt, { seVazio: 'agora' })}</strong>
-                    <button type="button" className="creator-link-btn" onClick={() => handleDeletePromotion(promo.id)}>
+                    <button
+                      type="button"
+                      className="creator-link-btn"
+                      onClick={() => handleDeletePromotion(promo.id)}
+                    >
                       Remover
                     </button>
                   </div>

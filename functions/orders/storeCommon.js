@@ -210,7 +210,6 @@ export function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
     : null;
   return {
     id: orderId,
-    uid: String(row?.uid || ''),
     status: normalizeStoreOrderStatusInput(row?.status, ''),
     createdAt: Number(row?.createdAt || 0),
     updatedAt: Number(row?.updatedAt || 0),

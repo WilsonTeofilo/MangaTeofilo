@@ -3,6 +3,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions/v2';
 import { getDatabase } from 'firebase-admin/database';
 import { getAdminAuthContext, requireSuperAdmin, listStaffUids } from './adminRbac.js';
+import { assertTrustedAppRequest } from './appCheckGuard.js';
 import { pushUserNotification as pushStaffInAppNotification } from './notificationPush.js';
 import {
   BOOK_FORMAT,
@@ -26,6 +27,7 @@ import {
   resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from './creatorRecord.js';
+import { enforceCommerceAbuseShield } from './commerceGuard.js';
 
 /**
  * Nível 2 — venda POD com repasse (alinhado a `CREATOR_LEVEL_THRESHOLDS[2]` no app).
@@ -130,6 +132,39 @@ async function verifyStorePromoEligibility(db, uid, workId) {
 function isHttpsUrl(s, maxLen = 2048) {
   const t = String(s || '').trim();
   return t.length >= 12 && t.length <= maxLen && /^https:\/\//i.test(t);
+}
+
+function assertNoClientControlledPodFinancialFields(body) {
+  const src = body && typeof body === 'object' ? body : {};
+  const forbiddenFields = [
+    'amountDueBRL',
+    'expectedPayBRL',
+    'productionCostTotalBRL',
+    'grossRetailTotalBRL',
+    'creatorProfitPerSoldUnitBRL',
+    'creatorProfitTotalIfAllSoldBRL',
+    'goodsTotalBRL',
+    'shippingBRL',
+    'subtotal',
+    'total',
+    'status',
+    'paidAt',
+    'createdAt',
+    'updatedAt',
+    'expiresAt',
+    'checkoutUrl',
+    'snapshot',
+    'orderEvents',
+    'creatorUid',
+    'payoutStatus',
+  ];
+  const present = forbiddenFields.filter((field) => src[field] != null);
+  if (present.length) {
+    throw new HttpsError(
+      'invalid-argument',
+      `Nao envie campos financeiros/sistemicos no checkout POD: ${present.join(', ')}.`
+    );
+  }
 }
 
 /** Buckets do projeto (getDownloadURL do SDK Web usa host firebasestorage.googleapis.com). */
@@ -320,6 +355,7 @@ async function pushUserNotification(db, uid, payload) {
  * @returns {{ orderId: string, order: object }}
  */
 export async function persistPrintOnDemandOrder(db, uid, body) {
+  assertNoClientControlledPodFinancialFields(body);
   const saleModel = String(body.saleModel || '').trim().toLowerCase();
   const format = String(body.format || '').trim().toLowerCase();
   const quantity = Number(body.quantity);
@@ -569,22 +605,34 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
 
 /** @deprecated Prefira createPrintOnDemandCheckout no cliente (pagamento antes da confirmação percebida). */
 export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Faca login para enviar o pedido.');
-  }
-  const uid = request.auth.uid;
-  const body = request.data && typeof request.data === 'object' ? request.data : {};
-  const db = getDatabase();
-  const { orderId } = await persistPrintOnDemandOrder(db, uid, body);
-  return { ok: true, orderId };
+  assertTrustedAppRequest(request);
+  throw new HttpsError(
+    'failed-precondition',
+    'Fluxo legado desativado. Atualize a pagina e use o checkout atual do print-on-demand.'
+  );
 });
 
 export const listMyPrintOnDemandOrders = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
   const uid = request.auth.uid;
-  const snap = await getDatabase().ref('loja/printOnDemandOrders').get();
+  const db = getDatabase();
+  await enforceCommerceAbuseShield(db, {
+    request,
+    scope: 'listMyPodOrders',
+    key: uid,
+    minIntervalMs: 350,
+    windowMs: 60 * 1000,
+    maxHits: 30,
+    networkWindowMs: 60 * 1000,
+    networkMaxHits: 50,
+    ipWindowMs: 5 * 60 * 1000,
+    ipMaxHits: 90,
+    message: 'Muitas consultas de pedidos POD em pouco tempo. Aguarde alguns segundos.',
+  });
+  const snap = await db.ref('loja/printOnDemandOrders').get();
   const all = snap.val() || {};
   const list = Object.entries(all)
     .map(([id, row]) => ({ id, ...(row || {}) }))
@@ -594,6 +642,7 @@ export const listMyPrintOnDemandOrders = onCall({ region: 'us-central1' }, async
 });
 
 export const getMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
@@ -601,7 +650,21 @@ export const getMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (
   if (!orderId) {
     throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
   }
-  const snap = await getDatabase().ref(`loja/printOnDemandOrders/${orderId}`).get();
+  const db = getDatabase();
+  await enforceCommerceAbuseShield(db, {
+    request,
+    scope: 'viewPodOrder',
+    key: request.auth.uid,
+    minIntervalMs: 350,
+    windowMs: 60 * 1000,
+    maxHits: 40,
+    networkWindowMs: 60 * 1000,
+    networkMaxHits: 70,
+    ipWindowMs: 5 * 60 * 1000,
+    ipMaxHits: 120,
+    message: 'Muitas consultas de pedido POD em pouco tempo. Aguarde alguns segundos.',
+  });
+  const snap = await db.ref(`loja/printOnDemandOrders/${orderId}`).get();
   if (!snap.exists()) {
     throw new HttpsError('not-found', 'Pedido nao encontrado.');
   }
@@ -613,9 +676,24 @@ export const getMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (
 });
 
 export const adminListPrintOnDemandOrders = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
+  const db = getDatabase();
+  await enforceCommerceAbuseShield(db, {
+    request,
+    scope: 'adminListPodOrders',
+    key: request.auth.uid,
+    minIntervalMs: 400,
+    windowMs: 60 * 1000,
+    maxHits: 30,
+    networkWindowMs: 60 * 1000,
+    networkMaxHits: 50,
+    ipWindowMs: 5 * 60 * 1000,
+    ipMaxHits: 90,
+    message: 'Muitas consultas de pedidos POD em pouco tempo. Aguarde alguns segundos.',
+  });
   const ctx = await getAdminAuthContext(request.auth);
   if (!ctx) {
     throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
@@ -625,7 +703,7 @@ export const adminListPrintOnDemandOrders = onCall({ region: 'us-central1' }, as
   if (!can) {
     throw new HttpsError('permission-denied', 'Sem permissao para producao fisica.');
   }
-  const snap = await getDatabase().ref('loja/printOnDemandOrders').get();
+  const snap = await db.ref('loja/printOnDemandOrders').get();
   const all = snap.val() || {};
   const list = Object.entries(all)
     .map(([id, row]) => ({ id, ...(row || {}) }))
@@ -634,9 +712,24 @@ export const adminListPrintOnDemandOrders = onCall({ region: 'us-central1' }, as
 });
 
 export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
+  const db = getDatabase();
+  await enforceCommerceAbuseShield(db, {
+    request,
+    scope: 'adminUpdatePodOrder',
+    key: request.auth.uid,
+    minIntervalMs: 700,
+    windowMs: 60 * 1000,
+    maxHits: 15,
+    networkWindowMs: 60 * 1000,
+    networkMaxHits: 25,
+    ipWindowMs: 5 * 60 * 1000,
+    ipMaxHits: 40,
+    message: 'Muitas atualizacoes de pedido POD em pouco tempo. Aguarde alguns segundos.',
+  });
   const ctx = await getAdminAuthContext(request.auth);
   if (!ctx) {
     throw new HttpsError('permission-denied', 'Sem acesso ao painel.');
@@ -660,7 +753,7 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
     );
   }
 
-  const ref = getDatabase().ref(`loja/printOnDemandOrders/${orderId}`);
+  const ref = db.ref(`loja/printOnDemandOrders/${orderId}`);
   const snap = await ref.get();
   if (!snap.exists()) {
     throw new HttpsError('not-found', 'Pedido nao encontrado.');
@@ -812,6 +905,7 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
  * Comprador (creatorUid do pedido) cancela antes do pagamento — sem estorno MP aqui.
  */
 export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
@@ -830,6 +924,19 @@ export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, asyn
   }
 
   const db = getDatabase();
+  await enforceCommerceAbuseShield(db, {
+    request,
+    scope: 'cancelPodOrder',
+    key: uid,
+    minIntervalMs: 1000,
+    windowMs: 60 * 1000,
+    maxHits: 6,
+    networkWindowMs: 60 * 1000,
+    networkMaxHits: 12,
+    ipWindowMs: 5 * 60 * 1000,
+    ipMaxHits: 20,
+    message: 'Muitas tentativas de cancelamento em pouco tempo. Aguarde alguns segundos.',
+  });
   const r = db.ref(`loja/printOnDemandOrders/${orderId}`);
   const snap = await r.get();
   if (!snap.exists()) {
@@ -886,6 +993,7 @@ export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, asyn
 
 /** Super-admin: ajuste manual se necessario (ex.: corrigir URL). */
 export const adminPatchPrintOnDemandOrderSuper = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   await requireSuperAdmin(request.auth);
   const body = request.data && typeof request.data === 'object' ? request.data : {};
   const orderId = String(body.orderId || '').trim();

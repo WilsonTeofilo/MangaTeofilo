@@ -5,7 +5,7 @@ export const APP_BASE_URL = defineString('APP_BASE_URL', {
 });
 
 export const MP_ACCESS_TOKEN = defineSecret('MP_ACCESS_TOKEN');
-export const MP_WEBHOOK_SECRET = defineString('MP_WEBHOOK_SECRET', { default: '' });
+export const MP_WEBHOOK_SECRET = defineSecret('MP_WEBHOOK_SECRET');
 export const FUNCTIONS_PUBLIC_URL = defineString('FUNCTIONS_PUBLIC_URL', {
   default: 'https://us-central1-shitoproject-ed649.cloudfunctions.net',
 });
@@ -30,4 +30,17 @@ export function getMercadoPagoAccessTokenOrThrow() {
     throw new Error('Token Mercado Pago vazio.');
   }
   return token;
+}
+
+export function getMercadoPagoWebhookSecretOrThrow() {
+  let secret;
+  try {
+    secret = String(MP_WEBHOOK_SECRET.value()).trim();
+  } catch {
+    throw new Error('Mercado Pago webhook nao configurado (secret MP_WEBHOOK_SECRET).');
+  }
+  if (!secret) {
+    throw new Error('Segredo do webhook Mercado Pago vazio.');
+  }
+  return secret;
 }

@@ -129,6 +129,20 @@ export default function LojaProduto({ user, perfil }) {
     );
   }
 
+  if (product.isActive === false || product.isStoreDemo === true) {
+    return (
+      <main className="loja-page">
+        <section className="loja-empty">
+          <h1>Produto indisponivel</h1>
+          <p>Este item nao esta liberado para venda publica.</p>
+          <button type="button" onClick={() => navigate('/loja')}>
+            Voltar para loja
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   const basePrice = Number(product.isOnSale && Number(product.promoPrice) > 0 ? product.promoPrice : product.price || 0);
   const finalPrice = Number(serverPricing?.pricedLine?.unitPrice ?? basePrice);
   const finalSubtotal = Number.isFinite(Number(serverPricing?.subtotal)) ? Number(serverPricing.subtotal) : null;

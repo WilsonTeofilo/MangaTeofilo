@@ -627,7 +627,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
                   <div className="header-notification-panel">
                     <div className="header-notification-panel-head">
                       <div>
-                        <strong>Notificacoes</strong>
+                        <strong>Notificações</strong>
                         <small>Tudo que importa da conta e dos criadores.</small>
                       </div>
                       {allNotifications.length ? (
@@ -643,7 +643,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
                     </div>
                     <div className="header-notification-panel-body">
                       {!allNotifications.length ? (
-                        <p className="header-notification-empty">Nenhuma notificacao por enquanto.</p>
+                        <p className="header-notification-empty">Nenhuma notificação por enquanto.</p>
                       ) : (
                         allNotifications.map((item) => (
                           <div
@@ -656,7 +656,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
                               onClick={() => openNotificationTarget(item)}
                             >
                               <small className="header-notification-meta">{priorityLabel(item)}</small>
-                              <strong>{item.title || 'Atualizacao'}</strong>
+                              <strong>{item.title || 'Atualização'}</strong>
                               <span>{item.message || 'Sem detalhes.'}</span>
                               {Number(item?.aggregate?.count || 1) > 1 ? (
                                 <em className="header-notification-group-count">
@@ -667,8 +667,8 @@ export default function Header({ usuario, perfil, adminAccess }) {
                             <button
                               type="button"
                               className="header-notification-delete"
-                              aria-label={`Apagar notificacao ${item.title || 'sem titulo'}`}
-                              title="Apagar notificacao"
+                              aria-label={`Apagar notificação ${item.title || 'sem título'}`}
+                              title="Apagar notificação"
                               onClick={(event) => handleDeleteNotification(item, event)}
                             >
                               ×
@@ -755,7 +755,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
             <div className="header-notification-modal__head">
               <div>
                 <small>{priorityLabel(selectedNotification)}</small>
-                <strong>{selectedNotification.title || 'Atualizacao'}</strong>
+                <strong>{selectedNotification.title || 'Atualização'}</strong>
               </div>
               <button type="button" onClick={() => setSelectedNotification(null)} aria-label="Fechar detalhes">
                 ×
@@ -765,7 +765,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
               <p>{selectedNotification.message || 'Sem detalhes adicionais.'}</p>
               {Number(selectedNotification?.aggregate?.count || 1) > 1 ? (
                 <p className="header-notification-modal__meta">
-                  {Number(selectedNotification.aggregate.count)} eventos recentes agrupados nesta notificacao.
+                  {Number(selectedNotification.aggregate.count)} eventos recentes agrupados nesta notificação.
                 </p>
               ) : null}
             </div>

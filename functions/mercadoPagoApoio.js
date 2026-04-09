@@ -1,22 +1,18 @@
 /**
  * Planos de apoio — valores em BRL (Checkout Pro / Preferences API).
- * fallbackLink: usado no site se a Cloud Function não tiver token configurado.
  */
 export const APOIO_PLANOS_MP = {
   cafe: {
     title: 'Shito — Café do autor',
     unit_price: 7.99,
-    fallbackLink: 'https://mpago.la/18VvCLv',
   },
   marmita: {
     title: 'Shito — Marmita do guerreiro',
     unit_price: 19,
-    fallbackLink: 'https://mpago.la/1XLszaM',
   },
   lendario: {
     title: 'Shito — O lendário mortal',
     unit_price: 35,
-    fallbackLink: 'https://mpago.la/16nmTHk',
   },
 };
 

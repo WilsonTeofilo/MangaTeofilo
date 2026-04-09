@@ -166,9 +166,7 @@ export async function getAdminAuthContext(auth) {
 
 export async function isCreatorAccountAuth(auth) {
   if (!auth?.uid) return false;
-  if (claimPanelRole(auth) === 'mangaka') return true;
-  const snap = await getDatabase().ref(`usuarios/${auth.uid}/role`).get();
-  return String(snap.val() || '').trim().toLowerCase() === 'mangaka';
+  return claimPanelRole(auth) === 'mangaka';
 }
 
 export async function requireAdminAuth(auth) {

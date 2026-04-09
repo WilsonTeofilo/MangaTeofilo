@@ -9,45 +9,65 @@ export function normalizeCreatorMonetizationPreference(v) {
 export function resolveCreatorMonetizationPreferenceFromDb(row) {
   const mon = row?.creator?.monetization;
   if (mon && typeof mon === 'object') {
-    if (mon.requested === true) return 'monetize';
+    if (String(mon.preference || '').trim().length > 0) {
+      return normalizeCreatorMonetizationPreference(mon.preference);
+    }
+    const applicationStatus = String(mon?.application?.status || '').trim().toLowerCase();
+    const financialStatus = String(mon?.financial?.status || '').trim().toLowerCase();
     if (
-      mon.enabled === true ||
-      mon.isMonetizationActive === true ||
-      mon.approved === true ||
-      mon.isApproved === true ||
+      ['pending', 'approved', 'rejected', 'blocked_underage'].includes(applicationStatus) ||
+      ['active', 'paused'].includes(financialStatus) ||
       Boolean(mon.legal) ||
       Boolean(mon.payout)
     ) {
       return 'monetize';
     }
-    if (mon.requested === false) return 'publish_only';
-  }
-  const publicProjection = row?.creatorProfile;
-  if (publicProjection && typeof publicProjection === 'object') {
-    if (
-      publicProjection.monetizationPreference === 'monetize' ||
-      publicProjection.isMonetizationActive === true ||
-      publicProjection.monetizationEnabled === true ||
-      publicProjection.isApproved === true
-    ) {
-      return 'monetize';
-    }
-    if (publicProjection.monetizationPreference === 'publish_only') return 'publish_only';
   }
   return 'publish_only';
 }
 
+export function resolveCreatorMonetizationApplicationStatusFromDb(row) {
+  if (!row || typeof row !== 'object') return 'not_requested';
+  const mon = row?.creator?.monetization;
+  const canonical = String(mon?.application?.status || '').trim().toLowerCase();
+  if (canonical) return canonical;
+  if (row?.creator?.meta?.isAdult === false) return 'blocked_underage';
+  return 'not_requested';
+}
+
+export function resolveCreatorFinancialStatusFromDb(row) {
+  if (!row || typeof row !== 'object') return 'inactive';
+  const mon = row?.creator?.monetization;
+  const canonical = String(mon?.financial?.status || '').trim().toLowerCase();
+  if (canonical === 'active' || canonical === 'inactive' || canonical === 'paused') {
+    return canonical;
+  }
+  return 'inactive';
+}
+
 export function resolveCreatorMonetizationFlags(row) {
-  const approved =
-    row?.creator?.monetization?.approved === true ||
-    row?.creator?.monetization?.isApproved === true ||
-    row?.creatorProfile?.isApproved === true;
-  const active =
-    row?.creator?.monetization?.isMonetizationActive === true ||
-    row?.creator?.monetization?.enabled === true ||
-    row?.creatorProfile?.isMonetizationActive === true ||
-    row?.creatorProfile?.monetizationEnabled === true;
+  const approved = resolveCreatorMonetizationApplicationStatusFromDb(row) === 'approved';
+  const active = resolveCreatorFinancialStatusFromDb(row) === 'active';
   return { isApproved: approved, isMonetizationActive: active };
+}
+
+export function resolveCreatorSupportOfferFromDb(row) {
+  const canonicalOffer =
+    row?.creator?.monetization?.offer && typeof row.creator.monetization.offer === 'object'
+      ? row.creator.monetization.offer
+      : row?.publicProfile?.creatorProfile?.supportOffer &&
+          typeof row.publicProfile.creatorProfile.supportOffer === 'object'
+        ? row.publicProfile.creatorProfile.supportOffer
+        : null;
+  const source = canonicalOffer || {};
+  const price = Number(source.membershipPriceBRL);
+  const donation = Number(source.donationSuggestedBRL);
+  return {
+    membershipEnabled: canonicalOffer?.membershipEnabled === true,
+    membershipPriceBRL: Number.isFinite(price) ? price : null,
+    donationSuggestedBRL: Number.isFinite(donation) ? donation : null,
+    updatedAt: Number(source.updatedAt || 0) || 0,
+  };
 }
 
 /**
@@ -56,27 +76,11 @@ export function resolveCreatorMonetizationFlags(row) {
  */
 export function resolveCreatorMonetizationStatusFromDb(row) {
   if (!row || typeof row !== 'object') return '';
-  const flags = resolveCreatorMonetizationFlags(row);
-  if (flags.isMonetizationActive && flags.isApproved) return 'active';
-  const mon = row.creator?.monetization;
-  if (mon && typeof mon === 'object') {
-    const adultBlocked = row?.creator?.meta?.isAdult === false;
-    if (adultBlocked) return 'blocked_underage';
-    if (mon.enabled === true && (mon.approved === true || mon.isApproved === true)) return 'active';
-  }
-  const publicProjection = row?.creatorProfile;
-  if (publicProjection && typeof publicProjection === 'object') {
-    const projectionStatus = String(publicProjection.monetizationStatus || '').trim().toLowerCase();
-    if (projectionStatus === 'blocked_underage') return 'blocked_underage';
-    if (
-      (publicProjection.isMonetizationActive === true || publicProjection.monetizationEnabled === true) &&
-      publicProjection.isApproved === true
-    ) {
-      return 'active';
-    }
-  }
+  const applicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(row);
+  const financialStatus = resolveCreatorFinancialStatusFromDb(row);
+  if (applicationStatus === 'blocked_underage') return 'blocked_underage';
+  if (applicationStatus === 'approved' && financialStatus === 'active') return 'active';
   if (row?.creator?.meta?.isAdult === false) return 'blocked_underage';
-  if (row?.creatorProfile?.ageVerified === false) return 'blocked_underage';
   return 'disabled';
 }
 
@@ -94,8 +98,7 @@ export function resolveEffectiveCreatorMonetizationStatusFromDb(row) {
 
 export function creatorMonetizationCanToggle(row, preference) {
   const pref = normalizeCreatorMonetizationPreference(preference);
-  const flags = resolveCreatorMonetizationFlags(row);
-  return pref === 'monetize' && flags.isApproved === true;
+  return pref === 'monetize' && resolveCreatorMonetizationApplicationStatusFromDb(row) === 'approved';
 }
 
 export function creatorMonetizationStatusLabel(preference, status) {
@@ -104,5 +107,5 @@ export function creatorMonetizationStatusLabel(preference, status) {
   if (pref !== 'monetize') return 'Apenas publicar';
   if (norm === 'active') return 'Monetizacao ativa - recebendo repasses';
   if (norm === 'blocked_underage') return 'Monetizacao bloqueada por idade';
-  return 'Configuracao pendente';
+  return 'Solicitacao em analise';
 }

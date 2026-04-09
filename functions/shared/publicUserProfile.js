@@ -92,6 +92,26 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
           instagramUrl,
           youtubeUrl,
         },
+        supportOffer: (() => {
+          const supportOffer =
+            sourceCreatorProfile?.supportOffer && typeof sourceCreatorProfile.supportOffer === 'object'
+              ? sourceCreatorProfile.supportOffer
+              : root?.creator?.monetization?.offer && typeof root.creator.monetization.offer === 'object'
+                ? root.creator.monetization.offer
+                : null;
+          return {
+            membershipEnabled: supportOffer?.membershipEnabled === true,
+            membershipPriceBRL:
+              Number.isFinite(Number(supportOffer?.membershipPriceBRL))
+                ? Number(supportOffer.membershipPriceBRL)
+                : null,
+            donationSuggestedBRL:
+              Number.isFinite(Number(supportOffer?.donationSuggestedBRL))
+                ? Number(supportOffer.donationSuggestedBRL)
+                : null,
+            updatedAt: asNumber(supportOffer?.updatedAt, 0),
+          };
+        })(),
       }
     : null;
 
@@ -114,15 +134,6 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
     readerProfileAvatarUrl: asString(source.readerProfileAvatarUrl, userAvatar),
     readerSince: asNumber(source.readerSince || root.createdAt || root.readerSince || source.createdAt, 0),
     creatorStatus: isCreatorProfile ? creatorStatus : '',
-    creatorMembershipEnabled: isCreatorProfile && source.creatorMembershipEnabled === true,
-    creatorMembershipPriceBRL:
-      isCreatorProfile && source.creatorMembershipPriceBRL != null
-        ? Number(source.creatorMembershipPriceBRL)
-        : null,
-    creatorDonationSuggestedBRL:
-      isCreatorProfile && source.creatorDonationSuggestedBRL != null
-        ? Number(source.creatorDonationSuggestedBRL)
-        : null,
     updatedAt:
       asNumber(
         source.updatedAt || root?.creator?.meta?.updatedAt || root.updatedAt || root.lastLogin || root.createdAt,

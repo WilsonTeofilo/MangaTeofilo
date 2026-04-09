@@ -2,6 +2,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
+import { assertTrustedAppRequest } from '../appCheckGuard.js';
 import { getAdminAuthContext, ADMIN_REGISTRY_PATH, isCreatorAccountAuth } from '../adminRbac.js';
 import { panelRoleFromAdminContext } from '../claimsConsistency.js';
 
@@ -25,6 +26,7 @@ async function reconcileStaffRtdbRoleFromMangaka(uid, ctx) {
 }
 
 export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     return { ok: true, admin: false };
   }

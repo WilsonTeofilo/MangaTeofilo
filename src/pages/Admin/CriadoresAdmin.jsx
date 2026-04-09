@@ -51,6 +51,9 @@ function statusBadgeClass(status) {
 
 function wantsMonetization(item) {
   return (
+    String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending' ||
+    String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'approved' ||
+    String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'rejected' ||
     item?.creatorApplication?.monetizationRequested === true ||
     String(item?.creatorMonetizationPreference || '').trim().toLowerCase() === 'monetize'
   );
@@ -120,6 +123,8 @@ function CreatorDetailDrawer({
   onPayoutTransferIdChange,
   payoutNotes,
   onPayoutNotesChange,
+  payoutRequestSelection,
+  onSelectPayoutRequest,
   onSubmitPayout,
 }) {
   const uid = item.uid;
@@ -129,6 +134,9 @@ function CreatorDetailDrawer({
   const bio = String(item.creatorBio || item.creatorBioShort || '').trim() || '—';
   const ageI = accountAgeInfo(item);
   const mon = wantsMonetization(item);
+  const monetizationApplicationStatus = String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase();
+  const monetizationFinancialStatus = String(item?.creatorFinancialStatus || '').trim().toLowerCase();
+  const monetizationPending = monetizationApplicationStatus === 'pending';
   const compliance = item.creatorComplianceAdmin;
   const pendingCreatorPhoto = String(item?.creatorApplication?.profileImageUrl || item?.creatorPendingProfileImageUrl || '').trim();
   const avatarPreviewUrl = pendingCreatorPhoto || item.userAvatar || '';
@@ -141,6 +149,9 @@ function CreatorDetailDrawer({
   const canApproveCreatorPending = isPending && approvalGate.ok;
   const balance = item.creatorBalanceAdmin || null;
   const recentPayouts = Array.isArray(item.creatorRecentPayoutsAdmin) ? item.creatorRecentPayoutsAdmin : [];
+  const pendingPayoutRequests = Array.isArray(item.creatorPendingPayoutRequestsAdmin)
+    ? item.creatorPendingPayoutRequestsAdmin
+    : [];
   const availableForPayout = Number(balance?.availableBRL || 0);
   const canRegisterPayout = availableForPayout > 0;
 
@@ -326,8 +337,9 @@ function CreatorDetailDrawer({
               <div>
                 <dt>Status / preferência</dt>
                 <dd>
-                  {String(item.creatorMonetizationStatus || '—')} ·{' '}
-                  {String(item.creatorMonetizationPreference || '—')}
+                  {String(monetizationApplicationStatus || item.creatorMonetizationStatus || '—')} ·{' '}
+                  {String(item.creatorMonetizationPreference || 'publish_only')} ·{' '}
+                  {String(monetizationFinancialStatus || 'inactive')}
                 </dd>
               </div>
             </dl>
@@ -443,6 +455,33 @@ function CreatorDetailDrawer({
               <p className="criadores-admin-compliance-hint">
                 Ultimo repasse registrado em {formatarDataHoraBr(balance.lastPayoutAt)}.
               </p>
+            ) : null}
+            {pendingPayoutRequests.length ? (
+              <>
+                <h4 className="criadores-admin-section__title" style={{ marginTop: 12 }}>Solicitacoes pendentes</h4>
+                <ul className="admin-staff-stack" style={{ marginTop: 12 }}>
+                  {pendingPayoutRequests.map((requestRow) => {
+                    const selected = payoutRequestSelection === requestRow.requestId;
+                    return (
+                      <li key={requestRow.requestId}>
+                        <strong>{brl(requestRow.amount || 0)}</strong> · pedido em{' '}
+                        {requestRow.requestedAt ? formatarDataHoraBr(requestRow.requestedAt) : 'agora'} · saldo na hora:{' '}
+                        {brl(requestRow.availableSnapshotBRL || 0)}
+                        {requestRow.notes ? <div style={{ marginTop: 4 }}>{requestRow.notes}</div> : null}
+                        <div style={{ marginTop: 8 }}>
+                          <button
+                            type="button"
+                            disabled={rowBusy}
+                            onClick={() => onSelectPayoutRequest(uid, requestRow)}
+                          >
+                            {selected ? 'Solicitacao selecionada' : 'Usar no repasse manual'}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             ) : null}
             <div className="financeiro-grid" style={{ marginTop: 12 }}>
               <label>
@@ -615,11 +654,12 @@ export default function CriadoresAdmin() {
   const [error, setError] = useState('');
   const [rejectReasons, setRejectReasons] = useState({});
   const [rejectAsBan, setRejectAsBan] = useState({});
-  const [monetizationReasons, setMonetizationReasons] = useState({});
-  const [payoutAmounts, setPayoutAmounts] = useState({});
-  const [payoutTransferIds, setPayoutTransferIds] = useState({});
-  const [payoutNotesByUid, setPayoutNotesByUid] = useState({});
-  const [detailUid, setDetailUid] = useState('');
+    const [monetizationReasons, setMonetizationReasons] = useState({});
+    const [payoutAmounts, setPayoutAmounts] = useState({});
+    const [payoutTransferIds, setPayoutTransferIds] = useState({});
+    const [payoutNotesByUid, setPayoutNotesByUid] = useState({});
+    const [payoutRequestSelectionByUid, setPayoutRequestSelectionByUid] = useState({});
+    const [detailUid, setDetailUid] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -657,12 +697,19 @@ export default function CriadoresAdmin() {
     const pending = applications.filter((item) => item.creatorApplicationStatus === 'requested').length;
     const approved = applications.filter((item) => item.creatorApplicationStatus === 'approved').length;
     const onboarding = applications.filter((item) => item.creatorStatus === 'onboarding').length;
-    const availablePayout = applications.reduce(
-      (acc, item) => acc + Number(item?.creatorBalanceAdmin?.availableBRL || 0),
-      0
-    );
-    return { pending, approved, onboarding, availablePayout };
-  }, [applications]);
+    const monetizationReview = applications.filter(
+      (item) => String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending'
+    ).length;
+      const availablePayout = applications.reduce(
+        (acc, item) => acc + Number(item?.creatorBalanceAdmin?.availableBRL || 0),
+        0
+      );
+      const payoutRequestsPending = applications.reduce(
+        (acc, item) => acc + (Array.isArray(item?.creatorPendingPayoutRequestsAdmin) ? item.creatorPendingPayoutRequestsAdmin.length : 0),
+        0
+      );
+      return { pending, approved, onboarding, monetizationReview, availablePayout, payoutRequestsPending };
+    }, [applications]);
 
   const detailItem = useMemo(
     () => applications.find((a) => a.uid === detailUid) || null,
@@ -759,7 +806,7 @@ export default function CriadoresAdmin() {
     }
   };
 
-  const handleSubmitPayout = async (uid) => {
+    const handleSubmitPayout = async (uid) => {
     if (!uid) return;
     const detail = applications.find((item) => item.uid === uid);
     const available = Number(detail?.creatorBalanceAdmin?.availableBRL || 0);
@@ -777,25 +824,39 @@ export default function CriadoresAdmin() {
     setMessage('');
     setError('');
     try {
-      const { data } = await adminRecordCreatorPixPayout({
-        uid,
-        amount: parsedAmount,
-        externalTransferId: String(payoutTransferIds[uid] || '').trim() || null,
-        notes: String(payoutNotesByUid[uid] || '').trim() || null,
-      });
+        const { data } = await adminRecordCreatorPixPayout({
+          uid,
+          amount: parsedAmount,
+          externalTransferId: String(payoutTransferIds[uid] || '').trim() || null,
+          notes: String(payoutNotesByUid[uid] || '').trim() || null,
+          payoutRequestId: String(payoutRequestSelectionByUid[uid] || '').trim() || null,
+        });
       setMessage(
         `Repasse PIX manual registrado em ${brl(data?.amount || parsedAmount)}. Saldo restante: ${brl(data?.remainingAvailableBRL || 0)}.`
       );
-      setPayoutAmounts((prev) => ({ ...prev, [uid]: '' }));
-      setPayoutTransferIds((prev) => ({ ...prev, [uid]: '' }));
-      setPayoutNotesByUid((prev) => ({ ...prev, [uid]: '' }));
-      await load();
+        setPayoutAmounts((prev) => ({ ...prev, [uid]: '' }));
+        setPayoutTransferIds((prev) => ({ ...prev, [uid]: '' }));
+        setPayoutNotesByUid((prev) => ({ ...prev, [uid]: '' }));
+        setPayoutRequestSelectionByUid((prev) => ({ ...prev, [uid]: '' }));
+        await load();
     } catch (err) {
       setError(mensagemErroCallable(err));
     } finally {
       setBusyUid('');
     }
-  };
+    };
+
+    const handleSelectPayoutRequest = (uid, requestRow) => {
+      if (!uid || !requestRow?.requestId) return;
+      setPayoutRequestSelectionByUid((prev) => ({ ...prev, [uid]: requestRow.requestId }));
+      setPayoutAmounts((prev) => ({
+        ...prev,
+        [uid]: requestRow.amount != null ? String(requestRow.amount) : prev[uid] || '',
+      }));
+      if (String(requestRow.notes || '').trim()) {
+        setPayoutNotesByUid((prev) => ({ ...prev, [uid]: String(requestRow.notes || '').trim() }));
+      }
+    };
 
   return (
     <main className="admin-empty-page admin-team-page">
@@ -828,11 +889,15 @@ export default function CriadoresAdmin() {
             <span>Monetizacao pendente</span>
             <strong>{summary.monetizationReview}</strong>
           </article>
-          <article className="admin-team-stat-card">
-            <span>Saldo criadores</span>
-            <strong>{brl(summary.availablePayout)}</strong>
-          </article>
-        </section>
+            <article className="admin-team-stat-card">
+              <span>Saldo criadores</span>
+              <strong>{brl(summary.availablePayout)}</strong>
+            </article>
+            <article className="admin-team-stat-card">
+              <span>Saques pendentes</span>
+              <strong>{summary.payoutRequestsPending}</strong>
+            </article>
+          </section>
 
         <section className="admin-team-panel">
           <div className="admin-team-panel-head">
@@ -927,12 +992,14 @@ export default function CriadoresAdmin() {
           onRejectMonetization={handleRejectMonetization}
           payoutAmountDraft={payoutAmounts[detailItem.uid] || ''}
           onPayoutAmountDraftChange={(v) => setPayoutAmounts((p) => ({ ...p, [detailItem.uid]: v }))}
-          payoutTransferId={payoutTransferIds[detailItem.uid] || ''}
-          onPayoutTransferIdChange={(v) => setPayoutTransferIds((p) => ({ ...p, [detailItem.uid]: v }))}
-          payoutNotes={payoutNotesByUid[detailItem.uid] || ''}
-          onPayoutNotesChange={(v) => setPayoutNotesByUid((p) => ({ ...p, [detailItem.uid]: v }))}
-          onSubmitPayout={handleSubmitPayout}
-        />
+            payoutTransferId={payoutTransferIds[detailItem.uid] || ''}
+            onPayoutTransferIdChange={(v) => setPayoutTransferIds((p) => ({ ...p, [detailItem.uid]: v }))}
+            payoutNotes={payoutNotesByUid[detailItem.uid] || ''}
+            onPayoutNotesChange={(v) => setPayoutNotesByUid((p) => ({ ...p, [detailItem.uid]: v }))}
+            payoutRequestSelection={payoutRequestSelectionByUid[detailItem.uid] || ''}
+            onSelectPayoutRequest={handleSelectPayoutRequest}
+            onSubmitPayout={handleSubmitPayout}
+          />
       ) : null}
     </main>
   );

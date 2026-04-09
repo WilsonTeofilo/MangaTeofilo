@@ -1,6 +1,7 @@
 ﻿import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
 import { normalizeUsernameInput, validateUsernameHandle } from './usernameValidation';
-import { resolvePublicProfileDisplayName } from './publicUserProfile';
+import { resolvePublicProfileAvatarUrl, resolvePublicProfileDisplayName } from './publicUserProfile';
+import { resolvePublicProfilePath } from './publicProfilePaths';
 import {
   resolveCanonicalWorkCreator,
   resolveCreatorPublicProfileById,
@@ -192,5 +193,42 @@ export function resolveCreatorFeedLabel(obra, creatorsMap, allCapitulos = null) 
     if (line && line !== 'Leitor') return line;
   }
   return resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos);
+}
+
+export function resolvePublicCreatorIdentity(obra, creatorsMap, allCapitulos = null) {
+  const obraId = String(obra?.id || '').toLowerCase();
+  const matchingCaps =
+    allCapitulos && Array.isArray(allCapitulos)
+      ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
+      : [];
+  const { creatorId, profile } = matchingCaps.length
+    ? resolveCanonicalWorkCreator(obra, matchingCaps, creatorsMap)
+    : {
+        creatorId: String(obra?.creatorId || '').trim() || obraCreatorId(obra),
+        profile: resolveCreatorPublicProfileById(
+          creatorsMap,
+          String(obra?.creatorId || '').trim() || obraCreatorId(obra)
+        ),
+      };
+
+  let label = resolvePublicCreatorName({ creatorPublicProfile: profile, obra, fallback: 'Autor' });
+  if (!label || label === 'Leitor') {
+    label = resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos);
+  }
+  if (!label || label === 'Leitor') {
+    label = 'Autor';
+  }
+
+  return {
+    creatorId,
+    profile,
+    label,
+    handle: normalizePublicHandle(profile),
+    avatarUrl: resolvePublicProfileAvatarUrl(profile, {
+      mode: 'creator',
+      fallback: '/assets/fotos/shito.jpg',
+    }),
+    path: resolvePublicProfilePath(profile, creatorId, { tab: 'works' }),
+  };
 }
 

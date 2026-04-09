@@ -9,12 +9,12 @@ import crypto from 'crypto';
  * @param {import('firebase-functions').https.Request} req
  * @param {string} resourceId - mesmo id usado na API GET /v1/payments/{id}
  * @param {string} secretTrimmed - segredo configurado no painel MP (integração > Webhooks)
- * @returns {{ ok: boolean, reason?: string, skipped?: boolean }}
+ * @returns {{ ok: boolean, reason?: string }}
  */
 export function verifyMercadoPagoWebhookSignature(req, resourceId, secretTrimmed) {
   const secret = String(secretTrimmed || '').trim();
   if (!secret) {
-    return { ok: true, skipped: true };
+    return { ok: false, reason: 'missing_webhook_secret' };
   }
   const sigRaw = req.headers['x-signature'] || req.headers['X-Signature'];
   const requestId = req.headers['x-request-id'] || req.headers['X-Request-Id'];

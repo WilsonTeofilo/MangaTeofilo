@@ -4,8 +4,7 @@ import { functions } from '../services/firebase';
 
 /** @typedef {{ byClaim: boolean, canAccessAdmin: boolean, claimChecked: boolean, profileLoaded: boolean, superAdmin: boolean, isChiefAdmin: boolean, isMangaka: boolean, panelRole: string | null, permissions: Record<string, boolean> | null }} AdminAccessState */
 
-const ADMIN_ACCESS_CACHE_PREFIX = 'shito_admin_access_cache_v2:';
-const ADMIN_ACCESS_CACHE_TTL_MS = 5 * 60 * 1000;
+const ADMIN_ACCESS_CACHE_TTL_MS = 60 * 1000;
 const memoryCache = new Map();
 const pendingRequests = new Map();
 const adminGetMyAdminProfile = httpsCallable(functions, 'adminGetMyAdminProfile');
@@ -34,41 +33,6 @@ function cloneAccess(value) {
   };
 }
 
-function cacheKey(uid) {
-  return `${ADMIN_ACCESS_CACHE_PREFIX}${uid}`;
-}
-
-function readSessionCache(uid) {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.sessionStorage.getItem(cacheKey(uid));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed?.value || Number(parsed.expiresAt || 0) <= Date.now()) {
-      window.sessionStorage.removeItem(cacheKey(uid));
-      return null;
-    }
-    return cloneAccess(parsed.value);
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionCache(uid, value) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.setItem(
-      cacheKey(uid),
-      JSON.stringify({
-        expiresAt: Date.now() + ADMIN_ACCESS_CACHE_TTL_MS,
-        value,
-      })
-    );
-  } catch {
-    // no-op
-  }
-}
-
 function readCachedAccess(uid) {
   const memoryEntry = memoryCache.get(uid);
   if (memoryEntry?.expiresAt > Date.now() && memoryEntry?.value) {
@@ -76,14 +40,6 @@ function readCachedAccess(uid) {
   }
   if (memoryEntry) {
     memoryCache.delete(uid);
-  }
-  const fromSession = readSessionCache(uid);
-  if (fromSession) {
-    memoryCache.set(uid, {
-      expiresAt: Date.now() + ADMIN_ACCESS_CACHE_TTL_MS,
-      value: cloneAccess(fromSession),
-    });
-    return fromSession;
   }
   return null;
 }
@@ -94,7 +50,6 @@ function writeCachedAccess(uid, value) {
     expiresAt: Date.now() + ADMIN_ACCESS_CACHE_TTL_MS,
     value: cloned,
   });
-  writeSessionCache(uid, cloned);
   return cloneAccess(cloned);
 }
 
@@ -102,26 +57,10 @@ export function clearAdminAccessCache(uid) {
   if (uid) {
     memoryCache.delete(uid);
     pendingRequests.delete(uid);
-    if (typeof window !== 'undefined') {
-      try {
-        window.sessionStorage.removeItem(cacheKey(uid));
-      } catch {
-        // no-op
-      }
-    }
     return;
   }
   memoryCache.clear();
   pendingRequests.clear();
-  if (typeof window !== 'undefined') {
-    try {
-      Object.keys(window.sessionStorage)
-        .filter((key) => key.startsWith(ADMIN_ACCESS_CACHE_PREFIX))
-        .forEach((key) => window.sessionStorage.removeItem(key));
-    } catch {
-      // no-op
-    }
-  }
 }
 
 /**
@@ -163,7 +102,7 @@ export async function resolveAdminAccess(user, { force = false } = {}) {
 
   const base = {
     byClaim,
-    canAccessAdmin: byClaim,
+    canAccessAdmin: false,
     claimChecked,
     profileLoaded: false,
     superAdmin: claimSuperAdmin,
@@ -182,6 +121,7 @@ export async function resolveAdminAccess(user, { force = false } = {}) {
         result = {
           ...base,
           profileLoaded: true,
+          canAccessAdmin: false,
           permissions: {},
         };
         return writeCachedAccess(uid, result);
@@ -214,6 +154,7 @@ export async function resolveAdminAccess(user, { force = false } = {}) {
         result = {
           ...base,
           profileLoaded: true,
+          canAccessAdmin: false,
           permissions: {},
         };
         return writeCachedAccess(uid, result);
@@ -235,6 +176,9 @@ export async function resolveAdminAccess(user, { force = false } = {}) {
       return writeCachedAccess(uid, {
         ...base,
         profileLoaded: true,
+        canAccessAdmin: false,
+        superAdmin: false,
+        isChiefAdmin: false,
         permissions: {},
       });
     } finally {

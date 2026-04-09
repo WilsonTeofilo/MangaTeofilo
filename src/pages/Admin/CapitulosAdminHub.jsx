@@ -3,6 +3,7 @@ import { onValue, query, orderByChild, equalTo, ref as dbRef } from 'firebase/da
 import { useNavigate } from 'react-router-dom';
 
 import { auth, db } from '../../services/firebase';
+import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { obraCreatorId } from '../../config/obras';
 import './CapitulosAdminHub.css';
 
@@ -33,7 +34,9 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   const editorPathBase = workspace === 'creator' ? '/creator/editor' : '/admin/manga';
   const obrasPath = workspace === 'creator' ? '/creator/obras' : '/admin/obras';
   const isCreatorWorkspace = workspace === 'creator';
-  const canAccessWorkspace = isCreatorWorkspace ? isMangaka : Boolean(adminAccess?.canAccessAdmin);
+  const canAccessWorkspace = isCreatorWorkspace
+    ? isMangaka
+    : canAccessAdminPath('/admin/capitulos', adminAccess);
   const [loading, setLoading] = useState(true);
   const [obras, setObras] = useState([]);
   const [allCapitulos, setAllCapitulos] = useState([]);

@@ -23,18 +23,18 @@ export default function CreatorMonetizationPanel({ progressVm }) {
   const motivationalLine = useMemo(() => {
     if (vm.nextLevel == null) {
       return vm.monetizationThresholdReached
-        ? 'Metas de nivel maximo. Mantenha ritmo e monetizacao ativa no perfil para repasses.'
+        ? 'Metas do nível máximo batidas. Mantenha o ritmo e a monetização ativa no perfil para liberar ganhos.'
         : vm.primaryNextLevelGapPhrase;
     }
-    return vm.primaryNextLevelGapPhrase || 'Publique com constancia e compartilhe seu perfil para subir de nivel na plataforma.';
+    return vm.primaryNextLevelGapPhrase || 'Publique com constância e compartilhe seu perfil para subir de nível na plataforma.';
   }, [vm.monetizationThresholdReached, vm.nextLevel, vm.primaryNextLevelGapPhrase]);
 
   return (
     <div className="creator-dash">
       <header className="creator-dash__intro">
-        <h2 className="creator-dash__intro-title">Monetizacao na plataforma</h2>
+        <h2 className="creator-dash__intro-title">Monetização na plataforma</h2>
         <p className="creator-dash__intro-sub">
-          Crescimento real (seguidores, views e likes) e caminho para liberar recursos financeiros - separado de missoes e XP.
+          Crescimento real em seguidores, views e likes para liberar ganhos na plataforma, separado de missões e XP.
         </p>
       </header>
 
@@ -50,16 +50,16 @@ export default function CreatorMonetizationPanel({ progressVm }) {
             <span className="creator-dash__level-emoji" aria-hidden="true">
               {vm.meta.emoji}
             </span>
-            Nivel atual: <strong>{vm.meta.title}</strong>
+            Nível atual: <strong>{vm.meta.title}</strong>
             {vm.nextLevelMeta ? (
               <>
                 {' '}
-                · Proximo nivel: <strong>{vm.nextLevelMeta.title}</strong>
+                · Próximo nível: <strong>{vm.nextLevelMeta.title}</strong>
               </>
             ) : (
               <>
                 {' '}
-                · <strong>Nivel maximo</strong> nas metas
+                · <strong>Nível máximo</strong> nas metas
               </>
             )}
           </p>
@@ -73,7 +73,7 @@ export default function CreatorMonetizationPanel({ progressVm }) {
                   aria-valuenow={vm.nextLevelProgressPercent}
                   aria-valuemin={0}
                   aria-valuemax={100}
-                  aria-label={`Progresso medio rumo a ${vm.nextLevelMeta?.title || 'proximo nivel'}`}
+                  aria-label={`Progresso médio rumo a ${vm.nextLevelMeta?.title || 'próximo nível'}`}
                 >
                   <div
                     className="creator-dash__metric-fill creator-dash__metric-fill--yellow"
@@ -81,7 +81,7 @@ export default function CreatorMonetizationPanel({ progressVm }) {
                   />
                 </div>
                 <p className="creator-dash__next-level-bar-caption">
-                  <strong>{vm.nextLevelProgressPercent}%</strong> para {vm.nextLevelMeta ? vm.nextLevelMeta.title : 'o proximo nivel'}
+                  <strong>{vm.nextLevelProgressPercent}%</strong> para {vm.nextLevelMeta ? vm.nextLevelMeta.title : 'o próximo nível'}
                 </p>
               </div>
               <div className="creator-dash__metric-grid creator-dash__metric-grid--mono">
@@ -111,7 +111,7 @@ export default function CreatorMonetizationPanel({ progressVm }) {
             </>
           ) : (
             <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-              Voce atingiu o nivel maximo de metas (Destaque). Continue publicando para manter alcance.
+              Você atingiu o nível máximo de metas (Destaque). Continue publicando para manter alcance.
             </p>
           )}
 
@@ -119,10 +119,10 @@ export default function CreatorMonetizationPanel({ progressVm }) {
             {motivationalLine}
           </p>
 
-          <div className="creator-dash__mono-longterm" aria-label="Metas de monetizacao">
-            <h4 className="creator-dash__subhead">Desbloqueio de monetizacao (Nivel 2)</h4>
+          <div className="creator-dash__mono-longterm" aria-label="Metas de monetização">
+            <h4 className="creator-dash__subhead">Desbloqueio de monetização (Nível 2)</h4>
             <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-              Alvo para <strong>POD com repasse</strong> e vitrine com repasse - alem de <strong>monetizacao aprovada</strong> no perfil.
+              Ao bater essas metas, você libera ganhos com a loja, membros e outros recursos financeiros no seu perfil.
             </p>
             <ul className="creator-dash__mono-longterm-metrics">
               <li>Seguidores: {nf.format(MONETIZATION_THRESHOLDS.followers)}</li>
@@ -140,16 +140,16 @@ export default function CreatorMonetizationPanel({ progressVm }) {
               </>
             ) : (
               <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-                Nas metricas, voce ja esta no patamar de monetizacao - siga com a conta e as aprovacoes no perfil.
+                Nas métricas, você já está no patamar de monetização. Agora é só manter a conta pronta e aprovada no perfil.
               </p>
             )}
           </div>
         </section>
 
         <section className="creator-dash__panel creator-dash__panel--drive" aria-label="Continue publicando">
-          <p className="creator-dash__drive-title">Ritmo sustentavel</p>
+          <p className="creator-dash__drive-title">Ritmo sustentável</p>
           <p className="creator-dash__drive-text">
-            Cada capitulo te aproxima do proximo nivel na plataforma. Consistencia {'>'} velocidade.
+            Cada capítulo te aproxima do próximo nível na plataforma. Consistência {'>'} velocidade.
           </p>
         </section>
 
@@ -158,10 +158,10 @@ export default function CreatorMonetizationPanel({ progressVm }) {
             Ver analytics
           </Link>
           <Link className="creator-dash__cta creator-dash__cta--ghost" to="/creator/missoes">
-            Ir para Missoes &amp; XP
+            Ir para Missões &amp; XP
           </Link>
           <p className="creator-dash__legal">
-            Missoes, XP e boost nao liberam repasse. POD com repasse: Nivel 2 nas metricas + monetizacao aprovada no perfil.
+            Missões, XP e boost não liberam ganhos por si só. Para vender na loja e receber pela plataforma, você precisa bater o Nível 2 nas métricas e ter monetização aprovada no perfil.
           </p>
         </footer>
       </div>

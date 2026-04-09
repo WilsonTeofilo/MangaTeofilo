@@ -153,9 +153,12 @@ export default function CreatorApplicationModal({
     }
   }, [variant, onClose]);
 
+  const allowImmediateMonetization = intent === 'mangaka_monetize';
   const initialWantsMonetize = useMemo(
-    () => String(initial.monetizationPreference || 'publish_only').trim().toLowerCase() === 'monetize',
-    [initial.monetizationPreference]
+    () =>
+      allowImmediateMonetization &&
+      String(initial.monetizationPreference || 'publish_only').trim().toLowerCase() === 'monetize',
+    [allowImmediateMonetization, initial.monetizationPreference]
   );
 
   useEffect(() => {
@@ -167,7 +170,8 @@ export default function CreatorApplicationModal({
     setInstagramUrl(String(initial.instagramUrl || '').trim());
     setYoutubeUrl(String(initial.youtubeUrl || '').trim());
     setMonetizationPreference(
-      String(initial.monetizationPreference || 'publish_only').toLowerCase() === 'monetize'
+      allowImmediateMonetization &&
+        String(initial.monetizationPreference || 'publish_only').toLowerCase() === 'monetize'
         ? 'monetize'
         : 'publish_only'
     );
@@ -207,6 +211,7 @@ export default function CreatorApplicationModal({
     initial.payoutPixType,
     initial.profileImageCrop,
     initial.existingProfileImageUrl,
+    allowImmediateMonetization,
   ]);
 
   const pixKeyNormalized = useMemo(
@@ -242,14 +247,17 @@ export default function CreatorApplicationModal({
 
   useEffect(() => {
     if (variant === 'modal' && !open) return;
-    if (intent === 'mangaka_monetize') {
+    if (allowImmediateMonetization) {
       if (!minorInForm) setMonetizationPreference('monetize');
       return;
     }
     if (minorInForm && monetizationPreference === 'monetize') {
       setMonetizationPreference('publish_only');
     }
-  }, [open, variant, intent, minorInForm, monetizationPreference]);
+    if (monetizationPreference !== 'publish_only') {
+      setMonetizationPreference('publish_only');
+    }
+  }, [open, variant, allowImmediateMonetization, minorInForm, monetizationPreference]);
 
   useEffect(() => {
     if (variant === 'modal' && !open) {
@@ -556,7 +564,7 @@ export default function CreatorApplicationModal({
     let docCpfDigits = '';
     if (wantsMonetize) {
       if (age < 18) {
-        showFormError('Menores de 18 anos não podem Solicitar monetização nesta plataforma.');
+      showFormError('Menores de 18 anos não podem solicitar monetização nesta plataforma.');
         return;
       }
       if (!legalFullNameHasMinThreeWords(legalFullName)) {
@@ -590,7 +598,7 @@ export default function CreatorApplicationModal({
         return;
       }
       if (!acceptFinancialTerms) {
-        showFormError('Aceite os termos financeiros e de repasse para Solicitar monetização.');
+      showFormError('Aceite os termos financeiros para solicitar monetização.');
         return;
       }
     }
@@ -680,7 +688,7 @@ export default function CreatorApplicationModal({
           </h2>
           <div className="creator-app-underage-dialog__body">
             <p>
-              Na MangaTeofilo, <strong>repasses financeiros</strong> (CPF, chave PIX, contrato de criador) exigem{' '}
+              Na MangaTeofilo, <strong>os ganhos na plataforma</strong> (CPF, chave PIX e contrato de creator) exigem{' '}
               <strong>maioridade — 18 anos ou mais</strong>, por lei e política da plataforma.
             </p>
             <p>
@@ -742,12 +750,13 @@ export default function CreatorApplicationModal({
       document.body
     );
 
-  const isMangakaMonetizeIntent = intent === 'mangaka_monetize';
+  const isMangakaMonetizeIntent = allowImmediateMonetization;
   const monetizationAllowed = ageInForm != null && ageInForm >= 18;
   /** Mostrar bloco legal sempre em Â«monetizarÂ», exceto menor confirmado; submit ainda exige 18+ e data válida. */
   const showMonetizationCompliance = monetizationPreference === 'monetize' && !minorInForm;
 
   const handleMonetizeToggleClick = () => {
+    if (!allowImmediateMonetization) return;
     if (minorInForm) {
       setUnderageMonetizationModalOpen(true);
       return;
@@ -769,8 +778,8 @@ export default function CreatorApplicationModal({
           </h2>
           <p>
             {isMangakaMonetizeIntent
-              ? 'Envie nome legal, CPF e chave PIX para a equipe analisar. Você continua publicando normalmente até a aprovação.'
-              : 'Publicar sem monetização entra direto. Se quiser monetizar, seus dados legais e de repasse vão para revisão humana.'}
+              ? 'Envie seus dados para análise. Você continua publicando normalmente até a aprovação.'
+              : 'Seu perfil de creator pode ser liberado para publicar agora. Os ganhos só entram depois, quando você cumprir as metas e pedir a monetização.'}
           </p>
         </div>
         <button
@@ -1006,8 +1015,8 @@ export default function CreatorApplicationModal({
           {isMangakaMonetizeIntent ? 'Pedido' : 'Objetivo'}
           {isMangakaMonetizeIntent ? (
             <p className="creator-app-modal__hint" style={{ marginTop: 6 }}>
-              Monetização na plataforma — dados legais e PIX abaixo seguem para revisão do time antes de liberar
-              repasses.
+            Monetização na plataforma — os dados legais e a chave PIX abaixo seguem para revisão do time antes de
+            liberar seus ganhos.
             </p>
           ) : (
             <>
@@ -1023,20 +1032,21 @@ export default function CreatorApplicationModal({
                   type="button"
                   className={`creator-app-modal__toggle${monetizationPreference === 'monetize' ? ' is-on' : ''}`}
                   onClick={handleMonetizeToggleClick}
+                  disabled={!allowImmediateMonetization}
                 >
-                  Quero monetizar
+                  Monetizar depois
                 </button>
               </div>
               <p className="creator-app-modal__hint">
                 {minorInForm
-                  ? 'Você pode publicar, mas não pode monetizar devido à idade. Conteúdo e repasse financeiro ficam separados por segurança jurídica.'
+                  ? 'Você pode publicar normalmente, mas a monetização só libera para maiores de 18 anos.'
                   : monetizationPreference === 'monetize' && !monetizationAllowed
                     ? 'Preencha uma data de nascimento válida (18+) para enviar com monetização — os dados legais aparecem abaixo.'
                     : !birthIsoEffective
                       ? 'Informe a data de nascimento para concluir a candidatura.'
-                      : monetizationPreference === 'monetize'
-                        ? 'Publicar e receber via plataforma são caminhos diferentes: com monetização, pedimos dados legais e de repasse.'
-                        : 'Modo apenas publicar: seu perfil de criador pode ser liberado na hora, sem repasses até você Solicitar monetização depois.'}
+                      : allowImmediateMonetization
+                        ? 'Para liberar ganhos, precisamos revisar seus dados legais e a chave de recebimento.'
+                        : 'Você poderá monetizar ao completar as missões e liberar essa etapa depois. Por enquanto, seu perfil entra no modo só publicar.'}
               </p>
             </>
           )}
@@ -1057,7 +1067,7 @@ export default function CreatorApplicationModal({
             </label>
             <div className="creator-app-modal__pix-block">
               <p className="creator-app-modal__section-title" style={{ marginBottom: 8 }}>
-                Chave PIX (repasse manual)
+                Chave PIX para receber
               </p>
               <label className="creator-app-modal__label">
                 Tipo da chave
@@ -1146,12 +1156,12 @@ export default function CreatorApplicationModal({
                 )
               ) : (
                 <p className="creator-app-modal__hint">
-                  O valor enviado ao servidor fica normalizado (sem pontuação de CPF/telefone).
+                  O valor enviado ao servidor fica normalizado, sem pontuação de CPF ou telefone.
                 </p>
               )}
               {payoutPixType === 'cpf' ? (
                 <p className="creator-app-modal__hint" style={{ marginTop: 10 }}>
-                  Este CPF é o mesmo do documento para repasse — não pedimos um segundo campo.
+                  Este CPF é o mesmo do documento usado para receber — não pedimos um segundo campo.
                 </p>
               ) : null}
               {payoutPixType !== 'cpf' ? (
@@ -1239,8 +1249,8 @@ export default function CreatorApplicationModal({
 
         <label className="creator-app-modal__check">
           <input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} />
-          <span>
-            Aceito os termos do programa de criadores e entendo que publicar e monetizar sao etapas separadas.
+            <span>
+            Aceito os termos do programa de criadores e entendo que publicar e monetizar são etapas separadas.
           </span>
         </label>
 
@@ -1252,7 +1262,7 @@ export default function CreatorApplicationModal({
               onChange={(e) => setAcceptFinancialTerms(e.target.checked)}
             />
             <span>
-              Li e aceito os termos financeiros e de repasse relacionados à monetização na plataforma.
+              Li e aceito os termos financeiros relacionados à monetização na plataforma.
             </span>
           </label>
         ) : null}
@@ -1266,7 +1276,7 @@ export default function CreatorApplicationModal({
           {loading
             ? 'Enviando...'
             : monetizationPreference === 'monetize'
-              ? 'Enviar para revisao'
+              ? 'Enviar para revisão'
               : 'Liberar meu perfil de creator'}
         </button>
       </div>

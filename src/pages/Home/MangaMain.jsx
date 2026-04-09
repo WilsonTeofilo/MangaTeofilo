@@ -14,10 +14,10 @@ import KokuinLegacyLandingSection from '../../components/KokuinLegacyLandingSect
 import { getLastRead, getReadHistory, subscribeReadingProgress } from '../../utils/readingProgressLocal';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
-import { buildPublicProfilesMapFromUsuarios } from '../../utils/publicUserProfile';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
+import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../utils/publicProfilesRealtime';
 import './MangaMain.css';
 
 function pathObraPublica(obra) {
@@ -90,12 +90,12 @@ export default function MangaMain({ user }) {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
-      setCreatorsMap(snapshot.exists() ? buildPublicProfilesMapFromUsuarios(snapshot.val() || {}) : {});
-    });
-    return () => unsub();
-  }, []);
+  const creatorIdsForLookup = useMemo(
+    () => collectCreatorIdsFromWorksAndChapters(obrasPublicadas, capitulos),
+    [obrasPublicadas, capitulos]
+  );
+
+  useEffect(() => subscribePublicProfilesMap(db, creatorIdsForLookup, setCreatorsMap), [creatorIdsForLookup]);
 
   const modoHome = useMemo(() => {
     if (loadingObras || loadingCapitulos) return 'loading';

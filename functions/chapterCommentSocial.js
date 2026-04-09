@@ -54,7 +54,7 @@ async function actorLabelFromUid(db, uid) {
     if (name && name.toLowerCase() !== handle.toLowerCase()) return `${name} (@${handle})`;
     return `@${handle}`;
   }
-  return name || 'Alguem';
+  return name || 'Alguém';
 }
 
 function commentSocialEnabled(profile) {
@@ -97,9 +97,9 @@ async function bumpCreatorReplyEngagement(db, creatorUid) {
 }
 
 function likeMilestoneCopy(n, capTitulo) {
-  const em = capTitulo ? ` em Â«${capTitulo}Â»` : '';
-  if (n === 1) return `Seu comentario recebeu a primeira curtida${em}.`;
-  return `Seu comentario atingiu ${n} curtidas${em}.`;
+  const em = capTitulo ? ` em "${capTitulo}"` : '';
+  if (n === 1) return `Seu comentário recebeu a primeira curtida${em}.`;
+  return `Seu comentário atingiu ${n} curtidas${em}.`;
 }
 
 async function maybePushCommentSocial(db, recipientUid, payload) {
@@ -168,8 +168,8 @@ export const onChapterCommentSocialWritten = onValueWritten(
       if (!recipientUid || recipientUid === actorUid) return;
 
       const actorLabel = await actorLabelFromUid(db, actorUid);
-      const title = 'Resposta ao seu comentario';
-      const message = `${actorLabel} respondeu seu comentario${capTitulo ? ` em Â«${capTitulo}Â»` : ''}.`;
+      const title = 'Resposta ao seu comentário';
+      const message = `${actorLabel} respondeu seu comentário${capTitulo ? ` em "${capTitulo}"` : ''}.`;
 
       try {
         await maybePushCommentSocial(db, recipientUid, {
@@ -217,7 +217,7 @@ export const onChapterCommentSocialWritten = onValueWritten(
         try {
           await maybePushCommentSocial(db, ownerUid, {
             type: 'comment_like_milestone',
-            title: m === 1 ? 'Primeira curtida no seu comentario' : `${m} curtidas no seu comentario`,
+            title: m === 1 ? 'Primeira curtida no seu comentário' : `${m} curtidas no seu comentário`,
             message: likeMilestoneCopy(m, capTitulo),
             targetPath,
             chapterId: capId,

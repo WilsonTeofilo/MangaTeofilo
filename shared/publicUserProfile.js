@@ -15,24 +15,43 @@ function asNumber(value, fallback = 0) {
 }
 
 function hasCanonicalCreatorState(source = {}, root = {}) {
+  const sourceCreatorProfileDirect = asObject(source.creatorProfile);
+  const rootCreatorProfileDirect = asObject(root.creatorProfile);
   const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
-  const creatorMonetizationStatus = asString(
-    source.creatorMonetizationStatus || root.creatorMonetizationStatus
-  ).toLowerCase();
+  const signupIntent = asString(source.signupIntent || root.signupIntent).toLowerCase();
   const role = asString(
     source.role || root.role || source.panelRole || root.panelRole,
     'user'
   ).toLowerCase();
   const sourceCreator = asObject(source.creator);
   const rootCreator = asObject(root.creator);
+  const sourceCreatorProfile = asObject(sourceCreator.profile);
+  const rootCreatorProfile = asObject(rootCreator.profile);
+  const sourceCreatorSocial = asObject(sourceCreator.social);
+  const rootCreatorSocial = asObject(rootCreator.social);
+  const hasCreatorProfileData =
+    asString(source.creatorDisplayName || root.creatorDisplayName) !== '' ||
+    asString(source.creatorBio || root.creatorBio) !== '' ||
+    asString(source.creatorUsername || root.creatorUsername) !== '' ||
+    asString(source.creatorBannerUrl || root.creatorBannerUrl) !== '' ||
+    asString(source.instagramUrl || root.instagramUrl) !== '' ||
+    asString(source.youtubeUrl || root.youtubeUrl) !== '' ||
+    asString(sourceCreatorProfileDirect.displayName || rootCreatorProfileDirect.displayName) !== '' ||
+    asString(sourceCreatorProfileDirect.bioFull || rootCreatorProfileDirect.bioFull) !== '' ||
+    asString(sourceCreatorProfileDirect.username || rootCreatorProfileDirect.username) !== '' ||
+    asString(sourceCreatorProfile.displayName || rootCreatorProfile.displayName) !== '' ||
+    asString(sourceCreatorProfile.bio || rootCreatorProfile.bio) !== '' ||
+    asString(sourceCreatorSocial.instagram || rootCreatorSocial.instagram) !== '' ||
+    asString(sourceCreatorSocial.youtube || rootCreatorSocial.youtube) !== '';
   return (
+    source.isCreatorProfile === true ||
+    root.isCreatorProfile === true ||
     creatorStatus === 'active' ||
     creatorStatus === 'onboarding' ||
-    creatorMonetizationStatus === 'active' ||
+    signupIntent === 'creator' ||
     role === 'mangaka' ||
     role === 'creator' ||
-    sourceCreator.isApproved === true ||
-    rootCreator.isApproved === true
+    hasCreatorProfileData
   );
 }
 
@@ -46,44 +65,79 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
   const privateCreatorProfile = asObject(root?.creator?.profile);
   const privateCreatorSocial = asObject(root?.creator?.social);
   const userHandle = asString(
-    source.userHandle || root.userHandle || sourceCreatorProfile.username
+    root.userHandle || source.userHandle || privateCreatorProfile.username || sourceCreatorProfile.username
   ).toLowerCase();
   const creatorDisplayName = asString(
-    source.creatorDisplayName ||
+    privateCreatorProfile.displayName ||
+      source.creatorDisplayName ||
       sourceCreatorProfile.displayName ||
-      privateCreatorProfile.displayName ||
-      source.userName ||
-      root.userName,
+      root.userName ||
+      source.userName,
     'Leitor'
   );
   const creatorBio = asString(
-    source.creatorBio ||
+    privateCreatorProfile.bio ||
+      source.creatorBio ||
       sourceCreatorProfile.bioFull ||
       sourceCreatorProfile.bioShort ||
-      privateCreatorProfile.bio ||
       root.creatorBio
   );
   const instagramUrl = asString(
-    source.instagramUrl || sourceCreatorSocial.instagramUrl || privateCreatorSocial.instagram || root.instagramUrl
+    privateCreatorSocial.instagram ||
+      source.instagramUrl ||
+      sourceCreatorSocial.instagramUrl ||
+      root.instagramUrl
   );
   const youtubeUrl = asString(
-    source.youtubeUrl || sourceCreatorSocial.youtubeUrl || privateCreatorSocial.youtube || root.youtubeUrl
+    privateCreatorSocial.youtube ||
+      source.youtubeUrl ||
+      sourceCreatorSocial.youtubeUrl ||
+      root.youtubeUrl
   );
-  const userAvatar = asString(source.userAvatar || root.userAvatar, AVATAR_FALLBACK);
-  const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
-  const signupIntent = asString(source.signupIntent || root.signupIntent, 'reader').toLowerCase();
+  const userAvatar = asString(root.userAvatar || source.userAvatar, AVATAR_FALLBACK);
+  const creatorAvatarUrl = asString(
+    sourceCreatorProfile.avatarUrl ||
+      privateCreatorProfile.avatarUrl ||
+      source.creatorAvatarUrl ||
+      source.readerProfileAvatarUrl ||
+      userAvatar,
+    userAvatar
+  );
+  const creatorStatus = asString(root.creatorStatus || source.creatorStatus).toLowerCase();
+  const signupIntent = asString(root.signupIntent || source.signupIntent, 'reader').toLowerCase();
   const isCreatorProfile = hasCanonicalCreatorState(source, root);
   const creatorProfile = isCreatorProfile
     ? {
         ...sourceCreatorProfile,
         displayName: creatorDisplayName,
         username: asString(sourceCreatorProfile.username || userHandle).toLowerCase(),
+        avatarUrl: creatorAvatarUrl,
         bioFull: creatorBio,
         socialLinks: {
           ...sourceCreatorSocial,
           instagramUrl,
           youtubeUrl,
         },
+        supportOffer: (() => {
+          const supportOffer =
+            sourceCreatorProfile?.supportOffer && typeof sourceCreatorProfile.supportOffer === 'object'
+              ? sourceCreatorProfile.supportOffer
+              : root?.creator?.monetization?.offer && typeof root.creator.monetization.offer === 'object'
+                ? root.creator.monetization.offer
+                : null;
+          return {
+            membershipEnabled: supportOffer?.membershipEnabled === true,
+            membershipPriceBRL:
+              Number.isFinite(Number(supportOffer?.membershipPriceBRL))
+                ? Number(supportOffer.membershipPriceBRL)
+                : null,
+            donationSuggestedBRL:
+              Number.isFinite(Number(supportOffer?.donationSuggestedBRL))
+                ? Number(supportOffer.donationSuggestedBRL)
+                : null,
+            updatedAt: asNumber(supportOffer?.updatedAt, 0),
+          };
+        })(),
       }
     : null;
 
@@ -107,15 +161,6 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
     readerProfileAvatarUrl: asString(source.readerProfileAvatarUrl, userAvatar),
     readerSince: asNumber(source.readerSince || root.createdAt || root.readerSince || source.createdAt, 0),
     creatorStatus: isCreatorProfile ? creatorStatus : '',
-    creatorMembershipEnabled: isCreatorProfile && source.creatorMembershipEnabled === true,
-    creatorMembershipPriceBRL:
-      isCreatorProfile && source.creatorMembershipPriceBRL != null
-        ? Number(source.creatorMembershipPriceBRL)
-        : null,
-    creatorDonationSuggestedBRL:
-      isCreatorProfile && source.creatorDonationSuggestedBRL != null
-        ? Number(source.creatorDonationSuggestedBRL)
-        : null,
     updatedAt:
       asNumber(
         source.updatedAt || root?.creator?.meta?.updatedAt || root.updatedAt || root.lastLogin || root.createdAt,

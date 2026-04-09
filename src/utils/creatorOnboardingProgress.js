@@ -1,7 +1,9 @@
 import { obterObraIdCapitulo } from '../config/obras';
 import {
   resolveCreatorMonetizationPreferenceFromDb,
+  resolveCreatorMonetizationApplicationStatusFromDb,
   resolveCreatorMonetizationStatusFromDb,
+  resolveCreatorSupportOfferFromDb,
 } from './creatorMonetizationUi';
 import {
   CREATOR_BIO_MIN_LENGTH,
@@ -9,7 +11,6 @@ import {
   CREATOR_MEMBERSHIP_PRICE_MAX_BRL,
   CREATOR_MEMBERSHIP_PRICE_MIN_BRL,
 } from '../constants';
-import { resolveCreatorMonetizationFlags } from './creatorMonetizationUi';
 import { validateCreatorSocialLinks } from './creatorSocialLinks';
 import { toRecordList } from './firebaseRecordList';
 
@@ -61,11 +62,12 @@ export function buildCreatorOnboardingSteps({
   const hasSocial = Boolean(socialValidation.instagramUrl || socialValidation.youtubeUrl);
   const publicOk = publicName.length >= 3 && avatar.length > 3 && hasBio && hasSocial;
 
-  const price = Number(perfilDb.creatorMembershipPriceBRL);
-  const donation = Number(perfilDb.creatorDonationSuggestedBRL);
-  const membershipEnabled = perfilDb.creatorMembershipEnabled !== false;
+  const supportOffer = resolveCreatorSupportOfferFromDb(perfilDb);
+  const price = Number(supportOffer.membershipPriceBRL);
+  const donation = Number(supportOffer.donationSuggestedBRL);
+  const membershipEnabled = supportOffer.membershipEnabled === true;
   const monetizationStatus = resolveCreatorMonetizationStatusFromDb(perfilDb);
-  const monetizationFlags = resolveCreatorMonetizationFlags(perfilDb);
+  const monetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(perfilDb);
   const monetizationActive = monetizationStatus === 'active';
   const monetizationConfigured =
     Number.isFinite(price) &&
@@ -79,7 +81,8 @@ export function buildCreatorOnboardingSteps({
     ? true
     : (
       monetizationStatus === 'blocked_underage' ||
-      (monetizationConfigured && (monetizationStatus === 'active' || monetizationFlags.isApproved === true))
+      (monetizationConfigured &&
+        (monetizationStatus === 'active' || monetizationApplicationStatus === 'approved'))
     );
 
   const produtos = toRecordList(produtosVal);

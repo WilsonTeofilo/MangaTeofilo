@@ -32,7 +32,6 @@ export {
   adminBackfillChapterWorkIds,
   adminBackfillStoreProductCreatorIds,
   adminAuditarPedidosLojaSemAtribuicao,
-  adminRecordCreatorPixPayout,
   adminRevokeUserSessions,
   adminRevokeAllSessions,
 } from './maintenance.js';

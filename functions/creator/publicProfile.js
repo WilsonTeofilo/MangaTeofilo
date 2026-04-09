@@ -1,7 +1,10 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';
 import {
+  readCreatorSupportOfferFromDb,
   readCreatorStatsFromDb,
+  resolveCreatorFinancialStatusFromDb,
+  resolveCreatorMonetizationApplicationStatusFromDb,
   resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../creatorRecord.js';
@@ -32,24 +35,28 @@ export async function getMonetizableCreatorPublicProfile(
     ...creatorPublic,
     ...creatorPrivate,
   });
+  const creatorMonetizationApplicationStatus =
+    creatorMonetizationPreference === 'monetize'
+      ? resolveCreatorMonetizationApplicationStatusFromDb(creatorPrivate)
+      : 'not_requested';
+  const creatorFinancialStatus =
+    creatorMonetizationPreference === 'monetize'
+      ? resolveCreatorFinancialStatusFromDb(creatorPrivate)
+      : 'inactive';
   const creatorMonetizationStatus =
     creatorMonetizationPreference === 'monetize'
       ? resolveCreatorMonetizationStatusFromDb(creatorPrivate)
       : 'disabled';
-  const creatorMonetizationApproved =
-    creatorPrivate?.creator?.monetization?.approved === true ||
-    creatorPrivate?.creator?.monetization?.isApproved === true;
-  const creatorMonetizationActive =
-    creatorPrivate?.creator?.monetization?.isMonetizationActive === true ||
-    creatorPrivate?.creator?.monetization?.enabled === true ||
-    creatorMonetizationStatus === 'active';
+  const creatorSupportOffer = readCreatorSupportOfferFromDb(creatorPrivate);
+  const creatorMonetizationApproved = creatorMonetizationApplicationStatus === 'approved';
+  const creatorMonetizationActive = creatorFinancialStatus === 'active';
   if (creatorMonetizationActive !== true || creatorMonetizationApproved !== true) {
     throw new HttpsError(
       'failed-precondition',
       'Este criador esta em modo apenas publicar e nao pode receber agora.'
     );
   }
-  if (requireMembershipEnabled && creatorPrivate.creatorMembershipEnabled !== true) {
+  if (requireMembershipEnabled && creatorSupportOffer.membershipEnabled !== true) {
     throw new HttpsError('failed-precondition', 'Este criador ainda nao ativou a membership publica.');
   }
   const creatorStats = readCreatorStatsFromDb(
@@ -65,20 +72,21 @@ export async function getMonetizableCreatorPublicProfile(
     creatorProfile: {
       ...publicCreatorProfile,
       monetizationPreference: creatorMonetizationPreference,
+      monetizationApplicationStatus: creatorMonetizationApplicationStatus,
       monetizationStatus: creatorMonetizationStatus,
       monetizationEnabled: creatorMonetizationActive,
       isMonetizationActive: creatorMonetizationActive,
       isApproved: creatorMonetizationApproved,
+      financialStatus: creatorFinancialStatus,
+      supportOffer: creatorSupportOffer,
     },
     stats: creatorStats,
     followersCount: creatorStats.followersCount,
-    creatorMembershipEnabled: creatorPrivate.creatorMembershipEnabled === true,
-    creatorMembershipPriceBRL:
-      creatorPrivate.creatorMembershipPriceBRL ?? creatorPublic.creatorMembershipPriceBRL,
-    creatorDonationSuggestedBRL:
-      creatorPrivate.creatorDonationSuggestedBRL ?? creatorPublic.creatorDonationSuggestedBRL,
+    creatorSupportOffer,
     creatorMonetizationPreference,
+    creatorMonetizationApplicationStatus,
     creatorMonetizationStatus,
+    creatorFinancialStatus,
     isApproved: creatorMonetizationApproved,
     isMonetizationActive: creatorMonetizationActive,
   };

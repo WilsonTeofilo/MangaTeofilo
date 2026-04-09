@@ -20,11 +20,11 @@ import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraEstaArquivada, obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
-import { formatUserDisplayWithHandle, normalizePublicHandle } from '../../utils/publicCreatorName';
+import { resolvePublicCreatorIdentity } from '../../utils/publicCreatorName';
 import {
-  buildPublicProfileFromUsuarioRow,
-  resolvePublicProfileAvatarUrl,
+  resolvePublicProfileDisplayName,
 } from '../../utils/publicUserProfile';
+import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../utils/publicProfilesRealtime';
 import { buildObraPageSeo } from '../../seo/applyObraPageSeo';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './ObraDetalhe.css';
@@ -39,10 +39,10 @@ function usuarioPodeVerObraArquivada(user, adminAccess, obra) {
 function chapterSort(a, b) {
   const nA = Number(a?.numero || 0);
   const nB = Number(b?.numero || 0);
-  if (nA !== nB) return nB - nA;
+  if (nA !== nB) return nA - nB;
   const dA = Date.parse(a?.dataUpload || '');
   const dB = Date.parse(b?.dataUpload || '');
-  return (Number.isFinite(dB) ? dB : 0) - (Number.isFinite(dA) ? dA : 0);
+  return (Number.isFinite(dA) ? dA : 0) - (Number.isFinite(dB) ? dB : 0);
 }
 
 /** Rota `/obra/:obraId` ou `/work/:slug` (slug ou id). */
@@ -60,11 +60,13 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   const [obra, setObra] = useState(null);
   const [capitulos, setCapitulos] = useState([]);
   const [isFavorito, setIsFavorito] = useState(false);
-  const [creatorProfile, setCreatorProfile] = useState(null);
+  const [creatorsMap, setCreatorsMap] = useState({});
   const [isSubscribedWork, setIsSubscribedWork] = useState(false);
   const [workNotificationBusy, setWorkNotificationBusy] = useState(false);
   const [workBrowserPushModalOpen, setWorkBrowserPushModalOpen] = useState(false);
   const [workBrowserPushPermission, setWorkBrowserPushPermission] = useState('default');
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [workActionMessage, setWorkActionMessage] = useState('');
   const [lastReadLocal, setLastReadLocal] = useState(() => getLastRead());
   const upsertNotificationSubscription = useMemo(
     () => httpsCallable(functions, 'upsertNotificationSubscription'),
@@ -82,7 +84,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return buildObraPageSeo({ obra: obraParaExibir });
   }, [obraParaExibir]);
 
-  /** Redireciona `/obra/shito`, `/work/shito`, `/work/kokuin` â†’ `/work/{slug-canÃ´nico}` (SEO) sem mudar `obras/shito` no RTDB. */
+  /** Redireciona `/obra/shito`, `/work/shito`, `/work/kokuin` para `/work/{slug-canônico}` (SEO) sem mudar `obras/shito` no RTDB. */
   useEffect(() => {
     if (loading || !obraParaExibir) return;
     const canon = obraSegmentoUrlPublica(obraParaExibir);
@@ -210,22 +212,6 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return () => unsub();
   }, [obraId, user?.uid]);
 
-  useEffect(() => {
-    const creatorId = obraCreatorId(obra);
-    if (!creatorId) {
-      setCreatorProfile(null);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, `usuarios/${creatorId}`), (snapshot) => {
-      setCreatorProfile(
-        snapshot.exists() ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, creatorId) : null
-      );
-    });
-    return () => unsub();
-  }, [obra]);
-
-  useEffect(() => subscribeReadingProgress(() => setLastReadLocal(getLastRead())), []);
-
   const capitulosResolvidos = useMemo(() => {
     const fallbackCreatorId = obraCreatorId(obra);
     return capitulos.map((cap) => (
@@ -233,10 +219,23 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     ));
   }, [capitulos, obra]);
 
+  const creatorIdsForLookup = useMemo(
+    () => collectCreatorIdsFromWorksAndChapters(obra ? [obra] : [], capitulosResolvidos),
+    [obra, capitulosResolvidos]
+  );
+
+  useEffect(() => subscribePublicProfilesMap(db, creatorIdsForLookup, setCreatorsMap), [creatorIdsForLookup]);
+
+  useEffect(() => subscribeReadingProgress(() => setLastReadLocal(getLastRead())), []);
+
   const fallbackCriadorObra = obraCreatorId(obra);
   const capitulosAsc = useMemo(
     () => [...capitulosResolvidos].sort((a, b) => Number(a?.numero || 0) - Number(b?.numero || 0)),
     [capitulosResolvidos]
+  );
+  const creatorIdentity = useMemo(
+    () => resolvePublicCreatorIdentity(obraParaExibir || obra || {}, creatorsMap, capitulosResolvidos),
+    [obraParaExibir, obra, creatorsMap, capitulosResolvidos]
   );
 
   const primeiroLiberado = useMemo(
@@ -256,7 +255,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return cap;
   }, [lastReadLocal, obraId, capitulosResolvidos, user, perfil, fallbackCriadorObra]);
 
-  const capMaisRecente = capitulosResolvidos[0] || null;
+  const capMaisRecente = capitulosAsc[capitulosAsc.length - 1] || null;
   const novoCapLabel = useMemo(() => {
     if (!capMaisRecente) return null;
     const ts =
@@ -267,8 +266,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     const diff = Date.now() - ts;
     if (diff < 0) return null;
     const h = diff / 3600000;
-    if (h < 1) return 'CapÃ­tulo novo hÃ¡ menos de 1h';
-    if (h < 48) return `ðŸ”¥ CapÃ­tulo novo hÃ¡ ${Math.round(h)}h`;
+    if (h < 1) return 'Capítulo novo há menos de 1h';
+    if (h < 48) return `Capítulo novo há ${Math.round(h)}h`;
     return null;
   }, [capMaisRecente]);
 
@@ -277,7 +276,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       navigate('/login');
       return;
     }
-    if (!obraId) return;
+    if (!obraId || favoriteBusy) return;
     const capa =
       String(obraParaExibir?.capaUrl || obra?.capaUrl || obraParaExibir?.coverUrl || obra?.coverUrl || '').trim();
     const slug = String(obraParaExibir?.slug || obra?.slug || obraId || '').trim();
@@ -290,11 +289,22 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       coverUrl: capa,
       savedAt: Date.now(),
     };
-    if (isFavorito) {
-      await removeWorkFavoriteBoth(db, user.uid, obraId);
-      return;
+    try {
+      setFavoriteBusy(true);
+      setWorkActionMessage('');
+      if (isFavorito) {
+        await removeWorkFavoriteBoth(db, user.uid, obraId);
+        setIsFavorito(false);
+        return;
+      }
+      await saveWorkFavoriteBoth(db, user.uid, obraId, payload);
+      setIsFavorito(true);
+    } catch (error) {
+      console.error('Erro ao salvar obra:', error);
+      setWorkActionMessage('Não foi possível salvar esta obra agora.');
+    } finally {
+      setFavoriteBusy(false);
     }
-    await saveWorkFavoriteBoth(db, user.uid, obraId, payload);
   };
 
   const abrirComecar = () => {
@@ -308,10 +318,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   };
 
   const abrirCriador = () => {
-    const alvo = obraParaExibir || obra;
-    const creatorId = String(obraCreatorId(alvo) || '').trim();
-    if (!creatorId) return;
-    navigate(`/criador/${encodeURIComponent(creatorId)}`);
+    if (!creatorPath) return;
+    navigate(creatorPath);
   };
 
   const salvarAvisosObra = async () => {
@@ -319,14 +327,17 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       navigate('/login');
       return;
     }
+    if (!obraId || workNotificationBusy) return;
     setWorkNotificationBusy(true);
     try {
+      setWorkActionMessage('');
       const nextEnabled = !isSubscribedWork;
       await upsertNotificationSubscription({
         type: 'work',
         targetId: obraId,
         enabled: nextEnabled,
       });
+      setIsSubscribedWork(nextEnabled);
       if (nextEnabled) {
         const perm =
           typeof window === 'undefined' || typeof Notification === 'undefined'
@@ -335,6 +346,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
         setWorkBrowserPushPermission(perm);
         setWorkBrowserPushModalOpen(true);
       }
+    } catch (error) {
+      console.error('Erro ao acompanhar obra:', error);
+      setWorkActionMessage('Não foi possível atualizar o acompanhamento desta obra.');
     } finally {
       setWorkNotificationBusy(false);
     }
@@ -345,8 +359,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return (
       <main className="obra-page">
         <section className="obra-not-found">
-          <h1>Obra nÃ£o encontrada</h1>
-          <p>Confira o link ou volte ao catÃ¡logo.</p>
+          <h1>Obra não encontrada</h1>
+          <p>Confira o link ou volte ao catálogo.</p>
           <button type="button" onClick={() => navigate('/works')}>
             Ver obras
           </button>
@@ -361,11 +375,11 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return (
       <main className="obra-page">
         <section className="obra-not-found">
-          <h1>Obra nÃ£o encontrada</h1>
+          <h1>Obra não encontrada</h1>
           <p>
             {obra && obraEstaArquivada(obra)
-              ? 'Esta obra foi arquivada e nÃ£o estÃ¡ mais no catÃ¡logo pÃºblico.'
-              : 'Essa obra nÃ£o existe ou ainda nÃ£o foi publicada.'}
+              ? 'Esta obra foi arquivada e não está mais no catálogo público.'
+              : 'Essa obra não existe ou ainda não foi publicada.'}
           </p>
           <button type="button" onClick={() => navigate('/works')}>
             Ver obras
@@ -375,9 +389,12 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     );
   }
 
-  const creatorUidObra = obraCreatorId(obraParaExibir);
-  const creatorHandle = normalizePublicHandle(creatorProfile);
-  const creatorPorLabel = formatUserDisplayWithHandle(creatorProfile, 'Autor');
+  const creatorUidObra = String(creatorIdentity?.creatorId || obraCreatorId(obraParaExibir) || '').trim();
+  const creatorHandle = creatorIdentity?.handle || '';
+  const creatorPorLabel = creatorIdentity?.label || 'Autor';
+  const creatorDisplayOnly = resolvePublicProfileDisplayName(creatorIdentity?.profile, creatorPorLabel);
+  const creatorAvatar = creatorIdentity?.avatarUrl || '/assets/fotos/shito.jpg';
+  const creatorPath = creatorIdentity?.path || (creatorUidObra ? `/criador/${encodeURIComponent(creatorUidObra)}` : '');
   const obraViews = Number(obraParaExibir.viewsCount || obraParaExibir.visualizacoes || 0);
   const obraLikes = Number(obraParaExibir.likesCount || obraParaExibir.curtidas || 0);
 
@@ -387,7 +404,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
         open={workBrowserPushModalOpen}
         permission={workBrowserPushPermission}
         title="Avisos no navegador"
-        description="Obra acompanhada. Quer receber notificaÃ§Ã£o aqui no navegador quando sair capÃ­tulo novo?"
+        description="Obra acompanhada. Quer receber notificação aqui no navegador quando sair capítulo novo?"
         onClose={() => setWorkBrowserPushModalOpen(false)}
       />
       {obraSeo ? (
@@ -398,10 +415,15 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
           <meta property="og:title" content={obraSeo.title} />
           <meta property="og:description" content={obraSeo.description} />
           <meta property="og:image" content={obraSeo.image} />
+          {/^https:\/\//i.test(obraSeo.image) ? (
+            <meta property="og:image:secure_url" content={obraSeo.image} />
+          ) : null}
+          <meta property="og:image:alt" content={obraSeo.title} />
           <meta property="og:url" content={obraSeo.canonical} />
           <meta name="twitter:title" content={obraSeo.title} />
           <meta name="twitter:description" content={obraSeo.description} />
           <meta name="twitter:image" content={obraSeo.image} />
+          <meta name="twitter:image:alt" content={obraSeo.title} />
           <link rel="canonical" href={obraSeo.canonical} />
           <script type="application/ld+json">{JSON.stringify(obraSeo.jsonLd)}</script>
         </Helmet>
@@ -419,33 +441,53 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
           <img
             className="obra-cover"
             src={obraParaExibir.capaUrl || obraParaExibir.bannerUrl || '/assets/fotos/shito.jpg'}
-            alt={`Capa do mangÃ¡ ${obraParaExibir.titulo || obraId}`}
+            alt={`Capa do mangá ${obraParaExibir.titulo || obraId}`}
           />
           <div className="obra-info">
             <h1>{obraParaExibir.titulo || obraId}</h1>
             {novoCapLabel ? <p className="obra-novo-cap">{novoCapLabel}</p> : null}
             <div className="obra-meta">
               <span>Status: {obraParaExibir.status || 'ongoing'}</span>
-              <span>PÃºblico: {obraParaExibir.publicoAlvo || 'Geral'}</span>
-              <span>{capitulos.length} capÃ­tulos</span>
+              <span>Público: {obraParaExibir.publicoAlvo || 'Geral'}</span>
+              <span>{capitulosAsc.length} capítulos</span>
               <span className="obra-meta-stats">
                 {obraViews > 0 ? `${obraViews.toLocaleString('pt-BR')} views` : null}
-                {obraViews > 0 && obraLikes > 0 ? ' Â· ' : null}
+                {obraViews > 0 && obraLikes > 0 ? ' · ' : null}
                 {obraLikes > 0 ? `${obraLikes.toLocaleString('pt-BR')} likes` : null}
               </span>
             </div>
             {creatorHandle ? (
-              <Link className="obra-creator-chip" to={`/@${creatorHandle}`}>
-                <img
-                  src={resolvePublicProfileAvatarUrl(creatorProfile, { mode: 'creator', fallback: '/assets/fotos/shito.jpg' })}
-                  alt={creatorPorLabel}
-                />
-                <span>por {creatorPorLabel}</span>
-              </Link>
+              <div className="obra-creator-inline">
+                <button
+                  type="button"
+                  className="obra-creator-chip"
+                  onClick={abrirCriador}
+                  disabled={!creatorPath}
+                >
+                  <img
+                    src={creatorAvatar}
+                    alt={creatorPorLabel}
+                  />
+                  <span>por {creatorDisplayOnly}</span>
+                </button>
+                <button
+                  type="button"
+                  className="obra-creator-handle-link"
+                  onClick={abrirCriador}
+                  disabled={!creatorPath}
+                >
+                  @{creatorHandle}
+                </button>
+                {creatorUidObra ? (
+                  <Link className="btn-obra-fav-page btn-obra-fav-page--creator" to={creatorPath}>
+                    Ver criador
+                  </Link>
+                ) : null}
+              </div>
             ) : (
-              <button type="button" className="obra-creator-chip" onClick={abrirCriador}>
+              <button type="button" className="obra-creator-chip" onClick={abrirCriador} disabled={!creatorUidObra}>
                 <img
-                  src={resolvePublicProfileAvatarUrl(creatorProfile, { mode: 'creator', fallback: '/assets/fotos/shito.jpg' })}
+                  src={creatorAvatar}
                   alt={creatorPorLabel}
                 />
                 <span>por {creatorPorLabel}</span>
@@ -455,36 +497,37 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
             <p className="obra-sinopse">{obraParaExibir.sinopse || 'Sinopse em breve.'}</p>
             <div className="obra-actions obra-actions--dual">
               <button type="button" className="btn-obra-cta btn-obra-cta--sec" onClick={abrirComecar} disabled={!primeiroLiberado}>
-                ComeÃ§ar
+                Começar
               </button>
               <button type="button" className="btn-obra-cta" onClick={abrirContinuar} disabled={!continuarCap}>
                 Continuar
               </button>
-              <button type="button" className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`} onClick={toggleFavorito}>
-                {isFavorito ? 'â˜… Desfavoritar' : 'â˜† Favoritar'}
-              </button>
-              {creatorUidObra ? (
-                <Link className="btn-obra-fav-page" to={`/criador/${encodeURIComponent(creatorUidObra)}`}>
-                  Ver criador
-                </Link>
-              ) : null}
             </div>
-            <nav className="obra-seo-nav" aria-label="NavegaÃ§Ã£o do catÃ¡logo">
-              <Link to="/works">Mais mangÃ¡s para ler online</Link>
-              <span aria-hidden="true"> Â· </span>
+            <nav className="obra-seo-nav" aria-label="Navegação do catálogo">
+              <Link to="/works">Mais mangás para ler online</Link>
+              <span aria-hidden="true"> · </span>
               {creatorUidObra ? (
-                <Link to={`/criador/${encodeURIComponent(creatorUidObra)}`}>PÃ¡gina do autor</Link>
+                <Link to={creatorPath}>Página do autor</Link>
               ) : null}
             </nav>
             {user?.uid ? (
               <div className="obra-notify-box">
                 <strong>Acompanhar esta obra</strong>
-                <p>Quando vocÃª acompanha uma obra, capÃ­tulos novos passam a aparecer no seu sino de notificaÃ§Ãµes.</p>
+                <p>Quando você acompanha uma obra, capítulos novos passam a aparecer no seu sino de notificações.</p>
                 <div className="obra-notify-box__options">
                   <button type="button" className="btn-obra-fav-page" onClick={salvarAvisosObra} disabled={workNotificationBusy}>
                     {workNotificationBusy ? 'Salvando...' : isSubscribedWork ? 'Parar de acompanhar' : 'Acompanhar obra'}
                   </button>
+                  <button
+                    type="button"
+                    className={`btn-obra-fav-page ${isFavorito ? 'is-fav' : ''}`}
+                    onClick={toggleFavorito}
+                    disabled={favoriteBusy}
+                  >
+                    {favoriteBusy ? 'Salvando...' : (isFavorito ? 'Remover dos salvos' : 'Salvar obra')}
+                  </button>
                 </div>
+                {workActionMessage ? <p className="obra-notify-box__error">{workActionMessage}</p> : null}
               </div>
             ) : null}
           </div>
@@ -493,14 +536,14 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
       <section className="obra-capitulos-section">
         <div className="obra-capitulos-head">
-          <h2 className="obra-capitulos-title">Lista de capÃ­tulos</h2>
+          <h2 className="obra-capitulos-title">Lista de capítulos</h2>
         </div>
 
-        {capitulos.length === 0 ? (
-          <p className="obra-capitulos-empty">Essa obra ainda nÃ£o possui capÃ­tulos publicados.</p>
+        {capitulosAsc.length === 0 ? (
+          <p className="obra-capitulos-empty">Essa obra ainda não possui capítulos publicados.</p>
         ) : (
           <div className="obra-capitulos-list shueisha-capitulos-list">
-            {capitulosResolvidos.map((cap) => {
+            {capitulosAsc.map((cap) => {
               if (!cap) return null;
               const liberado = capituloLiberadoParaUsuario(cap, user, perfil, {
                 creatorIdFallback: fallbackCriadorObra,
@@ -523,7 +566,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                       <div className="shito-cap-miniature-wrapper">
                         <img
                           src={cap.capaUrl || '/assets/fotos/shito.jpg'}
-                          alt={cap.titulo || `CapÃ­tulo ${cap.numero}`}
+                          alt={cap.titulo || `Capítulo ${cap.numero}`}
                           className="shito-cap-miniature"
                           style={chapterCoverStyle(cap.capaAjuste)}
                           loading="lazy"
@@ -531,14 +574,14 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                         />
                       </div>
                       <div className="cap-text-details">
-                        <h3 className="shito-cap-title">{cap.titulo || 'CapÃ­tulo sem tÃ­tulo'}</h3>
+                        <h3 className="shito-cap-title">{cap.titulo || 'Capítulo sem título'}</h3>
                         {!liberado && (
                           <span className="cap-badge-em-breve">
-                            Em breve Â· {formatarDataLancamento(cap.publicReleaseAt)}
+                            Em breve · {formatarDataLancamento(cap.publicReleaseAt)}
                           </span>
                         )}
                         <div className="obra-cap-access">
-                          {liberado && <span className="pill publico">PÃºblico</span>}
+                          {liberado && <span className="pill publico">Público</span>}
                           {!liberado && cap.antecipadoMembros && (
                             <span className="pill premium">Membership antecipada</span>
                           )}
@@ -547,9 +590,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                           )}
                         </div>
                         <div className="cap-stats-row">
-                          <span className="stat-item">ðŸ‘ {Number(cap.viewsCount || cap.visualizacoes || 0)}</span>
+                          <span className="stat-item">👁 {Number(cap.viewsCount || cap.visualizacoes || 0)}</span>
                           {Number(cap.likesCount || 0) > 0 ? (
-                            <span className="stat-item">â™¡ {Number(cap.likesCount || 0)}</span>
+                            <span className="stat-item">♡ {Number(cap.likesCount || 0)}</span>
                           ) : null}
                         </div>
                       </div>
@@ -557,7 +600,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                   </div>
                   <div className="cap-right-info">
                     <time className="shito-cap-date">{formatarDataBrPartirIsoOuMs(cap.dataUpload)}</time>
-                    <span className="arrow-mobile">â€º</span>
+                    <span className="arrow-mobile">›</span>
                   </div>
                 </article>
               );

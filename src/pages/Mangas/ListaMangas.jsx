@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,11 +9,11 @@ import {
   obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
-import { buildPublicProfilesMapFromUsuarios } from '../../utils/publicUserProfile';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { resolveCreatorFeedLabel, resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
+import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../utils/publicProfilesRealtime';
 import {
   filterAndRankMangaCatalogCards,
   searchQueryIsActive,
@@ -138,12 +138,12 @@ export default function ListaMangas({ user }) {
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const unsub = onValue(ref(db, 'usuarios'), (snapshot) => {
-      setCreatorsMap(snapshot.exists() ? buildPublicProfilesMapFromUsuarios(snapshot.val() || {}) : {});
-    });
-    return () => unsub();
-  }, []);
+  const creatorIdsForLookup = useMemo(
+    () => collectCreatorIdsFromWorksAndChapters(obras, capitulos),
+    [obras, capitulos]
+  );
+
+  useEffect(() => subscribePublicProfilesMap(db, creatorIdsForLookup, setCreatorsMap), [creatorIdsForLookup]);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -340,7 +340,7 @@ export default function ListaMangas({ user }) {
           <section className="lista-discovery-section">
             <div className="lista-discovery-head">
               <h2>Obras em alta</h2>
-              <p>Ranking por seguidores, likes, views, comentarios e recencia.</p>
+              <p>Ranking por seguidores, likes, views, comentários e recência.</p>
             </div>
             <div className="lista-discovery-row">
               {discovery.trendingWorks.slice(0, 5).map((obra, index) => (
@@ -380,35 +380,41 @@ export default function ListaMangas({ user }) {
           <section className="lista-discovery-section">
             <div className="lista-discovery-head">
               <h2>Criadores populares</h2>
-              <p>Perfis com audiencia forte e obras puxando descoberta no catalogo.</p>
+              <p>Perfis com audiência forte e obras puxando descoberta no catálogo.</p>
             </div>
             <div className="lista-discovery-row">
-              {discovery.popularCreators.slice(0, 6).map((creator, index) => (
-                <article
-                  key={`discover-creator-${creator.creatorId}`}
-                  className="lista-discovery-card is-creator"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigate(`/criador/${encodeURIComponent(creator.creatorId)}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      navigate(`/criador/${encodeURIComponent(creator.creatorId)}`);
-                    }
-                  }}
-                >
-                  <span className="lista-discovery-rank">#{index + 1}</span>
-                  <img
-                    src={creator.avatarUrl || '/assets/fotos/shito.jpg'}
-                    alt={creator.publicLabel}
-                    className="lista-discovery-cover"
-                  />
-                  <div className="lista-discovery-body">
-                    <strong>{creator.publicLabel}</strong>
-                    <span>{creator.followersCount} seguidores · {creator.worksCount} obra(s)</span>
-                  </div>
-                </article>
-              ))}
+              {discovery.popularCreators.slice(0, 6).map((creator, index) => {
+                const creatorPath =
+                  creator.username && creator.username !== creator.creatorId
+                    ? `/@${encodeURIComponent(creator.username)}`
+                    : `/criador/${encodeURIComponent(creator.creatorId)}`;
+                return (
+                  <article
+                    key={`discover-creator-${creator.creatorId}`}
+                    className="lista-discovery-card is-creator"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(creatorPath)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        navigate(creatorPath);
+                      }
+                    }}
+                  >
+                    <span className="lista-discovery-rank">#{index + 1}</span>
+                    <img
+                      src={creator.avatarUrl || '/assets/fotos/shito.jpg'}
+                      alt={creator.publicLabel}
+                      className="lista-discovery-cover"
+                    />
+                    <div className="lista-discovery-body">
+                      <strong>{creator.publicLabel}</strong>
+                      <span>{creator.followersCount} seguidores · {creator.worksCount} obra(s)</span>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </section>
         ) : null}
@@ -416,7 +422,7 @@ export default function ListaMangas({ user }) {
         {obrasCards.length === 0 ? (
           <section className="lista-mangas-empty">
             <h2>Nenhuma obra publicada</h2>
-            <p>O catalogo esta vazio agora. Enquanto novas obras nao entram no ar, voce ainda pode explorar Kokuin ou conhecer a proposta da plataforma.</p>
+            <p>O catálogo está vazio agora. Enquanto novas obras não entram no ar, você ainda pode explorar Kokuin ou conhecer a proposta da plataforma.</p>
             <div className="biblioteca-actions">
               <button type="button" className="btn-biblioteca-cta" onClick={() => navigate('/kokuin')}>
                 Abrir Kokuin
@@ -570,3 +576,4 @@ export default function ListaMangas({ user }) {
     </main>
   );
 }
+

@@ -15,8 +15,6 @@ Reduzir o risco de deploy e cold start do backend Firebase Functions, tirando o 
 - `functions/notifications/index.js`
 - `functions/engagement/index.js`
 - `functions/system/index.js`
-- `functions/utils/index.js`
-- `functions/deprecated/index.js`
 - `functions/deprecated/legacyIndex.js`
 
 ### Novo papel do `functions/index.js`

@@ -174,7 +174,10 @@ export default function SobreAutorV2() {
             >
               DETALHES DA OBRA
             </button>
-            <button className="hn-cta" onClick={() => navigate('/works')}>
+            <button
+              className="hn-cta"
+              onClick={() => navigate('/kokuin', { state: { from: '/sobre-autor' } })}
+            >
               LER KOKUIN AGORA
             </button>
           </div>

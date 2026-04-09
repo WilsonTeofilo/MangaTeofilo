@@ -134,7 +134,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
       return false;
     }
     if (!cepValidated) {
-      showToast('Valide o CEP com Â«Buscar CEPÂ» antes de salvar o endereÃ§o.');
+      showToast('Valide o CEP com "Buscar CEP" antes de salvar o endereÃ§o.');
       return false;
     }
     if (
@@ -173,7 +173,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
   const handlePay = async () => {
     if (!draft || !user?.uid) return;
     if (needAddress && !addressConfirmed) {
-      showToast('Salve o endereÃ§o antes de pagar â€” toque em Â«Salvar endereÃ§oÂ».');
+      showToast('Salve o endereÃ§o antes de pagar. Toque em "Salvar endereÃ§o".');
       return;
     }
     if (needAddress && !validateAddress()) return;
@@ -216,7 +216,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     return (
       <main className="pod-checkout-page">
         <Helmet>
-          <title>Finalizar pedido â€” mangÃ¡ fÃ­sico | MangaTeofilo</title>
+          <title>Finalizar pedido - manga fisico | MangaTeofilo</title>
         </Helmet>
         <section className="pod-checkout-card pod-checkout-card--empty">
           <h1>Finalizar pedido</h1>
@@ -233,7 +233,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     return (
       <main className="pod-checkout-page">
         <Helmet>
-          <title>Finalizar pedido â€” mangÃ¡ fÃ­sico | MangaTeofilo</title>
+          <title>Finalizar pedido - manga fisico | MangaTeofilo</title>
         </Helmet>
         <section className="pod-checkout-card pod-checkout-card--empty">
           <h1>Nada para pagar</h1>
@@ -249,34 +249,32 @@ export default function PrintOnDemandCheckoutPage({ user }) {
   return (
     <main className="pod-checkout-page">
       <Helmet>
-        <title>Finalizar pedido â€” mangÃ¡ fÃ­sico | MangaTeofilo</title>
+        <title>Finalizar pedido - manga fisico | MangaTeofilo</title>
       </Helmet>
 
       {busy ? (
         <div className="pod-checkout-processing" role="status" aria-live="polite">
           <div className="pod-checkout-processing__card">
             <div className="pod-checkout-processing__spinner" aria-hidden="true" />
-            <p className="pod-checkout-processing__title">Processando pagamentoâ€¦</p>
-            <p className="pod-checkout-processing__sub">Abrindo o Mercado Pago com seguranÃ§a.</p>
+            <p className="pod-checkout-processing__title">Processando pagamento...</p>
+            <p className="pod-checkout-processing__sub">Abrindo o Mercado Pago com seguranca.</p>
           </div>
         </div>
       ) : null}
 
       <Link className="pod-checkout-link-back" to="/loja/carrinho">
-        â† Voltar ao carrinho
+        Voltar ao carrinho
       </Link>
       <header className="pod-checkout-head">
         <h1>Finalizar pedido</h1>
         <p className="pod-checkout-head__sub">
-          EndereÃ§o (se for Â«Produzir para mimÂ») â†’ escolha Pix ou cartÃ£o no passo seguinte â†’ sÃ³ apÃ³s aprovaÃ§Ã£o o pedido entra na
-          fila. Produto sob demanda: apÃ³s pagamento o endereÃ§o fica travado; sem devoluÃ§Ã£o por arrependimento, salvo defeito
-          analisado pelo suporte.
+          Endereco (se for "Produzir para mim"), escolha Pix ou cartao no passo seguinte. O pedido so entra na fila depois do pagamento aprovado. Como este produto e sob demanda, o endereco fica travado apos o pagamento.
         </p>
       </header>
 
       {mpErro ? (
         <p className="pod-checkout-banner pod-checkout-banner--warn" role="status">
-          O pagamento nÃ£o foi concluÃ­do. Tente de novo abaixo ou abra o pedido em Â«MangÃ¡ fÃ­sicoÂ» em Pedidos.
+          O pagamento nao foi concluido. Tente de novo abaixo ou abra o pedido em "Manga fisico" em Pedidos.
         </p>
       ) : null}
       {toast ? (
@@ -291,7 +289,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
             <section className="pod-checkout-card">
               <h2 className="pod-checkout-section-title">
                 <span className="pod-checkout-section-ico" aria-hidden="true">
-                  ðŸ“
+                  Ã°Å¸â€œÂ
                 </span>
                 EndereÃ§o de entrega
               </h2>
@@ -311,7 +309,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
               ) : (
                 <>
                   <p className="pod-checkout-hint">
-                    CEP com 8 dÃ­gitos. Ã‰ obrigatÃ³rio usar Â«Buscar CEPÂ» (ViaCEP) antes de salvar â€” ajuste sÃ³ nÃºmero e
+                    CEP com 8 dÃ­gitos. Ã‰ obrigatÃ³rio usar "Buscar CEP" (ViaCEP) antes de salvar. Ajuste sÃ³ nÃºmero e
                     complemento se precisar.
                   </p>
                   <label className="pod-checkout-field">
@@ -344,12 +342,12 @@ export default function PrintOnDemandCheckoutPage({ user }) {
                       disabled={cepLookupBusy}
                       onClick={handleLookupCep}
                     >
-                      {cepLookupBusy ? 'â€¦' : 'Buscar CEP'}
+                      {cepLookupBusy ? '...' : 'Buscar CEP'}
                     </button>
                   </div>
                   {cepValidated ? (
                     <p className="pod-checkout-hint pod-checkout-hint--compact" role="status">
-                      CEP validado âœ“
+                      CEP validado
                     </p>
                   ) : null}
                   <label className="pod-checkout-field">
@@ -411,7 +409,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
             <section className="pod-checkout-card">
               <h2 className="pod-checkout-section-title">
                 <span className="pod-checkout-section-ico" aria-hidden="true">
-                  ðŸ“
+                  Ã°Å¸â€œÂ
                 </span>
                 Envio
               </h2>
@@ -425,11 +423,11 @@ export default function PrintOnDemandCheckoutPage({ user }) {
           <section className="pod-checkout-card">
             <h2 className="pod-checkout-section-title">
               <span className="pod-checkout-section-ico" aria-hidden="true">
-                ðŸ’³
+                Ã°Å¸â€™Â³
               </span>
               Pagamento
             </h2>
-            <p className="pod-checkout-hint">Escolha como prefere pagar â€” no Mercado Pago vocÃª confirma com o meio selecionado.</p>
+            <p className="pod-checkout-hint">Escolha como prefere pagar â€” no Mercado Pago vocÃƒÂª confirma com o meio selecionado.</p>
             <div className="pod-pay-choice" role="radiogroup" aria-label="Forma de pagamento">
               <label className={`pod-pay-choice__opt ${payChoice === 'pix' ? 'is-on' : ''}`}>
                 <input
@@ -460,7 +458,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
           <div className="pod-checkout-card pod-checkout-card--sticky">
             <h2 className="pod-checkout-summary__title">
               <span className="pod-checkout-section-ico" aria-hidden="true">
-                ðŸ“¦
+                Ã°Å¸â€œÂ¦
               </span>
               Resumo do pedido
             </h2>
@@ -473,7 +471,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
               {needAddress ? (
                 <>
                   <div className="pod-checkout-summary__row">
-                    <dt>Endereco</dt>
+                    <dt>EndereÃ§o</dt>
                     <dd>{addressConfirmed ? 'Confirmado' : 'Pendente'}</dd>
                   </div>
                   <div className="pod-checkout-summary__row">
@@ -496,7 +494,7 @@ export default function PrintOnDemandCheckoutPage({ user }) {
               disabled={busy}
               onClick={handlePay}
             >
-              {busy ? 'Abrindoâ€¦' : 'Confirmar e pagar'}
+              {busy ? 'Abrindo...' : 'Confirmar e pagar'}
             </button>
           </div>
         </aside>
@@ -504,5 +502,6 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     </main>
   );
 }
+
 
 

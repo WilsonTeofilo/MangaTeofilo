@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { get, ref } from 'firebase/database';
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 
 import LoadingScreen from '../../components/LoadingScreen';
 import { db } from '../../services/firebase';
+import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
+import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
+import {
+  buildPublicProfileFromUsuarioRow,
+  isCreatorPublicProfile,
+} from '../../utils/publicUserProfile';
 import { normalizeUsernameInput } from '../../utils/usernameValidation';
 
 /**
@@ -11,6 +17,7 @@ import { normalizeUsernameInput } from '../../utils/usernameValidation';
  */
 export default function UsernamePublicRoute() {
   const { userHandle: raw } = useParams();
+  const location = useLocation();
   const [dest, setDest] = useState(null);
 
   useEffect(() => {
@@ -21,10 +28,29 @@ export default function UsernamePublicRoute() {
     }
     let alive = true;
     get(ref(db, `usernames/${norm}`))
-      .then((snap) => {
+      .then(async (snap) => {
         if (!alive) return;
         if (!snap.exists()) setDest('/');
-        else setDest(`/criador/${snap.val()}`);
+        else {
+          const uid = String(snap.val() || '').trim();
+          if (!uid) {
+            setDest('/');
+            return;
+          }
+          const userSnap = await get(ref(db, `usuarios/${uid}`));
+          if (!alive) return;
+          const profile = userSnap.exists()
+            ? buildPublicProfileFromUsuarioRow(userSnap.val() || {}, uid)
+            : { uid };
+          const searchParams = new URLSearchParams(location.search || '');
+          const currentTab = String(searchParams.get('tab') || '').trim().toLowerCase();
+          const defaultTab = isCreatorPublicProfile(profile)
+            ? 'works'
+            : isReaderPublicProfileEffective(profile)
+              ? 'likes'
+              : '';
+          setDest(resolvePublicProfilePath(profile, uid, { tab: currentTab || defaultTab }));
+        }
       })
       .catch(() => {
         if (alive) setDest('/');
@@ -32,7 +58,7 @@ export default function UsernamePublicRoute() {
     return () => {
       alive = false;
     };
-  }, [raw]);
+  }, [location.search, raw]);
 
   if (dest === null) return <LoadingScreen />;
   return <Navigate to={dest} replace />;

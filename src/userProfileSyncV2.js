@@ -2,7 +2,25 @@ import { ref, get, set, update } from 'firebase/database';
 import { getIdToken, reload } from 'firebase/auth';
 import { db } from './services/firebase';
 import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME } from './constants';
-import { buildUsuarioBaseRecord, buildUsuarioMissingFieldsPatch } from './config/userProfileSchema';
+import {
+  buildUsuarioBaseRecord,
+  buildUsuarioMissingFieldsPatch,
+  buildUsuarioPublicProfileRecord,
+} from './config/userProfileSchema';
+
+async function syncPublicProfileIdentity(uid, source = {}) {
+  const publicProfile = buildUsuarioPublicProfileRecord(source, uid);
+  await update(ref(db), {
+    [`usuarios/${uid}/publicProfile/uid`]: publicProfile.uid || uid,
+    [`usuarios/${uid}/publicProfile/userName`]: publicProfile.userName || DEFAULT_USER_DISPLAY_NAME,
+    [`usuarios/${uid}/publicProfile/userHandle`]: publicProfile.userHandle || null,
+    [`usuarios/${uid}/publicProfile/userAvatar`]: publicProfile.userAvatar || AVATAR_FALLBACK,
+    [`usuarios/${uid}/publicProfile/accountType`]: publicProfile.accountType || 'comum',
+    [`usuarios/${uid}/publicProfile/signupIntent`]: publicProfile.signupIntent || 'reader',
+    [`usuarios/${uid}/publicProfile/status`]: publicProfile.status || '',
+    [`usuarios/${uid}/publicProfile/updatedAt`]: Date.now(),
+  });
+}
 
 export async function refreshAuthUser(user) {
   await reload(user);
@@ -27,6 +45,7 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
       now: agora,
     });
     await set(userRef, record);
+    await syncPublicProfileIdentity(usuario.uid, record);
     if (status === 'ativo') {
       await update(ref(db), {
         [`usuarios/${usuario.uid}/status`]: 'ativo',
@@ -53,6 +72,8 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
     }
     await update(ref(db), rootPatch);
   }
+
+  await syncPublicProfileIdentity(usuario.uid, { ...atual, ...patch });
 
   return { ...atual, ...patch };
 }

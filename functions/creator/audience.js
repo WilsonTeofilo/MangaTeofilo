@@ -1,6 +1,7 @@
 ﻿import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';
+import { assertTrustedAppRequest } from '../appCheckGuard.js';
 
 function creatorAudienceDateKey(timestamp = Date.now()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -22,6 +23,7 @@ async function incrementCreatorAudienceDaily(db, creatorId, field, amount, times
 }
 
 export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }

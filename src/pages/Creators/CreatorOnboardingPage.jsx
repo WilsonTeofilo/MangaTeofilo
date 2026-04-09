@@ -116,7 +116,7 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
         return {
           successTitle: 'Dados enviados',
           successBody:
-            'Seus dados de monetização foram enviados. Depois da primeira liberação, você poderá ligar e desligar repasses direto no perfil.',
+            'Seus dados de monetização foram enviados. A equipe vai revisar os documentos e liberar sua área financeira se estiver tudo certo.',
           afterDismiss: () => navigate('/perfil'),
         };
       }

@@ -38,6 +38,7 @@ import './pages/Admin/AdminUiForms.css';
 
 const MangaMain = lazy(() => import('./pages/Home/MangaMain.jsx'));
 const SobreAutor = lazy(() => import('./pages/Home/SobreAutorV2.jsx'));
+const KokuinLegacyPage = lazy(() => import('./pages/Home/KokuinLegacyPage.jsx'));
 const Apoie = lazy(() => import('./pages/Home/Apoie.jsx'));
 const ApoieCreatorRedirect = lazy(() => import('./pages/Home/ApoieCreatorRedirect.jsx'));
 const ListaMangas = lazy(() => import('./pages/Mangas/ListaMangas.jsx'));
@@ -131,6 +132,7 @@ function AppRoutes() {
 
   const [perfilUsuario, setPerfilUsuario] = useState(null);
   const [perfilLoadedUid, setPerfilLoadedUid] = useState('');
+  const [perfilLoadTimedOut, setPerfilLoadTimedOut] = useState(false);
   const [adminAccess, setAdminAccess] = useState(emptyAdminAccess());
 
   useEffect(() => {
@@ -139,6 +141,7 @@ function AppRoutes() {
       if (!user) {
         setPerfilUsuario(null);
         setPerfilLoadedUid('');
+        setPerfilLoadTimedOut(false);
         setAdminAccess(emptyAdminAccess());
       }
       setCarregando(false);
@@ -151,15 +154,24 @@ function AppRoutes() {
   }, []);
 
   useEffect(() => {
+    setPerfilLoadTimedOut(false);
     if (!usuario?.uid) {
       return () => {};
     }
+    const timeoutId = window.setTimeout(() => {
+      setPerfilLoadTimedOut(true);
+      setPerfilLoadedUid(usuario.uid);
+    }, 5000);
     const r = ref(db, `usuarios/${usuario.uid}`);
     const unsub = onValue(r, (snap) => {
       setPerfilUsuario(snap.exists() ? snap.val() : null);
       setPerfilLoadedUid(usuario.uid);
+      setPerfilLoadTimedOut(false);
     });
-    return () => unsub();
+    return () => {
+      window.clearTimeout(timeoutId);
+      unsub();
+    };
   }, [usuario?.uid]);
 
   const staffBypassMangaka = adminAccess.canAccessAdmin === true;
@@ -177,20 +189,83 @@ function AppRoutes() {
 
   useEffect(() => {
     let ativo = true;
+    let timeoutId = 0;
     if (!usuario) {
       return () => {};
     }
+    timeoutId = window.setTimeout(() => {
+      if (!ativo) return;
+      setAdminAccess((current) =>
+        current.profileLoaded ? current : { ...emptyAdminAccess(), profileLoaded: true }
+      );
+    }, 5000);
     resolveAdminAccess(usuario)
       .then((result) => {
         if (!ativo) return;
+        window.clearTimeout(timeoutId);
         setAdminAccess(result);
       })
       .catch(() => {
         if (!ativo) return;
+        window.clearTimeout(timeoutId);
         setAdminAccess(emptyAdminAccess());
       });
     return () => {
       ativo = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [usuario?.uid]);
+
+  useEffect(() => {
+    if (!usuario?.uid) return () => {};
+
+    let cancelled = false;
+    let inFlight = false;
+    let lastRefreshAt = Date.now();
+
+    async function refreshAdminAccess(force = false) {
+      if (cancelled || inFlight || !auth.currentUser?.uid) return;
+      inFlight = true;
+      try {
+        const result = await resolveAdminAccess(auth.currentUser, { force });
+        if (!cancelled) {
+          setAdminAccess(result);
+          lastRefreshAt = Date.now();
+        }
+      } catch {
+        if (!cancelled) {
+          setAdminAccess(emptyAdminAccess());
+          lastRefreshAt = Date.now();
+        }
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    const refreshIfStale = () => {
+      if (Date.now() - lastRefreshAt >= 45 * 1000) {
+        refreshAdminAccess(true);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshIfStale();
+    };
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshAdminAccess(true);
+      }
+    }, 60 * 1000);
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', refreshIfStale);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', refreshIfStale);
     };
   }, [usuario?.uid]);
 
@@ -198,7 +273,10 @@ function AppRoutes() {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
-  const perfilCarregando = Boolean(usuario?.uid) && perfilLoadedUid !== usuario.uid;
+  const perfilCarregando =
+    Boolean(usuario?.uid) &&
+    perfilLoadedUid !== usuario.uid &&
+    perfilLoadTimedOut !== true;
   if (usuario && perfilCarregando) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
@@ -417,6 +495,7 @@ function AppRoutes() {
             }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
+          <Route path="/kokuin" element={<KokuinLegacyPage />} />
           <Route
             path="/creators"
             element={

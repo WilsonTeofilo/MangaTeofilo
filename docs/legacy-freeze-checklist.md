@@ -3,7 +3,7 @@
 ## Runtime ativo
 
 - `functions/index.js` exporta apenas mÃ³dulos ativos.
-- `functions/deprecated/index.js` nÃ£o reexporta monÃ³lito legado.
+- `functions/deprecated/index.js` foi removido; o runtime nÃ£o depende mais desse ponteiro.
 - o runtime nÃ£o deve depender de `legacyIndex.js`.
 
 ## Fontes canÃ´nicas

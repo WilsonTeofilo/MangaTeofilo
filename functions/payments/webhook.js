@@ -30,7 +30,12 @@ import {
   normalizeStoreOrderStatusInput,
   releaseStoreInventoryReservation,
 } from '../orders/storeCommon.js';
-import { APP_BASE_URL, MP_ACCESS_TOKEN, MP_WEBHOOK_SECRET } from './config.js';
+import {
+  APP_BASE_URL,
+  MP_ACCESS_TOKEN,
+  MP_WEBHOOK_SECRET,
+  getMercadoPagoWebhookSecretOrThrow,
+} from './config.js';
 import {
   SMTP_FROM,
   SMTP_HOST,
@@ -172,12 +177,6 @@ function buildPremiumStatusPatch(uid, entitlement, now, extra = {}) {
 }
 
 function extractMercadoPagoPaymentId(req) {
-  if (req.method === 'GET') {
-    const topic = req.query?.topic;
-    const id = req.query?.id ?? req.query?.['data.id'];
-    if (topic === 'payment' && id != null && String(id).length > 0) return String(id);
-    return null;
-  }
   if (req.method !== 'POST') return null;
   let b = req.body;
   if (typeof b === 'string') {
@@ -996,6 +995,7 @@ export const mercadopagowebhook = onRequest(
     region: 'us-central1',
     secrets: [
       MP_ACCESS_TOKEN,
+      MP_WEBHOOK_SECRET,
       SMTP_HOST,
       SMTP_PORT,
       SMTP_USER,
@@ -1011,7 +1011,7 @@ export const mercadopagowebhook = onRequest(
       res.status(204).send('');
       return;
     }
-    if (req.method !== 'POST' && req.method !== 'GET') {
+    if (req.method !== 'POST') {
       res.status(405).send('Method Not Allowed');
       return;
     }
@@ -1021,27 +1021,27 @@ export const mercadopagowebhook = onRequest(
       paymentId = extractMercadoPagoPaymentId(req);
     } catch (e) {
       logger.error('mercadopagowebhook parse', { error: e?.message });
-      res.status(200).send('OK');
+      res.status(400).send('Invalid payload');
       return;
     }
     if (!paymentId) {
-      res.status(200).send('OK');
+      res.status(400).send('Invalid payload');
       return;
     }
 
-    const mpWebhookSecret = String(MP_WEBHOOK_SECRET.value() || '').trim();
-    if (mpWebhookSecret) {
-      if (req.method === 'POST') {
-        const sigCheck = verifyMercadoPagoWebhookSignature(req, paymentId, mpWebhookSecret);
-        if (!sigCheck.ok && !sigCheck.skipped) {
-          logger.warn('mercadopagowebhook assinatura invalida', { paymentId, reason: sigCheck.reason });
-          res.status(401).send('Unauthorized');
-          return;
-        }
-      } else {
-        res.status(401).send('Unauthorized');
-        return;
-      }
+    let mpWebhookSecret;
+    try {
+      mpWebhookSecret = getMercadoPagoWebhookSecretOrThrow();
+    } catch (err) {
+      logger.error('mercadopagowebhook: MP_WEBHOOK_SECRET ausente', { error: err?.message });
+      res.status(500).send('Config');
+      return;
+    }
+    const sigCheck = verifyMercadoPagoWebhookSignature(req, paymentId, mpWebhookSecret);
+    if (!sigCheck.ok) {
+      logger.warn('mercadopagowebhook assinatura invalida', { paymentId, reason: sigCheck.reason });
+      res.status(401).send('Unauthorized');
+      return;
     }
 
     let token;

@@ -43,6 +43,13 @@ import {
   MP_ACCESS_TOKEN,
   getMercadoPagoAccessTokenOrThrow,
 } from './config.js';
+import {
+  buildCommerceFingerprint,
+  enforceCommerceAbuseShield,
+  readCommerceIdempotency,
+  writeCommerceIdempotency,
+} from '../commerceGuard.js';
+import { assertTrustedAppRequest } from '../appCheckGuard.js';
 
 const APOIO_CUSTOM_MIN = 1;
 const APOIO_CUSTOM_MAX = 5000;
@@ -84,6 +91,34 @@ function normalizeApoioPlanId(raw) {
   return APOIO_PLANOS_MP[value] ? value : null;
 }
 
+function assertStoreCartPayloadShape(rawItems) {
+  const forbiddenFields = [
+    'price',
+    'promoPrice',
+    'unitPrice',
+    'lineTotal',
+    'subtotal',
+    'total',
+    'shippingBrl',
+    'shippingDiscountBrl',
+    'creatorId',
+    'inventoryMode',
+    'title',
+    'description',
+    'costPrice',
+  ];
+  for (const item of Array.isArray(rawItems) ? rawItems : []) {
+    const row = item && typeof item === 'object' ? item : {};
+    const present = forbiddenFields.filter((field) => row[field] != null);
+    if (present.length) {
+      throw new HttpsError(
+        'invalid-argument',
+        `Nao envie preco/frete/metadados no carrinho. Campos rejeitados: ${present.join(', ')}.`
+      );
+    }
+  }
+}
+
 export const criarCheckoutApoio = onCall(
   {
     region: 'us-central1',
@@ -92,11 +127,27 @@ export const criarCheckoutApoio = onCall(
     invoker: 'public',
   },
   async (request) => {
+    assertTrustedAppRequest(request);
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'Faca login para apoiar a obra.');
     }
 
     const payload = request.data && typeof request.data === 'object' ? request.data : {};
+    const db = getDatabase();
+    await enforceCommerceAbuseShield(db, {
+      request,
+      scope: 'checkoutApoio',
+      key: request.auth.uid,
+      minIntervalMs: 2000,
+      windowMs: 60 * 1000,
+      maxHits: 6,
+      networkMinIntervalMs: 750,
+      networkWindowMs: 60 * 1000,
+      networkMaxHits: 12,
+      ipWindowMs: 5 * 60 * 1000,
+      ipMaxHits: 18,
+      message: 'Muitas tentativas de apoio em pouco tempo. Aguarde alguns segundos.',
+    });
     const attributionCreatorId = sanitizeCreatorId(payload.attributionCreatorId);
     const creatorMembership = payload.creatorMembership === true;
     const creatorMembershipCreatorId =
@@ -107,6 +158,21 @@ export const criarCheckoutApoio = onCall(
 
     const hasValidCustom = customTry.present && 'value' in customTry;
     const hasValidPlan = Boolean(planNorm);
+    const checkoutFingerprint = buildCommerceFingerprint({
+      planNorm,
+      customAmount: hasValidCustom ? customTry.value : null,
+      attributionCreatorId,
+      creatorMembership,
+      creatorMembershipCreatorId,
+    });
+    const cachedCheckout = await readCommerceIdempotency(db, {
+      scope: 'checkoutApoio',
+      key: request.auth.uid,
+      fingerprint: checkoutFingerprint,
+    });
+    if (cachedCheckout) {
+      return { ...cachedCheckout, reused: true };
+    }
 
     logger.info('criarCheckoutApoio entrada', {
       planId: planRaw,
@@ -117,7 +183,6 @@ export const criarCheckoutApoio = onCall(
     });
 
     let creatorMembershipPrice = null;
-    const db = getDatabase();
     if (creatorMembership) {
       if (!creatorMembershipCreatorId) {
         throw new HttpsError('invalid-argument', 'Membership do criador exige um creatorId valido.');
@@ -135,7 +200,10 @@ export const criarCheckoutApoio = onCall(
           'Este criador ainda nao concluiu a identidade publica minima.'
         );
       }
-      creatorMembershipPrice = Number(creatorPublic.creatorMembershipPriceBRL);
+      creatorMembershipPrice = Number(
+        creatorPublic?.creatorSupportOffer?.membershipPriceBRL ||
+        creatorPublic?.creatorProfile?.supportOffer?.membershipPriceBRL
+      );
       if (!isValidCreatorMembershipPriceBRL(creatorMembershipPrice)) {
         throw new HttpsError(
           'failed-precondition',
@@ -229,7 +297,15 @@ export const criarCheckoutApoio = onCall(
           creatorBackUrlQuery ? { backUrlQuery: creatorBackUrlQuery } : {}
         );
       }
-      return { ok: true, url };
+      const response = { ok: true, url };
+      await writeCommerceIdempotency(db, {
+        scope: 'checkoutApoio',
+        key: request.auth.uid,
+        fingerprint: checkoutFingerprint,
+        ttlMs: 2 * 60 * 1000,
+        response,
+      });
+      return response;
     } catch (err) {
       const errMsg = err?.message || String(err);
       logger.error('Mercado Pago preference', {
@@ -260,6 +336,7 @@ export const criarCheckoutLoja = onCall(
     cors: true,
   },
   async (request) => {
+    assertTrustedAppRequest(request);
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'Faca login para finalizar a compra.');
     }
@@ -270,9 +347,36 @@ export const criarCheckoutLoja = onCall(
       .toUpperCase();
     if (!rawItems.length) throw new HttpsError('invalid-argument', 'Carrinho vazio.');
     if (rawItems.length > 20) throw new HttpsError('invalid-argument', 'Limite de 20 itens por checkout.');
+    assertStoreCartPayloadShape(rawItems);
 
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
+    await enforceCommerceAbuseShield(db, {
+      request,
+      scope: 'checkoutLoja',
+      key: request.auth.uid,
+      minIntervalMs: 2500,
+      windowMs: 60 * 1000,
+      maxHits: 5,
+      networkMinIntervalMs: 1000,
+      networkWindowMs: 60 * 1000,
+      networkMaxHits: 10,
+      ipWindowMs: 5 * 60 * 1000,
+      ipMaxHits: 15,
+      message: 'Muitas tentativas de checkout da loja em pouco tempo. Aguarde alguns segundos.',
+    });
+    const checkoutFingerprint = buildCommerceFingerprint({
+      items: rawItems,
+      shippingService: requestedShippingService,
+    });
+    const cachedCheckout = await readCommerceIdempotency(db, {
+      scope: 'checkoutLoja',
+      key: request.auth.uid,
+      fingerprint: checkoutFingerprint,
+    });
+    if (cachedCheckout) {
+      return { ...cachedCheckout, reused: true };
+    }
     const [cfgSnap, productsSnap, userSnap] = await Promise.all([
       db.ref('loja/config').get(),
       db.ref('loja/produtos').get(),
@@ -418,7 +522,15 @@ export const criarCheckoutLoja = onCall(
       updatedAt: Date.now(),
     });
 
-    return { ok: true, orderId, url };
+    const response = { ok: true, orderId, url };
+    await writeCommerceIdempotency(db, {
+      scope: 'checkoutLoja',
+      key: request.auth.uid,
+      fingerprint: checkoutFingerprint,
+      ttlMs: 3 * 60 * 1000,
+      response,
+    });
+    return response;
   }
 );
 
@@ -429,6 +541,7 @@ export const resumeStoreCheckout = onCall(
     cors: true,
   },
   async (request) => {
+    assertTrustedAppRequest(request);
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'Faca login para pagar.');
     }
@@ -439,6 +552,29 @@ export const resumeStoreCheckout = onCall(
     }
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
+    await enforceCommerceAbuseShield(db, {
+      request,
+      scope: 'resumeCheckoutLoja',
+      key: request.auth.uid,
+      minIntervalMs: 1500,
+      windowMs: 60 * 1000,
+      maxHits: 8,
+      networkMinIntervalMs: 700,
+      networkWindowMs: 60 * 1000,
+      networkMaxHits: 14,
+      ipWindowMs: 5 * 60 * 1000,
+      ipMaxHits: 25,
+      message: 'Muitas retomadas de pagamento em pouco tempo. Aguarde alguns segundos.',
+    });
+    const checkoutFingerprint = buildCommerceFingerprint({ orderId });
+    const cachedResume = await readCommerceIdempotency(db, {
+      scope: 'resumeCheckoutLoja',
+      key: request.auth.uid,
+      fingerprint: checkoutFingerprint,
+    });
+    if (cachedResume) {
+      return { ...cachedResume, reused: true };
+    }
     const orderRef = db.ref(`loja/pedidos/${orderId}`);
     const snap = await orderRef.get();
     if (!snap.exists()) {
@@ -480,7 +616,15 @@ export const resumeStoreCheckout = onCall(
 
     const checkoutUrl = String(row.checkoutUrl || '').trim();
     if (checkoutUrl) {
-      return { ok: true, url: checkoutUrl, reused: true };
+      const response = { ok: true, url: checkoutUrl, reused: true };
+      await writeCommerceIdempotency(db, {
+        scope: 'resumeCheckoutLoja',
+        key: request.auth.uid,
+        fingerprint: checkoutFingerprint,
+        ttlMs: 60 * 1000,
+        response,
+      });
+      return response;
     }
 
     const notificationUrl = notificationUrlForWebhook();
@@ -520,7 +664,15 @@ export const resumeStoreCheckout = onCall(
       checkoutStartedAt: now,
       updatedAt: now,
     });
-    return { ok: true, url, reused: false };
+    const response = { ok: true, url, reused: false };
+    await writeCommerceIdempotency(db, {
+      scope: 'resumeCheckoutLoja',
+      key: request.auth.uid,
+      fingerprint: checkoutFingerprint,
+      ttlMs: 60 * 1000,
+      response,
+    });
+    return response;
   }
 );
 
@@ -531,6 +683,7 @@ export const createPrintOnDemandCheckout = onCall(
     cors: true,
   },
   async (request) => {
+    assertTrustedAppRequest(request);
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'Faca login para pagar.');
     }
@@ -538,6 +691,29 @@ export const createPrintOnDemandCheckout = onCall(
     const body = request.data && typeof request.data === 'object' ? request.data : {};
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
+    await enforceCommerceAbuseShield(db, {
+      request,
+      scope: 'checkoutPod',
+      key: uid,
+      minIntervalMs: 2500,
+      windowMs: 60 * 1000,
+      maxHits: 5,
+      networkMinIntervalMs: 1000,
+      networkWindowMs: 60 * 1000,
+      networkMaxHits: 10,
+      ipWindowMs: 5 * 60 * 1000,
+      ipMaxHits: 15,
+      message: 'Muitas tentativas de checkout POD em pouco tempo. Aguarde alguns segundos.',
+    });
+    const checkoutFingerprint = buildCommerceFingerprint(body);
+    const cachedCheckout = await readCommerceIdempotency(db, {
+      scope: 'checkoutPod',
+      key: uid,
+      fingerprint: checkoutFingerprint,
+    });
+    if (cachedCheckout) {
+      return { ...cachedCheckout, reused: true };
+    }
     let orderId;
     try {
       const created = await persistPrintOnDemandOrder(db, uid, body);
@@ -582,7 +758,15 @@ export const createPrintOnDemandCheckout = onCall(
         message: 'Preferencia de pagamento criada no Mercado Pago.',
         actor: 'system',
       });
-      return { ok: true, orderId, url };
+      const response = { ok: true, orderId, url };
+      await writeCommerceIdempotency(db, {
+        scope: 'checkoutPod',
+        key: uid,
+        fingerprint: checkoutFingerprint,
+        ttlMs: 3 * 60 * 1000,
+        response,
+      });
+      return response;
     } catch (error) {
       if (orderId) {
         try {
@@ -603,6 +787,7 @@ export const resumePrintOnDemandCheckout = onCall(
     cors: true,
   },
   async (request) => {
+    assertTrustedAppRequest(request);
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'Faca login para pagar.');
     }
@@ -614,6 +799,29 @@ export const resumePrintOnDemandCheckout = onCall(
     }
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
+    await enforceCommerceAbuseShield(db, {
+      request,
+      scope: 'resumeCheckoutPod',
+      key: uid,
+      minIntervalMs: 1500,
+      windowMs: 60 * 1000,
+      maxHits: 8,
+      networkMinIntervalMs: 700,
+      networkWindowMs: 60 * 1000,
+      networkMaxHits: 14,
+      ipWindowMs: 5 * 60 * 1000,
+      ipMaxHits: 25,
+      message: 'Muitas retomadas de pagamento em pouco tempo. Aguarde alguns segundos.',
+    });
+    const checkoutFingerprint = buildCommerceFingerprint({ orderId });
+    const cachedResume = await readCommerceIdempotency(db, {
+      scope: 'resumeCheckoutPod',
+      key: uid,
+      fingerprint: checkoutFingerprint,
+    });
+    if (cachedResume) {
+      return { ...cachedResume, reused: true };
+    }
     const orderRef = db.ref(`loja/printOnDemandOrders/${orderId}`);
     const snap = await orderRef.get();
     if (!snap.exists()) {
@@ -668,7 +876,15 @@ export const resumePrintOnDemandCheckout = onCall(
       expectedPayBRL: amount,
       updatedAt: Date.now(),
     });
-    return { ok: true, url };
+    const response = { ok: true, url };
+    await writeCommerceIdempotency(db, {
+      scope: 'resumeCheckoutPod',
+      key: uid,
+      fingerprint: checkoutFingerprint,
+      ttlMs: 60 * 1000,
+      response,
+    });
+    return response;
   }
 );
 
@@ -679,6 +895,7 @@ export const criarCheckoutPremium = onCall(
     cors: true,
   },
   async (request) => {
+    assertTrustedAppRequest(request);
     if (!request.auth?.uid) {
       throw new HttpsError('unauthenticated', 'Faca login para assinar o Premium.');
     }
@@ -686,6 +903,20 @@ export const criarCheckoutPremium = onCall(
     const token = getMercadoPagoTokenOrHttpsError();
     const notificationUrl = notificationUrlForWebhook();
     const db = getDatabase();
+    await enforceCommerceAbuseShield(db, {
+      request,
+      scope: 'checkoutPremium',
+      key: request.auth.uid,
+      minIntervalMs: 2000,
+      windowMs: 60 * 1000,
+      maxHits: 5,
+      networkMinIntervalMs: 750,
+      networkWindowMs: 60 * 1000,
+      networkMaxHits: 10,
+      ipWindowMs: 5 * 60 * 1000,
+      ipMaxHits: 15,
+      message: 'Muitas tentativas de checkout Premium em pouco tempo. Aguarde alguns segundos.',
+    });
     const offer = await getPremiumOfferAt(db, Date.now(), PREMIUM_PRICE_BRL);
     const payload = request.data && typeof request.data === 'object' ? request.data : {};
     const attributionRaw =
@@ -699,6 +930,22 @@ export const criarCheckoutPremium = onCall(
     };
     if (attributionCreatorId) {
       await getMonetizableCreatorPublicProfile(db, attributionCreatorId);
+    }
+    const checkoutFingerprint = buildCommerceFingerprint({
+      creatorId: attributionCreatorId,
+      source: attribution.source,
+      campaignId: attribution.campaignId,
+      clickId: attribution.clickId,
+      offerPrice: offer.currentPriceBRL,
+      promoId: offer.promo?.promoId || null,
+    });
+    const cachedCheckout = await readCommerceIdempotency(db, {
+      scope: 'checkoutPremium',
+      key: request.auth.uid,
+      fingerprint: checkoutFingerprint,
+    });
+    if (cachedCheckout) {
+      return { ...cachedCheckout, reused: true };
     }
 
     try {
@@ -721,7 +968,15 @@ export const criarCheckoutPremium = onCall(
         clickId: attribution.clickId,
         uid: request.auth.uid,
       });
-      return { ok: true, url };
+      const response = { ok: true, url };
+      await writeCommerceIdempotency(db, {
+        scope: 'checkoutPremium',
+        key: request.auth.uid,
+        fingerprint: checkoutFingerprint,
+        ttlMs: 2 * 60 * 1000,
+        response,
+      });
+      return response;
     } catch (err) {
       const errMsg = err?.message || String(err);
       logger.error('criarCheckoutPremium', { uid: request.auth.uid, error: errMsg });

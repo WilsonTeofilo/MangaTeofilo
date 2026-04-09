@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import CreatorMonetizationDashboard from './CreatorMonetizationDashboard.jsx';
+import CreatorMonetizationDashboard from './CreatorMonetizationDashboardClean.jsx';
 import './CreatorFrame.css';
 
 export default function CreatorMonetizationPage({ user }) {
@@ -12,11 +12,11 @@ export default function CreatorMonetizationPage({ user }) {
       <section className="creator-frame-shell">
         <header className="creator-frame-hero">
           <div>
-            <p className="creator-frame-eyebrow">Creator Monetization</p>
-            <h1>Ganhos, membros e promoções</h1>
+            <p className="creator-frame-eyebrow">Monetização do criador</p>
+            <h1>Ganhos, membros e loja</h1>
             <p>
-              Acompanhe entradas por tipo, recorrência de membros, campanhas e o efeito da sua monetização
-              sem depender do painel administrativo da plataforma.
+              Acompanhe seus ganhos por tipo, a base de membros e os resultados da loja sem depender do painel
+              administrativo da plataforma.
             </p>
           </div>
           <div className="creator-frame-actions">
@@ -29,15 +29,15 @@ export default function CreatorMonetizationPage({ user }) {
         <section className="creator-frame-notes">
           <article className="creator-frame-note">
             <strong>Membership</strong>
-            <p>Veja o que veio de membros recorrentes do seu creatorId e acompanhe a retenção da base.</p>
+            <p>Veja o que veio dos membros recorrentes do seu perfil e acompanhe a retenção da base.</p>
           </article>
           <article className="creator-frame-note">
             <strong>Apoios</strong>
-            <p>Separação clara entre membership, apoios e loja para facilitar leitura de receita real.</p>
+            <p>Separação clara entre membros, apoios e loja para facilitar a leitura dos seus ganhos.</p>
           </article>
           <article className="creator-frame-note">
             <strong>Promoções</strong>
-            <p>Use promoções como ferramenta operacional sua, sem misturar com o financeiro global da plataforma.</p>
+            <p>Use promoções para organizar campanhas sem misturar isso com o financeiro global da plataforma.</p>
           </article>
         </section>
 

@@ -23,24 +23,24 @@ export default function CreatorLevelBadgeCard({ progressVm, className = '' }) {
     <div className={`creator-lvl-card ${className}`.trim()}>
       <div className="creator-lvl-card__head">
         <h3 className="creator-lvl-card__title">
-          Nivel {vm.level} - {vm.meta.title} {vm.level >= 2 ? '💵' : ''}
+          Nível {vm.level} - {vm.meta.title} {vm.level >= 2 ? '💵' : ''}
         </h3>
       </div>
 
       {vm.monetizationThresholdReached ? (
         <ul className="creator-lvl-card__unlocks">
-          <li>Ganhar com vendas e repasses (com monetizacao ok)</li>
-          <li>Vender manga fisico na loja com repasse</li>
+          <li>Ganhar com vendas da loja</li>
+          <li>Receber pelos apoios e membros</li>
         </ul>
       ) : (
         <p style={{ margin: '0 0 10px', fontSize: '0.86rem', color: '#94a3b8' }}>
-          Suba ate <strong>Monetizado</strong> nas metricas da plataforma para liberar a loja com repasse.
+          Suba até <strong>Monetizado</strong> nas métricas da plataforma para liberar os ganhos da loja.
         </p>
       )}
 
       {nextMeta ? (
         <>
-          <p className="creator-lvl-card__next">Proximo nivel: {nextMeta.title}</p>
+          <p className="creator-lvl-card__next">Próximo nível: {nextMeta.title}</p>
           {gapLines.length ? (
             <ul className="creator-lvl-card__gaps">
               {gapLines.map((text) => (
@@ -51,7 +51,7 @@ export default function CreatorLevelBadgeCard({ progressVm, className = '' }) {
         </>
       ) : (
         <p className="creator-lvl-card__next" style={{ textTransform: 'none', letterSpacing: 'normal' }}>
-          Voce esta no topo do sistema de niveis por enquanto.
+          Você está no topo do sistema de níveis por enquanto.
         </p>
       )}
     </div>

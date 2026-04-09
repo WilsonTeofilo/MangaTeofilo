@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { equalTo, onValue, orderByChild, query, ref } from 'firebase/database';
+import { equalTo, get, onValue, orderByChild, query, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { db, functions } from '../../services/firebase';
@@ -18,6 +18,7 @@ import {
   resolvePublicProfileBio,
   resolvePublicProfileSocialLinks,
 } from '../../utils/publicUserProfile';
+import { normalizeUsernameInput } from '../../utils/usernameValidation';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import './CriadorPublico.css';
 
@@ -118,10 +119,59 @@ export default function CreatorPublicProfilePage({ user }) {
   const [obrasReady, setObrasReady] = useState(false);
   const [capitulosReady, setCapitulosReady] = useState(false);
   const [creatorStatsRow, setCreatorStatsRow] = useState({});
+  const [favoritesMap, setFavoritesMap] = useState({});
+  const [favoritesReady, setFavoritesReady] = useState(false);
   const [sortObras, setSortObras] = useState('recent');
+  const [resolvedCreatorUid, setResolvedCreatorUid] = useState('');
+  const [creatorIdentityReady, setCreatorIdentityReady] = useState(false);
   const obrasSectionRef = useRef(null);
-  const creatorUid = String(creatorId || '').trim();
+  const creatorLookup = String(creatorId || '').trim();
+  const creatorUid = String(resolvedCreatorUid || '').trim();
   const toggleCreatorFollow = useMemo(() => httpsCallable(functions, 'toggleCreatorFollow'), []);
+
+  useEffect(() => {
+    let alive = true;
+    const raw = String(creatorLookup || '').trim();
+    if (!raw) {
+      setResolvedCreatorUid('');
+      setCreatorIdentityReady(true);
+      return () => {};
+    }
+
+    setCreatorIdentityReady(false);
+    const normalizedHandle = normalizeUsernameInput(raw.replace(/^@/, ''));
+
+    (async () => {
+      try {
+        const directSnapshot = await get(ref(db, `usuarios/${raw}`));
+        if (!alive) return;
+        if (directSnapshot.exists()) {
+          setResolvedCreatorUid(raw);
+          setCreatorIdentityReady(true);
+          return;
+        }
+
+        if (!normalizedHandle) {
+          setResolvedCreatorUid('');
+          setCreatorIdentityReady(true);
+          return;
+        }
+
+        const handleSnapshot = await get(ref(db, `usernames/${normalizedHandle}`));
+        if (!alive) return;
+        setResolvedCreatorUid(handleSnapshot.exists() ? String(handleSnapshot.val() || '').trim() : '');
+        setCreatorIdentityReady(true);
+      } catch {
+        if (!alive) return;
+        setResolvedCreatorUid('');
+        setCreatorIdentityReady(true);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [creatorLookup]);
 
   useEffect(() => {
     if (!creatorUid) return () => {};
@@ -185,6 +235,23 @@ export default function CreatorPublicProfilePage({ user }) {
       setCapitulos(snapshot.exists() ? toRecordList(snapshot.val()) : []);
       setCapitulosReady(true);
     });
+    return () => unsub();
+  }, [creatorUid]);
+
+  useEffect(() => {
+    if (!creatorUid) return () => {};
+    setFavoritesReady(false);
+    const unsub = onValue(
+      ref(db, `usuarios/${creatorUid}/favorites`),
+      (snapshot) => {
+        setFavoritesMap(snapshot.exists() ? snapshot.val() || {} : {});
+        setFavoritesReady(true);
+      },
+      () => {
+        setFavoritesMap({});
+        setFavoritesReady(true);
+      }
+    );
     return () => unsub();
   }, [creatorUid]);
 
@@ -268,13 +335,38 @@ export default function CreatorPublicProfilePage({ user }) {
   const heroBackdropUrl = profileMode === 'reader' ? avatar : creatorPublicHeroImageUrl(perfilPublico);
   const creatorMonetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(perfilPublico);
   const supportEnabled = profileMode === 'writer' && creatorMonetizationStatus === 'active';
-  const membershipEnabled = supportEnabled && perfilPublico?.creatorMembershipEnabled === true;
-  const membershipPrice = Number(perfilPublico?.creatorMembershipPriceBRL || 12);
-  const donationSuggested = Number(perfilPublico?.creatorDonationSuggestedBRL || 7);
+  const supportOffer =
+    perfilPublico?.creatorProfile?.supportOffer && typeof perfilPublico.creatorProfile.supportOffer === 'object'
+      ? perfilPublico.creatorProfile.supportOffer
+      : {};
+  const membershipEnabled = supportEnabled && supportOffer.membershipEnabled === true;
+  const membershipPrice = Number(supportOffer.membershipPriceBRL || 12);
+  const donationSuggested = Number(supportOffer.donationSuggestedBRL || 7);
   const moderation = String(perfilPublico?.creatorModerationAction || '').trim().toLowerCase();
   const canFollow = profileMode === 'writer' && Boolean(user?.uid) && user.uid !== creatorUid;
 
-  const favoritesList = useMemo(() => [], []);
+  const favoritesList = useMemo(() => {
+    const worksById = new Map(
+      obras.map((obra) => [String(obra?.id || '').trim().toLowerCase(), obra])
+    );
+    return Object.entries(favoritesMap || {})
+      .map(([workIdRaw, row]) => {
+        const workId = String(workIdRaw || '').trim();
+        const linkedWork = worksById.get(workId.toLowerCase());
+        return {
+          workId,
+          slug: String(linkedWork?.slug || row?.slug || workId).trim(),
+          title: String(
+            linkedWork?.titulo || linkedWork?.title || row?.titulo || row?.title || workId
+          ).trim(),
+          coverUrl: String(
+            linkedWork?.capaUrl || linkedWork?.coverUrl || row?.coverUrl || row?.capaUrl || ''
+          ).trim(),
+          savedAt: Number(row?.savedAt || row?.createdAt || 0) || 0,
+        };
+      })
+      .sort((a, b) => Number(b.savedAt || 0) - Number(a.savedAt || 0));
+  }, [favoritesMap, obras]);
 
   const rawTab = String(searchParams.get('tab') || '').toLowerCase();
   const availableTabs = profileMode === 'writer' ? ['works', 'likes'] : ['likes'];
@@ -337,7 +429,7 @@ export default function CreatorPublicProfilePage({ user }) {
     }
   }
 
-  if (!creatorUid) {
+  if (!creatorLookup) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
@@ -348,9 +440,28 @@ export default function CreatorPublicProfilePage({ user }) {
     );
   }
 
-  if (!publicoReady || !obrasReady || !capitulosReady) {
+  if (!creatorUid) {
+    if (!creatorIdentityReady) {
+      return <div className="shito-app-splash" aria-hidden="true" />;
+    }
+    return (
+      <main className="criador-page">
+        <section className="criador-empty">
+          <h1>Criador não encontrado</h1>
+          <p>Não encontramos este perfil público pelo link informado.</p>
+          <button type="button" onClick={() => navigate('/works')}>
+            Voltar ao catálogo
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (!publicoReady || !obrasReady || !capitulosReady || !favoritesReady) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
+
+  const favoritesPublicVisible = profileMode === 'writer' ? true : readerPublic;
 
   const perfilBloqueado = moderation === 'banned';
 
@@ -615,10 +726,14 @@ export default function CreatorPublicProfilePage({ user }) {
           <div className="criador-section__head">
             <h2 id="criador-curtidas-title">{profileMode === 'writer' ? 'Obras curtidas' : 'Biblioteca pública'}</h2>
           </div>
-          {!readerPublic ? (
+          {!favoritesPublicVisible ? (
             <p className="criador-section__empty">Este usuário não exibe curtidas publicamente.</p>
           ) : !favoritesList.length ? (
-            <p className="criador-section__empty">Biblioteca pública indisponível nesta versão.</p>
+            <p className="criador-section__empty">
+              {profileMode === 'writer'
+                ? 'Este escritor ainda não salvou nenhuma obra por aqui.'
+                : 'Este leitor ainda não salvou nenhuma obra publicamente.'}
+            </p>
           ) : (
             <div className="criador-favorites-grid">
               {favoritesList.map((fav) => (

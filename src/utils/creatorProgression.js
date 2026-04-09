@@ -26,16 +26,16 @@ export const CREATOR_LEVEL_META = {
     short: 'Iniciante',
     emoji: '🟤',
     color: '#a8a29e',
-    perks: ['Publicar obras', 'Modo vitrine ao bater as metas do Nivel 1'],
+    perks: ['Publicar obras', 'Modo vitrine ao bater as metas do Nível 1'],
   },
   1: {
     id: 1,
     key: 'rising',
-    title: 'Em ascensao',
-    short: 'Em ascensao',
+    title: 'Em ascensão',
+    short: 'Em ascensão',
     emoji: '🟡',
     color: '#eab308',
-    perks: ['Prioridade leve no ranking', 'Vitrine POD liberada nas metas'],
+    perks: ['Prioridade leve no ranking', 'Vitrine da loja liberada nas metas'],
   },
   2: {
     id: 2,
@@ -44,7 +44,7 @@ export const CREATOR_LEVEL_META = {
     short: 'Monetizado',
     emoji: '🟢',
     color: '#22c55e',
-    perks: ['Ganhar com a loja (POD + repasse)', 'Membership e Pix conforme cadastro aprovado'],
+    perks: ['Ganhar com vendas da loja', 'Apoios e recebimentos após cadastro aprovado'],
   },
   3: {
     id: 3,
@@ -53,14 +53,14 @@ export const CREATOR_LEVEL_META = {
     short: 'Destaque',
     emoji: '🔵',
     color: '#38bdf8',
-    perks: ['Mais exposicao', 'Prioridade na vitrine (evoluindo)', 'Selo especial (em breve)'],
+    perks: ['Mais exposição', 'Prioridade na vitrine (evoluindo)', 'Selo especial (em breve)'],
   },
 };
 
 export const MONETIZATION_REWARD_LINES = [
-  'Monetizacao e repasses (com aprovacao no perfil)',
-  'Venda na loja - manga fisico com repasse',
-  'Membership e apoio direto',
+  'Receber pelos seus apoios e membros',
+  'Ganhar com vendas da loja',
+  'Liberar recursos financeiros do creator',
 ];
 
 function norm(n) {
@@ -159,8 +159,8 @@ export function buildCreatorProgressViewModel(metrics) {
     nextLevelProgressPercent: nextLevel == null ? 100 : averagePercent(nextLevelRows),
     primaryNextLevelGapPhrase:
       nextLevel == null
-        ? 'Voce atingiu o nivel maximo de metas da plataforma.'
-        : firstGapPhrase(nextLevelGapRows, ' para o proximo nivel'),
+        ? 'Você atingiu o nível máximo de metas da plataforma.'
+        : firstGapPhrase(nextLevelGapRows, ' para o próximo nível'),
     monetizationProgressRows,
     monetizationGapRows,
     monetizationProgressPercent: averagePercent(monetizationProgressRows),

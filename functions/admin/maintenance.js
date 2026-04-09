@@ -9,8 +9,7 @@ import {
   requireSuperAdmin,
   resolveTargetUidByEmail,
 } from '../adminRbac.js';
-import { resolveCreatorMonetizationPreferenceFromDb } from '../creatorRecord.js';
-import { sanitizeCreatorId, recordCreatorManualPixPayout } from '../creatorDataLedger.js';
+import { sanitizeCreatorId } from '../creatorDataLedger.js';
 import { buildUserEntitlementsPatch } from '../userEntitlements.js';
 import { buildPublicProfileFromUsuarioRow } from '../shared/publicUserProfile.js';
 
@@ -370,22 +369,7 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
 
     for (const [uid, row] of Object.entries(usuarios)) {
       const current = row && typeof row === 'object' ? row : {};
-      const approved =
-        current?.creator?.monetization?.approved === true ||
-        current?.creator?.monetization?.isApproved === true;
-      const active =
-        current?.creator?.monetization?.enabled === true ||
-        current?.creator?.monetization?.isMonetizationActive === true;
-      const nextRequested =
-        current?.creator?.monetization?.requested === true ||
-        resolveCreatorMonetizationPreferenceFromDb(current) === 'monetize';
-
-      const needsCreatorDoc =
-        current?.creator?.monetization?.isApproved !== approved ||
-        current?.creator?.monetization?.approved !== approved ||
-        current?.creator?.monetization?.isMonetizationActive !== active ||
-        current?.creator?.monetization?.enabled !== active ||
-        current?.creator?.monetization?.requested !== nextRequested;
+      const needsCreatorDoc = false;
       const hasLegacyFields =
         String(current?.creatorMonetizationPreference || '').trim().length > 0 ||
         current?.creatorMonetizationApprovedOnce != null ||
@@ -394,14 +378,6 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
         String(current?.creatorMonetizationReviewReason || '').trim().length > 0;
 
       if (!needsCreatorDoc && !hasLegacyFields) continue;
-
-      if (needsCreatorDoc) {
-        patch[`usuarios/${uid}/creator/monetization/approved`] = approved;
-        patch[`usuarios/${uid}/creator/monetization/isApproved`] = approved;
-        patch[`usuarios/${uid}/creator/monetization/enabled`] = active;
-        patch[`usuarios/${uid}/creator/monetization/isMonetizationActive`] = active;
-        patch[`usuarios/${uid}/creator/monetization/requested`] = nextRequested;
-      }
       if (hasLegacyFields) {
         patch[`usuarios/${uid}/creatorMonetizationPreference`] = null;
         patch[`usuarios/${uid}/creatorMonetizationApprovedOnce`] = null;
@@ -411,7 +387,7 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
       }
       updated += 1;
       if (sample.length < 100) {
-        sample.push({ uid, approved, active, clearedLegacyFields: hasLegacyFields });
+        sample.push({ uid, clearedLegacyFields: hasLegacyFields });
       }
     }
 
@@ -810,31 +786,6 @@ export const adminAuditarPedidosLojaSemAtribuicao = onCall({ region: 'us-central
     note: 'Pedidos antigos sem creatorId continuam como historico valido; sem regra forte de retroatribuicao automatica.',
     sample,
   };
-});
-
-export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, async (request) => {
-  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Faca login.');
-  const ctx = await requireAdminAuth(request.auth);
-  requirePermission(ctx, 'financeiro');
-  const body = request.data && typeof request.data === 'object' ? request.data : {};
-  const creatorId = sanitizeCreatorId(body.creatorId);
-  const amount = Number(body.amount);
-  if (!creatorId) throw new HttpsError('invalid-argument', 'creatorId invalido.');
-  if (!Number.isFinite(amount) || amount <= 0) throw new HttpsError('invalid-argument', 'amount invalido.');
-
-  const payoutId = await recordCreatorManualPixPayout(getDatabase(), {
-    creatorId,
-    amount,
-    currency: String(body.currency || 'BRL'),
-    pixType: body.pixType ? String(body.pixType) : null,
-    pixKeyMasked: body.pixKeyMasked ? String(body.pixKeyMasked) : null,
-    paidAt: Number(body.paidAt || Date.now()),
-    paidByUid: request.auth.uid,
-    externalTransferId: body.externalTransferId ? String(body.externalTransferId) : null,
-    notes: body.notes ? String(body.notes) : null,
-  });
-  if (!payoutId) throw new HttpsError('internal', 'Falha ao registrar payout manual.');
-  return { ok: true, payoutId };
 });
 
 export const adminRevokeUserSessions = onCall({ region: 'us-central1' }, async (request) => {

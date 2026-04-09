@@ -9,6 +9,7 @@ import './index.css';
 
 // 2. COMPONENTE PRINCIPAL
 import App from './App.jsx';
+import { initializeClientAppCheck } from './services/firebase';
 
 // 3. RENDERIZAÇÃO
 const rootElement = document.getElementById('root');
@@ -16,6 +17,8 @@ const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Elemento 'root' não encontrado. Verifique seu index.html.");
 }
+
+initializeClientAppCheck();
 
 createRoot(rootElement).render(
   <StrictMode>

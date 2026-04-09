@@ -6,6 +6,10 @@
 import { CREATOR_BIO_MAX_LENGTH } from '../constants';
 import { ageFromBirthDateLocal, parseBirthDateLocal } from './birthDateAge';
 import { inferPayoutPixTypeFromStoredKey } from './pixKeyInput';
+import {
+  CREATOR_MEMBERSHIP_PRICE_MAX_BRL,
+  CREATOR_MEMBERSHIP_PRICE_MIN_BRL,
+} from '../constants';
 
 export function legalFullNameHasMinThreeWords(s) {
   const parts = String(s || '')
@@ -45,16 +49,11 @@ export function buildCreatorRecordForProfileSave({
   bio,
   instagramUrl,
   youtubeUrl,
-  monetizationPreference,
-  monetizationStatus,
   now = Date.now(),
 }) {
   const birth = birthDateIso && parseBirthDateLocal(birthDateIso) ? birthDateIso : '';
   const age = birth ? ageFromBirthDateLocal(birth) : null;
   const isAdult = age != null && age >= 18;
-  const pref = String(monetizationPreference || 'publish_only').toLowerCase() === 'monetize' ? 'monetize' : 'publish_only';
-  const st = String(monetizationStatus || 'disabled').toLowerCase();
-
   const prev = perfilDb?.creator && typeof perfilDb.creator === 'object' ? perfilDb.creator : {};
   const createdAt = Number(prev.meta?.createdAt) || now;
 
@@ -75,36 +74,60 @@ export function buildCreatorRecordForProfileSave({
   const hasCompliance = fullName.length >= 6 && cpfDigits.length === 11 && pixKey.length > 0;
 
   const prevMon = prev.monetization && typeof prev.monetization === 'object' ? prev.monetization : {};
-  const approvedPersisted =
-    prevMon.approved === true || prevMon.isApproved === true;
-  const approved = approvedPersisted || st === 'active';
-  const enabled = pref === 'monetize' && st === 'active';
+  const prevOffer = prevMon.offer && typeof prevMon.offer === 'object' ? prevMon.offer : {};
+  const membershipPrice = Number(prevOffer.membershipPriceBRL);
+  const donationSuggested = Number(prevOffer.donationSuggestedBRL);
+  const hasValidMembershipPrice =
+    Number.isFinite(membershipPrice) &&
+    membershipPrice >= CREATOR_MEMBERSHIP_PRICE_MIN_BRL &&
+    membershipPrice <= CREATOR_MEMBERSHIP_PRICE_MAX_BRL;
+  const hasValidDonationSuggested =
+    Number.isFinite(donationSuggested) &&
+    donationSuggested >= CREATOR_MEMBERSHIP_PRICE_MIN_BRL &&
+    donationSuggested <= CREATOR_MEMBERSHIP_PRICE_MAX_BRL;
   const legalDoc = hasCompliance ? { fullName, cpf: cpfDigits } : prevMon.legal || null;
   const payoutDoc = hasCompliance
     ? { type: 'pix', key: pixKey.slice(0, 2000), pixType }
     : prevMon.payout || null;
-
-  let monetization;
+  const previousApplication =
+    prevMon.application && typeof prevMon.application === 'object' ? prevMon.application : {};
+  const previousFinancial =
+    prevMon.financial && typeof prevMon.financial === 'object' ? prevMon.financial : {};
+  const monetization = {
+    ...prevMon,
+    preference:
+      String(prevMon.preference || '').trim().toLowerCase() === 'monetize' ? 'monetize' : 'publish_only',
+    application: {
+      status: String(previousApplication.status || '').trim().toLowerCase() || (isAdult ? 'not_requested' : 'blocked_underage'),
+      requestedAt: previousApplication.requestedAt || null,
+      reviewedAt: previousApplication.reviewedAt || null,
+      reviewedBy: previousApplication.reviewedBy || null,
+      reviewReason: previousApplication.reviewReason || null,
+    },
+    financial: {
+      status:
+        String(previousFinancial.status || '').trim().toLowerCase() === 'active'
+          ? 'active'
+          : String(previousFinancial.status || '').trim().toLowerCase() === 'paused'
+            ? 'paused'
+            : 'inactive',
+      activatedAt: previousFinancial.activatedAt || null,
+      updatedAt: now,
+    },
+    offer: {
+      membershipEnabled:
+        prevOffer.membershipEnabled === true,
+      membershipPriceBRL: hasValidMembershipPrice ? membershipPrice : null,
+      donationSuggestedBRL: hasValidDonationSuggested ? donationSuggested : null,
+      updatedAt: now,
+    },
+    legal: isAdult ? legalDoc : null,
+    payout: isAdult ? payoutDoc : null,
+  };
   if (!isAdult) {
-    monetization = {
-      enabled: false,
-      isMonetizationActive: false,
-      requested: false,
-      approved: false,
-      isApproved: false,
-      legal: null,
-      payout: null,
-    };
-  } else {
-    monetization = {
-      enabled,
-      isMonetizationActive: enabled,
-      requested: pref === 'monetize' && !approved,
-      approved,
-      isApproved: approved,
-      legal: legalDoc,
-      payout: payoutDoc,
-    };
+    monetization.application.status = 'blocked_underage';
+    monetization.financial.status = 'inactive';
+    monetization.offer.membershipEnabled = false;
   }
 
   return {
@@ -131,9 +154,9 @@ export function readCreatorMonetizationSummary(row) {
   const c = row?.creator?.monetization;
   if (c && typeof c === 'object') {
     return {
-      enabled: c.enabled === true,
-      requested: c.requested === true,
-      approved: c.approved === true,
+      enabled: String(c?.financial?.status || '').trim().toLowerCase() === 'active',
+      requested: String(c?.application?.status || '').trim().toLowerCase() === 'pending',
+      approved: String(c?.application?.status || '').trim().toLowerCase() === 'approved',
       hasPixPayout: Boolean(c.payout?.key),
       hasLegal: Boolean(c.legal?.fullName && c.legal?.cpf),
     };

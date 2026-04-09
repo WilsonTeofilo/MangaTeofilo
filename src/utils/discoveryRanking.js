@@ -281,7 +281,12 @@ export function buildDiscoveryRanking({ obras = [], capitulos = [], creatorsMap 
       return {
         creatorId,
         displayName,
-        publicLabel: publicLabel && publicLabel !== 'Usuário' ? publicLabel : displayName,
+        publicLabel:
+          publicLabel &&
+          publicLabel !== 'Usuário' &&
+          publicLabel !== 'Leitor'
+            ? publicLabel
+            : displayName,
         username,
         avatarUrl:
           String(profile?.creatorProfile?.avatarUrl || profile?.userAvatar || '').trim() ||

@@ -3,6 +3,10 @@ import {
   STORE_CATEGORY_KEYS,
   STORE_TYPE_KEYS,
 } from '../../config/store';
+import {
+  filterTrustedPlatformImageUrls,
+  isTrustedPlatformAssetUrl,
+} from '../../utils/trustedAssetUrls';
 
 export const SHIPPING_MODE = {
   FIXED: 'fixed',
@@ -44,10 +48,13 @@ export const EMPTY_PRODUCT = {
 };
 
 export function parseImages(text) {
-  return String(text || '')
+  return filterTrustedPlatformImageUrls(
+    String(text || '')
     .split(/\n+/)
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean),
+    { allowLocalAssets: true }
+  );
 }
 
 export function parseSizes(text) {
@@ -106,6 +113,7 @@ export function buildProductPayload(form, { isMangaka, creatorUid, config }) {
   const category = normalizeProductCategory({ category: form.category });
   const regionalShipping = parseRegionShipping(form.regionShippingText);
 
+  const coverSourceUrl = String(form.coverSourceUrl || '').trim();
   return {
     title: String(form.title || '').trim(),
     description: String(form.description || '').trim(),
@@ -141,7 +149,9 @@ export function buildProductPayload(form, { isMangaka, creatorUid, config }) {
       form.inventoryMode === INVENTORY_MODE.FIXED ? INVENTORY_MODE.FIXED : INVENTORY_MODE.ON_DEMAND,
     internalFiles: {
       mioloPdfPath: String(form.mioloPdfPath || '').trim(),
-      coverSourceUrl: String(form.coverSourceUrl || '').trim(),
+      coverSourceUrl: isTrustedPlatformAssetUrl(coverSourceUrl, { allowLocalAssets: true })
+        ? coverSourceUrl
+        : '',
     },
     updatedAt: now,
   };

@@ -1,5 +1,6 @@
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { assertTrustedAppRequest } from '../appCheckGuard.js';
 
 function assertNotificationId(notificationId) {
   const id = String(notificationId || '').trim();
@@ -13,6 +14,7 @@ function assertNotificationId(notificationId) {
 }
 
 export const markUserNotificationRead = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
@@ -50,6 +52,7 @@ export const markUserNotificationRead = onCall({ region: 'us-central1' }, async 
 });
 
 export const deleteUserNotification = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
@@ -77,6 +80,7 @@ export const deleteUserNotification = onCall({ region: 'us-central1' }, async (r
 });
 
 export const upsertNotificationSubscription = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }

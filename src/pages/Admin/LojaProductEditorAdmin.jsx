@@ -155,6 +155,12 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
         mioloPdfPath = await uploadLojaFile(pdfFile, storageTargetUid, 'miolo');
       }
 
+      const trustedImages = parseImages(imagesText);
+      if (trustedImages.length !== parseImages(form.imagesText).length) {
+        setMsg('Algumas imagens externas foram removidas. A loja aceita apenas URLs hospedadas no Storage da plataforma.');
+      }
+      imagesText = trustedImages.join('\n');
+
       const formReady = { ...form, imagesText, mioloPdfPath, coverSourceUrl };
       const payload = buildProductPayload(formReady, { isMangaka, creatorUid, config });
 

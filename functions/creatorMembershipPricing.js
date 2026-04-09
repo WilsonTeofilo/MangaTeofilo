@@ -17,8 +17,17 @@ export function isValidCreatorMembershipPriceBRL(n) {
 /** Pronto para exibir assinatura/apoio sugerido no perfil público (checkout). */
 export function hasPublicCreatorMembershipOffer(row) {
   if (!row || typeof row !== 'object') return false;
-  if (row.creatorMembershipEnabled === false) return false;
-  const p = Number(row.creatorMembershipPriceBRL);
-  const d = Number(row.creatorDonationSuggestedBRL);
+  const canonicalOffer =
+    row?.creator?.monetization?.offer && typeof row.creator.monetization.offer === 'object'
+      ? row.creator.monetization.offer
+      : row?.publicProfile?.creatorProfile?.supportOffer &&
+          typeof row.publicProfile.creatorProfile.supportOffer === 'object'
+        ? row.publicProfile.creatorProfile.supportOffer
+        : row?.creatorProfile?.supportOffer && typeof row.creatorProfile.supportOffer === 'object'
+          ? row.creatorProfile.supportOffer
+          : row;
+  if (canonicalOffer.membershipEnabled === false) return false;
+  const p = Number(canonicalOffer.membershipPriceBRL);
+  const d = Number(canonicalOffer.donationSuggestedBRL);
   return isValidCreatorMembershipPriceBRL(p) && isValidCreatorMembershipPriceBRL(d);
 }

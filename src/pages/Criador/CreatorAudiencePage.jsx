@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { equalTo, onValue, orderByChild, query, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
@@ -72,7 +72,7 @@ function AudienceLineChart({ rows }) {
         <p className="creator-empty-copy">Ainda não há histórico suficiente para mostrar o crescimento.</p>
       ) : (
         <>
-          <svg viewBox={`0 0 ${width} ${height}`} className="creator-audience-chart" role="img" aria-label="Grafico de crescimento">
+          <svg viewBox={`0 0 ${width} ${height}`} className="creator-audience-chart" role="img" aria-label="Gráfico de crescimento">
             {[0.25, 0.5, 0.75].map((ratio) => (
               <line
                 key={ratio}
@@ -149,7 +149,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
       return () => {};
     }
     const unsubs = workIds.map((workId) =>
-      onValue(ref(db, `workRetention/${workId}`), (snap) => {
+      onValue(ref(db, `workRetencao/${workId}`), (snap) => {
         setRetentionMap((prev) => ({
           ...prev,
           [workId]: snap.exists() ? snap.val() || {} : {},
@@ -178,14 +178,14 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
   const totals = useMemo(() => {
     const stats = creatorStats || {};
-    const activeMembers = Object.values(membersIndex || {}).filter((row) => safeNumber(row?.memberUntil) > Date.now()).length;
+    const activeMembros = Object.values(membersIndex || {}).filter((row) => safeNumber(row?.memberUntil) > Date.now()).length;
     return {
       followersCount: safeNumber(stats?.followersCount),
       totalViews: safeNumber(stats?.totalViews),
       uniqueReaders: safeNumber(stats?.uniqueReaders),
       likesTotal: safeNumber(stats?.likesTotal),
       commentsTotal: safeNumber(stats?.commentsTotal),
-      membersCount: activeMembers || safeNumber(stats?.membersCount),
+      membersCount: activeMembros || safeNumber(stats?.membersCount),
       revenueTotal: safeNumber(stats?.revenueTotal),
     };
   }, [creatorStats, membersIndex]);
@@ -216,12 +216,12 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
   const graphRows = useMemo(() => {
     if (!filteredDailyRows.length) return [];
-    const totalFutureFollowersAdds = filteredDailyRows.reduce((sum, row) => sum + safeNumber(row.followersAdded), 0);
+    const totalFutureSeguidoresAdds = filteredDailyRows.reduce((sum, row) => sum + safeNumber(row.followersAdded), 0);
     const totalFutureViews = filteredDailyRows.reduce((sum, row) => sum + safeNumber(row.totalViews), 0);
-    const totalFutureRevenue = filteredDailyRows.reduce((sum, row) => sum + safeNumber(row.revenueTotal), 0);
-    let followersRunning = Math.max(0, totals.followersCount - totalFutureFollowersAdds);
+    const totalFutureGanhos = filteredDailyRows.reduce((sum, row) => sum + safeNumber(row.revenueTotal), 0);
+    let followersRunning = Math.max(0, totals.followersCount - totalFutureSeguidoresAdds);
     let viewsRunning = Math.max(0, totals.totalViews - totalFutureViews);
-    let revenueRunning = Math.max(0, totals.revenueTotal - totalFutureRevenue);
+    let revenueRunning = Math.max(0, totals.revenueTotal - totalFutureGanhos);
     return filteredDailyRows.map((row) => {
       followersRunning += safeNumber(row.followersAdded);
       viewsRunning += safeNumber(row.totalViews);
@@ -246,7 +246,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
         const views = safeNumber(chapter?.viewsCount || chapter?.visualizacoes);
         return {
           id: chapter.id,
-          title: String(chapter?.titulo || `Capitulo ${chapter?.numero || ''}`).trim(),
+          title: String(chapter?.titulo || `Capítulo ${chapter?.numero || ''}`).trim(),
           workTitle: String(work?.titulo || work?.title || 'Obra').trim(),
           likes,
           comments,
@@ -391,7 +391,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
       <section className="creator-frame-shell">
         <header className="creator-frame-hero">
           <div>
-            <p className="creator-frame-eyebrow">Creator Audience</p>
+            <p className="creator-frame-eyebrow">Audiência do creator</p>
             <h1>Audiência, retenção e monetização</h1>
             <p>
               Leia o tamanho da sua base, o nível de engajamento, a retenção entre capítulos e a conversão em membros
@@ -425,8 +425,8 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
         <section className="creator-audience-filters">
           {[
-            { id: '7d', label: 'Ãšltimos 7 dias' },
-            { id: '30d', label: 'Ãšltimos 30 dias' },
+            { id: '7d', label: 'Últimos 7 dias' },
+            { id: '30d', label: 'Últimos 30 dias' },
             { id: 'all', label: 'Tudo' },
           ].map((item) => (
             <button
@@ -442,7 +442,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
         <section className="creator-metrics-grid">
           <article className="creator-metric-card">
-            <span>Followers</span>
+            <span>Seguidores</span>
             <strong>{formatCompactNumber(totals.followersCount)}</strong>
             <small>+{formatCompactNumber(periodSummary.followersAdded)} no período</small>
           </article>
@@ -452,12 +452,12 @@ export default function CreatorAudiencePage({ user, perfil }) {
             <small>{formatCompactNumber(periodSummary.views)} no período</small>
           </article>
           <article className="creator-metric-card">
-            <span>Members</span>
+            <span>Membros</span>
             <strong>{formatCompactNumber(totals.membersCount)}</strong>
             <small>{formatPercent(conversionRate)} de conversão</small>
           </article>
           <article className="creator-metric-card">
-            <span>Revenue</span>
+            <span>Ganhos</span>
             <strong>{formatCurrency(totals.revenueTotal)}</strong>
             <small>{formatCurrency(periodSummary.revenue)} no período</small>
           </article>
@@ -482,7 +482,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
         <section className="creator-panel-card creator-panel-card--wide">
           <div className="creator-panel-head">
             <div>
-              <p className="creator-frame-eyebrow">Growth</p>
+              <p className="creator-frame-eyebrow">Crescimento</p>
               <h2>Crescimento ao longo do tempo</h2>
             </div>
           </div>
@@ -493,7 +493,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
           <article className="creator-panel-card">
             <div className="creator-panel-head">
               <div>
-                <p className="creator-frame-eyebrow">Engagement</p>
+                <p className="creator-frame-eyebrow">Engajamento</p>
                 <h2>Engajamento</h2>
               </div>
             </div>
@@ -508,7 +508,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
           <article className="creator-panel-card">
             <div className="creator-panel-head">
               <div>
-                <p className="creator-frame-eyebrow">Top Chapters</p>
+                <p className="creator-frame-eyebrow">Top capítulos</p>
                 <h2>Capítulos com melhor resposta</h2>
               </div>
             </div>
@@ -524,7 +524,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
                     </div>
                     <div>
                       <strong>{formatCompactNumber(chapter.views)} views</strong>
-                      <span>{chapter.likes} likes Â· {chapter.comments} comentários</span>
+                      <span>{chapter.likes} likes · {chapter.comments} comentários</span>
                     </div>
                   </li>
                 ))}
@@ -536,7 +536,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
         <section className="creator-panel-card creator-panel-card--wide">
           <div className="creator-panel-head">
             <div>
-              <p className="creator-frame-eyebrow">Best Works</p>
+              <p className="creator-frame-eyebrow">Melhores obras</p>
               <h2>Obras com melhor desempenho</h2>
             </div>
           </div>
@@ -548,7 +548,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
                 <li key={work.id}>
                   <div>
                     <strong>{work.title}</strong>
-                    <span>{formatCompactNumber(work.views)} views Â· {work.likes} likes Â· {work.comments} comentários</span>
+                    <span>{formatCompactNumber(work.views)} views · {work.likes} likes · {work.comments} comentários</span>
                   </div>
                   <div>
                     <strong>{formatPercent(work.estimatedConversion)}</strong>
@@ -564,7 +564,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
           <article className="creator-panel-card">
             <div className="creator-panel-head">
               <div>
-                <p className="creator-frame-eyebrow">Retention</p>
+                <p className="creator-frame-eyebrow">Retenção</p>
                 <h2>Capítulo por capítulo</h2>
               </div>
             </div>
@@ -591,7 +591,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
           <article className="creator-panel-card">
             <div className="creator-panel-head">
               <div>
-                <p className="creator-frame-eyebrow">Monetization</p>
+                <p className="creator-frame-eyebrow">Monetização</p>
                 <h2>Base pagante</h2>
               </div>
             </div>

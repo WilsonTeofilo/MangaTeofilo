@@ -42,7 +42,9 @@ import {
   creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
   normalizeCreatorMonetizationPreference,
+  resolveCreatorMonetizationApplicationStatusFromDb,
   resolveCreatorMonetizationPreferenceFromDb,
+  resolveCreatorSupportOfferFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../../utils/creatorMonetizationUi';
 import { BRAZILIAN_STATES, PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
@@ -55,12 +57,20 @@ import {
   suggestUsernameFromDisplayName,
 } from '../../utils/usernameValidation';
 import { buildUsuarioPublicProfileRecord } from '../../config/userProfileSchema';
+import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
+import { isTrustedPlatformAssetUrl } from '../../utils/trustedAssetUrls';
 import './Perfil.css';
 
 function isCreatorProfileStorageAssetForUser(uid, pathOrUrl) {
   const path = resolveStoragePathFromPathOrUrl(pathOrUrl);
   if (!path) return false;
   return path.startsWith(`creator_profile/${uid}/`);
+}
+
+function isTrustedProfileImageUrl(url) {
+  return isTrustedPlatformAssetUrl(url, {
+    allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp'],
+  });
 }
 
 // Recebe `user` via prop (consistente com App.jsx)
@@ -206,12 +216,13 @@ export default function Perfil({
       setYoutubeUrl(String(creatorSocialDoc.youtube || '').trim());
       setCreatorTermsAccepted(Boolean(perfil.creatorTermsAccepted));
       setCreatorMonetizationPreference(resolveCreatorMonetizationPreferenceFromDb(perfil));
-      setCreatorMembershipEnabled(perfil.creatorMembershipEnabled !== false);
+      const creatorSupportOffer = resolveCreatorSupportOfferFromDb(perfil);
+      setCreatorMembershipEnabled(creatorSupportOffer.membershipEnabled === true);
       setCreatorMembershipPriceBRL(
-        perfil.creatorMembershipPriceBRL != null ? String(perfil.creatorMembershipPriceBRL) : '12'
+        creatorSupportOffer.membershipPriceBRL != null ? String(creatorSupportOffer.membershipPriceBRL) : '12'
       );
       setCreatorDonationSuggestedBRL(
-        perfil.creatorDonationSuggestedBRL != null ? String(perfil.creatorDonationSuggestedBRL) : '7'
+        creatorSupportOffer.donationSuggestedBRL != null ? String(creatorSupportOffer.donationSuggestedBRL) : '7'
       );
       const buyerProfile = normalizeBuyerProfile(perfil.buyerProfile);
       setBuyerFullName(buyerProfile.fullName);
@@ -291,11 +302,12 @@ export default function Perfil({
 
   const perfilAvatarPreviewSrc =
     mangakaAvatarLocalPreview ||
-    (adminAccess.isMangaka && String(mangakaAvatarUrlDraft || '').trim()
+    (adminAccess.isMangaka && isTrustedProfileImageUrl(String(mangakaAvatarUrlDraft || '').trim())
       ? String(mangakaAvatarUrlDraft).trim()
       : avatarSelecionado);
 
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
+  const creatorMonetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(perfilDb || {});
   const creatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(perfilDb || {});
   const creatorMonetizationStatusEffective = effectiveCreatorMonetizationStatus(
     creatorMonetizationPreference,
@@ -303,10 +315,10 @@ export default function Perfil({
   );
   /** Ja aprovado pela equipe (ou equivalente) - religar monetizacao não pede formulário de novo. */
   const hasMonetizationClearance = useMemo(() => {
-    if (perfilDb?.creator?.monetization?.isApproved === true) return true;
+    if (creatorMonetizationApplicationStatus === 'approved') return true;
     if (String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved') return true;
     return creatorMonetizationStatus === 'active';
-  }, [perfilDb, creatorMonetizationStatus]);
+  }, [creatorMonetizationApplicationStatus, perfilDb, creatorMonetizationStatus]);
   const creatorReviewReason = String(perfilDb?.creatorReviewReason || '').trim();
   const creatorModerationAction = String(perfilDb?.creatorModerationAction || '').trim().toLowerCase();
   const creatorSignupIntent = String(perfilDb?.signupIntent || '').trim().toLowerCase();
@@ -322,9 +334,24 @@ export default function Perfil({
   const creatorDisplayLabel = String(creatorDisplayName || novoNome || user?.displayName || '').trim() || 'Criador';
   const creatorHandleLocked = String(perfilDb?.userHandle || '').trim().toLowerCase();
   const creatorSupportUrl = user?.uid ? apoieUrlAbsolutaParaCriador(user.uid) : '';
-  const creatorPublicPath = user?.uid ? `/criador/${encodeURIComponent(user.uid)}` : '/perfil';
+  const publicProfileHandlePreview = creatorHandleLocked || normalizeUsernameInput(userHandleDraft);
+  const creatorPublicPath = resolvePublicProfilePath(
+    {
+      uid: user?.uid || '',
+      userHandle: publicProfileHandlePreview,
+    },
+    user?.uid || ''
+  );
+  const readerPublicPath = resolvePublicProfilePath(
+    {
+      uid: user?.uid || '',
+      userHandle: publicProfileHandlePreview,
+    },
+    user?.uid || '',
+    { tab: 'likes' }
+  );
   const needsFirstMonetizationApplication =
-    adminAccess.isMangaka && !hasMonetizationClearance && creatorMonetizationStatus === 'disabled';
+    adminAccess.isMangaka && creatorMonetizationApplicationStatus === 'not_requested';
   const monetizacaoBloqueadaPorIdade =
     creatorMonetizationStatus === 'blocked_underage' || isUnderageByBirthYear;
 
@@ -333,15 +360,11 @@ export default function Perfil({
       setUnderageMonetizeModalOpen(true);
       return;
     }
-    if (!hasMonetizationClearance && creatorMonetizationStatus === 'disabled') {
-      navigate('/creator/onboarding?intent=mangaka_monetize');
-      return;
-    }
-    setCreatorMonetizationPreference('monetize');
+    navigate('/creator/onboarding?intent=mangaka_monetize');
   };
 
   const handleDesativarMonetizacaoClick = () => {
-    setCreatorMonetizationPreference('publish_only');
+    navigate('/creator/monetizacao');
   };
   const creatorStatusLabel = creatorMonetizationStatusLabel(
     creatorMonetizationPreference,
@@ -466,55 +489,14 @@ export default function Perfil({
     }
 
     const ano = birthIsoForSave && parseBirthDateLocal(birthIsoForSave) ? Number(birthIsoForSave.slice(0, 4)) : NaN;
-    const membershipPrice = Number(String(creatorMembershipPriceBRL || '').replace(',', '.'));
-    const suggestedDonation = Number(String(creatorDonationSuggestedBRL || '').replace(',', '.'));
     const notificationPrefs = {
       promotionsEmail: notifyPromotions === true,
       commentSocialInApp: notifyCommentSocial === true,
     };
 
-    const ageIfValid =
-      birthIsoForSave && parseBirthDateLocal(birthIsoForSave)
-        ? ageFromBirthDateLocal(birthIsoForSave)
-        : null;
-    const monetizationRequiresValues =
-      adminAccess.isMangaka &&
-      creatorMonetizationPreference === 'monetize' &&
-      ageIfValid != null &&
-      ageIfValid >= 18;
-
-    if (
-      monetizationRequiresValues &&
-      (!Number.isFinite(membershipPrice) ||
-        membershipPrice < CREATOR_MEMBERSHIP_PRICE_MIN_BRL ||
-        membershipPrice > CREATOR_MEMBERSHIP_PRICE_MAX_BRL)
-    ) {
-      setMensagem({
-        texto: `Defina o valor da membership entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00 (acesso antecipado as suas obras).`,
-        tipo: 'erro',
-      });
-      return;
-    }
-    if (
-      monetizationRequiresValues &&
-      (!Number.isFinite(suggestedDonation) ||
-        suggestedDonation < CREATOR_MEMBERSHIP_PRICE_MIN_BRL ||
-        suggestedDonation > CREATOR_MEMBERSHIP_PRICE_MAX_BRL)
-    ) {
-      setMensagem({
-        texto: `Defina a doacao sugerida entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00.`,
-        tipo: 'erro',
-      });
-      return;
-    }
-    if (monetizationRequiresValues && creatorMembershipEnabled !== true) {
-      setMensagem({ texto: 'Ative a membership do criador para concluir a monetizacao.', tipo: 'erro' });
-      return;
-    }
     if (adminAccess.isMangaka) {
       const bioLen = String(creatorBio || '').trim().length;
-      const bioMinMangaka =
-        creatorMonetizationPreference === 'monetize' ? CREATOR_BIO_MIN_LENGTH : CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
+      const bioMinMangaka = CREATOR_BIO_MIN_LENGTH_PUBLISH_ONLY;
       if (bioLen < bioMinMangaka || bioLen > CREATOR_BIO_MAX_LENGTH) {
         setMensagem({
           texto: `A bio do criador deve ter entre ${bioMinMangaka} e ${CREATOR_BIO_MAX_LENGTH} caracteres.`,
@@ -552,15 +534,18 @@ export default function Perfil({
         }
       } else if (adminAccess.isMangaka && String(mangakaAvatarUrlDraft || '').trim()) {
         const u = String(mangakaAvatarUrlDraft || '').trim();
-        if (!/^https:\/\//i.test(u) || u.length > 2048) {
-          setMensagem({ texto: 'URL da foto deve ser HTTPS valida.', tipo: 'erro' });
+        if (!isTrustedProfileImageUrl(u) || u.length > 2048) {
+          setMensagem({
+            texto: 'Use apenas imagem da plataforma (Storage) ou envie um novo arquivo.',
+            tipo: 'erro',
+          });
           setLoading(false);
           return;
         }
         finalAvatar = u;
       } else if (adminAccess.isMangaka) {
         const asUrl = String(avatarSelecionado || '').trim();
-        if (/^https:\/\//i.test(asUrl) && asUrl.length <= 2048) {
+        if (isTrustedProfileImageUrl(asUrl) && asUrl.length <= 2048) {
           finalAvatar = asUrl;
         } else {
           const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
@@ -596,37 +581,10 @@ export default function Perfil({
       const readerAvatarSave = readerPub ? finalAvatar : null;
 
       const creatorPublicName = String(creatorDisplayName || novoNome || '').trim();
-      const creatorStatusNext = adminAccess.isMangaka ? 'active' : null;
-      const ageForMonet = birthIsoForSave ? ageFromBirthDateLocal(birthIsoForSave) : null;
-      const clearanceNow =
-        perfilDb?.creator?.monetization?.isApproved === true ||
-        String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved' ||
-        creatorMonetizationStatus === 'active';
-      const creatorMonetizationPreferenceNext = !adminAccess.isMangaka
-        ? creatorMonetizationPreference
-        : normalizeCreatorMonetizationPreference(creatorMonetizationPreference);
-      const creatorMonetizationStatusNext = !adminAccess.isMangaka
-        ? null
-        : creatorMonetizationPreferenceNext !== 'monetize'
-          ? ['active', 'blocked_underage'].includes(creatorMonetizationStatus)
-            ? creatorMonetizationStatus
-            : 'disabled'
-          : ageForMonet != null && ageForMonet < 18
-            ? 'blocked_underage'
-            : creatorMonetizationStatus === 'blocked_underage'
-              ? 'blocked_underage'
-              : clearanceNow
-                ? 'active'
-                : 'disabled';
-      const creatorMonetizationRequestNeedsModal =
-        adminAccess.isMangaka &&
-        creatorMonetizationPreferenceNext === 'monetize' &&
-        creatorMonetizationStatusNext === 'disabled' &&
-        !clearanceNow;
       const socialValidation = validateCreatorSocialLinks({
         instagramUrl,
         youtubeUrl,
-        requireOne: adminAccess.isMangaka && creatorMonetizationPreferenceNext === 'monetize',
+        requireOne: false,
       });
       if (!socialValidation.ok) {
         setMensagem({ texto: socialValidation.message, tipo: 'erro' });
@@ -642,8 +600,6 @@ export default function Perfil({
             bio: String(creatorBio || '').trim(),
             instagramUrl: socialValidation.instagramUrl,
             youtubeUrl: socialValidation.youtubeUrl,
-            monetizationPreference: creatorMonetizationPreferenceNext,
-            monetizationStatus: creatorMonetizationStatusNext,
             now: Date.now(),
           })
         : null;
@@ -724,102 +680,118 @@ export default function Perfil({
         [`usuarios/${user.uid}/readerProfilePublic`]: readerPub,
         [`usuarios/${user.uid}/readerProfileAvatarUrl`]: readerAvatarSave,
         [`usuarios/${user.uid}/creatorBannerUrl`]: null,
-        [`usuarios/${user.uid}/creatorMembershipEnabled`]:
-          adminAccess.isMangaka &&
-          creatorMonetizationPreferenceNext === 'monetize' &&
-          creatorMonetizationStatusNext === 'active'
-            ? creatorMembershipEnabled
-            : false,
-        [`usuarios/${user.uid}/creatorMembershipPriceBRL`]:
-          adminAccess.isMangaka &&
-          creatorMonetizationPreferenceNext === 'monetize' &&
-          creatorMonetizationStatusNext === 'active'
-            ? Math.round(membershipPrice * 100) / 100
-            : null,
-        [`usuarios/${user.uid}/creatorDonationSuggestedBRL`]:
-          adminAccess.isMangaka &&
-          creatorMonetizationPreferenceNext === 'monetize' &&
-          creatorMonetizationStatusNext === 'active'
-            ? Math.round(suggestedDonation * 100) / 100
-            : null,
         [`usuarios/${user.uid}/lastLogin`]: nowTs,
       };
       if (persistedHandle) {
         privatePatch[`usuarios/${user.uid}/userHandle`] = persistedHandle;
       }
+      if (adminAccess.isMangaka) {
+        privatePatch[`usuarios/${user.uid}/signupIntent`] = 'creator';
+      }
       if (creatorCanonicalDoc) {
         privatePatch[`usuarios/${user.uid}/creator/profile`] = creatorCanonicalDoc.profile;
         privatePatch[`usuarios/${user.uid}/creator/social`] = creatorCanonicalDoc.social;
-        privatePatch[`usuarios/${user.uid}/creator/meta`] = creatorCanonicalDoc.meta;
-        privatePatch[`usuarios/${user.uid}/creator/monetization/requested`] =
-          creatorCanonicalDoc.monetization?.requested === true;
-        privatePatch[`usuarios/${user.uid}/creator/monetization/enabled`] =
-          creatorCanonicalDoc.monetization?.enabled === true;
-        privatePatch[`usuarios/${user.uid}/creator/monetization/isMonetizationActive`] =
-          creatorCanonicalDoc.monetization?.isMonetizationActive === true;
       }
       await update(ref(db), privatePatch);
 
-      const publicProfileRecord = buildUsuarioPublicProfileRecord(
-        {
-          ...(perfilDb || {}),
-          uid: user.uid,
-          userName: accountDisplayName,
-          userAvatar: finalAvatar,
-          accountType,
-          userHandle: persistedHandle || perfilDb?.userHandle || '',
-          signupIntent:
-            privatePatch[`usuarios/${user.uid}/signupIntent`] ??
-            perfilDb?.signupIntent ??
-            'reader',
-          creatorStatus:
-            privatePatch[`usuarios/${user.uid}/creatorStatus`] ??
-            perfilDb?.creatorStatus ??
-            '',
-          creatorDisplayName: creatorPublicName,
-          creatorBio: String(creatorBio || '').trim(),
-          creatorBannerUrl: null,
-          instagramUrl: String(instagramUrl || '').trim(),
-          youtubeUrl: String(youtubeUrl || '').trim(),
-          readerProfilePublic: readerPub,
-          readerProfileAvatarUrl: readerAvatarSave,
-          creatorMembershipEnabled:
-            privatePatch[`usuarios/${user.uid}/creatorMembershipEnabled`] ??
-            perfilDb?.creatorMembershipEnabled ??
-            false,
-          creatorMembershipPriceBRL:
-            privatePatch[`usuarios/${user.uid}/creatorMembershipPriceBRL`] ??
-            perfilDb?.creatorMembershipPriceBRL ??
-            null,
-          creatorDonationSuggestedBRL:
-            privatePatch[`usuarios/${user.uid}/creatorDonationSuggestedBRL`] ??
-            perfilDb?.creatorDonationSuggestedBRL ??
-            null,
-          creator: creatorCanonicalDoc
-            ? {
-                ...(perfilDb?.creator && typeof perfilDb.creator === 'object' ? perfilDb.creator : {}),
-                profile: creatorCanonicalDoc.profile,
-                social: creatorCanonicalDoc.social,
-                meta: creatorCanonicalDoc.meta,
-                monetization: {
-                  ...(perfilDb?.creator?.monetization &&
-                  typeof perfilDb.creator.monetization === 'object'
-                    ? perfilDb.creator.monetization
-                    : {}),
-                  requested: creatorCanonicalDoc.monetization?.requested === true,
-                  enabled: creatorCanonicalDoc.monetization?.enabled === true,
-                  isMonetizationActive:
-                    creatorCanonicalDoc.monetization?.isMonetizationActive === true,
-                },
-              }
-            : perfilDb?.creator,
-          updatedAt: nowTs,
-          lastLogin: nowTs,
-        },
-        user.uid
-      );
+      const nextPerfilDb = {
+        ...(perfilDb || {}),
+        uid: user.uid,
+        userName: accountDisplayName,
+        userAvatar: finalAvatar,
+        accountType,
+        userHandle: persistedHandle || perfilDb?.userHandle || '',
+        signupIntent:
+          privatePatch[`usuarios/${user.uid}/signupIntent`] ??
+          perfilDb?.signupIntent ??
+          'reader',
+        creatorStatus: perfilDb?.creatorStatus ?? '',
+        creatorDisplayName: creatorPublicName,
+        creatorBio: String(creatorBio || '').trim(),
+        creatorBannerUrl: null,
+        instagramUrl: String(instagramUrl || '').trim(),
+        youtubeUrl: String(youtubeUrl || '').trim(),
+        readerProfilePublic: readerPub,
+        readerProfileAvatarUrl: readerAvatarSave,
+        role: perfilDb?.role ?? 'user',
+        buyerProfile,
+        creator: creatorCanonicalDoc
+          ? {
+              ...(perfilDb?.creator && typeof perfilDb.creator === 'object' ? perfilDb.creator : {}),
+              profile: {
+                ...(perfilDb?.creator?.profile && typeof perfilDb.creator.profile === 'object'
+                  ? perfilDb.creator.profile
+                  : {}),
+                ...creatorCanonicalDoc.profile,
+                avatarUrl: finalAvatar,
+              },
+              social: creatorCanonicalDoc.social,
+              meta: creatorCanonicalDoc.meta,
+              monetization: {
+                ...(perfilDb?.creator?.monetization &&
+                typeof perfilDb.creator.monetization === 'object'
+                  ? perfilDb.creator.monetization
+                  : {}),
+                application: creatorCanonicalDoc.monetization?.application || null,
+                financial: creatorCanonicalDoc.monetization?.financial || null,
+                offer: creatorCanonicalDoc.monetization?.offer || null,
+                legal: creatorCanonicalDoc.monetization?.legal || null,
+                payout: creatorCanonicalDoc.monetization?.payout || null,
+              },
+            }
+          : perfilDb?.creator,
+        updatedAt: nowTs,
+        lastLogin: nowTs,
+      };
+
+      const publicProfileRecord = buildUsuarioPublicProfileRecord(nextPerfilDb, user.uid);
+      delete publicProfileRecord.creatorStatus;
+      delete publicProfileRecord.creatorMembershipEnabled;
+      delete publicProfileRecord.creatorMembershipPriceBRL;
+      delete publicProfileRecord.creatorDonationSuggestedBRL;
+      const publicProfilePatch = {
+        [`usuarios/${user.uid}/publicProfile/uid`]: publicProfileRecord.uid || user.uid,
+        [`usuarios/${user.uid}/publicProfile/userName`]: publicProfileRecord.userName || accountDisplayName,
+        [`usuarios/${user.uid}/publicProfile/userHandle`]: publicProfileRecord.userHandle || null,
+        [`usuarios/${user.uid}/publicProfile/userAvatar`]: publicProfileRecord.userAvatar || finalAvatar,
+        [`usuarios/${user.uid}/publicProfile/isCreatorProfile`]: publicProfileRecord.isCreatorProfile === true,
+        [`usuarios/${user.uid}/publicProfile/accountType`]: publicProfileRecord.accountType || 'comum',
+        [`usuarios/${user.uid}/publicProfile/signupIntent`]: publicProfileRecord.signupIntent || 'reader',
+        [`usuarios/${user.uid}/publicProfile/status`]: publicProfileRecord.status || '',
+        [`usuarios/${user.uid}/publicProfile/creatorDisplayName`]: publicProfileRecord.creatorDisplayName || null,
+        [`usuarios/${user.uid}/publicProfile/creatorUsername`]: publicProfileRecord.creatorUsername || null,
+        [`usuarios/${user.uid}/publicProfile/creatorBio`]: publicProfileRecord.creatorBio || null,
+        [`usuarios/${user.uid}/publicProfile/creatorBannerUrl`]: publicProfileRecord.creatorBannerUrl || null,
+        [`usuarios/${user.uid}/publicProfile/instagramUrl`]: publicProfileRecord.instagramUrl || null,
+        [`usuarios/${user.uid}/publicProfile/youtubeUrl`]: publicProfileRecord.youtubeUrl || null,
+        [`usuarios/${user.uid}/publicProfile/readerProfilePublic`]: publicProfileRecord.readerProfilePublic === true,
+        [`usuarios/${user.uid}/publicProfile/readerProfileAvatarUrl`]:
+          publicProfileRecord.readerProfileAvatarUrl || finalAvatar,
+        [`usuarios/${user.uid}/publicProfile/readerSince`]: publicProfileRecord.readerSince || nowTs,
+        [`usuarios/${user.uid}/publicProfile/updatedAt`]: publicProfileRecord.updatedAt || nowTs,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/displayName`]:
+          publicProfileRecord?.creatorProfile?.displayName || null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/username`]:
+          publicProfileRecord?.creatorProfile?.username || null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/avatarUrl`]:
+          publicProfileRecord?.creatorProfile?.avatarUrl || null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/bioFull`]:
+          publicProfileRecord?.creatorProfile?.bioFull || null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/instagramUrl`]:
+          publicProfileRecord?.creatorProfile?.socialLinks?.instagramUrl || null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/youtubeUrl`]:
+          publicProfileRecord?.creatorProfile?.socialLinks?.youtubeUrl || null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/membershipEnabled`]:
+          publicProfileRecord?.creatorProfile?.supportOffer?.membershipEnabled === true,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/membershipPriceBRL`]:
+          publicProfileRecord?.creatorProfile?.supportOffer?.membershipPriceBRL ?? null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/donationSuggestedBRL`]:
+          publicProfileRecord?.creatorProfile?.supportOffer?.donationSuggestedBRL ?? null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/updatedAt`]:
+          publicProfileRecord?.creatorProfile?.supportOffer?.updatedAt || nowTs,
+      };
       await update(ref(db), {
-        [`usuarios/${user.uid}/publicProfile`]: publicProfileRecord,
+        ...publicProfilePatch,
       });
 
       if (
@@ -835,10 +807,12 @@ export default function Perfil({
 
       savedUserAvatarRef.current = String(finalAvatar || '').trim();
       setAvatarSelecionado(finalAvatar);
+      setPerfilDb(nextPerfilDb);
+      setNovoNome(accountDisplayName);
+      setCreatorDisplayName(creatorPublicName || accountDisplayName);
+      setUserHandleDraft(persistedHandle || '');
+      setReaderProfilePublicDraft(readerPub);
       setMangakaAvatarFile(null);
-      if (creatorMonetizationRequestNeedsModal) {
-        setCreatorMonetizationPreference('publish_only');
-      }
       if (listaAvatares.some((i) => i.url === finalAvatar)) {
         setMangakaAvatarUrlDraft('');
       } else if (adminAccess.isMangaka && /^https:\/\//i.test(finalAvatar)) {
@@ -850,9 +824,7 @@ export default function Perfil({
       setBirthDateDraft(savedBirth ? formatBirthDateIsoToBr(savedBirth) : '');
 
       setMensagem({
-        texto: creatorMonetizationRequestNeedsModal
-          ? 'Perfil salvo. Para pedir monetizacao, use o formulário de creator e envie nome legal, CPF e chave PIX. Ate la, voce continua publicando normalmente, so sem repasse financeiro.'
-          : 'Perfil atualizado com sucesso!',
+        texto: 'Perfil atualizado com sucesso!',
         tipo: 'sucesso',
       });
       setTimeout(() => navigate('/perfil', { replace: true }), 900);
@@ -1232,7 +1204,8 @@ export default function Perfil({
               <div className="input-group">
                 <label>FOTO DE PERFIL</label>
                 <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
-                  A capa publica reaproveita a mesma foto com um leve blur. Envie arquivo ou cole uma URL HTTPS.
+                  A capa publica reaproveita a mesma foto com um leve blur. Envie um arquivo ou use apenas imagem
+                  hospedada no Storage da plataforma.
                 </p>
                 <input
                   type="url"
@@ -1242,7 +1215,7 @@ export default function Perfil({
                     setMangakaAvatarUrlDraft(e.target.value);
                     setMangakaAvatarFile(null);
                   }}
-                  placeholder="https://..."
+                  placeholder="https://firebasestorage.googleapis.com/..."
                 />
                 <input
                   type="file"
@@ -1365,7 +1338,7 @@ export default function Perfil({
                   Monetizacao
                 </h2>
                 <p className="perfil-creator-section-sub">
-                  Aprovacao da equipe e feita uma vez. Depois, voce liga ou desliga repasses quando quiser.
+                  Publicar e monetizar sao etapas separadas. A equipe revisa seus dados antes de liberar qualquer repasse.
                 </p>
               </header>
 
@@ -1378,14 +1351,21 @@ export default function Perfil({
                   <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--on">
                     <strong>Status:</strong> ativa - recebendo repasses.
                   </p>
-                ) : hasMonetizationClearance &&
-                  normalizeCreatorMonetizationPreference(creatorMonetizationPreference) === 'publish_only' ? (
+                ) : creatorMonetizationApplicationStatus === 'pending' ? (
                   <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> desligada - voce so publica; repasse esta pausado.
+                    <strong>Status:</strong> solicitacao enviada - aguardando analise da equipe.
+                  </p>
+                ) : creatorMonetizationApplicationStatus === 'rejected' ? (
+                  <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--warn">
+                    <strong>Status:</strong> monetizacao nao aprovada no momento.
+                  </p>
+                ) : hasMonetizationClearance ? (
+                  <p className="perfil-creator-monetization-card__status">
+                    <strong>Status:</strong> documentos ja aprovados. Abra a area de monetizacao para acompanhar.
                   </p>
                 ) : (
                   <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> desligada - ative para pedir ou concluir cadastro de repasse.
+                    <strong>Status:</strong> publica normalmente. A monetizacao vira solicitacao separada depois das metas.
                   </p>
                 )}
 
@@ -1396,7 +1376,15 @@ export default function Perfil({
                       className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
                       onClick={handleDesativarMonetizacaoClick}
                     >
-                      Desativar monetizacao
+                      Abrir monetizacao
+                    </button>
+                  ) : creatorMonetizationApplicationStatus === 'pending' ? (
+                    <button
+                      type="button"
+                      className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
+                      onClick={() => navigate('/creator/monetizacao')}
+                    >
+                      Ver solicitacao
                     </button>
                   ) : (
                     <button
@@ -1405,15 +1393,14 @@ export default function Perfil({
                       onClick={handleMonetizarContaClick}
                       disabled={monetizacaoBloqueadaPorIdade}
                     >
-                      Ativar monetizacao
+                      Solicitar monetizacao
                     </button>
                   )}
                 </div>
 
                 {needsFirstMonetizationApplication ? (
                   <p className="perfil-mangaka-apoio-label" style={{ marginTop: 12 }}>
-                    Na primeira vez, abrimos o formulário com nome legal, CPF e PIX. Depois de aprovado, nao precisa enviar
-                    de novo para religar.
+                    Quando bater as metas da plataforma, abrimos o formulario com nome legal, CPF e PIX para a equipe revisar.
                   </p>
                 ) : null}
               </div>
@@ -1422,40 +1409,25 @@ export default function Perfil({
               creatorMonetizationStatusEffective === 'active' ? (
                 <>
                   <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 12 }}>
-                    Membership nas suas obras (nao e Premium do site). Valores entre R$ {CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e
-                    R$ {CREATOR_MEMBERSHIP_PRICE_MAX_BRL}.
+                    A parte financeira agora fica separada do perfil publico. O perfil mostra o estado da sua conta, e a
+                    equipe registra o repasse no fluxo financeiro quando houver saldo disponivel.
                   </p>
                   <div className="input-group">
-                    <label className="notify-label">
-                      <input
-                        type="checkbox"
-                        checked={creatorMembershipEnabled}
-                        onChange={(e) => setCreatorMembershipEnabled(e.target.checked)}
-                      />
-                      Ativar membership na pagina publica
-                    </label>
+                    <label>MEMBERSHIP PUBLICA</label>
+                    <p className="perfil-mangaka-apoio-label">
+                      {creatorMembershipEnabled
+                        ? `Ativa em sua pagina publica por R$ ${creatorMembershipPriceBRL || CREATOR_MEMBERSHIP_PRICE_MIN_BRL}.`
+                        : 'Ainda nao publicada na pagina publica.'}
+                    </p>
                   </div>
 
                   <div className="input-group">
-                    <label>VALOR DA MEMBERSHIP (R$)</label>
-                    <input
-                      type="text"
-                      className="perfil-input"
-                      value={creatorMembershipPriceBRL}
-                      onChange={(e) => setCreatorMembershipPriceBRL(e.target.value)}
-                      placeholder={`${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 a ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00`}
-                    />
-                  </div>
-
-                  <div className="input-group">
-                    <label>DOACAO SUGERIDA NO APOIO (R$)</label>
-                    <input
-                      type="text"
-                      className="perfil-input"
-                      value={creatorDonationSuggestedBRL}
-                      onChange={(e) => setCreatorDonationSuggestedBRL(e.target.value)}
-                      placeholder={`${CREATOR_MEMBERSHIP_PRICE_MIN_BRL},00 a ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL},00`}
-                    />
+                    <label>DOACAO SUGERIDA</label>
+                    <p className="perfil-mangaka-apoio-label">
+                      {creatorDonationSuggestedBRL
+                        ? `Apoio livre sugerido em R$ ${creatorDonationSuggestedBRL}.`
+                        : 'Nenhum valor sugerido configurado no momento.'}
+                    </p>
                   </div>
                 </>
               ) : null}
@@ -1833,7 +1805,7 @@ export default function Perfil({
                   type="button"
                   className="perfil-mangaka-apoio-copy"
                   style={{ marginTop: 8 }}
-                  onClick={() => navigate(`/criador/${encodeURIComponent(user.uid)}?tab=likes`)}
+                  onClick={() => navigate(readerPublicPath)}
                 >
                   Abrir meu perfil publico de leitor
                 </button>

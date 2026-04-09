@@ -10,7 +10,7 @@ import { formatPodStatusLabel, normalizePodStatus } from '../../utils/podStatus'
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import './PrintOnDemandAdmin.css';
 
-/** TransiÃ§Ãµes normais (cancelamento Ã© fluxo separado com motivo obrigatÃ³rio). */
+/** Transicoes normais (cancelamento e fluxo separado com motivo obrigatorio). */
 const STATUS_TRANSITION_OPTIONS = [
   'pending_payment',
   'paid',
@@ -25,7 +25,7 @@ const STATUS_FILTER_OPTIONS = [...STATUS_TRANSITION_OPTIONS, 'cancelled'];
 const STATUS_LABELS = {
   pending_payment: 'Pagamento pendente',
   paid: 'Pago',
-  in_production: 'Em produÃ§Ã£o',
+  in_production: 'Em producao',
   ready_to_ship: 'Pronto p/ envio',
   shipped: 'Enviado',
   delivered: 'Entregue',
@@ -36,7 +36,7 @@ function shortId(id) {
   return String(id || '').slice(-8).toUpperCase();
 }
 
-/** OpÃ§Ãµes do select alinhadas Ã s transiÃ§Ãµes permitidas no backend (sem Â«pagoÂ» manual). */
+/** Opcoes do select alinhadas as transicoes permitidas no backend (sem "pago" manual). */
 function podAdminSelectableStatuses(current) {
   const c = normalizePodStatus(current);
   const m = {
@@ -51,20 +51,20 @@ function podAdminSelectableStatuses(current) {
   return m[c] || STATUS_TRANSITION_OPTIONS;
 }
 
-/** MangakÃ¡ monetizado vs nÃ£o (anÃ¡lise). */
+/** Mangaka monetizado vs nÃ£o (anÃ¡lise). */
 function podTipoDisplay(snap) {
   const sm = String(snap?.saleModel || '');
   const k = String(snap?.creatorProductKind || '');
-  if (sm === 'store_promo' || k === 'non_monetized_promo') return 'MangakÃ¡ nÃ£o monetizado';
+  if (sm === 'store_promo' || k === 'non_monetized_promo') return 'Mangaka nao monetizado';
   if (sm === 'personal' || k === 'personal_purchase') return 'â€”';
-  if (k === 'monetized' || sm === 'platform') return 'MangakÃ¡ monetizado';
+  if (k === 'monetized' || sm === 'platform') return 'Mangaka monetizado';
   return 'â€”';
 }
 
 /** Canal: uma das trÃªs formas de pedido fÃ­sico. */
 function podOrigemDisplay(snap) {
   const sm = String(snap?.saleModel || '');
-  if (sm === 'store_promo') return 'Modo vitrine (divulgaÃ§Ã£o)';
+  if (sm === 'store_promo') return 'Modo vitrine (divulgacao)';
   if (sm === 'personal') return 'Produzir para mim';
   if (sm === 'platform') return 'Venda pela plataforma';
   return 'â€”';
@@ -448,7 +448,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
             <strong className="po-card__value">{stats.pedidosHoje}</strong>
           </article>
           <article className="po-card">
-            <span className="po-card__label">Em produÃ§Ã£o</span>
+            <span className="po-card__label">Em producao</span>
             <strong className="po-card__value">{stats.emProducao}</strong>
           </article>
           <article className="po-card">
@@ -480,7 +480,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <option value="">Todos</option>
                 <option value="platform">Venda pela plataforma</option>
                 <option value="personal">Produzir para mim</option>
-                <option value="store_promo">Modo vitrine (divulgaÃ§Ã£o)</option>
+                <option value="store_promo">Modo vitrine (divulgacao)</option>
               </select>
             </label>
             <label>
@@ -926,4 +926,5 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
     </div>
   );
 }
+
 

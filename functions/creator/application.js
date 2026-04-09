@@ -17,6 +17,8 @@ import {
 } from '../creatorRecord.js';
 import { coercePayoutPixType, normalizePixPayoutKey, validatePixPayout } from '../pixKey.js';
 import { finalizeCreatorApplicationApproval } from './admin.js';
+import { isTrustedPlatformAssetUrl } from '../trustedAssetUrls.js';
+import { assertTrustedAppRequest } from '../appCheckGuard.js';
 
 async function notifyCreatorRequestAdmins(
   db,
@@ -77,6 +79,7 @@ function normalizeCreatorSocialUrl(raw, allowedHosts = []) {
 }
 
 export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
@@ -123,14 +126,9 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   const instagramUrl = normalizeCreatorSocialUrl(instagramRaw, ['instagram.com']);
   const youtubeUrl = normalizeCreatorSocialUrl(youtubeRaw, ['youtube.com', 'youtu.be']);
   let profileImageUrl = String(payload.profileImageUrl || row?.creatorApplication?.profileImageUrl || '').trim();
-  if (
-    !profileImageUrl ||
-    profileImageUrl.length < 12 ||
-    !/^https:\/\//i.test(profileImageUrl) ||
-    profileImageUrl.length > 2048
-  ) {
+  if (!isTrustedPlatformAssetUrl(profileImageUrl)) {
     const avatar = String(row?.userAvatar || '').trim();
-    if (/^https:\/\//i.test(avatar) && avatar.length >= 12 && avatar.length <= 2048) {
+    if (isTrustedPlatformAssetUrl(avatar)) {
       profileImageUrl = avatar;
     }
   }
@@ -155,9 +153,11 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     throw new HttpsError('invalid-argument', 'Data de nascimento invalida.');
   }
   const isAdult = age >= 18;
+  const isAlreadyCreator = String(row?.role || '').trim().toLowerCase() === 'mangaka';
   const monetizationRequested =
+    isAlreadyCreator &&
     String(payload.monetizationPreference || '').trim().toLowerCase() === 'monetize';
-  const monetizationPreference = monetizationRequested && isAdult ? 'monetize' : 'publish_only';
+  const monetizationPreference = monetizationRequested ? 'monetize' : 'publish_only';
 
   const legalFullNameIn = String(payload.legalFullName || '').trim();
   const taxIdIn = String(payload.taxId || '').trim();
@@ -210,14 +210,10 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   if (bioShort.length > 450) {
     throw new HttpsError('invalid-argument', 'A bio pode ter no maximo 450 caracteres.');
   }
-  if (
-    profileImageUrl.length < 12 ||
-    !/^https:\/\//i.test(profileImageUrl) ||
-    profileImageUrl.length > 2048
-  ) {
+  if (!isTrustedPlatformAssetUrl(profileImageUrl)) {
     throw new HttpsError(
       'invalid-argument',
-      'Envie a foto de perfil do creator antes de solicitar acesso de criador.'
+      'Envie a foto de perfil do creator usando uma imagem hospedada no Storage da plataforma.'
     );
   }
   if (!acceptTerms) {
@@ -251,7 +247,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
         }
       : null;
 
-  if (String(row?.role || '').trim().toLowerCase() === 'mangaka') {
+  if (isAlreadyCreator) {
     if (monetizationPreference !== 'monetize') {
       return { ok: true, status: 'approved', alreadyMangaka: true };
     }
@@ -259,39 +255,32 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     if (monStatus === 'active') {
       return { ok: true, status: 'approved', alreadyMangaka: true, monetizationAlreadyActive: true };
     }
+    if (!isAdult) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Criadores menores de idade podem publicar, mas nao podem solicitar monetizacao.'
+      );
+    }
+    const approvalGate = evaluateCreatorApplicationApprovalGate({
+      ...row,
+      creatorStats: readCreatorStatsFromDb(row, creatorStatsRow),
+    });
+    if (!approvalGate.ok) {
+      throw new HttpsError(
+        'failed-precondition',
+        `Para solicitar monetizacao, atinja as metas do Nivel 1: ${approvalGate.metrics.followers}/${approvalGate.thresholds.followers} seguidores, ${approvalGate.metrics.views}/${approvalGate.thresholds.views} views, ${approvalGate.metrics.likes}/${approvalGate.thresholds.likes} likes.`
+      );
+    }
     const alreadyApprovedOnce =
-      row?.creator?.monetization?.approved === true ||
-      row?.creator?.monetization?.isApproved === true;
+      String(row?.creator?.monetization?.application?.status || '').trim().toLowerCase() === 'approved';
     if (alreadyApprovedOnce) {
-      const nextMonetizationStatus = isAdult ? 'active' : 'blocked_underage';
-      const creatorDocM = assembleCreatorRecordForRtdb({
-        row,
-        birthDateIso: birthDateRaw,
-        displayName,
-        bio: bioShort,
-        instagramUrl,
-        youtubeUrl,
-        monetizationPreference: 'monetize',
-        creatorMonetizationStatus: nextMonetizationStatus,
-        compliance,
-        now,
-      });
-      await db.ref().update({
-        [`usuarios/${uid}/creator`]: creatorDocM,
-        [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
-        [`usuarios/${uid}/creatorCompliance`]: compliance,
-        [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
-        [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
-      });
       return {
         ok: true,
         status: 'approved',
         alreadyMangaka: true,
-        monetizationReactivated: nextMonetizationStatus === 'active',
-        monetizationStatus: nextMonetizationStatus,
+        monetizationAlreadyApproved: true,
       };
     }
-    const nextMonetizationStatus = isAdult ? 'active' : 'blocked_underage';
     const creatorDocM = assembleCreatorRecordForRtdb({
       row,
       birthDateIso: birthDateRaw,
@@ -300,13 +289,27 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
       instagramUrl,
       youtubeUrl,
       monetizationPreference: 'monetize',
-      creatorMonetizationStatus: nextMonetizationStatus,
+      creatorMonetizationStatus: 'disabled',
       compliance,
       now,
     });
+    creatorDocM.monetization.application = {
+      ...(creatorDocM.monetization.application || {}),
+      status: 'pending',
+      requestedAt: now,
+      reviewedAt: null,
+      reviewedBy: null,
+      reviewReason: null,
+    };
+    creatorDocM.monetization.financial = {
+      ...(creatorDocM.monetization.financial || {}),
+      status: 'inactive',
+      activatedAt: null,
+      updatedAt: now,
+    };
     const monetizationPatch = {
       [`usuarios/${uid}/creator`]: creatorDocM,
-      [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
+      [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: now,
       [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
       [`usuarios/${uid}/creatorCompliance`]: compliance,
       [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
@@ -318,19 +321,23 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     await db.ref().update(monetizationPatch);
     await pushUserNotification(db, uid, {
       type: 'creator_monetization',
-      title: nextMonetizationStatus === 'active' ? 'Monetizacao ativada' : 'Monetizacao bloqueada por idade',
+      title: 'Solicitacao de monetizacao enviada',
       message:
-        nextMonetizationStatus === 'active'
-          ? 'Seus dados financeiros foram validados e a monetizacao foi ativada. Agora voce pode ligar ou desligar no perfil quando quiser.'
-          : 'Sua conta continua liberada para publicar, mas a monetizacao segue bloqueada por idade.',
-      data: { monetizationStatus: nextMonetizationStatus, readPath: '/perfil' },
+        'Recebemos seus dados. A equipe vai revisar seus documentos e liberar a monetizacao se estiver tudo certo.',
+      data: { monetizationStatus: 'pending', readPath: '/creator/monetizacao' },
+    });
+    await notifyCreatorRequestAdmins(db, {
+      applicantUid: uid,
+      displayName,
+      monetizationPreference: 'monetize',
+      monetizationOnly: true,
     });
     return {
       ok: true,
-      status: 'approved',
+      status: 'pending',
       alreadyMangaka: true,
-      monetizationReactivated: nextMonetizationStatus === 'active',
-      monetizationStatus: nextMonetizationStatus,
+      monetizationRequested: true,
+      monetizationStatus: 'disabled',
     };
   }
 

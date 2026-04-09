@@ -2,6 +2,7 @@ import { ref, update } from 'firebase/database';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 
 import { db, storage } from '../services/firebase';
+import { isTrustedPlatformAssetUrl } from './trustedAssetUrls';
 import {
   processCreatorProfileImageToWebp,
   serializeCreatorProfileCrop,
@@ -52,7 +53,7 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
     );
   } else {
     const pass = String(payload.profileImageUrl || '').trim();
-    if (/^https:\/\//i.test(pass) && pass.length >= 12 && pass.length <= 2048) {
+    if (isTrustedPlatformAssetUrl(pass)) {
       callablePayload.profileImageUrl = pass;
     }
     if (payload.profileImageCrop && typeof payload.profileImageCrop === 'object') {

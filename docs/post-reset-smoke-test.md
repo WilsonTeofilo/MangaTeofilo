@@ -50,7 +50,7 @@
 
 ## Lixo residual para manter por enquanto
 - helpers de compat / fallback de leitura que nao estao no fluxo mais podre.
-- `functions/deprecated/index.js` como ponteiro de snapshot legado.
+- nenhum ponteiro de snapshot legado deve voltar para o runtime.
 - `src/config/userDeprecatedFields.js` e limpeza de deprecated ate a base nova estabilizar.
 
 ## Lixo residual que vale podar na proxima passada

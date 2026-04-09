@@ -130,7 +130,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
         return;
       }
       if (!config.acceptingOrders) {
-        setCheckoutErr('Pedidos estao fechados no momento.');
+        setCheckoutErr('Pedidos estão fechados no momento.');
         return;
       }
       setCheckoutLoading(true);
@@ -151,7 +151,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
     return (
       <main className="loja-page">
         <section className="loja-empty">
-          <h1>Loja em preparacao</h1>
+          <h1>Loja em preparação</h1>
           <p>Em breve você poderá comprar produtos físicos por aqui, com checkout integrado.</p>
         </section>
       </main>
@@ -164,7 +164,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
     <main className="loja-page loja-page--premium loja-store">
       <header className="loja-store__dock">
         <button type="button" className="loja-store__ghost-link" onClick={() => navigate('/')}>
-          ? Site
+          Voltar ao site
         </button>
         <div className="loja-store__dock-actions">
           {user ? (
@@ -206,8 +206,8 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
             <span className="loja-author-strip__eyebrow">Autores</span>
             <p className="loja-author-strip__p">
               Leve sua obra para o papel: <strong>tankōbon</strong> ou <strong>meio-tankō</strong> com produção pela
-              MangaTeofilo — venda na loja com repasse, encomende para você ou, como criador sem monetização, peça vaga na
-              vitrine (preço fixo e metas).
+              MangaTeofilo. Você pode vender na loja, encomendar para você ou, como creator ainda sem ganhos liberados, pedir vaga na
+              vitrine com preço fixo e metas.
             </p>
           </div>
           <div className="loja-author-strip__actions">
@@ -215,7 +215,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
               Ver mangá físico
             </Link>
             <Link className="loja-author-strip__cta loja-author-strip__cta--ghost" to="/creators">
-              Quero ser autor
+              Quero ser creator
             </Link>
           </div>
         </section>
@@ -252,7 +252,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
             <span className="loja-vip-strip__icon" aria-hidden="true">
               ?
             </span>
-            <p className="loja-vip-strip__text">Membros VIP veem os produtos marcados aqui, mas o desconto final e confirmado no checkout.</p>
+            <p className="loja-vip-strip__text">Membros VIP veem os produtos marcados aqui, mas o desconto final é confirmado no checkout.</p>
           </div>
         ) : null}
 

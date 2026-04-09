@@ -1,5 +1,6 @@
 import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { assertTrustedAppRequest } from '../appCheckGuard.js';
 import { syncReaderLikedWorkStateForUser } from './readerProfiles.js';
 
 function safeWorkIdFromChapter(chapter) {
@@ -7,6 +8,7 @@ function safeWorkIdFromChapter(chapter) {
 }
 
 export const toggleChapterLike = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
   const uid = String(request.auth?.uid || '').trim();
   if (!uid) throw new HttpsError('unauthenticated', 'Faca login.');
 

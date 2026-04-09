@@ -4,6 +4,7 @@
  */
 
 import { slugifyObraSlug } from './obras';
+import { isTrustedPlatformAssetUrl } from '../utils/trustedAssetUrls';
 
 export const OBRAS_WORK_GENRE_IDS = [
   'acao',
@@ -61,22 +62,7 @@ const UID_RE = /^[a-zA-Z0-9]{10,128}$/;
 
 /** URL HTTP(S) com caminho que parece imagem raster (evita texto aleatório no campo). */
 export function isLikelyHttpImageUrl(url) {
-  const u = String(url || '').trim();
-  if (!u) return false;
-  try {
-    const parsed = new URL(u);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
-    if (/firebasestorage\.googleapis\.com$/i.test(parsed.hostname)) return true;
-    let path = parsed.pathname;
-    try {
-      path = decodeURIComponent(path);
-    } catch {
-      /* manter pathname bruto */
-    }
-    return /\.(jpe?g|png|webp)(\?|#|$)/i.test(path) || /\.(jpe?g|png|webp)(\?|#|$)/i.test(parsed.pathname);
-  } catch {
-    return false;
-  }
+  return isTrustedPlatformAssetUrl(url, { allowLocalAssets: true });
 }
 
 export function obraSlugFromTitle(title) {

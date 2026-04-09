@@ -12,6 +12,7 @@
     "sitemap": "node ./scripts/generate-sitemap.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
+    "security:scan-secrets": "node ./scripts/scan-secrets.mjs",
     "security:sync-staff-rules": "node ./scripts/syncStaffAllowlistToFirebaseRules.mjs"
   },
   "dependencies": {

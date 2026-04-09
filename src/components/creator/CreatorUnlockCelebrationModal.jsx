@@ -22,11 +22,11 @@ export default function CreatorUnlockCelebrationModal({ open, onClose }) {
         <h2 id="creator-unlock-title" className="creator-unlock-modal__title">
           Parabéns!
         </h2>
-        <p className="creator-unlock-modal__lead">Você desbloqueou o nível para monetizar na plataforma.</p>
+        <p className="creator-unlock-modal__lead">Você desbloqueou o nível para liberar ganhos na plataforma.</p>
         <ul className="creator-unlock-modal__list">
-          <li>Ganhar com vendas e repasses (com monetização aprovada no perfil)</li>
-          <li>Vender mangá físico na loja com repasse</li>
-          <li>Membership e apoio, conforme seu cadastro</li>
+          <li>Ganhar com vendas da loja</li>
+          <li>Receber por membros e apoios</li>
+          <li>Liberar os recursos financeiros do seu creator</li>
         </ul>
         <div className="creator-unlock-modal__actions">
           <button type="button" className="creator-unlock-modal__btn creator-unlock-modal__btn--ghost" onClick={onClose}>

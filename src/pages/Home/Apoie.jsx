@@ -345,7 +345,6 @@ export default function Apoie({ user, perfil }) {
     }
     setErroCheckoutPlanos('');
     setCarregandoId(plano.id);
-    let abriuPelaApi = false;
     try {
       if (attributionCreatorIdParaCheckout) {
         registrarAttributionEvento({
@@ -363,16 +362,14 @@ export default function Apoie({ user, perfil }) {
       });
       if (data?.url) {
         window.open(data.url, '_blank', 'noopener,noreferrer');
-        abriuPelaApi = true;
+        return;
       }
+      setErroCheckoutPlanos('O checkout nao retornou uma URL valida. Tente novamente em alguns instantes.');
     } catch (err) {
       console.error('criarCheckoutApoio', err);
       setErroCheckoutPlanos(mensagemErroCallable(err));
     } finally {
       setCarregandoId(null);
-    }
-    if (!abriuPelaApi) {
-      window.open(plano.fallbackLink, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -426,12 +423,12 @@ export default function Apoie({ user, perfil }) {
       irLoginComRetorno();
       return;
     }
-    if (!attributionCreatorIdParaCheckout || !creatorOffer?.creatorMembershipEnabled) {
-      setErroMembershipCriador('Este criador ainda nÃ£o ativou a membership pÃºblica.');
+    if (!attributionCreatorIdParaCheckout || creatorOffer?.creatorSupportOffer?.membershipEnabled !== true) {
+      setErroMembershipCriador('Este criador ainda nÃ£o ativou a membership pÃƒÂºblica.');
       return;
     }
     if (attributionCreatorIdParaCheckout === user.uid) {
-      setErroMembershipCriador('VocÃª nÃ£o pode assinar a prÃ³pria membership de criador.');
+      setErroMembershipCriador('VocÃª nÃ£o pode assinar a prÃƒÂ³pria membership de criador.');
       return;
     }
     setErroMembershipCriador('');
@@ -496,7 +493,7 @@ export default function Apoie({ user, perfil }) {
   const textoAteInicioPromo = textoCountdownPromoSegundos(segundosAteInicio);
   const textoTerminaPromo = textoCountdownPromoSegundos(segundosRestantes);
 
-  /** AtribuiÃ§Ã£o de apoio/premium a um mangakÃ¡ (links: ?creatorId=UID ou ?criador=UID). */
+  /** AtribuiÃ§Ã£o de apoio/premium a um mangakÃƒÂ¡ (links: ?creatorId=UID ou ?criador=UID). */
 
   useEffect(() => {
     if (!attributionCreatorIdParaCheckout) {
@@ -515,18 +512,21 @@ export default function Apoie({ user, perfil }) {
       setCreatorOffer({
         creatorId: attributionCreatorIdParaCheckout,
         creatorName: resolvePublicProfileDisplayName(row, 'Criador'),
-        creatorMembershipEnabled: row.creatorMembershipEnabled !== false,
-        creatorMembershipPriceBRL: Number(row.creatorMembershipPriceBRL || 12),
-        creatorDonationSuggestedBRL: Number(row.creatorDonationSuggestedBRL || 7),
+        creatorSupportOffer:
+          row?.creatorProfile?.supportOffer && typeof row.creatorProfile.supportOffer === 'object'
+            ? row.creatorProfile.supportOffer
+            : {},
       });
     });
     return () => unsub();
   }, [attributionCreatorIdParaCheckout]);
 
   useEffect(() => {
-    if (!creatorOffer?.creatorDonationSuggestedBRL) return;
-    setValorLivre((prev) => (String(prev || '').trim() ? prev : String(creatorOffer.creatorDonationSuggestedBRL)));
-  }, [creatorOffer?.creatorDonationSuggestedBRL]);
+    if (!creatorOffer?.creatorSupportOffer?.donationSuggestedBRL) return;
+    setValorLivre((prev) =>
+      String(prev || '').trim() ? prev : String(creatorOffer.creatorSupportOffer.donationSuggestedBRL)
+    );
+  }, [creatorOffer?.creatorSupportOffer?.donationSuggestedBRL]);
 
   const capIdFromEmail = searchParams.get('capId');
   const fromChapterEmail =
@@ -589,16 +589,16 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="apoie-title-discord">Apoie Kokuin: HeranÃ§a do Abismo</h1>
+          <h1 className="apoie-title-discord">Apoie Kokuin: Heranca do Abismo</h1>
 
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="status">
-              VocÃª entrou por um link de criador: os apoios desta sessÃ£o podem ser atribuÃ­dos a esse perfil.
+              Voce entrou por um link de criador: os apoios desta sessao podem ser atribuidos a esse perfil.
             </p>
           ) : null}
           {attributionCreatorIdParaCheckout ? (
             <p className="apoie-attrib-hint" role="note">
-              AtribuiÃ§Ã£o vale para mÃ©trica interna e repasse futuro, quando a regra estiver ativa. O valor cobrado nÃ£o muda por causa disso.
+              A atribuicao vale para metrica interna e repasse futuro, quando a regra estiver ativa. O valor cobrado nao muda por causa disso.
             </p>
           ) : null}
 
@@ -613,8 +613,8 @@ export default function Apoie({ user, perfil }) {
                 </h2>
                 <p>
                   {acompanhamentoPremium.tipoConfirmacao === 'renovacao'
-                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai atÃ© ${formatarDataLongaBr(acompanhamentoPremium.novoUntil)}.`
-                    : 'Seus poderes Premium foram liberados. Bem-vindo Ã  Elite da Tempestade.'}
+                    ? `+${acompanhamentoPremium.diasGanho || 30} dias adicionados. Agora sua assinatura vai ate ${formatarDataLongaBr(acompanhamentoPremium.novoUntil)}.`
+                    : 'Seus poderes Premium foram liberados. Bem-vindo a Elite da Tempestade.'}
                 </p>
                 <button
                   type="button"
@@ -658,31 +658,31 @@ export default function Apoie({ user, perfil }) {
 
           {mpRetorno === 'pending' && (
             <p className="apoie-flash apoie-flash--pending" role="status">
-              Pagamento pendente. Quando o Mercado Pago confirmar, vocÃª verÃ¡ a cobranÃ§a finalizada.
+              Pagamento pendente. Quando o Mercado Pago confirmar, voce vera a cobranca finalizada.
             </p>
           )}
           {mpRetorno === 'erro' && (
             <p className="apoie-flash apoie-flash--erro" role="alert">
-              NÃ£o foi possÃ­vel concluir o pagamento. VocÃª pode tentar de novo abaixo.
+              Nao foi possivel concluir o pagamento. Voce pode tentar de novo abaixo.
             </p>
           )}
 
           <p className="apoie-texto">
-            Cada apoio faz diferenÃ§a real: ajuda com servidor, energia, ferramentas de IA, cafÃ© e meu
-            tempo pra desenhar mais capÃ­tulos.
+            Cada apoio faz diferenca real: ajuda com servidor, energia, ferramentas de IA, cafe e meu
+            tempo para desenhar mais capitulos.
             <br />
-            <strong>Obrigado por acreditar na histÃ³ria e na tempestade!</strong>
+            <strong>Obrigado por acreditar na historia e na tempestade!</strong>
           </p>
 
           {attributionCreatorIdParaCheckout && creatorOffer && (
             <div className="apoie-premium-card">
               <div className="apoie-premium-badge">MEMBERSHIP DO CRIADOR</div>
               <h2 className="apoie-premium-titulo">
-                {creatorOffer.creatorName} - {formatarPrecoBrl(creatorOffer.creatorMembershipPriceBRL)} / 30 dias
+                {creatorOffer.creatorName} - {formatarPrecoBrl(creatorOffer.creatorSupportOffer?.membershipPriceBRL || 12)} / 30 dias
               </h2>
               <p className="apoie-premium-desc">
-                Esta assinatura Ã© do criador. Ela libera acesso antecipado sÃ³ aos capÃ­tulos ligados a{' '}
-                <strong>{creatorOffer.creatorName}</strong> â€” o valor Ã© apoio direto a esse autor.
+                Esta assinatura e do criador. Ela libera acesso antecipado so aos capitulos ligados a{' '}
+                <strong>{creatorOffer.creatorName}</strong> - o valor e apoio direto a esse autor.
               </p>
               <ul className="apoie-premium-lista">
                 <li>
@@ -692,14 +692,14 @@ export default function Apoie({ user, perfil }) {
                   <i className="fa-solid fa-heart" /> O valor desta assinatura vai para o criador indicado.
                 </li>
                 <li>
-                  <i className="fa-solid fa-layer-group" /> NÃ£o substitui o Premium da plataforma nem libera benefÃ­cios globais.
+                  <i className="fa-solid fa-layer-group" /> Nao substitui o Premium da plataforma nem libera beneficios globais.
                 </li>
               </ul>
               {membershipCriadorAtiva && (
                 <p className="apoie-premium-status" role="status">
-                  Sua membership deste criador estÃ¡ <strong>ativa</strong>
+                  Sua membership deste criador esta <strong>ativa</strong>
                   {typeof membershipAtualDoCriador?.memberUntil === 'number'
-                    ? ` atÃ© ${formatarDataLongaBr(membershipAtualDoCriador.memberUntil)}`
+                    ? ` ate ${formatarDataLongaBr(membershipAtualDoCriador.memberUntil)}`
                     : ''}
                   .
                 </p>
@@ -712,7 +712,11 @@ export default function Apoie({ user, perfil }) {
               <button
                 type="button"
                 className="btn-apoie btn-apoie-premium"
-                disabled={carregandoId !== null || !user || creatorOffer.creatorMembershipEnabled === false}
+                disabled={
+                  carregandoId !== null ||
+                  !user ||
+                  creatorOffer?.creatorSupportOffer?.membershipEnabled !== true
+                }
                 onClick={abrirMembershipCriador}
               >
                 {carregandoId === 'creator-membership'
@@ -725,17 +729,17 @@ export default function Apoie({ user, perfil }) {
           )}
 
           {fromChapterEmail && (
-            <div className="apoie-cap-email-banner" role="region" aria-label="Novo capÃ­tulo por e-mail">
+            <div className="apoie-cap-email-banner" role="region" aria-label="Novo capitulo por e-mail">
               <p>
-                VocÃª abriu o link do aviso de capÃ­tulo novo. Esta pÃ¡gina Ã© o <strong>checkout</strong> para
-                apoiar a obra; se preferir ler antes, use o botÃ£o abaixo (o rastreio do e-mail continua igual).
+                Voce abriu o link do aviso de capitulo novo. Esta pagina e o <strong>checkout</strong> para
+                apoiar a obra; se preferir ler antes, use o botao abaixo. O rastreio do e-mail continua igual.
               </p>
               <button
                 type="button"
                 className="apoie-cap-email-banner-btn"
                 onClick={() => navigate(hrefLerCapEmail)}
               >
-                Ir ler o capÃ­tulo
+                Ir ler o capitulo
               </button>
             </div>
           )}
@@ -751,7 +755,7 @@ export default function Apoie({ user, perfil }) {
             ) : (
               <>
                 <h2 className="apoie-premium-titulo">
-                  Assinatura Premium â€” {labelPrecoPremium(precoSeguro)} / 30 dias
+                  Assinatura Premium - {labelPrecoPremium(precoSeguro)} / 30 dias
                 </h2>
                 {ofertaPremium.isPromoActive && (
                   <div className="apoie-premium-oferta">
@@ -774,10 +778,10 @@ export default function Apoie({ user, perfil }) {
                 {promoProgramada && (
                   <div className="apoie-premium-oferta">
                     <p>
-                      <strong>{ofertaPremium?.promo?.name || 'PromoÃ§Ã£o relÃ¢mpago'}</strong> programada.
+                      <strong>{ofertaPremium?.promo?.name || 'Promocao relampago'}</strong> programada.
                     </p>
                     <p>
-                      EntrarÃ¡ em: <strong>{textoAteInicioPromo}</strong>
+                      Entrara em: <strong>{textoAteInicioPromo}</strong>
                     </p>
                     <p>
                       Quando iniciar, o valor muda automaticamente para{' '}
@@ -793,10 +797,10 @@ export default function Apoie({ user, perfil }) {
             <ul className="apoie-premium-lista">
 
               <li>
-                <i className="fa-solid fa-crown" /> Distintivo dourado nos comentÃ¡rios e destaque de presenÃ§a.
+                <i className="fa-solid fa-crown" /> Distintivo dourado nos comentarios e destaque de presenca.
               </li>
               <li>
-                <i className="fa-solid fa-eye" /> Leitura sem anÃºncios (quando houver espaÃ§os de mÃ­dia no site).
+                <i className="fa-solid fa-eye" /> Leitura sem anuncios (quando houver espacos de midia no site).
               </li>
               <li>
                 <i className="fa-solid fa-user-pen" /> Perfil: avatares exclusivos e cor de nome (em evolucao no
@@ -808,8 +812,8 @@ export default function Apoie({ user, perfil }) {
             </ul>
             {premiumAtivo && fimPremium && (
               <p className="apoie-premium-status" role="status">
-                Sua assinatura estÃ¡ <strong>ativa</strong> atÃ© <strong>{fimPremium}</strong>. VocÃª pode renovar
-                antes do fim para somar mais 30 dias a partir do Ãºltimo dia vÃ¡lido.
+                Sua assinatura esta <strong>ativa</strong> ate <strong>{fimPremium}</strong>. Voce pode renovar
+                antes do fim para somar mais 30 dias a partir do ultimo dia valido.
               </p>
             )}
             {!user && (
@@ -817,7 +821,7 @@ export default function Apoie({ user, perfil }) {
                 <button type="button" className="apoie-link-login" onClick={irLoginComRetorno}>
                   Entre na sua conta
                 </button>{' '}
-                para assinar â€” precisamos saber quem Ã© vocÃª para liberar o Premium.
+                para assinar - precisamos saber quem e voce para liberar o Premium.
               </p>
             )}
             {erroPremium && (
@@ -854,7 +858,7 @@ export default function Apoie({ user, perfil }) {
                           <strong>
                             {formatarHoraBr(acompanhamentoPremium.confirmadoAt, { seVazio: '' })}
                           </strong>
-                          . Pode fechar com seguranÃ§a.
+                          . Pode fechar com seguranÃƒÂ§a.
                         </>
                       )}
                   </p>
@@ -893,10 +897,10 @@ export default function Apoie({ user, perfil }) {
               onClick={abrirAssinaturaPremium}
             >
               {carregandoId === 'premium'
-                ? 'Abrindo checkoutâ€¦'
+                ? 'Abrindo checkoutÃ¢â‚¬Â¦'
                 : premiumAtivo
                   ? 'Renovar Premium (30 dias)'
-                  : `Assinar Premium â€” ${labelPrecoPremium(precoSeguro)}`}
+                  : `Assinar Premium Ã¢â‚¬â€ ${labelPrecoPremium(precoSeguro)}`}
             </button>
           </div>
 
@@ -942,7 +946,7 @@ export default function Apoie({ user, perfil }) {
                 disabled={carregandoId !== null || !user}
                 onClick={abrirDoacaoLivre}
               >
-                {carregandoId === 'livre' ? 'Abrindoâ€¦' : 'Doar este valor'}
+                {carregandoId === 'livre' ? 'Abrindo...' : 'Doar este valor'}
               </button>
             </div>
             {erroValorLivre && (
@@ -955,12 +959,6 @@ export default function Apoie({ user, perfil }) {
           {erroCheckoutPlanos && (
             <p className="apoie-checkout-erro" role="alert">
               <strong>API:</strong> {erroCheckoutPlanos}
-              <span className="apoie-checkout-erro-hint">
-                {' '}
-                Se abriu outra aba com o link <code>mpago.la</code>, esse Ã© o plano B. Token: gere de novo em
-                Mercado Pago â†’ Credenciais â†’ Access Token (produÃ§Ã£o ou teste) e rode{' '}
-                <code>firebase functions:secrets:set MP_ACCESS_TOKEN</code> + deploy da function.
-              </span>
             </p>
           )}
 
@@ -977,7 +975,7 @@ export default function Apoie({ user, perfil }) {
                   disabled={carregandoId !== null || !user}
                   onClick={() => abrirPagamento(plano)}
                 >
-                  {carregandoId === plano.id ? 'Abrindoâ€¦' : `APOIAR ${plano.precoLabel}`}
+                  {carregandoId === plano.id ? 'Abrindo...' : `APOIAR ${plano.precoLabel}`}
                 </button>
               </div>
             ))}
@@ -985,7 +983,7 @@ export default function Apoie({ user, perfil }) {
 
           <p className="apoie-nota">
             <i className="fa-solid fa-shield-check" /> Checkout oficial do Mercado Pago.{' '}
-            <strong>Premium:</strong> apÃ³s o pagamento aprovado vocÃª recebe e-mail de confirmaÃ§Ã£o e, perto do
+            <strong>Premium:</strong> apÃƒÂ³s o pagamento aprovado vocÃƒÂª recebe e-mail de confirmaÃ§Ã£o e, perto do
             fim dos 30 dias, um lembrete para renovar. <strong>DoaÃ§Ãµes:</strong> agradecimento no site (modal),
             sem e-mail automatico. <strong>Membership do criador:</strong> ativa acesso antecipado somente para o autor assinado.
           </p>
@@ -1015,3 +1013,4 @@ export default function Apoie({ user, perfil }) {
     </div>
   );
 }
+

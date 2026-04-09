@@ -278,6 +278,33 @@ a.obra-creator-chip {
   text-decoration: none;
 }
 
+.obra-creator-inline {
+  margin-top: clamp(10px, 2vw, 12px);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.obra-creator-inline .obra-creator-chip {
+  margin-top: 0;
+}
+
+.obra-creator-handle-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: #8fc0ff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.obra-creator-handle-link:hover,
+.obra-creator-handle-link:focus-visible {
+  text-decoration: underline;
+}
+
 .obra-creator-chip img {
   width: 36px;
   height: 36px;
@@ -289,6 +316,10 @@ a.obra-creator-chip {
 
 .btn-obra-cta,
 .btn-obra-fav-page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
   border-radius: 10px;
   border: 1px solid #3a4866;
   background: #16223a;
@@ -311,6 +342,11 @@ a.obra-creator-chip {
   border-color: rgba(255, 204, 0, 0.62);
   background: rgba(255, 204, 0, 0.24);
   color: #ffe37d;
+}
+
+.btn-obra-fav-page--creator {
+  min-width: 0;
+  padding-inline: 12px;
 }
 
 .btn-obra-apoie {
@@ -369,6 +405,13 @@ a.obra-creator-chip {
 
 .obra-notify-box__options input[type="checkbox"] {
   accent-color: #ffcc00;
+}
+
+.obra-notify-box__error {
+  margin: 10px 0 0;
+  color: #ff9f9f;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 /* —— Lista de capítulos (linhas tipo catálogo) —— */

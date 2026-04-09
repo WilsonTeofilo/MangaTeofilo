@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 
 import './KokuinLegacyLandingSection.css';
 
-export default function KokuinLegacyLandingSection({ scrollContainerRef = null, fullViewport = false }) {
+export default function KokuinLegacyLandingSection({
+  scrollContainerRef = null,
+  fullViewport = false,
+  readPath = '',
+}) {
   const navigate = useNavigate();
   const scrollRafRef = useRef(null);
   const heroRef = useRef(null);
@@ -68,6 +72,8 @@ export default function KokuinLegacyLandingSection({ scrollContainerRef = null, 
       }
     };
   }, [atualizarVisibilidadeSeta, getScrollHost, onScrollOrResize]);
+
+  const canReadInstitutionalWork = String(readPath || '').trim().length > 0;
 
   return (
     <div className={`shito-page ${fullViewport ? 'shito-page--immersive' : ''}`}>
@@ -154,8 +160,18 @@ export default function KokuinLegacyLandingSection({ scrollContainerRef = null, 
             <p>Obra fundadora: <span>Kokuin</span></p>
             <p>Status: <span>Em lançamento</span></p>
           </div>
-          <button className="btn-read-now" onClick={() => navigate('/works')}>
-            COMEÇAR LEITURA
+          <button
+            className="btn-read-now"
+            type="button"
+            onClick={() => {
+              if (!canReadInstitutionalWork) return;
+              navigate(readPath);
+            }}
+            disabled={!canReadInstitutionalWork}
+            aria-disabled={!canReadInstitutionalWork}
+            title={canReadInstitutionalWork ? 'Abrir a obra Kokuin' : 'Kokuin ainda nao esta publicado como obra'}
+          >
+            {canReadInstitutionalWork ? 'COMEÇAR LEITURA' : 'LEITURA EM BREVE'}
           </button>
         </div>
         <p className="copyright">© 2026 Kokuin: Herança do Abismo - Todos os direitos reservados.</p>

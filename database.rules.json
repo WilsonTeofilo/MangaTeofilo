@@ -24,7 +24,7 @@
     "admins": {
       "registry": {
         ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-        ".write": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
+        ".write": "auth != null && auth.token.panelRole === 'super_admin'"
       }
     },
 
@@ -130,6 +130,12 @@
         "creatorId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
         },
+        "capaUrl": {
+          ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+        },
+        "bannerUrl": {
+          ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+        },
         "archivedAt": {
           ".validate": "!newData.exists() || newData.val() === null || newData.isNumber()"
         },
@@ -224,6 +230,16 @@
           },
           "creatorId": {
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 128)"
+          },
+          "images": {
+            "$idx": {
+              ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))"
+            }
+          },
+          "internalFiles": {
+            "coverSourceUrl": {
+              ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+            }
           }
         }
       },
@@ -274,7 +290,7 @@
         "userName":          { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userHandle":        { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')" },
         "email":             { ".write": "auth != null && auth.uid === $uid && !data.exists()", ".validate": "!newData.exists() || (auth.token.email != null && newData.isString() && newData.val() === auth.token.email && newData.val().length <= 100)" },
-        "userAvatar":        { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isString()" },
+        "userAvatar":        { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//))))" },
         "uid":               { ".write": "auth != null && auth.uid === $uid && (!data.exists() || data.val() === auth.uid)", ".validate": "newData.val() === auth.uid" },
         "notifyNewChapter":  { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isBoolean()" },
         "notifyPromotions":  { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isBoolean()" },
@@ -306,11 +322,11 @@
           ".write": false
         },
         "creatorApplicationStatus": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": false,
           ".validate": "(newData.val() === null && (!data.exists() || data.val() === null)) || (newData.val() === 'draft' && (!data.exists() || data.val() === null || data.val() === 'draft')) || (newData.val() === data.val())"
         },
         "creatorRequestedAt": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": false,
           ".validate": "(newData.val() === null && (!data.exists() || data.val() === null)) || (newData.val() === data.val())"
         },
         "signupIntent": {
@@ -318,11 +334,11 @@
           ".validate": "(newData.val() === 'reader' || newData.val() === 'creator') && (!data.exists() || newData.val() === data.val() || (data.val() === 'reader' && newData.val() === 'creator'))"
         },
         "creatorMonetizationPreference": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": false,
           ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'publish_only' || newData.val() === 'monetize'"
         },
         "creatorMonetizationStatus": {
-          ".write": "auth != null && auth.uid === $uid",
+          ".write": false,
           ".validate": "!newData.exists() || newData.val() === null || newData.val() === 'disabled' || newData.val() === 'blocked_underage' || newData.val() === 'active' || newData.val() === data.val()"
         },
         "creatorMonetizationReviewReason": {
@@ -363,9 +379,9 @@
             "youtube": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" }
           },
           "monetization": {
-            "enabled": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
-            "isMonetizationActive": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
-            "requested": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
+            "enabled": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
+            "isMonetizationActive": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
+            "requested": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
             "approved": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
             "isApproved": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
             "legal": {
@@ -379,9 +395,9 @@
             }
           },
           "meta": {
-            "isAdult": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
+            "isAdult": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
             "createdAt": { ".validate": "!newData.exists() || newData.isNumber()" },
-            "updatedAt": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isNumber()" }
+            "updatedAt": { ".write": false, ".validate": "!newData.exists() || newData.isNumber()" }
           }
         },
         "marketingOptIn":    { ".validate": "newData.isBoolean()" },
@@ -394,6 +410,7 @@
           ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((!data.exists() && newData.val() === 'comum') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
         },
         "role": {
+          ".write": false,
           ".validate": "(newData.val() === 'user' || newData.val() === 'admin' || newData.val() === 'mangaka' || newData.val() === 'super_admin' || newData.val() === 'membro') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
         },
         "status": {
@@ -401,51 +418,135 @@
           ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
         },
         "membershipStatus": {
+          ".write": false,
           ".validate": "(newData.val() === 'inativo' || newData.val() === 'ativo' || newData.val() === 'vencido' || newData.val() === 'cancelado') && ((!data.exists() && newData.val() === 'inativo') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
         },
-        "memberUntil":   { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
-        "currentPlanId": { ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
-        "lastPaymentAt": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
-        "premium5dNotifiedForUntil": { ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
-        "creatorMembershipEnabled": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
-        "creatorMembershipPriceBRL": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
-        "creatorDonationSuggestedBRL": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "memberUntil":   { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
+        "currentPlanId": { ".write": false, ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
+        "lastPaymentAt": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
+        "premium5dNotifiedForUntil": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
+        "creatorMembershipEnabled": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
+        "creatorMembershipPriceBRL": { ".write": false, ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
+        "creatorDonationSuggestedBRL": { ".write": false, ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 5000)" },
         "creatorDisplayName": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
         "creatorBio": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)" },
         "creatorTermsAccepted": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
         "instagramUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" },
         "youtubeUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" },
-        "creatorBannerUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
+        "creatorBannerUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))" },
         "creatorOnboardingChecklistHidden": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorOnboardingStoreSkipped": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "readerProfilePublic": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
-        "readerProfileAvatarUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
+        "readerProfileAvatarUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))" },
         "publicProfile": {
           ".read": true,
-          ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-          "uid": { ".validate": "!newData.exists() || newData.val() === $uid" },
-          "userName": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 60)" },
-          "userHandle": { ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')" },
-          "userAvatar": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
-          "accountType": { ".validate": "!newData.exists() || (newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin')" },
-          "signupIntent": { ".validate": "!newData.exists() || (newData.val() === 'reader' || newData.val() === 'creator')" },
-          "status": { ".validate": "!newData.exists() || newData.isString()" },
-          "creatorDisplayName": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
-          "creatorUsername": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)" },
-          "creatorBio": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)" },
-          "creatorBannerUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
-          "instagramUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
-          "youtubeUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
-          "readerProfilePublic": { ".validate": "!newData.exists() || newData.isBoolean()" },
-          "readerProfileAvatarUrl": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2048)" },
-          "readerSince": { ".validate": "!newData.exists() || newData.isNumber()" },
-          "creatorStatus": { ".validate": "!newData.exists() || newData.isString()" },
-          "creatorMembershipEnabled": { ".validate": "!newData.exists() || newData.isBoolean()" },
-          "creatorMembershipPriceBRL": { ".validate": "!newData.exists() || newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000)" },
-          "creatorDonationSuggestedBRL": { ".validate": "!newData.exists() || newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000)" },
-          "updatedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+          ".write": false,
+          "uid": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || newData.val() === $uid"
+          },
+          "userName": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 60)"
+          },
+          "userHandle": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')"
+          },
+          "userAvatar": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+          },
+          "isCreatorProfile": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || newData.isBoolean()"
+          },
+          "accountType": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin')"
+          },
+          "signupIntent": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.val() === 'reader' || newData.val() === 'creator')"
+          },
+          "status": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "creatorDisplayName": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)"
+          },
+          "creatorUsername": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)"
+          },
+          "creatorBio": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)"
+          },
+          "creatorBannerUrl": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+          },
+          "instagramUrl": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+          },
+          "youtubeUrl": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+          },
+          "readerProfilePublic": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || newData.isBoolean()"
+          },
+          "readerProfileAvatarUrl": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+          },
+          "readerSince": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || newData.isNumber()"
+          },
+          "creatorStatus": { ".write": false, ".validate": "!newData.exists() || newData.isString()" },
+          "creatorMembershipEnabled": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
+          "creatorMembershipPriceBRL": { ".write": false, ".validate": "!newData.exists() || newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000)" },
+          "creatorDonationSuggestedBRL": { ".write": false, ".validate": "!newData.exists() || newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 5000)" },
+          "updatedAt": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || newData.isNumber()"
+          },
           "creatorProfile": {
-            ".validate": "!newData.exists() || newData.hasChildren(['displayName','username','bioFull','socialLinks'])"
+            ".write": false,
+            ".validate": "!newData.exists() || newData.hasChildren(['displayName','username','bioFull','socialLinks'])",
+            "displayName": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)"
+            },
+            "username": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)"
+            },
+            "avatarUrl": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
+            },
+            "bioFull": {
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)"
+            },
+            "socialLinks": {
+              ".write": false,
+              "instagramUrl": {
+                ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+              },
+              "youtubeUrl": {
+                ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+              }
+            }
           },
           "followers": {
             "$followerUid": {

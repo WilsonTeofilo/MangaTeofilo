@@ -3,6 +3,7 @@ import { getDatabase } from 'firebase-admin/database';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
   ADMIN_REGISTRY_PATH,
+  isCreatorAccountAuth,
   isTargetSuperAdmin,
   requireSuperAdmin,
 } from '../adminRbac.js';
@@ -20,7 +21,10 @@ import { notifyUserByPreference } from '../notifications/delivery.js';
 import { resolveCreatorAgeYears } from '../creatorCompliance.js';
 import {
   assembleCreatorRecordForRtdb,
+  readCreatorSupportOfferFromDb,
   readCreatorStatsFromDb,
+  resolveCreatorFinancialStatusFromDb,
+  resolveCreatorMonetizationApplicationStatusFromDb,
   resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../creatorRecord.js';
@@ -28,6 +32,10 @@ import {
 function resolveCreatorRequestedAtMs(row, app) {
   const top = Number(row?.creatorRequestedAt || 0);
   if (Number.isFinite(top) && top > 0) return top;
+  const monetizationRequestedAt = Number(
+    row?.creator?.monetization?.application?.requestedAt || row?.creatorMonetizationReviewRequestedAt || 0
+  );
+  if (Number.isFinite(monetizationRequestedAt) && monetizationRequestedAt > 0) return monetizationRequestedAt;
   const c1 = Number(app?.createdAt || 0);
   if (Number.isFinite(c1) && c1 > 0) return c1;
   const c2 = Number(app?.updatedAt || 0);
@@ -79,6 +87,43 @@ function maskPixKeyForAdminSnapshot(rawPixKey) {
   return `${value.slice(0, 3)}***${value.slice(-3)}`;
 }
 
+function normalizePayoutRequestStatus(raw) {
+  const status = String(raw || '').trim().toLowerCase();
+  if (
+    status === 'pending' ||
+    status === 'paid' ||
+    status === 'rejected' ||
+    status === 'cancelled'
+  ) {
+    return status;
+  }
+  return 'pending';
+}
+
+function buildCreatorPayoutRequestsAdmin(rows) {
+  if (!rows || typeof rows !== 'object') return [];
+  return Object.entries(rows)
+    .map(([requestId, row]) => {
+      const current = row && typeof row === 'object' ? row : {};
+      return {
+        requestId: String(requestId || ''),
+        creatorId: String(current.creatorId || ''),
+        amount: round2(Number(current.amount || 0)),
+        currency: String(current.currency || 'BRL'),
+        status: normalizePayoutRequestStatus(current.status),
+        requestedAt: Number(current.requestedAt || 0) || null,
+        requestedByUid: String(current.requestedByUid || ''),
+        availableSnapshotBRL: round2(Number(current.availableSnapshotBRL || 0)),
+        pendingPayoutSnapshotBRL: round2(Number(current.pendingPayoutSnapshotBRL || 0)),
+        notes: String(current.notes || ''),
+        reviewedAt: Number(current.reviewedAt || 0) || null,
+        reviewedByUid: String(current.reviewedByUid || ''),
+        payoutId: String(current.payoutId || ''),
+      };
+    })
+    .sort((a, b) => Number(b.requestedAt || 0) - Number(a.requestedAt || 0));
+}
+
 function buildPublicCreatorProfileDoc({
   uid,
   currentPublicProfile = null,
@@ -90,6 +135,7 @@ function buildPublicCreatorProfileDoc({
   youtubeUrl,
   monetizationPreference,
   monetizationStatus,
+  supportOffer = null,
   status,
   createdAt,
   now,
@@ -109,11 +155,20 @@ function buildPublicCreatorProfileDoc({
       instagramUrl: instagramUrl || null,
       youtubeUrl: youtubeUrl || null,
     },
+    supportOffer:
+      supportOffer && typeof supportOffer === 'object'
+        ? {
+            membershipEnabled: supportOffer.membershipEnabled === true,
+            membershipPriceBRL: Number(supportOffer.membershipPriceBRL || 0) || null,
+            donationSuggestedBRL: Number(supportOffer.donationSuggestedBRL || 0) || null,
+            updatedAt: Number(supportOffer.updatedAt || now) || now,
+          }
+        : null,
     monetizationPreference,
     monetizationStatus,
     monetizationEnabled: monetizationStatus === 'active',
     isMonetizationActive: monetizationStatus === 'active',
-    isApproved: monetizationStatus === 'active' || current.isApproved === true,
+    isApproved: monetizationStatus === 'active',
     ageVerified: current.ageVerified === true || current.ageVerified === false ? current.ageVerified : null,
     status,
     createdAt,
@@ -146,6 +201,8 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
         .sort((a, b) => Number(b.paidAt || b.createdAt || 0) - Number(a.paidAt || a.createdAt || 0))
         .slice(0, 3)
     : [];
+  const payoutRequestsAdmin = buildCreatorPayoutRequestsAdmin(creatorData?.payoutRequests);
+  const pendingPayoutRequestsAdmin = payoutRequestsAdmin.filter((row) => row.status === 'pending');
   const creatorProfile =
     row?.creator?.profile && typeof row.creator.profile === 'object' ? row.creator.profile : {};
   const creatorSocial =
@@ -165,6 +222,8 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
     creatorOnboardingCompleted: row?.creatorOnboardingCompleted === true,
     creatorMonetizationPreference: resolveCreatorMonetizationPreference(row, app),
     creatorMonetizationStatus: resolveCreatorMonetizationStatusFromDb(row),
+    creatorMonetizationApplicationStatus: resolveCreatorMonetizationApplicationStatusFromDb(row),
+    creatorFinancialStatus: resolveCreatorFinancialStatusFromDb(row),
     birthYear: Number(row?.birthYear || 0) || null,
     birthDate: String(row?.birthDate || '').trim() || null,
     creatorComplianceSummary: (() => {
@@ -194,13 +253,15 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
       const m = row?.creator?.monetization;
       if (m && typeof m === 'object') {
         return {
-          requested: m.requested === true,
-          enabled: m.enabled === true,
-          isMonetizationActive: m.isMonetizationActive === true || m.enabled === true,
-          approved: m.approved === true,
-          isApproved: m.isApproved === true || m.approved === true,
+          preference: String(m.preference || '').trim().toLowerCase() || 'publish_only',
+          applicationStatus:
+            String(m?.application?.status || '').trim().toLowerCase() || 'not_requested',
+          financialStatus:
+            String(m?.financial?.status || '').trim().toLowerCase() || 'inactive',
+          requestedAt: Number(m?.application?.requestedAt || 0) || null,
           hasLegal: Boolean(m.legal?.fullName && m.legal?.cpf),
           hasPixKey: Boolean(m.payout?.type === 'pix' && String(m.payout?.key || '').trim()),
+          supportOffer: readCreatorSupportOfferFromDb(row),
         };
       }
       return null;
@@ -240,6 +301,8 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
       paidByUid: String(p.paidByUid || ''),
       notes: String(p.notes || ''),
     })),
+    creatorPayoutRequestsAdmin: payoutRequestsAdmin,
+    creatorPendingPayoutRequestsAdmin: pendingPayoutRequestsAdmin,
     role: String(row?.role || 'user'),
     accountStatus: String(row?.status || ''),
   };
@@ -268,15 +331,9 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
   const bioShort = String(creatorProfileRow.bio || application.bioShort || '').trim();
   const instagramUrl = String(creatorSocialRow.instagram || application?.socialLinks?.instagramUrl || '').trim();
   const youtubeUrl = String(creatorSocialRow.youtube || application?.socialLinks?.youtubeUrl || '').trim();
-  const monetizationPreference = resolveCreatorMonetizationPreference(row, application);
+  const monetizationPreference = 'publish_only';
   const age = resolveCreatorAgeYears(row);
-  const isUnderage = age != null && age < 18;
-  const monetizationStatus =
-    monetizationPreference === 'monetize'
-      ? isUnderage
-        ? 'blocked_underage'
-        : 'active'
-      : 'disabled';
+  const monetizationStatus = 'disabled';
   const creatorUsername = slugifyCreatorUsername(displayName, uid);
   const creatorStatusNext = row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding';
   const [currentPublicProfileSnap, creatorStatsSnap] = await Promise.all([
@@ -298,6 +355,7 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     youtubeUrl,
     monetizationPreference,
     monetizationStatus,
+    supportOffer: readCreatorSupportOfferFromDb(row),
     status: creatorStatusNext,
     createdAt: Number(row?.creator?.meta?.createdAt || now),
     now,
@@ -364,7 +422,7 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     [`usuarios/${uid}/publicProfile/instagramUrl`]: instagramUrl || null,
     [`usuarios/${uid}/publicProfile/youtubeUrl`]: youtubeUrl || null,
     [`usuarios/${uid}/publicProfile/creatorStatus`]: creatorStatusNext,
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
     [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
     [`usuarios/${uid}/publicProfile/creatorProfile`]: publicCreatorProfile,
@@ -383,13 +441,7 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
 
   const approvalMessage = isAutoPublishOnly
     ? 'Voce ja pode publicar como criador. Se o painel nao aparecer, recarregue a pagina ou faca login de novo.'
-    : monetizationStatus === 'blocked_underage'
-      ? 'Voce foi aprovado para publicar, mas a monetizacao ficou bloqueada por idade. Sua conta esta liberada apenas para publicacao.'
-      : monetizationStatus === 'active'
-        ? 'Voce foi aprovado como criador e sua monetizacao foi ativada.'
-        : monetizationPreference === 'monetize'
-          ? 'Voce foi aprovado como criador e ja pode ativar ou desativar sua monetizacao livremente no perfil.'
-          : 'Voce foi aprovado como criador para publicar na plataforma.';
+    : 'Voce foi aprovado como criador para publicar na plataforma. A monetizacao continua separada e so entra depois da analise da equipe.';
   await notifyUserByPreference(db, uid, row || {}, {
     kind: 'creator_lifecycle',
     notification: {
@@ -449,9 +501,8 @@ export const adminListCreatorApplications = onCall({ region: 'us-central1' }, as
   rows.sort((a, b) => {
     const queueScore = (r) => {
       const s = String(r?.creatorApplicationStatus || '').trim().toLowerCase();
-      const mon = resolveCreatorMonetizationStatusFromDb(r);
-      const role = String(r?.role || '').trim().toLowerCase();
       if (s === 'requested') return 2;
+      if (String(r?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending') return 1;
       return 0;
     };
     const diff = queueScore(b) - queueScore(a);
@@ -575,7 +626,7 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
     [`usuarios/${uid}/status`]: banUser ? 'banido' : null,
     [`usuarios/${uid}/banReason`]: banUser ? reason : null,
     [`usuarios/${uid}/publicProfile/creatorStatus`]: banUser ? 'banned' : 'rejected',
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
     [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
     [`usuarios/${uid}/publicProfile/status`]: banUser ? 'banido' : null,
@@ -630,8 +681,11 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
   const now = Date.now();
   const monetizationStatus = isUnderage ? 'blocked_underage' : 'active';
   const canPublishMembership = monetizationStatus === 'active' && hasPublicCreatorMembershipOffer(row);
-  const membershipPricePub = canPublishMembership ? Number(row.creatorMembershipPriceBRL) : null;
-  const donationSuggestedPub = canPublishMembership ? Number(row.creatorDonationSuggestedBRL) : null;
+  const nextSupportOffer = {
+    ...readCreatorSupportOfferFromDb(row),
+    membershipEnabled: canPublishMembership,
+    updatedAt: now,
+  };
 
   const creatorDocMonApprove = assembleCreatorRecordForRtdb({
     row,
@@ -645,21 +699,53 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
     compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
     now,
   });
+  creatorDocMonApprove.monetization.application = {
+    ...(creatorDocMonApprove.monetization.application || {}),
+    status: isUnderage ? 'blocked_underage' : 'approved',
+    requestedAt:
+      creatorDocMonApprove?.monetization?.application?.requestedAt ||
+      row?.creator?.monetization?.application?.requestedAt ||
+      now,
+    reviewedAt: now,
+    reviewedBy: request.auth.uid,
+    reviewReason: null,
+  };
+  creatorDocMonApprove.monetization.financial = {
+    ...(creatorDocMonApprove.monetization.financial || {}),
+    status: isUnderage ? 'inactive' : 'active',
+    activatedAt:
+      !isUnderage
+        ? creatorDocMonApprove?.monetization?.financial?.activatedAt ||
+          row?.creator?.monetization?.financial?.activatedAt ||
+          now
+        : null,
+    updatedAt: now,
+  };
+  creatorDocMonApprove.monetization.offer = nextSupportOffer;
 
   await db.ref().update({
     [`usuarios/${uid}/creator`]: creatorDocMonApprove,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: canPublishMembership,
-    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: membershipPricePub,
-    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: donationSuggestedPub,
+    [`usuarios/${uid}/creatorMembershipEnabled`]: null,
+    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
+    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/supportOffer`]: {
+      membershipEnabled: nextSupportOffer.membershipEnabled === true,
+      membershipPriceBRL: nextSupportOffer.membershipPriceBRL,
+      donationSuggestedBRL: nextSupportOffer.donationSuggestedBRL,
+      updatedAt: nextSupportOffer.updatedAt,
+    },
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
 
   const monetizationApprovalMessage =
     monetizationStatus === 'active'
       ? canPublishMembership
-        ? 'Sua monetizacao foi aprovada. Assinaturas na sua pagina publica ja podem usar os valores que voce configurou.'
+        ? 'Sua monetização foi aprovada. Sua assinatura pública já pode usar os valores que você configurou.'
         : `Sua monetizacao foi aprovada. No perfil, ative a membership e defina valor da membership e doacao sugerida entre R$ ${CREATOR_MEMBERSHIP_PRICE_MIN_BRL} e R$ ${CREATOR_MEMBERSHIP_PRICE_MAX_BRL} para liberar assinatura com acesso antecipado as suas obras.`
       : 'Sua conta segue liberada para publicar, mas a monetizacao permanece bloqueada por idade.';
   await notifyUserByPreference(db, uid, row || {}, {
@@ -723,6 +809,28 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
     compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
     now,
   });
+  creatorDocMonReject.monetization.application = {
+    ...(creatorDocMonReject.monetization.application || {}),
+    status: 'rejected',
+    requestedAt:
+      creatorDocMonReject?.monetization?.application?.requestedAt ||
+      row?.creator?.monetization?.application?.requestedAt ||
+      now,
+    reviewedAt: now,
+    reviewedBy: request.auth.uid,
+    reviewReason: reason,
+  };
+  creatorDocMonReject.monetization.financial = {
+    ...(creatorDocMonReject.monetization.financial || {}),
+    status: 'inactive',
+    activatedAt: null,
+    updatedAt: now,
+  };
+  creatorDocMonReject.monetization.offer = {
+    ...readCreatorSupportOfferFromDb(row),
+    membershipEnabled: false,
+    updatedAt: now,
+  };
 
   await db.ref().update({
     [`usuarios/${uid}/creator`]: creatorDocMonReject,
@@ -731,9 +839,15 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
     [`usuarios/${uid}/creatorMembershipEnabled`]: false,
     [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: false,
+    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
     [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
     [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/supportOffer`]: {
+      membershipEnabled: false,
+      membershipPriceBRL: creatorDocMonReject.monetization.offer?.membershipPriceBRL || null,
+      donationSuggestedBRL: creatorDocMonReject.monetization.offer?.donationSuggestedBRL || null,
+      updatedAt: now,
+    },
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
 
@@ -759,6 +873,100 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
   return { ok: true, uid, monetizationStatus: 'disabled' };
 });
 
+export const creatorRequestPixPayout = onCall({ region: 'us-central1' }, async (request) => {
+  if (!request.auth?.uid) {
+    throw new HttpsError('unauthenticated', 'Faca login.');
+  }
+  if (!(await isCreatorAccountAuth(request.auth))) {
+    throw new HttpsError('permission-denied', 'Apenas criadores podem solicitar repasse.');
+  }
+  const uid = String(request.auth.uid || '').trim();
+  const db = getDatabase();
+  const [userSnap, balanceSnap, payoutRequestsSnap] = await Promise.all([
+    db.ref(`usuarios/${uid}`).get(),
+    db.ref(`creatorData/${uid}/balance`).get(),
+    db.ref(`creatorData/${uid}/payoutRequests`).get(),
+  ]);
+  if (!userSnap.exists()) {
+    throw new HttpsError('not-found', 'Criador nao encontrado.');
+  }
+  const row = userSnap.val() || {};
+  if (String(row?.role || '').trim().toLowerCase() !== 'mangaka') {
+    throw new HttpsError('failed-precondition', 'Este usuario ainda nao e um criador aprovado.');
+  }
+  const monetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(row);
+  const monetizationFinancialStatus = resolveCreatorFinancialStatusFromDb(row);
+  if (monetizationApplicationStatus !== 'approved' || monetizationFinancialStatus !== 'active') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Repasse so pode ser solicitado por criador com monetizacao aprovada e ativa.'
+    );
+  }
+  const balance = balanceSnap.exists() ? balanceSnap.val() || {} : {};
+  const available = round2(Number(balance?.availableBRL || 0));
+  if (!(available > 0)) {
+    throw new HttpsError('failed-precondition', 'Nao ha saldo disponivel para solicitar repasse.');
+  }
+  const existingRequests = buildCreatorPayoutRequestsAdmin(
+    payoutRequestsSnap.exists() ? payoutRequestsSnap.val() || {} : {}
+  );
+  if (existingRequests.some((item) => item.status === 'pending')) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Ja existe uma solicitacao de repasse pendente para este criador.'
+    );
+  }
+  const rawAmount = request.data?.amount == null ? available : round2(Number(request.data.amount));
+  if (!rawAmount || rawAmount <= 0) {
+    throw new HttpsError('invalid-argument', 'amount invalido.');
+  }
+  if (rawAmount - available > 0.009) {
+    throw new HttpsError('failed-precondition', 'O valor solicitado excede o saldo disponivel.');
+  }
+  const notes = String(request.data?.notes || '').trim().slice(0, 1000);
+  const requestedAt = Date.now();
+  const requestRef = db.ref(`creatorData/${uid}/payoutRequests`).push();
+  const payoutRequestId = requestRef.key;
+  const requestRow = {
+    payoutRequestId,
+    creatorId: uid,
+    amount: rawAmount,
+    currency: 'BRL',
+    status: 'pending',
+    requestedAt,
+    requestedByUid: uid,
+    availableSnapshotBRL: available,
+    pendingPayoutSnapshotBRL: round2(Number(balance?.pendingPayoutBRL || 0)),
+    notes: notes || null,
+  };
+  await db.ref().update({
+    [`creatorData/${uid}/payoutRequests/${payoutRequestId}`]: requestRow,
+    [`financas/creatorPayoutRequests/${payoutRequestId}`]: requestRow,
+  });
+  await notifyUserByPreference(db, uid, row || {}, {
+    kind: 'creator_lifecycle',
+    notification: {
+      type: 'creator_payout_request',
+      title: 'Solicitacao de repasse enviada',
+      message: `Sua solicitacao de repasse de ${rawAmount.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+      })} foi enviada para a equipe.`,
+      data: {
+        payoutRequestId,
+        amount: rawAmount,
+        readPath: '/creator/monetizacao',
+      },
+    },
+  });
+  return {
+    ok: true,
+    payoutRequestId,
+    amount: rawAmount,
+    availableSnapshotBRL: available,
+  };
+});
+
 export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Faca login.');
@@ -779,6 +987,14 @@ export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, asy
   const row = userSnap.val() || {};
   if (String(row?.role || '').trim().toLowerCase() !== 'mangaka') {
     throw new HttpsError('failed-precondition', 'Este usuario ainda nao e um criador aprovado.');
+  }
+  const monetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(row);
+  const monetizationFinancialStatus = resolveCreatorFinancialStatusFromDb(row);
+  if (monetizationApplicationStatus !== 'approved' || monetizationFinancialStatus !== 'active') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Repasse manual so pode ser registrado para criador com monetizacao aprovada e ativa.'
+    );
   }
   const balance = balanceSnap.exists() ? balanceSnap.val() || {} : {};
   const available = round2(Number(balance?.availableBRL || 0));
@@ -811,6 +1027,25 @@ export const adminRecordCreatorPixPayout = onCall({ region: 'us-central1' }, asy
   });
   if (!payoutId) {
     throw new HttpsError('internal', 'Nao foi possivel registrar o repasse manual.');
+  }
+  const payoutRequestId = String(request.data?.payoutRequestId || '').trim();
+  if (payoutRequestId) {
+    const requestPatch = {
+      status: 'paid',
+      reviewedAt: Date.now(),
+      reviewedByUid: request.auth.uid,
+      payoutId,
+    };
+    await db.ref().update({
+      [`creatorData/${uid}/payoutRequests/${payoutRequestId}/status`]: requestPatch.status,
+      [`creatorData/${uid}/payoutRequests/${payoutRequestId}/reviewedAt`]: requestPatch.reviewedAt,
+      [`creatorData/${uid}/payoutRequests/${payoutRequestId}/reviewedByUid`]: requestPatch.reviewedByUid,
+      [`creatorData/${uid}/payoutRequests/${payoutRequestId}/payoutId`]: requestPatch.payoutId,
+      [`financas/creatorPayoutRequests/${payoutRequestId}/status`]: requestPatch.status,
+      [`financas/creatorPayoutRequests/${payoutRequestId}/reviewedAt`]: requestPatch.reviewedAt,
+      [`financas/creatorPayoutRequests/${payoutRequestId}/reviewedByUid`]: requestPatch.reviewedByUid,
+      [`financas/creatorPayoutRequests/${payoutRequestId}/payoutId`]: requestPatch.payoutId,
+    });
   }
   await notifyUserByPreference(db, uid, row || {}, {
     kind: 'creator_lifecycle',

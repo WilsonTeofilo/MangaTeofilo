@@ -11,16 +11,43 @@ function hasOwn(obj, key) {
 
 function hasCanonicalCreatorState(source = {}) {
   const creator = source?.creator && typeof source.creator === 'object' ? source.creator : {};
+  const creatorProfilePublic =
+    source?.creatorProfile && typeof source.creatorProfile === 'object' ? source.creatorProfile : {};
+  const creatorSocialPublic =
+    creatorProfilePublic?.socialLinks && typeof creatorProfilePublic.socialLinks === 'object'
+      ? creatorProfilePublic.socialLinks
+      : {};
+  const creatorProfile =
+    creator?.profile && typeof creator.profile === 'object' ? creator.profile : {};
+  const creatorSocial =
+    creator?.social && typeof creator.social === 'object' ? creator.social : {};
   const creatorStatus = asNonEmptyString(source.creatorStatus, '').toLowerCase();
-  const creatorMonetizationStatus = asNonEmptyString(source.creatorMonetizationStatus, '').toLowerCase();
+  const signupIntent = asNonEmptyString(source.signupIntent, '').toLowerCase();
   const role = asNonEmptyString(source.role || source.panelRole, 'user').toLowerCase();
+  const hasCreatorProfileData =
+    asNonEmptyString(source.creatorDisplayName, '') !== '' ||
+    asNonEmptyString(source.creatorBio, '') !== '' ||
+    asNonEmptyString(source.creatorUsername, '') !== '' ||
+    asNonEmptyString(source.creatorBannerUrl, '') !== '' ||
+    asNonEmptyString(source.instagramUrl, '') !== '' ||
+    asNonEmptyString(source.youtubeUrl, '') !== '' ||
+    asNonEmptyString(creatorProfilePublic.displayName, '') !== '' ||
+    asNonEmptyString(creatorProfilePublic.bioFull, '') !== '' ||
+    asNonEmptyString(creatorProfilePublic.username, '') !== '' ||
+    asNonEmptyString(creatorSocialPublic.instagramUrl, '') !== '' ||
+    asNonEmptyString(creatorSocialPublic.youtubeUrl, '') !== '' ||
+    asNonEmptyString(creatorProfile.displayName, '') !== '' ||
+    asNonEmptyString(creatorProfile.bio, '') !== '' ||
+    asNonEmptyString(creatorSocial.instagram, '') !== '' ||
+    asNonEmptyString(creatorSocial.youtube, '') !== '';
   return (
+    source.isCreatorProfile === true ||
     creatorStatus === 'active' ||
     creatorStatus === 'onboarding' ||
-    creatorMonetizationStatus === 'active' ||
+    signupIntent === 'creator' ||
     role === 'mangaka' ||
     role === 'creator' ||
-    creator.isApproved === true
+    hasCreatorProfileData
   );
 }
 
@@ -79,9 +106,19 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
   const instagramUrl = asNonEmptyString(creatorSocial.instagram || source.instagramUrl, '');
   const youtubeUrl = asNonEmptyString(creatorSocial.youtube || source.youtubeUrl, '');
   const userAvatar = asNonEmptyString(source.userAvatar, AVATAR_FALLBACK);
+  const creatorAvatarUrl = asNonEmptyString(
+    creatorProfile.avatarUrl || source.creatorAvatarUrl || source.readerProfileAvatarUrl || userAvatar,
+    userAvatar
+  );
   const creatorStatus = asNonEmptyString(source.creatorStatus, '');
   const signupIntent = asNonEmptyString(source.signupIntent, 'reader');
   const isCreatorProfile = hasCanonicalCreatorState(source);
+  const creatorSupportOffer =
+    source?.creator?.monetization?.offer && typeof source.creator.monetization.offer === 'object'
+      ? source.creator.monetization.offer
+      : source?.creatorProfile?.supportOffer && typeof source.creatorProfile.supportOffer === 'object'
+        ? source.creatorProfile.supportOffer
+        : null;
 
   return {
     uid: asNonEmptyString(uidOverride || source.uid, ''),
@@ -102,15 +139,6 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
     readerProfileAvatarUrl: asNonEmptyString(source.readerProfileAvatarUrl, userAvatar),
     readerSince: Number(source.createdAt || source.readerSince || 0) || 0,
     creatorStatus: isCreatorProfile ? creatorStatus : '',
-    creatorMembershipEnabled: isCreatorProfile && source.creatorMembershipEnabled === true,
-    creatorMembershipPriceBRL:
-      isCreatorProfile && source.creatorMembershipPriceBRL != null
-        ? Number(source.creatorMembershipPriceBRL)
-        : null,
-    creatorDonationSuggestedBRL:
-      isCreatorProfile && source.creatorDonationSuggestedBRL != null
-        ? Number(source.creatorDonationSuggestedBRL)
-        : null,
     updatedAt:
       Number(source?.creator?.meta?.updatedAt || source.updatedAt || source.lastLogin || source.createdAt || 0) || 0,
     ...(isCreatorProfile
@@ -118,10 +146,17 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
           creatorProfile: {
             displayName: creatorDisplayName,
             username: userHandle,
+            avatarUrl: creatorAvatarUrl,
             bioFull: creatorBio,
             socialLinks: {
               instagramUrl,
               youtubeUrl,
+            },
+            supportOffer: {
+              membershipEnabled: creatorSupportOffer?.membershipEnabled === true,
+              membershipPriceBRL: Number(creatorSupportOffer?.membershipPriceBRL || 0) || null,
+              donationSuggestedBRL: Number(creatorSupportOffer?.donationSuggestedBRL || 0) || null,
+              updatedAt: Number(creatorSupportOffer?.updatedAt || 0) || 0,
             },
           },
         }

@@ -4,6 +4,7 @@ export {
   adminRejectCreatorApplication,
   adminApproveCreatorMonetization,
   adminRejectCreatorMonetization,
+  creatorRequestPixPayout,
   adminRecordCreatorPixPayout,
 } from './admin.js';
 export { toggleCreatorFollow } from './audience.js';

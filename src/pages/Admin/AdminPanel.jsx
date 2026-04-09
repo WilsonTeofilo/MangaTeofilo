@@ -5,6 +5,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } 
 
 import { db, storage, auth } from '../../services/firebase';
 import { resolveAdminAccess } from '../../auth/adminAccess';
+import { canAccessAdminPath } from '../../auth/adminPermissions';
 import {
   normalizarObraId,
   obterObraIdCapitulo,
@@ -529,14 +530,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     return {
       chaptersHubPath: '/admin/capitulos',
       worksPath: '/admin/obras',
-      canAccessWorkspace: Boolean(adminAccess?.canAccessAdmin),
+      canAccessWorkspace: canAccessAdminPath('/admin/capitulos', adminAccess),
       headerSuffix: ' - FORJA DO AUTOR',
       backLabel: 'Voltar capítulos',
       emptyStateTitle: 'Selecione uma obra antes de editar',
       emptyStateCopy:
         'O editor precisa de uma obra válida no contexto atual. Volte ao hub de capítulos e abra o fluxo pela obra correta.',
     };
-  }, [adminAccess?.canAccessAdmin, isCreatorWorkspace, isMangaka]);
+  }, [adminAccess, isCreatorWorkspace, isMangaka]);
   const { chaptersHubPath, worksPath, canAccessWorkspace } = workspaceConfig;
   const obraQueryId = String(searchParams.get('obra') || '').trim();
   const obraIdSelecionada = obraQueryId ? normalizarObraId(obraQueryId) : '';

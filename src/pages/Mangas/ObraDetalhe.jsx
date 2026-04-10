@@ -442,6 +442,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
             className="obra-cover"
             src={obraParaExibir.capaUrl || obraParaExibir.bannerUrl || '/assets/fotos/shito.jpg'}
             alt={`Capa do mangá ${obraParaExibir.titulo || obraId}`}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            decoding="async"
           />
           <div className="obra-info">
             <h1>{obraParaExibir.titulo || obraId}</h1>
@@ -467,6 +470,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                   <img
                     src={creatorAvatar}
                     alt={creatorPorLabel}
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
                   />
                   <span>por {creatorDisplayOnly}</span>
                 </button>
@@ -489,6 +495,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                 <img
                   src={creatorAvatar}
                   alt={creatorPorLabel}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
                 <span>por {creatorPorLabel}</span>
               </button>
@@ -569,6 +578,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                           alt={cap.titulo || `Capítulo ${cap.numero}`}
                           className="shito-cap-miniature"
                           style={chapterCoverStyle(cap.capaAjuste)}
+                          referrerPolicy="no-referrer"
                           loading="lazy"
                           decoding="async"
                         />

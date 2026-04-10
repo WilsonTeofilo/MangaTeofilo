@@ -260,7 +260,14 @@ export default function LojaCarrinho({ user, perfil }) {
               <div className="pod-cart-line">
                 <div className="pod-cart-line__thumb">
                   {podDraft.coverUrl ? (
-                    <img src={podDraft.coverUrl} alt="" className="pod-cart-line__thumb-img" />
+                    <img
+                      src={podDraft.coverUrl}
+                      alt=""
+                      className="pod-cart-line__thumb-img"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <span className="pod-cart-line__thumb-fallback" aria-hidden="true">
                       ??
@@ -335,6 +342,9 @@ export default function LojaCarrinho({ user, perfil }) {
                 <img
                   src={(Array.isArray(line.product.images) && line.product.images[0]) || '/assets/fotos/shito.jpg'}
                   alt=""
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
                 <div>
                   <h3>{line.product.title}</h3>

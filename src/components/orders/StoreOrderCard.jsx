@@ -56,7 +56,15 @@ export default function StoreOrderCard({ order, productImages = {}, perspective 
 
       <div className="ot-card__mid">
         <div className="ot-card__thumb" aria-hidden="true">
-          {thumbUrl ? <img src={thumbUrl} alt="" loading="lazy" /> : <span>📦</span>}
+          {thumbUrl ? (
+            <img
+              src={thumbUrl}
+              alt=""
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
+            />
+          ) : <span>📦</span>}
         </div>
         <div>
           <p className="ot-card__product-title">{subtitle}</p>

@@ -9,15 +9,25 @@ export const PREMIUM_PLAN_ID = 'premium_mensal_23';
 
 /** Prefixo em external_reference (sem caracteres especiais problemáticos). */
 export const PREMIUM_EXTERNAL_PREFIX = 'SHITO_PREMIUM|';
+const PREMIUM_EXTERNAL_PART_RE = /^[A-Za-z0-9_-]{4,120}$/;
+
+function sanitizePremiumExternalPart(raw, label = 'uid') {
+  const value = String(raw || '').trim();
+  if (!PREMIUM_EXTERNAL_PART_RE.test(value)) {
+    throw new Error(`${label} invalido para external_reference.`);
+  }
+  return value;
+}
 
 export function buildPremiumExternalRef(uid) {
-  return `${PREMIUM_EXTERNAL_PREFIX}${uid}`;
+  return `${PREMIUM_EXTERNAL_PREFIX}${sanitizePremiumExternalPart(uid)}`;
 }
 
 export function parsePremiumExternalRef(ref) {
   if (ref == null || typeof ref !== 'string') return null;
   if (!ref.startsWith(PREMIUM_EXTERNAL_PREFIX)) return null;
   const uid = ref.slice(PREMIUM_EXTERNAL_PREFIX.length).trim();
+  if (!PREMIUM_EXTERNAL_PART_RE.test(uid)) return null;
   return uid || null;
 }
 

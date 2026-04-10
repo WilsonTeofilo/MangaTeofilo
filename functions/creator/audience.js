@@ -2,6 +2,12 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';
 import { assertTrustedAppRequest } from '../appCheckGuard.js';
+import {
+  buildPublicProfileFromUsuarioRow,
+  isCreatorPublicProfile,
+  resolvePublicProfileAvatarUrl,
+  resolvePublicProfileDisplayName,
+} from '../shared/publicUserProfile.js';
 
 function creatorAudienceDateKey(timestamp = Date.now()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -37,22 +43,20 @@ export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (requ
   }
 
   const db = getDatabase();
-  const [targetSnap, followerSnap] = await Promise.all([
-    db.ref(`usuarios/${creatorId}/publicProfile`).get(),
-    db.ref(`usuarios/${followerUid}`).get(),
-  ]);
+  const [targetSnap, followerSnap] = await Promise.all([db.ref(`usuarios/${creatorId}`).get(), db.ref(`usuarios/${followerUid}`).get()]);
 
   if (!targetSnap.exists()) {
     throw new HttpsError('not-found', 'Criador nao encontrado.');
   }
-  const target = targetSnap.val() || {};
-  const creatorStatus = String(target?.creatorStatus || '').trim().toLowerCase();
-  if (creatorStatus && creatorStatus !== 'active') {
-    throw new HttpsError('failed-precondition', 'Este perfil de criador ainda nao esta publico.');
+  const targetRow = targetSnap.val() || {};
+  const targetProfile = buildPublicProfileFromUsuarioRow(targetRow, creatorId);
+  if (!isCreatorPublicProfile(targetProfile)) {
+    throw new HttpsError('failed-precondition', 'Este perfil nao pertence a um escritor publico.');
   }
 
   const followerRow = followerSnap.exists() ? followerSnap.val() || {} : {};
-  const followerIsCreator = String(followerRow?.role || '').trim().toLowerCase() === 'mangaka';
+  const followerProfile = buildPublicProfileFromUsuarioRow(followerRow, followerUid);
+  const followerIsCreator = isCreatorPublicProfile(followerProfile);
 
   const followingRef = db.ref(`usuarios/${followerUid}/followingCreators/${creatorId}`);
   const followerRef = db.ref(`usuarios/${creatorId}/publicProfile/followers/${followerUid}`);
@@ -84,5 +88,69 @@ export const toggleCreatorFollow = onCall({ region: 'us-central1' }, async (requ
   await incrementCreatorAudienceDaily(db, creatorId, 'followersAdded', 1, now);
 
   return { ok: true, isFollowing: true };
+});
+
+export const getCreatorFollowers = onCall({ region: 'us-central1' }, async (request) => {
+  assertTrustedAppRequest(request);
+  const creatorId = sanitizeCreatorId(request.data?.creatorId);
+  if (!creatorId) {
+    throw new HttpsError('invalid-argument', 'creatorId obrigatorio.');
+  }
+
+  const db = getDatabase();
+  const [creatorSnap, followersSnap] = await Promise.all([
+    db.ref(`usuarios/${creatorId}`).get(),
+    db.ref(`usuarios/${creatorId}/publicProfile/followers`).get(),
+  ]);
+
+  if (!creatorSnap.exists()) {
+    throw new HttpsError('not-found', 'Criador nao encontrado.');
+  }
+
+  const creatorProfile = buildPublicProfileFromUsuarioRow(creatorSnap.val() || {}, creatorId);
+  if (!isCreatorPublicProfile(creatorProfile)) {
+    throw new HttpsError('failed-precondition', 'Este perfil nao pertence a um escritor publico.');
+  }
+
+  const followersMap =
+    followersSnap.exists() && followersSnap.val() && typeof followersSnap.val() === 'object'
+      ? followersSnap.val()
+      : {};
+  const followerIds = Object.keys(followersMap)
+    .map((uid) => String(uid || '').trim())
+    .filter(Boolean)
+    .slice(0, 100);
+
+  if (!followerIds.length) {
+    return { ok: true, followers: [] };
+  }
+
+  const followerSnapshots = await Promise.all(followerIds.map((uid) => db.ref(`usuarios/${uid}`).get()));
+  const followers = followerSnapshots
+    .map((snap, index) => {
+      const uid = followerIds[index];
+      const followerRow = snap.exists() ? snap.val() || {} : {};
+      const relation =
+        followersMap?.[uid] && typeof followersMap[uid] === 'object' ? followersMap[uid] : {};
+      const profile = buildPublicProfileFromUsuarioRow(followerRow, uid);
+      const isWriter = isCreatorPublicProfile(profile);
+      const isReaderPublic = profile?.readerProfilePublic === true;
+      return {
+        uid,
+        followedAt: Number(relation?.followedAt || 0) || 0,
+        displayName: resolvePublicProfileDisplayName(profile, 'Leitor'),
+        userHandle: String(profile?.userHandle || '').trim().toLowerCase(),
+        avatarUrl: resolvePublicProfileAvatarUrl(profile, {
+          mode: isWriter ? 'creator' : 'reader',
+          fallback: '/assets/avatares/ava1.webp',
+        }),
+        isCreatorProfile: isWriter,
+        isProfilePublic: isWriter || isReaderPublic,
+        profileTab: isWriter ? 'works' : 'likes',
+      };
+    })
+    .sort((a, b) => Number(b.followedAt || 0) - Number(a.followedAt || 0));
+
+  return { ok: true, followers };
 });
 

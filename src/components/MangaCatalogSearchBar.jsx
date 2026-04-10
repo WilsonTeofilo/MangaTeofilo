@@ -192,6 +192,7 @@ export default function MangaCatalogSearchBar({
                     src={cover}
                     alt=""
                     className="manga-catalog-search__thumb"
+                    referrerPolicy="no-referrer"
                     loading="lazy"
                     decoding="async"
                     onError={(e) => {

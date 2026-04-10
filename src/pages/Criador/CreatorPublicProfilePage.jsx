@@ -10,6 +10,7 @@ import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/cre
 import { obraCreatorId, obraSegmentoUrlPublica } from '../../config/obras';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
+import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
 import {
   buildPublicProfileFromUsuarioRow,
@@ -113,6 +114,11 @@ export default function CreatorPublicProfilePage({ user }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followMessage, setFollowMessage] = useState('');
+  const [followersModalOpen, setFollowersModalOpen] = useState(false);
+  const [followersBusy, setFollowersBusy] = useState(false);
+  const [followersError, setFollowersError] = useState('');
+  const [followersList, setFollowersList] = useState([]);
+  const [privateFollowerModal, setPrivateFollowerModal] = useState(null);
   const [followBrowserPushModalOpen, setFollowBrowserPushModalOpen] = useState(false);
   const [followBrowserPushPermission, setFollowBrowserPushPermission] = useState('default');
   const [publicoReady, setPublicoReady] = useState(false);
@@ -128,6 +134,7 @@ export default function CreatorPublicProfilePage({ user }) {
   const creatorLookup = String(creatorId || '').trim();
   const creatorUid = String(resolvedCreatorUid || '').trim();
   const toggleCreatorFollow = useMemo(() => httpsCallable(functions, 'toggleCreatorFollow'), []);
+  const getCreatorFollowers = useMemo(() => httpsCallable(functions, 'getCreatorFollowers'), []);
 
   useEffect(() => {
     let alive = true;
@@ -143,7 +150,7 @@ export default function CreatorPublicProfilePage({ user }) {
 
     (async () => {
       try {
-        const directSnapshot = await get(ref(db, `usuarios/${raw}`));
+        const directSnapshot = await get(ref(db, `usuarios/${raw}/publicProfile`));
         if (!alive) return;
         if (directSnapshot.exists()) {
           setResolvedCreatorUid(raw);
@@ -177,7 +184,7 @@ export default function CreatorPublicProfilePage({ user }) {
     if (!creatorUid) return () => {};
     setPublicoReady(false);
     const unsub = onValue(
-      ref(db, `usuarios/${creatorUid}`),
+      ref(db, `usuarios/${creatorUid}/publicProfile`),
       (snapshot) => {
         setPerfilPublico(
           snapshot.exists() ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, creatorUid) : null
@@ -265,6 +272,15 @@ export default function CreatorPublicProfilePage({ user }) {
     });
     return () => unsub();
   }, [creatorUid, user?.uid]);
+
+  useEffect(() => {
+    if (!privateFollowerModal) return undefined;
+    function handleEscape(event) {
+      if (event.key === 'Escape') setPrivateFollowerModal(null);
+    }
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [privateFollowerModal]);
 
   const redes = useMemo(() => {
     const socialLinks = resolvePublicProfileSocialLinks(perfilPublico);
@@ -422,11 +438,54 @@ export default function CreatorPublicProfilePage({ user }) {
           },
         };
       });
+      if (followersModalOpen) {
+        void handleOpenFollowersModal({ force: true });
+      }
     } catch (err) {
       setFollowMessage(err?.message || 'Nao foi possivel atualizar o follow agora.');
     } finally {
       setFollowBusy(false);
     }
+  }
+
+  async function handleOpenFollowersModal({ force = false } = {}) {
+    if (!creatorUid || profileMode !== 'writer') return;
+    setFollowersModalOpen(true);
+    if (!force && followersList.length) return;
+    setFollowersBusy(true);
+    setFollowersError('');
+    try {
+      const { data } = await getCreatorFollowers({ creatorId: creatorUid });
+      setFollowersList(Array.isArray(data?.followers) ? data.followers : []);
+    } catch (err) {
+      setFollowersError(err?.message || 'Nao foi possivel carregar os seguidores agora.');
+    } finally {
+      setFollowersBusy(false);
+    }
+  }
+
+  function handleFollowerProfileOpen(follower) {
+    if (!follower?.uid) return;
+    if (follower.isProfilePublic !== true) {
+      setPrivateFollowerModal({
+        label: follower.displayName || follower.userHandle || 'Este usuario',
+      });
+      return;
+    }
+    navigate(
+      resolvePublicProfilePath(
+        {
+          uid: follower.uid,
+          userHandle: follower.userHandle,
+          userName: follower.displayName,
+          isCreatorProfile: follower.isCreatorProfile === true,
+          readerProfilePublic: follower.isCreatorProfile !== true,
+        },
+        follower.uid,
+        { tab: follower.profileTab || (follower.isCreatorProfile ? 'works' : 'likes') }
+      )
+    );
+    setFollowersModalOpen(false);
   }
 
   if (!creatorLookup) {
@@ -496,6 +555,86 @@ export default function CreatorPublicProfilePage({ user }) {
         description="Você passou a seguir este criador. Quer receber notificação aqui no navegador quando sair capítulo novo?"
         onClose={() => setFollowBrowserPushModalOpen(false)}
       />
+      {followersModalOpen ? (
+        <div
+          className="criador-followers-modal__overlay"
+          role="presentation"
+          onClick={() => setFollowersModalOpen(false)}
+        >
+          <div
+            className="criador-followers-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="criador-followers-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="criador-followers-modal__head">
+              <div>
+                <h2 id="criador-followers-title">Seguidores</h2>
+                <p>{creatorStats.followersCount} perfil(is) acompanhando este escritor.</p>
+              </div>
+              <button type="button" className="criador-followers-modal__close" onClick={() => setFollowersModalOpen(false)}>
+                Fechar
+              </button>
+            </div>
+            {followersBusy ? <p className="criador-followers-modal__empty">Carregando seguidores...</p> : null}
+            {!followersBusy && followersError ? <p className="criador-followers-modal__error">{followersError}</p> : null}
+            {!followersBusy && !followersError && !followersList.length ? (
+              <p className="criador-followers-modal__empty">Ninguem esta seguindo este escritor ainda.</p>
+            ) : null}
+            {!followersBusy && !followersError && followersList.length ? (
+              <div className="criador-followers-modal__list">
+                {followersList.map((follower) => (
+                  <button
+                    key={String(follower.uid || '')}
+                    type="button"
+                    className="criador-follower-row"
+                    onClick={() => handleFollowerProfileOpen(follower)}
+                  >
+                    <img
+                      src={String(follower.avatarUrl || '').trim() || '/assets/avatares/ava1.webp'}
+                      alt={String(follower.displayName || follower.userHandle || 'Usuario')}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                    />
+                    <span className="criador-follower-row__body">
+                      <strong>{follower.displayName || 'Leitor'}</strong>
+                      <span>
+                        {follower.userHandle ? `@${follower.userHandle}` : 'sem @'}{' '}
+                        {follower.isCreatorProfile ? '• escritor' : follower.isProfilePublic ? '• leitor publico' : '• perfil privado'}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      {privateFollowerModal ? (
+        <div
+          className="criador-followers-modal__overlay"
+          role="presentation"
+          onClick={() => setPrivateFollowerModal(null)}
+        >
+          <div
+            className="criador-followers-modal criador-followers-modal--private"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="criador-private-profile-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="criador-private-profile-title">Perfil privado</h2>
+            <p>{privateFollowerModal.label} nao deixou o card publico disponivel no momento.</p>
+            <div className="criador-followers-modal__actions">
+              <button type="button" onClick={() => setPrivateFollowerModal(null)}>
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <section className={`criador-hero criador-hero--blur-backdrop${profileMode === 'reader' ? ' criador-hero--reader' : ''}`}>
         <div className="criador-hero__backdrop" aria-hidden="true">
           <div
@@ -506,7 +645,7 @@ export default function CreatorPublicProfilePage({ user }) {
         </div>
         <div className="criador-hero__foreground">
         <div className="criador-hero__avatar">
-          <img src={avatar} alt={publicLine} />
+          <img src={avatar} alt={publicLine} referrerPolicy="no-referrer" crossOrigin="anonymous" />
         </div>
         <div className="criador-hero__content">
           <span className={`criador-hero__pill${profileMode === 'reader' ? ' criador-hero__pill--reader' : ''}`}>
@@ -556,8 +695,10 @@ export default function CreatorPublicProfilePage({ user }) {
             <>
               <div className="criador-stats-grid">
                 <article>
-                  <strong>{creatorStats.followersCount}</strong>
-                  <span>seguidores</span>
+                  <button type="button" className="criador-stat-button" onClick={() => handleOpenFollowersModal()}>
+                    <strong>{creatorStats.followersCount}</strong>
+                    <span>seguidores</span>
+                  </button>
                 </article>
                 <article>
                   <strong>{obrasComStats.length}</strong>
@@ -699,6 +840,8 @@ export default function CreatorPublicProfilePage({ user }) {
                         src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
                         alt={obra.titulo || obra.id}
                         loading="lazy"
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
                       />
                     </div>
                     <div className="criador-obra-card__body">
@@ -748,6 +891,8 @@ export default function CreatorPublicProfilePage({ user }) {
                       src={String(fav.coverUrl || '').trim() || '/assets/fotos/shito.jpg'}
                       alt={String(fav.title || fav.workId || '')}
                       loading="lazy"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
                     />
                   </div>
                   <span className="criador-favorite-card__title">{fav.title || fav.workId}</span>

@@ -2,37 +2,37 @@
 
 ## Runtime ativo
 
-- `functions/index.js` exporta apenas mÃ³dulos ativos.
-- `functions/deprecated/index.js` foi removido; o runtime nÃ£o depende mais desse ponteiro.
-- o runtime nÃ£o deve depender de `legacyIndex.js`.
+- `functions/index.js` exporta apenas módulos ativos.
+- `functions/deprecated/index.js` foi removido; o runtime não depende mais desse ponteiro.
+- O runtime não deve depender de `legacyIndex.js`.
 
-## Fontes canÃ´nicas
+## Fontes canônicas
 
 - roles efetivos: `src/auth/appRoles.js`
 - creator stats: `creators/{uid}/stats`
-- monetizaÃ§Ã£o do creator: `usuarios/{uid}/creator/monetization/*`
-- trilha MP: `financas/mp_webhook_payments`
-- obra pÃºblica: `/work/:slug`
+- monetização do creator: `usuarios/{uid}/creator/monetization/*`
+- trilha Mercado Pago: `financas/mp_webhook_payments`
+- obra pública: `/work/:slug`
 - landing institucional Kokuin: `/kokuin`
 
 ## Espelhos permitidos
 
-- `usuarios/{uid}/creatorProfile/*`: apenas espelho/UI
-- `usuarios/{uid}/publicProfile/*`: apenas projeÃ§Ã£o pÃºblica
-- seller de pedido da loja: nunca recebe endereÃ§o completo do comprador
+- `usuarios/{uid}/creatorProfile/*`: apenas espelho de UI
+- `usuarios/{uid}/publicProfile/*`: apenas projeção pública
+- seller de pedido da loja: nunca recebe endereço completo do comprador
 
 ## Legado proibido no fluxo vivo
 
 - `pending_review`
 - `creatorMonetizationApprovedOnce`
 - `mp_processed`
-- fallback automÃ¡tico para `shito`
-- perfil pÃºblico duplicado em JSX
+- fallback automático para `shito`
+- perfil público duplicado em JSX
 
-## Regra para manutenÃ§Ã£o/backfill
+## Regra para manutenção e backfill
 
-- se nÃ£o houver inferÃªncia segura, pular e diagnosticar
-- nunca inventar creator/work legado para â€œtampar buracoâ€
-- nunca usar espelho pÃºblico como fonte de verdade
-- qualquer limpeza deve convergir para o canÃ´nico e apagar campo legado
-- qualquer retomada de checkout deve passar pelo backend vivo
+- Se não houver inferência segura, pular e diagnosticar.
+- Nunca inventar creator/work legado para tampar buraco.
+- Nunca usar espelho público como fonte de verdade.
+- Qualquer limpeza deve convergir para o canônico e apagar campo legado.
+- Qualquer retomada de checkout deve passar pelo backend vivo.

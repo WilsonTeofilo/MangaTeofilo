@@ -50,13 +50,60 @@ function statusBadgeClass(status) {
 }
 
 function wantsMonetization(item) {
+  const nestedMon = item?.creatorProfile?.monetization;
+  const nestedApplicationStatus = String(nestedMon?.applicationStatus || '').trim().toLowerCase();
+  const nestedPreference = String(nestedMon?.preference || '').trim().toLowerCase();
   return (
+    nestedApplicationStatus === 'pending' ||
+    nestedApplicationStatus === 'approved' ||
+    nestedApplicationStatus === 'rejected' ||
+    nestedPreference === 'monetize' ||
     String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending' ||
     String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'approved' ||
     String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'rejected' ||
     item?.creatorApplication?.monetizationRequested === true ||
     String(item?.creatorMonetizationPreference || '').trim().toLowerCase() === 'monetize'
   );
+}
+
+function creatorPublicProfileOf(item) {
+  return item?.creatorProfile && typeof item.creatorProfile === 'object' ? item.creatorProfile : {};
+}
+
+function creatorMonetizationOf(item) {
+  const creatorProfile = creatorPublicProfileOf(item);
+  return creatorProfile?.monetization && typeof creatorProfile.monetization === 'object'
+    ? creatorProfile.monetization
+    : {};
+}
+
+function creatorDisplayNameOf(item) {
+  const creatorProfile = creatorPublicProfileOf(item);
+  return String(
+    creatorProfile.displayName || item?.creatorDisplayName || item?.userName || ''
+  ).trim();
+}
+
+function creatorBioOf(item) {
+  const creatorProfile = creatorPublicProfileOf(item);
+  return String(
+    creatorProfile.bioFull || item?.creatorBio || item?.creatorBioShort || ''
+  ).trim();
+}
+
+function creatorSocialOf(item) {
+  const creatorProfile = creatorPublicProfileOf(item);
+  const social = creatorProfile?.socialLinks && typeof creatorProfile.socialLinks === 'object'
+    ? creatorProfile.socialLinks
+    : {};
+  return {
+    instagramUrl: String(social.instagramUrl || item?.creatorInstagramUrl || '').trim(),
+    youtubeUrl: String(social.youtubeUrl || item?.creatorYoutubeUrl || '').trim(),
+  };
+}
+
+function creatorBannerUrlOf(item) {
+  return String(item?.creatorBannerUrl || '').trim();
 }
 
 /** Comparativo Nível 1 (vitrine) — dados vêm do callable ou recalculados se faltar campo. */
@@ -137,6 +184,21 @@ function CreatorDetailDrawer({
   const monetizationApplicationStatus = String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase();
   const monetizationFinancialStatus = String(item?.creatorFinancialStatus || '').trim().toLowerCase();
   const monetizationPending = monetizationApplicationStatus === 'pending';
+  const creatorSocialResolved = creatorSocialOf(item);
+  const creatorBannerUrlResolved = creatorBannerUrlOf(item);
+  const creatorMonetizationResolved = creatorMonetizationOf(item);
+  const creatorMonetizationPreferenceResolved = String(
+    creatorMonetizationResolved.preference || item?.creatorMonetizationPreference || 'publish_only'
+  ).trim().toLowerCase();
+  const monetizationApplicationStatusResolved = String(
+    creatorMonetizationResolved.applicationStatus || monetizationApplicationStatus || ''
+  ).trim().toLowerCase();
+  const monetizationFinancialStatusResolved = String(
+    creatorMonetizationResolved.financialStatus || monetizationFinancialStatus || ''
+  ).trim().toLowerCase();
+  const monetizationStatusResolved = String(
+    creatorMonetizationResolved.status || item?.creatorMonetizationStatus || ''
+  ).trim().toLowerCase();
   const compliance = item.creatorComplianceAdmin;
   const pendingCreatorPhoto = String(item?.creatorApplication?.profileImageUrl || item?.creatorPendingProfileImageUrl || '').trim();
   const avatarPreviewUrl = pendingCreatorPhoto || item.userAvatar || '';

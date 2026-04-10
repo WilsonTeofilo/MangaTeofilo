@@ -242,6 +242,9 @@ export default function MangaMain({ user }) {
                   className="home-thumb-pop"
                   src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
                   alt={obra.titulo || obra.id}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
                 <div className="home-rank-item__text">
                   <strong>{obra.titulo || obra.id}</strong>
@@ -338,6 +341,9 @@ export default function MangaMain({ user }) {
                 '/assets/fotos/shito.jpg'
               }
               alt=""
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
             />
             <div className="home-continue-body">
               <strong className="home-continue-title">
@@ -399,6 +405,9 @@ export default function MangaMain({ user }) {
                 <img
                   src={obra?.capaUrl || obra?.bannerUrl || entry.capaUrl || '/assets/fotos/shito.jpg'}
                   alt=""
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
                 <div className="home-recent-read-card__body">
                   <strong>{obra?.titulo || entry.obraTitulo || 'Obra'}</strong>
@@ -435,6 +444,9 @@ export default function MangaMain({ user }) {
                   src={cap.capaUrl || '/assets/fotos/shito.jpg'}
                   alt={cap.titulo || `Capítulo ${cap.numero}`}
                   style={chapterCoverStyle(cap.capaAjuste)}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
                 <div className="home-update-meta">
                   <strong>{cap.titulo || `Capítulo ${cap.numero}`}</strong>
@@ -472,6 +484,9 @@ export default function MangaMain({ user }) {
                 className="home-thumb-pop"
                 src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
                 alt={obra.titulo || obra.id}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
               />
               <div className="home-obra-card-body">
                 <strong>{obra.titulo || obra.id}</strong>
@@ -500,7 +515,13 @@ export default function MangaMain({ user }) {
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && navigate(`/criador/${encodeURIComponent(creator.creatorId)}`)}
             >
-              <img src={creator.avatarUrl || '/assets/fotos/shito.jpg'} alt={creator.publicLabel} />
+              <img
+                src={creator.avatarUrl || '/assets/fotos/shito.jpg'}
+                alt={creator.publicLabel}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
+              />
               <div className="home-creator-card-body">
                 <strong>{creator.publicLabel}</strong>
                 <span>{creator.followersCount} seguidores</span>
@@ -531,6 +552,9 @@ export default function MangaMain({ user }) {
                 className="home-thumb-pop"
                 src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
                 alt={obra.titulo || obra.id}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
               />
               <div className="home-obra-card-body">
                 <strong>{obra.titulo || obra.id}</strong>

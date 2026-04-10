@@ -23,6 +23,12 @@ function hashRequestSignal(value) {
   return createHash('sha256').update(raw).digest('hex').slice(0, 24);
 }
 
+function normalizeSignalKey(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return hashRequestSignal(raw);
+}
+
 function requestHeader(request, name) {
   const value = request?.rawRequest?.get?.(name);
   return typeof value === 'string' ? value : '';
@@ -54,8 +60,46 @@ export function buildCommerceAbuseActor(request) {
     ipHash,
     userAgentHash,
     languageHash,
+    deviceKey: [appId, userAgentHash, languageHash].filter(Boolean).join(':'),
     networkKey: [ipHash, userAgentHash].filter(Boolean).join(':'),
   };
+}
+
+function signalSummaryPath(scope, kind, key) {
+  return `security/commerceAbuseSignals/${String(scope || 'default')}/${String(kind || 'actor')}/${String(key || '')}`;
+}
+
+async function recordCommerceSignalSummary(db, { scope, kind, key, actor, violation, now }) {
+  if (!key) return;
+  await db.ref(signalSummaryPath(scope, kind, key)).transaction((current) => {
+    const row = current && typeof current === 'object' ? current : {};
+    const totals = row.totals && typeof row.totals === 'object' ? row.totals : {};
+    const violationKey = String(violation || 'unknown');
+    const totalCount = Number(row.totalCount || 0) + 1;
+    return {
+      kind,
+      key,
+      actor: {
+        uid: actor?.uid || null,
+        appId: actor?.appId || null,
+        ipHash: actor?.ipHash || null,
+        userAgentHash: actor?.userAgentHash || null,
+        languageHash: actor?.languageHash || null,
+      },
+      totalCount,
+      totals: {
+        ...totals,
+        [violationKey]: Number(totals[violationKey] || 0) + 1,
+      },
+      suspicious:
+        totalCount >= (kind === 'ip' ? 8 : 6) ||
+        Number(totals.burst || 0) + (violationKey === 'burst' ? 1 : 0) >= 3 ||
+        Number(totals.cooldown || 0) + (violationKey === 'cooldown' ? 1 : 0) >= 3,
+      firstSeenAt: Number(row.firstSeenAt || 0) > 0 ? Number(row.firstSeenAt) : now,
+      lastSeenAt: now,
+      lastViolation: violationKey,
+    };
+  });
 }
 
 export async function enforceCommerceRateLimit(
@@ -129,7 +173,21 @@ export async function writeCommerceIdempotency(
 
 async function recordCommerceAbuse(db, { scope, actor, violation, policy }) {
   try {
-    await db.ref(`security/commerceAbuse/${String(scope || 'default')}`).push({
+    const safeScope = String(scope || 'default');
+    const now = Date.now();
+    const actorSummaryKey = createHash('sha256')
+      .update(
+        stableSerialize({
+          uid: actor?.uid || null,
+          appId: actor?.appId || null,
+          ipHash: actor?.ipHash || null,
+          userAgentHash: actor?.userAgentHash || null,
+          languageHash: actor?.languageHash || null,
+        })
+      )
+      .digest('hex')
+      .slice(0, 32);
+    await db.ref(`security/commerceAbuse/${safeScope}`).push({
       actor: {
         uid: actor?.uid || null,
         appId: actor?.appId || null,
@@ -139,14 +197,128 @@ async function recordCommerceAbuse(db, { scope, actor, violation, policy }) {
       },
       violation: String(violation || 'unknown'),
       policy: policy && typeof policy === 'object' ? policy : null,
-      createdAt: Date.now(),
+      createdAt: now,
     });
+    await db.ref(`security/commerceAbuseSummary/${safeScope}/${actorSummaryKey}`).transaction((current) => {
+      const row = current && typeof current === 'object' ? current : {};
+      const totals = row.totals && typeof row.totals === 'object' ? row.totals : {};
+      const violationKey = String(violation || 'unknown');
+      const totalCount = Number(row.totalCount || 0) + 1;
+      const burstCount = Number(totals.burst || 0) + (violationKey === 'burst' ? 1 : 0);
+      const cooldownCount = Number(totals.cooldown || 0) + (violationKey === 'cooldown' ? 1 : 0);
+      const actorCount = Number(totals.actor || 0) + (violationKey === 'actor' ? 1 : 0);
+      return {
+        actor: {
+          uid: actor?.uid || null,
+          appId: actor?.appId || null,
+          ipHash: actor?.ipHash || null,
+          userAgentHash: actor?.userAgentHash || null,
+          languageHash: actor?.languageHash || null,
+        },
+        totalCount,
+        totals: {
+          ...totals,
+          [violationKey]: Number(totals[violationKey] || 0) + 1,
+          burst: burstCount,
+          cooldown: cooldownCount,
+          actor: actorCount,
+        },
+        suspicious: totalCount >= 5 || burstCount >= 3 || cooldownCount >= 3 || actorCount >= 3,
+        firstSeenAt: Number(row.firstSeenAt || 0) > 0 ? Number(row.firstSeenAt) : now,
+        lastSeenAt: now,
+        lastViolation: violationKey,
+      };
+    });
+    await Promise.all([
+      actor?.uid
+        ? recordCommerceSignalSummary(db, {
+            scope: safeScope,
+            kind: 'uid',
+            key: actor.uid,
+            actor,
+            violation,
+            now,
+          })
+        : Promise.resolve(),
+      actor?.deviceKey
+        ? recordCommerceSignalSummary(db, {
+            scope: safeScope,
+            kind: 'device',
+            key: normalizeSignalKey(actor.deviceKey),
+            actor,
+            violation,
+            now,
+          })
+        : Promise.resolve(),
+      actor?.networkKey
+        ? recordCommerceSignalSummary(db, {
+            scope: safeScope,
+            kind: 'network',
+            key: normalizeSignalKey(actor.networkKey),
+            actor,
+            violation,
+            now,
+          })
+        : Promise.resolve(),
+      actor?.ipHash
+        ? recordCommerceSignalSummary(db, {
+            scope: safeScope,
+            kind: 'ip',
+            key: actor.ipHash,
+            actor,
+            violation,
+            now,
+          })
+        : Promise.resolve(),
+    ]);
   } catch (error) {
     logger.warn('commerce abuse log failed', {
       scope,
       violation,
       error: error?.message || String(error),
     });
+  }
+}
+
+async function enforceSuspiciousActorLock(db, { scope, actor, message }) {
+  const lockWindowMs = 15 * 60 * 1000;
+  const checks = [
+    actor?.uid
+      ? { kind: 'uid', key: actor.uid, threshold: 6 }
+      : null,
+    actor?.deviceKey
+      ? { kind: 'device', key: normalizeSignalKey(actor.deviceKey), threshold: 6 }
+      : null,
+    actor?.networkKey
+      ? { kind: 'network', key: normalizeSignalKey(actor.networkKey), threshold: 6 }
+      : null,
+    actor?.ipHash
+      ? { kind: 'ip', key: actor.ipHash, threshold: 8 }
+      : null,
+  ].filter(Boolean);
+  if (!checks.length) return;
+
+  const snaps = await Promise.all(
+    checks.map((entry) => db.ref(signalSummaryPath(scope, entry.kind, entry.key)).get())
+  );
+  const now = Date.now();
+  for (let i = 0; i < checks.length; i += 1) {
+    const row = snaps[i].exists() ? snaps[i].val() || {} : {};
+    const recent = Number(row.lastSeenAt || 0) > 0 && now - Number(row.lastSeenAt || 0) <= lockWindowMs;
+    const suspicious = row.suspicious === true || Number(row.totalCount || 0) >= checks[i].threshold;
+    if (recent && suspicious) {
+      logger.warn('commerce suspicious actor locked', {
+        scope,
+        kind: checks[i].kind,
+        totalCount: Number(row.totalCount || 0),
+        uid: actor?.uid || null,
+        ipHash: actor?.ipHash || null,
+      });
+      throw new HttpsError(
+        'resource-exhausted',
+        message || 'Atividade suspeita detectada. Aguarde alguns minutos antes de tentar de novo.'
+      );
+    }
   }
 }
 
@@ -186,12 +358,20 @@ export async function enforceCommerceAbuseShield(
     networkMinIntervalMs = 0,
     networkWindowMs = windowMs,
     networkMaxHits = 0,
+    actorMinIntervalMs = 0,
+    actorWindowMs = windowMs,
+    actorMaxHits = 0,
     ipMinIntervalMs = 0,
     ipWindowMs = windowMs,
     ipMaxHits = 0,
   }
 ) {
   const actor = buildCommerceAbuseActor(request);
+  await enforceSuspiciousActorLock(db, {
+    scope,
+    actor,
+    message: message || 'Atividade suspeita detectada. Aguarde alguns minutos antes de tentar de novo.',
+  });
   await enforceRateLimitWithLogging(db, {
     scope,
     key,
@@ -212,6 +392,20 @@ export async function enforceCommerceAbuseShield(
       },
       violationLabel: 'network',
       message: message || 'Muitas tentativas desta origem. Aguarde alguns segundos.',
+    });
+  }
+  if (actorMaxHits > 0 && actor.deviceKey) {
+    await enforceRateLimitWithLogging(db, {
+      scope: `${String(scope || 'default')}:actor`,
+      key: actor.deviceKey,
+      actor,
+      policy: {
+        minIntervalMs: actorMinIntervalMs,
+        windowMs: actorWindowMs,
+        maxHits: actorMaxHits,
+      },
+      violationLabel: 'actor',
+      message: message || 'Muitas tentativas deste dispositivo. Aguarde alguns segundos.',
     });
   }
   if (ipMaxHits > 0 && actor.ipHash) {

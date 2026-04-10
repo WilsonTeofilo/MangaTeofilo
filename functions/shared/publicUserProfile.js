@@ -14,6 +14,55 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(normalized) ? normalized : fallback;
 }
 
+function buildCreatorPublicMonetization(root = {}, source = {}, supportOffer = {}) {
+  const creatorMonetization =
+    root?.creator?.monetization && typeof root.creator.monetization === 'object'
+      ? root.creator.monetization
+      : {};
+  const publicCreatorProfile =
+    source?.creatorProfile && typeof source.creatorProfile === 'object'
+      ? source.creatorProfile
+      : {};
+  const publicMonetization =
+    publicCreatorProfile?.monetization && typeof publicCreatorProfile.monetization === 'object'
+      ? publicCreatorProfile.monetization
+      : {};
+  const preference = asString(
+    creatorMonetization.preference || publicMonetization.preference,
+    'publish_only'
+  ).toLowerCase() === 'monetize'
+    ? 'monetize'
+    : 'publish_only';
+  const applicationStatus = asString(
+    creatorMonetization?.application?.status || publicMonetization.applicationStatus,
+    root?.creator?.meta?.isAdult === false ? 'blocked_underage' : 'not_requested'
+  ).toLowerCase();
+  const financialStatus = asString(
+    creatorMonetization?.financial?.status || publicMonetization.financialStatus,
+    'inactive'
+  ).toLowerCase();
+  const status =
+    applicationStatus === 'blocked_underage'
+      ? 'blocked_underage'
+      : applicationStatus === 'approved' && financialStatus === 'active'
+        ? 'active'
+        : 'disabled';
+  return {
+    preference,
+    applicationStatus,
+    financialStatus,
+    status,
+    isApproved: applicationStatus === 'approved',
+    isActive: financialStatus === 'active',
+    supportOffer: {
+      membershipEnabled: supportOffer?.membershipEnabled === true,
+      membershipPriceBRL: asNumber(supportOffer?.membershipPriceBRL, 0) || null,
+      donationSuggestedBRL: asNumber(supportOffer?.donationSuggestedBRL, 0) || null,
+      updatedAt: asNumber(supportOffer?.updatedAt, 0),
+    },
+  };
+}
+
 function hasMeaningfulCreatorFields(source = {}) {
   return Boolean(
     String(source.creatorDisplayName || '').trim() ||
@@ -48,25 +97,25 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
     source.userHandle || root.userHandle || sourceCreatorProfile.username
   ).toLowerCase();
   const creatorDisplayName = asString(
-    source.creatorDisplayName ||
-      sourceCreatorProfile.displayName ||
       privateCreatorProfile.displayName ||
+      sourceCreatorProfile.displayName ||
+      source.creatorDisplayName ||
       source.userName ||
       root.userName,
     'Leitor'
   );
   const creatorBio = asString(
-    source.creatorBio ||
+      privateCreatorProfile.bio ||
       sourceCreatorProfile.bioFull ||
       sourceCreatorProfile.bioShort ||
-      privateCreatorProfile.bio ||
+      source.creatorBio ||
       root.creatorBio
   );
   const instagramUrl = asString(
-    source.instagramUrl || sourceCreatorSocial.instagramUrl || privateCreatorSocial.instagram || root.instagramUrl
+    privateCreatorSocial.instagram || sourceCreatorSocial.instagramUrl || source.instagramUrl || root.instagramUrl
   );
   const youtubeUrl = asString(
-    source.youtubeUrl || sourceCreatorSocial.youtubeUrl || privateCreatorSocial.youtube || root.youtubeUrl
+    privateCreatorSocial.youtube || sourceCreatorSocial.youtubeUrl || source.youtubeUrl || root.youtubeUrl
   );
   const userAvatar = asString(source.userAvatar || root.userAvatar, AVATAR_FALLBACK);
   const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
@@ -114,6 +163,12 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
         })(),
       }
     : null;
+  const creatorMonetization = creatorProfile
+    ? buildCreatorPublicMonetization(root, source, creatorProfile.supportOffer)
+    : null;
+  if (creatorProfile && creatorMonetization) {
+    creatorProfile.monetization = creatorMonetization;
+  }
 
   return {
     ...source,

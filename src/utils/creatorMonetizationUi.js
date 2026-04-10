@@ -7,6 +7,10 @@ export function normalizeCreatorMonetizationPreference(v) {
 }
 
 export function resolveCreatorMonetizationPreferenceFromDb(row) {
+  const publicMon = row?.creatorProfile?.monetization;
+  if (publicMon && typeof publicMon === 'object' && String(publicMon.preference || '').trim()) {
+    return normalizeCreatorMonetizationPreference(publicMon.preference);
+  }
   const mon = row?.creator?.monetization;
   if (mon && typeof mon === 'object') {
     if (String(mon.preference || '').trim().length > 0) {
@@ -28,6 +32,9 @@ export function resolveCreatorMonetizationPreferenceFromDb(row) {
 
 export function resolveCreatorMonetizationApplicationStatusFromDb(row) {
   if (!row || typeof row !== 'object') return 'not_requested';
+  const publicMon = row?.creatorProfile?.monetization;
+  const projected = String(publicMon?.applicationStatus || '').trim().toLowerCase();
+  if (projected) return projected;
   const mon = row?.creator?.monetization;
   const canonical = String(mon?.application?.status || '').trim().toLowerCase();
   if (canonical) return canonical;
@@ -37,6 +44,11 @@ export function resolveCreatorMonetizationApplicationStatusFromDb(row) {
 
 export function resolveCreatorFinancialStatusFromDb(row) {
   if (!row || typeof row !== 'object') return 'inactive';
+  const publicMon = row?.creatorProfile?.monetization;
+  const projected = String(publicMon?.financialStatus || '').trim().toLowerCase();
+  if (projected === 'active' || projected === 'inactive' || projected === 'paused') {
+    return projected;
+  }
   const mon = row?.creator?.monetization;
   const canonical = String(mon?.financial?.status || '').trim().toLowerCase();
   if (canonical === 'active' || canonical === 'inactive' || canonical === 'paused') {
@@ -52,13 +64,26 @@ export function resolveCreatorMonetizationFlags(row) {
 }
 
 export function resolveCreatorSupportOfferFromDb(row) {
-  const canonicalOffer =
-    row?.creator?.monetization?.offer && typeof row.creator.monetization.offer === 'object'
-      ? row.creator.monetization.offer
+  const publicOffer =
+    row?.creatorProfile?.monetization?.supportOffer &&
+    typeof row.creatorProfile.monetization.supportOffer === 'object'
+      ? row.creatorProfile.monetization.supportOffer
+      : row?.creatorProfile?.supportOffer &&
+          typeof row.creatorProfile.supportOffer === 'object'
+        ? row.creatorProfile.supportOffer
+        : null;
+  const publicProjectedOffer =
+    row?.publicProfile?.creatorProfile?.monetization?.supportOffer &&
+    typeof row.publicProfile.creatorProfile.monetization.supportOffer === 'object'
+      ? row.publicProfile.creatorProfile.monetization.supportOffer
       : row?.publicProfile?.creatorProfile?.supportOffer &&
           typeof row.publicProfile.creatorProfile.supportOffer === 'object'
         ? row.publicProfile.creatorProfile.supportOffer
         : null;
+  const canonicalOffer =
+    row?.creator?.monetization?.offer && typeof row.creator.monetization.offer === 'object'
+      ? row.creator.monetization.offer
+      : publicOffer || publicProjectedOffer || null;
   const source = canonicalOffer || {};
   const price = Number(source.membershipPriceBRL);
   const donation = Number(source.donationSuggestedBRL);
@@ -76,6 +101,11 @@ export function resolveCreatorSupportOfferFromDb(row) {
  */
 export function resolveCreatorMonetizationStatusFromDb(row) {
   if (!row || typeof row !== 'object') return '';
+  const publicMon = row?.creatorProfile?.monetization;
+  const projected = String(publicMon?.status || '').trim().toLowerCase();
+  if (projected === 'active' || projected === 'disabled' || projected === 'blocked_underage') {
+    return projected;
+  }
   const applicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(row);
   const financialStatus = resolveCreatorFinancialStatusFromDb(row);
   if (applicationStatus === 'blocked_underage') return 'blocked_underage';

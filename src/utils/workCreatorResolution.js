@@ -110,6 +110,8 @@ export function resolveCanonicalWorkCreator(obra, caps, creatorsMap = null) {
   }
 
   const hintedProfile = resolveCreatorPublicProfileFromHints(creatorsMap, [
+    obra?.creatorProfile?.username,
+    obra?.creatorProfile?.displayName,
     obra?.creatorUsername,
     obra?.creatorDisplayName,
     obra?.creatorName,

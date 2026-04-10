@@ -142,6 +142,7 @@ function buildPublicCreatorProfileDoc({
 }) {
   const current =
     currentPublicProfile && typeof currentPublicProfile === 'object' ? currentPublicProfile : {};
+  const financialStatus = monetizationStatus === 'active' ? 'active' : 'inactive';
   return {
     creatorId: uid,
     userId: uid,
@@ -164,6 +165,28 @@ function buildPublicCreatorProfileDoc({
             updatedAt: Number(supportOffer.updatedAt || now) || now,
           }
         : null,
+    monetization: {
+      preference: monetizationPreference,
+      applicationStatus: monetizationPreference === 'monetize' ? 'approved' : 'not_requested',
+      financialStatus,
+      status: monetizationStatus,
+      isApproved: monetizationPreference === 'monetize',
+      isActive: monetizationStatus === 'active',
+      supportOffer:
+        supportOffer && typeof supportOffer === 'object'
+          ? {
+              membershipEnabled: supportOffer.membershipEnabled === true,
+              membershipPriceBRL: Number(supportOffer.membershipPriceBRL || 0) || null,
+              donationSuggestedBRL: Number(supportOffer.donationSuggestedBRL || 0) || null,
+              updatedAt: Number(supportOffer.updatedAt || now) || now,
+            }
+          : {
+              membershipEnabled: false,
+              membershipPriceBRL: null,
+              donationSuggestedBRL: null,
+              updatedAt: now,
+            },
+    },
     monetizationPreference,
     monetizationStatus,
     monetizationEnabled: monetizationStatus === 'active',
@@ -207,6 +230,11 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
     row?.creator?.profile && typeof row.creator.profile === 'object' ? row.creator.profile : {};
   const creatorSocial =
     row?.creator?.social && typeof row.creator.social === 'object' ? row.creator.social : {};
+  const creatorSupportOffer = readCreatorSupportOfferFromDb(row);
+  const creatorMonetizationPreference = resolveCreatorMonetizationPreference(row, app);
+  const creatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(row);
+  const creatorMonetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(row);
+  const creatorFinancialStatus = resolveCreatorFinancialStatusFromDb(row);
   return {
     uid,
     email,
@@ -220,10 +248,10 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
     creatorApplication: app,
     creatorStatus: String(row?.creatorStatus || ''),
     creatorOnboardingCompleted: row?.creatorOnboardingCompleted === true,
-    creatorMonetizationPreference: resolveCreatorMonetizationPreference(row, app),
-    creatorMonetizationStatus: resolveCreatorMonetizationStatusFromDb(row),
-    creatorMonetizationApplicationStatus: resolveCreatorMonetizationApplicationStatusFromDb(row),
-    creatorFinancialStatus: resolveCreatorFinancialStatusFromDb(row),
+    creatorMonetizationPreference,
+    creatorMonetizationStatus,
+    creatorMonetizationApplicationStatus,
+    creatorFinancialStatus,
     birthYear: Number(row?.birthYear || 0) || null,
     birthDate: String(row?.birthDate || '').trim() || null,
     creatorComplianceSummary: (() => {
@@ -249,23 +277,33 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
       };
     })(),
     creatorBannerUrl: String(row?.creatorBannerUrl || '').trim() || null,
-    creatorMonetizationV2: (() => {
-      const m = row?.creator?.monetization;
-      if (m && typeof m === 'object') {
-        return {
-          preference: String(m.preference || '').trim().toLowerCase() || 'publish_only',
-          applicationStatus:
-            String(m?.application?.status || '').trim().toLowerCase() || 'not_requested',
-          financialStatus:
-            String(m?.financial?.status || '').trim().toLowerCase() || 'inactive',
-          requestedAt: Number(m?.application?.requestedAt || 0) || null,
-          hasLegal: Boolean(m.legal?.fullName && m.legal?.cpf),
-          hasPixKey: Boolean(m.payout?.type === 'pix' && String(m.payout?.key || '').trim()),
-          supportOffer: readCreatorSupportOfferFromDb(row),
-        };
-      }
-      return null;
-    })(),
+    creatorProfile: {
+      displayName: String(creatorProfile.displayName || app.displayName || row?.userName || ''),
+      bioFull: String(creatorProfile.bio || ''),
+      socialLinks: {
+        instagramUrl: String(creatorSocial.instagram || app?.socialLinks?.instagramUrl || ''),
+        youtubeUrl: String(creatorSocial.youtube || app?.socialLinks?.youtubeUrl || ''),
+      },
+      monetization: {
+        preference: creatorMonetizationPreference,
+        applicationStatus: creatorMonetizationApplicationStatus,
+        financialStatus: creatorFinancialStatus,
+        status: creatorMonetizationStatus,
+        requestedAt: Number(row?.creator?.monetization?.application?.requestedAt || 0) || null,
+        hasLegal: Boolean(row?.creator?.monetization?.legal?.fullName && row?.creator?.monetization?.legal?.cpf),
+        hasPixKey: Boolean(row?.creator?.monetization?.payout?.type === 'pix' && String(row?.creator?.monetization?.payout?.key || '').trim()),
+        supportOffer: creatorSupportOffer,
+      },
+    },
+    creatorMonetizationV2: {
+      preference: creatorMonetizationPreference,
+      applicationStatus: creatorMonetizationApplicationStatus,
+      financialStatus: creatorFinancialStatus,
+      requestedAt: Number(row?.creator?.monetization?.application?.requestedAt || 0) || null,
+      hasLegal: Boolean(row?.creator?.monetization?.legal?.fullName && row?.creator?.monetization?.legal?.cpf),
+      hasPixKey: Boolean(row?.creator?.monetization?.payout?.type === 'pix' && String(row?.creator?.monetization?.payout?.key || '').trim()),
+      supportOffer: creatorSupportOffer,
+    },
     signupIntent: String(row?.signupIntent || ''),
     creatorApplicationStatus: String(row?.creatorApplicationStatus || ''),
     creatorRequestedAt: resolveCreatorRequestedAtMs(row, app),

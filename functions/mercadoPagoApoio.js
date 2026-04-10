@@ -18,15 +18,25 @@ export const APOIO_PLANOS_MP = {
 
 /** Prefixo em external_reference para vincular doacao a um UID logado. */
 export const APOIO_EXTERNAL_PREFIX = 'SHITO_APOIO|';
+const APOIO_EXTERNAL_PART_RE = /^[A-Za-z0-9_-]{4,120}$/;
+
+function sanitizeApoioExternalPart(raw, label = 'uid') {
+  const value = String(raw || '').trim();
+  if (!APOIO_EXTERNAL_PART_RE.test(value)) {
+    throw new Error(`${label} invalido para external_reference.`);
+  }
+  return value;
+}
 
 export function buildApoioExternalRef(uid) {
-  return `${APOIO_EXTERNAL_PREFIX}${uid}`;
+  return `${APOIO_EXTERNAL_PREFIX}${sanitizeApoioExternalPart(uid)}`;
 }
 
 export function parseApoioExternalRef(ref) {
   if (ref == null || typeof ref !== 'string') return null;
   if (!ref.startsWith(APOIO_EXTERNAL_PREFIX)) return null;
   const uid = ref.slice(APOIO_EXTERNAL_PREFIX.length).trim();
+  if (!APOIO_EXTERNAL_PART_RE.test(uid)) return null;
   return uid || null;
 }
 

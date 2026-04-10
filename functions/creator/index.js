@@ -7,5 +7,5 @@ export {
   creatorRequestPixPayout,
   adminRecordCreatorPixPayout,
 } from './admin.js';
-export { toggleCreatorFollow } from './audience.js';
+export { getCreatorFollowers, toggleCreatorFollow } from './audience.js';
 export { creatorSubmitApplication } from './application.js';

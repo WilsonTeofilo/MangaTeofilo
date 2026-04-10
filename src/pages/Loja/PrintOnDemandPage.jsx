@@ -1161,6 +1161,9 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   src={coverPreviewUrl.current}
                   alt="PrÃ©via da capa"
                   className="pod-cover-preview"
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                 />
               ) : null}
             </div>

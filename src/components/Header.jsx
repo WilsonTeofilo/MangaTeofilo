@@ -693,6 +693,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
                     src={headerAvatarSrc}
                     alt=""
                     className="header-avatar-img"
+                    referrerPolicy="no-referrer"
                     decoding="async"
                     onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
                   />

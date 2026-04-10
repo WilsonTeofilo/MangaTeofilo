@@ -34,6 +34,16 @@ import { enforceCommerceAbuseShield } from './commerceGuard.js';
  * ORIGINAL: { followers: 1000, views: 20000, likes: 500 } — reverter com o restante do teste.
  */
 const CREATOR_LEVEL_2_THRESHOLDS = { followers: 200, views: 10000, likes: 80 };
+const POD_ORDER_ID_RE = /^[A-Za-z0-9_-]{4,120}$/;
+
+function assertPodOrderId(raw, label = 'orderId') {
+  const value = String(raw || '').trim();
+  if (!POD_ORDER_ID_RE.test(value)) {
+    throw new HttpsError('invalid-argument', `${label} invalido.`);
+  }
+  return value;
+}
+
 function normalizePodStatus(value, fallback = 'pending') {
   const raw = String(value || fallback).trim().toLowerCase().replace(/\s+/g, '_');
   if (!raw) return fallback;
@@ -646,10 +656,7 @@ export const getMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
-  const orderId = String(request.data?.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
+  const orderId = assertPodOrderId(request.data?.orderId, 'orderId');
   const db = getDatabase();
   await enforceCommerceAbuseShield(db, {
     request,
@@ -741,10 +748,7 @@ export const adminUpdatePrintOnDemandOrder = onCall({ region: 'us-central1' }, a
   }
 
   const body = request.data && typeof request.data === 'object' ? request.data : {};
-  const orderId = String(body.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
+  const orderId = assertPodOrderId(body.orderId, 'orderId');
 
   if (body.shippingAddress != null) {
     throw new HttpsError(
@@ -911,10 +915,7 @@ export const cancelMyPrintOnDemandOrder = onCall({ region: 'us-central1' }, asyn
   }
   const uid = request.auth.uid;
   const body = request.data && typeof request.data === 'object' ? request.data : {};
-  const orderId = String(body.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
+  const orderId = assertPodOrderId(body.orderId, 'orderId');
   const reason = String(body.cancellationReason || '').trim();
   if (reason.length < 3) {
     throw new HttpsError('invalid-argument', 'Informe o motivo do cancelamento (minimo 3 caracteres).');
@@ -996,10 +997,7 @@ export const adminPatchPrintOnDemandOrderSuper = onCall({ region: 'us-central1' 
   assertTrustedAppRequest(request);
   await requireSuperAdmin(request.auth);
   const body = request.data && typeof request.data === 'object' ? request.data : {};
-  const orderId = String(body.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
+  const orderId = assertPodOrderId(body.orderId, 'orderId');
   const ref = getDatabase().ref(`loja/printOnDemandOrders/${orderId}`);
   const snap = await ref.get();
   if (!snap.exists()) {

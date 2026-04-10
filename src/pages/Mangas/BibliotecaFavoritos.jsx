@@ -169,6 +169,9 @@ export default function BibliotecaFavoritos({ user, perfil }) {
                 }
                 alt={item.obra?.titulo || item.obraId}
                 className={item.obraExcluida ? 'biblioteca-card-img biblioteca-card-img--deleted' : 'biblioteca-card-img'}
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
               />
               <div className="biblioteca-card-body">
                 <h3>{item.obra?.titulo || item.favMeta?.titulo || item.obraId}</h3>

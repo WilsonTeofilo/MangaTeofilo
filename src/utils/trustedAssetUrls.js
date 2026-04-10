@@ -57,6 +57,10 @@ export function isTrustedPlatformAssetUrl(
   }
 }
 
+/**
+ * Imagens validas para o app: assets locais do projeto ou arquivos do bucket da plataforma.
+ * Nao use isso para incentivar o usuario a colar URL manual; o fluxo comum deve ser upload.
+ */
 export function filterTrustedPlatformImageUrls(urls, { allowLocalAssets = false } = {}) {
   return (Array.isArray(urls) ? urls : []).filter((url) =>
     isTrustedPlatformAssetUrl(url, {

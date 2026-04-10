@@ -285,7 +285,14 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
                     >
                       <div className="loja-pcard__visual">
                         <button type="button" className="loja-pcard__imgBtn" onClick={openProd} aria-label={`Ver ${p.title || p.id}`}>
-                          <img className="loja-pcard__img" src={img} alt="" loading="lazy" />
+                          <img
+                            className="loja-pcard__img"
+                            src={img}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
+                            decoding="async"
+                          />
                         </button>
                         {badges.length ? (
                           <div className="loja-pcard__badges">

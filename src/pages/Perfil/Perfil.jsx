@@ -536,7 +536,7 @@ export default function Perfil({
         const u = String(mangakaAvatarUrlDraft || '').trim();
         if (!isTrustedProfileImageUrl(u) || u.length > 2048) {
           setMensagem({
-            texto: 'Use apenas imagem da plataforma (Storage) ou envie um novo arquivo.',
+            texto: 'Escolha uma foto enviada por aqui ou um avatar da plataforma.',
             tipo: 'erro',
           });
           setLoading(false);
@@ -1204,24 +1204,13 @@ export default function Perfil({
               <div className="input-group">
                 <label>FOTO DE PERFIL</label>
                 <p className="perfil-mangaka-apoio-label" style={{ marginBottom: 8 }}>
-                  A capa publica reaproveita a mesma foto com um leve blur. Envie um arquivo ou use apenas imagem
-                  hospedada no Storage da plataforma.
+                  Envie uma foto do seu aparelho. A versão pública é ajustada automaticamente para o seu perfil.
                 </p>
-                <input
-                  type="url"
-                  className="perfil-input"
-                  value={mangakaAvatarUrlDraft}
-                  onChange={(e) => {
-                    setMangakaAvatarUrlDraft(e.target.value);
-                    setMangakaAvatarFile(null);
-                  }}
-                  placeholder="https://firebasestorage.googleapis.com/..."
-                />
                 <input
                   type="file"
                   className="perfil-input"
-                  style={{ marginTop: 8 }}
                   accept="image/jpeg,image/png,image/webp"
+                  aria-label="Enviar foto de perfil"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     setMangakaAvatarFile(f || null);
@@ -1857,7 +1846,7 @@ export default function Perfil({
             </>
           ) : (
             <p className="perfil-mangaka-apoio-label" style={{ marginTop: 8 }}>
-              Criadores usam arquivo ou URL acima; a grade da loja so aparece em Identidade publica, atras do painel com
+              Criadores usam arquivo enviado por aqui; a grade da loja so aparece em Identidade publica, atras do painel com
               cadeado, para nao sobrescrever sua arte sem querer.
             </p>
           )}

@@ -16,7 +16,7 @@ export default function ApoieCreatorRedirect() {
   useEffect(() => {
     if (!isValidRaw) return () => {};
     const unsub = onValue(
-      ref(db, `usuarios/${raw}`),
+      ref(db, `usuarios/${raw}/publicProfile`),
       (snapshot) => {
         const row = snapshot.exists() ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, raw) : {};
         const monetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);

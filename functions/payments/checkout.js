@@ -27,6 +27,7 @@ import {
   normalizeTrackingSource,
 } from '../trackingUtils.js';
 import {
+  assertOpaqueEntityId,
   buildStoreShippingQuoteForUser,
   maskCpf,
   normalizeStoreOrderStatusInput,
@@ -106,6 +107,13 @@ function assertStoreCartPayloadShape(rawItems) {
     'title',
     'description',
     'costPrice',
+    'orderId',
+    'uid',
+    'sellerUid',
+    'buyerUid',
+    'checkoutUrl',
+    'checkoutStartedAt',
+    'expectedPayBRL',
   ];
   for (const item of Array.isArray(rawItems) ? rawItems : []) {
     const row = item && typeof item === 'object' ? item : {};
@@ -116,6 +124,30 @@ function assertStoreCartPayloadShape(rawItems) {
         `Nao envie preco/frete/metadados no carrinho. Campos rejeitados: ${present.join(', ')}.`
       );
     }
+  }
+}
+
+function assertNoForbiddenPodFields(payload) {
+  const forbiddenFields = [
+    'amount',
+    'amountBRL',
+    'expectedPayBRL',
+    'checkoutUrl',
+    'checkoutStartedAt',
+    'paymentId',
+    'status',
+    'payoutStatus',
+    'creatorUid',
+    'uid',
+    'orderId',
+  ];
+  const row = payload && typeof payload === 'object' ? payload : {};
+  const present = forbiddenFields.filter((field) => row[field] != null);
+  if (present.length) {
+    throw new HttpsError(
+      'invalid-argument',
+      `Nao envie campos sistemicos/financeiros no checkout POD. Campos rejeitados: ${present.join(', ')}.`
+    );
   }
 }
 
@@ -144,6 +176,9 @@ export const criarCheckoutApoio = onCall(
       networkMinIntervalMs: 750,
       networkWindowMs: 60 * 1000,
       networkMaxHits: 12,
+      actorMinIntervalMs: 1000,
+      actorWindowMs: 60 * 1000,
+      actorMaxHits: 10,
       ipWindowMs: 5 * 60 * 1000,
       ipMaxHits: 18,
       message: 'Muitas tentativas de apoio em pouco tempo. Aguarde alguns segundos.',
@@ -152,6 +187,8 @@ export const criarCheckoutApoio = onCall(
     const creatorMembership = payload.creatorMembership === true;
     const creatorMembershipCreatorId =
       sanitizeCreatorId(payload.creatorMembershipCreatorId) || attributionCreatorId;
+    if (attributionCreatorId) assertOpaqueEntityId(attributionCreatorId, 'creatorId');
+    if (creatorMembershipCreatorId) assertOpaqueEntityId(creatorMembershipCreatorId, 'creatorId');
     const planRaw = payload.planId;
     const customTry = tryParseApoioCustomAmount(payload.customAmount);
     const planNorm = normalizeApoioPlanId(planRaw);
@@ -193,7 +230,12 @@ export const criarCheckoutApoio = onCall(
       const creatorPublic = await getMonetizableCreatorPublicProfile(db, creatorMembershipCreatorId, {
         requireMembershipEnabled: true,
       });
-      const creatorName = String(creatorPublic.creatorDisplayName || creatorPublic.userName || '').trim();
+      const creatorName = String(
+        creatorPublic?.creatorProfile?.displayName ||
+        creatorPublic.creatorDisplayName ||
+        creatorPublic.userName ||
+        ''
+      ).trim();
       if (!creatorName) {
         throw new HttpsError(
           'failed-precondition',
@@ -201,8 +243,9 @@ export const criarCheckoutApoio = onCall(
         );
       }
       creatorMembershipPrice = Number(
-        creatorPublic?.creatorSupportOffer?.membershipPriceBRL ||
-        creatorPublic?.creatorProfile?.supportOffer?.membershipPriceBRL
+        creatorPublic?.creatorProfile?.monetization?.supportOffer?.membershipPriceBRL ||
+        creatorPublic?.creatorProfile?.supportOffer?.membershipPriceBRL ||
+        creatorPublic?.creatorSupportOffer?.membershipPriceBRL
       );
       if (!isValidCreatorMembershipPriceBRL(creatorMembershipPrice)) {
         throw new HttpsError(
@@ -361,6 +404,9 @@ export const criarCheckoutLoja = onCall(
       networkMinIntervalMs: 1000,
       networkWindowMs: 60 * 1000,
       networkMaxHits: 10,
+      actorMinIntervalMs: 1200,
+      actorWindowMs: 60 * 1000,
+      actorMaxHits: 8,
       ipWindowMs: 5 * 60 * 1000,
       ipMaxHits: 15,
       message: 'Muitas tentativas de checkout da loja em pouco tempo. Aguarde alguns segundos.',
@@ -547,9 +593,7 @@ export const resumeStoreCheckout = onCall(
     }
     const body = request.data && typeof request.data === 'object' ? request.data : {};
     const orderId = String(body.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-    }
+    assertOpaqueEntityId(orderId, 'orderId');
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
     await enforceCommerceAbuseShield(db, {
@@ -562,6 +606,9 @@ export const resumeStoreCheckout = onCall(
       networkMinIntervalMs: 700,
       networkWindowMs: 60 * 1000,
       networkMaxHits: 14,
+      actorMinIntervalMs: 900,
+      actorWindowMs: 60 * 1000,
+      actorMaxHits: 12,
       ipWindowMs: 5 * 60 * 1000,
       ipMaxHits: 25,
       message: 'Muitas retomadas de pagamento em pouco tempo. Aguarde alguns segundos.',
@@ -689,6 +736,7 @@ export const createPrintOnDemandCheckout = onCall(
     }
     const uid = request.auth.uid;
     const body = request.data && typeof request.data === 'object' ? request.data : {};
+    assertNoForbiddenPodFields(body);
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
     await enforceCommerceAbuseShield(db, {
@@ -701,6 +749,9 @@ export const createPrintOnDemandCheckout = onCall(
       networkMinIntervalMs: 1000,
       networkWindowMs: 60 * 1000,
       networkMaxHits: 10,
+      actorMinIntervalMs: 1200,
+      actorWindowMs: 60 * 1000,
+      actorMaxHits: 8,
       ipWindowMs: 5 * 60 * 1000,
       ipMaxHits: 15,
       message: 'Muitas tentativas de checkout POD em pouco tempo. Aguarde alguns segundos.',
@@ -794,9 +845,7 @@ export const resumePrintOnDemandCheckout = onCall(
     const uid = request.auth.uid;
     const body = request.data && typeof request.data === 'object' ? request.data : {};
     const orderId = String(body.orderId || '').trim();
-    if (!orderId) {
-      throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-    }
+    assertOpaqueEntityId(orderId, 'orderId');
     const token = getMercadoPagoTokenOrHttpsError();
     const db = getDatabase();
     await enforceCommerceAbuseShield(db, {
@@ -809,6 +858,9 @@ export const resumePrintOnDemandCheckout = onCall(
       networkMinIntervalMs: 700,
       networkWindowMs: 60 * 1000,
       networkMaxHits: 14,
+      actorMinIntervalMs: 900,
+      actorWindowMs: 60 * 1000,
+      actorMaxHits: 12,
       ipWindowMs: 5 * 60 * 1000,
       ipMaxHits: 25,
       message: 'Muitas retomadas de pagamento em pouco tempo. Aguarde alguns segundos.',
@@ -913,6 +965,9 @@ export const criarCheckoutPremium = onCall(
       networkMinIntervalMs: 750,
       networkWindowMs: 60 * 1000,
       networkMaxHits: 10,
+      actorMinIntervalMs: 1000,
+      actorWindowMs: 60 * 1000,
+      actorMaxHits: 8,
       ipWindowMs: 5 * 60 * 1000,
       ipMaxHits: 15,
       message: 'Muitas tentativas de checkout Premium em pouco tempo. Aguarde alguns segundos.',

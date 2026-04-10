@@ -204,7 +204,7 @@ export default function LojaProduto({ user, perfil }) {
       <section className="loja-product loja-product--premium">
         <div className="loja-product-media">
           <div className="loja-product-mainimg">
-            <img src={mainImg} alt="" />
+            <img src={mainImg} alt="" referrerPolicy="no-referrer" crossOrigin="anonymous" />
           </div>
           {images.length > 1 ? (
             <div className="loja-product-thumbs" role="tablist" aria-label="Imagens do produto">
@@ -217,7 +217,7 @@ export default function LojaProduto({ user, perfil }) {
                   className={`loja-product-thumb ${index === imgIdx ? 'loja-product-thumb--active' : ''}`}
                   onClick={() => setImgIdx(index)}
                 >
-                  <img src={src} alt="" />
+                  <img src={src} alt="" referrerPolicy="no-referrer" crossOrigin="anonymous" />
                 </button>
               ))}
             </div>

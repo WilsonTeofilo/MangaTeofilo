@@ -894,6 +894,9 @@ export default function Leitor({ user, perfil }) {
                 src={resolvePublicProfileAvatarUrl(perfilPublico, { fallback: AVATAR_FALLBACK })}
                 alt={autorLabel ? `Avatar de ${autorLabel}` : 'Avatar do comentarista'}
                 className="avatar-comentario"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
                 onError={(e) => {
                   e.target.src = AVATAR_FALLBACK;
                 }}
@@ -1095,7 +1098,9 @@ export default function Leitor({ user, perfil }) {
               key={index}
               src={url}
               alt={`${chapterSeo?.imgAltPrefix || 'Mangá'} ${index + 1}`}
+              referrerPolicy="no-referrer"
               loading="lazy"
+              decoding="async"
               style={{ width: `${zoom}%`, display: 'block', margin: '0 auto' }}
             />
           ))}
@@ -1108,7 +1113,9 @@ export default function Leitor({ user, perfil }) {
             <img
               src={capitulo.paginas?.[paginaAtual]}
               alt={`${chapterSeo?.imgAltPrefix || 'Mangá'} ${paginaAtual + 1}`}
+              referrerPolicy="no-referrer"
               loading="lazy"
+              decoding="async"
               style={{ width: `${zoom}%`, margin: '0 auto', display: 'block' }}
             />
           </div>
@@ -1183,6 +1190,9 @@ export default function Leitor({ user, perfil }) {
                 src={creatorIdentity.avatarUrl}
                 alt={creatorIdentity?.label || 'Autor'}
                 className="leitor-footer-author-avatar"
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
               />
             ) : null}
             <span>{creatorIdentity?.label || 'Perfil do autor'}</span>
@@ -1256,6 +1266,7 @@ export default function Leitor({ user, perfil }) {
               }
               alt="Seu avatar"
               className="avatar-comentario"
+              referrerPolicy="no-referrer"
               decoding="async"
               onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
             />

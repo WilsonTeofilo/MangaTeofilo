@@ -13,8 +13,18 @@ export const STORE_ORDER_STATUS_CANON = new Set([
   'cancelled',
 ]);
 
+const OPAQUE_ENTITY_ID_RE = /^[A-Za-z0-9_-]{4,120}$/;
+
 export function round2(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+export function assertOpaqueEntityId(raw, label = 'id') {
+  const value = String(raw || '').trim();
+  if (!value || !OPAQUE_ENTITY_ID_RE.test(value)) {
+    throw new HttpsError('invalid-argument', `${label} invalido.`);
+  }
+  return value;
 }
 
 export function normalizeStoreOrderStatusInput(raw, fallback = 'pending') {
@@ -69,7 +79,7 @@ export function storeProductIsOnDemand(product) {
 }
 
 export function parseStoreCartLineItem(item, products, { vip, vipDiscountPct, enforceStock }) {
-  const productId = String(item?.productId || '').trim();
+  const productId = assertOpaqueEntityId(item?.productId, 'productId');
   const quantity = Math.max(1, Math.floor(Number(item?.quantity || 1)));
   if (!productId) {
     throw new HttpsError('invalid-argument', 'Item invalido (productId ausente).');

@@ -559,6 +559,7 @@ function AppRoutes() {
             element={<CreatorPublicProfilePage user={podeAcessarApp ? usuario : null} />}
           />
           <Route path="/@:userHandle" element={<UsernamePublicRoute />} />
+          <Route path="/:userHandle" element={<UsernamePublicRoute />} />
 
           <Route
             path="/admin"

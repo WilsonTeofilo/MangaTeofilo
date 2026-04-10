@@ -3,8 +3,18 @@ export const STORE_EXTERNAL_PREFIX = 'SHITO_STORE|';
 /** Pagamento único por pedido print-on-demand (Mercado Pago). */
 export const POD_EXTERNAL_PREFIX = 'SHITO_POD|';
 
+const EXTERNAL_REF_PART_RE = /^[A-Za-z0-9_-]{4,120}$/;
+
+function sanitizeExternalRefPart(raw, label) {
+  const value = String(raw || '').trim();
+  if (!value || !EXTERNAL_REF_PART_RE.test(value)) {
+    throw new Error(`${label} invalido para external_reference.`);
+  }
+  return value;
+}
+
 export function buildPodExternalRef(orderId, uid) {
-  return `${POD_EXTERNAL_PREFIX}${String(orderId || '').trim()}|${String(uid || '').trim()}`;
+  return `${POD_EXTERNAL_PREFIX}${sanitizeExternalRefPart(orderId, 'orderId')}|${sanitizeExternalRefPart(uid, 'uid')}`;
 }
 
 export function parsePodExternalRef(ref) {
@@ -13,7 +23,7 @@ export function parsePodExternalRef(ref) {
   const [orderIdRaw, uidRaw] = String(rest || '').split('|');
   const orderId = String(orderIdRaw || '').trim();
   const uid = String(uidRaw || '').trim();
-  if (!orderId || !uid) return null;
+  if (!orderId || !uid || !EXTERNAL_REF_PART_RE.test(orderId) || !EXTERNAL_REF_PART_RE.test(uid)) return null;
   return { orderId, uid };
 }
 
@@ -75,7 +85,7 @@ export async function criarPreferenciaPrintOnDemand(
 }
 
 export function buildStoreExternalRef(orderId, uid) {
-  return `${STORE_EXTERNAL_PREFIX}${String(orderId || '').trim()}|${String(uid || '').trim()}`;
+  return `${STORE_EXTERNAL_PREFIX}${sanitizeExternalRefPart(orderId, 'orderId')}|${sanitizeExternalRefPart(uid, 'uid')}`;
 }
 
 export function parseStoreExternalRef(ref) {
@@ -84,7 +94,7 @@ export function parseStoreExternalRef(ref) {
   const [orderIdRaw, uidRaw] = String(rest || '').split('|');
   const orderId = String(orderIdRaw || '').trim();
   const uid = String(uidRaw || '').trim();
-  if (!orderId || !uid) return null;
+  if (!orderId || !uid || !EXTERNAL_REF_PART_RE.test(orderId) || !EXTERNAL_REF_PART_RE.test(uid)) return null;
   return { orderId, uid };
 }
 

@@ -94,7 +94,9 @@ export default function SobreAutorV2() {
                   src="/assets/fotos/teofilo.jpg"
                   className="sobre-portrait sobre-portrait--real"
                   alt="Wilson Teofilo"
+                  referrerPolicy="no-referrer"
                   loading="lazy"
+                  decoding="async"
                   onError={(event) => {
                     event.target.src = '/assets/avatares/ava1.webp';
                   }}
@@ -103,7 +105,9 @@ export default function SobreAutorV2() {
                   src="/assets/fotos/teofilomangá.jpg"
                   className="sobre-portrait sobre-portrait--manga"
                   alt="Wilson Teofilo em estilo mangá"
+                  referrerPolicy="no-referrer"
                   loading="lazy"
+                  decoding="async"
                   onError={(event) => {
                     event.target.src = '/assets/avatares/ava2.webp';
                   }}

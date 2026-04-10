@@ -151,6 +151,16 @@ export function buildCreatorRecordForProfileSave({
 
 /** Leitura resiliente: prefer `creator`, senão deriva visão mínima dos campos legados. */
 export function readCreatorMonetizationSummary(row) {
+  const projected = row?.creatorProfile?.monetization;
+  if (projected && typeof projected === 'object') {
+    return {
+      enabled: String(projected?.financialStatus || '').trim().toLowerCase() === 'active' || projected?.isActive === true,
+      requested: String(projected?.applicationStatus || '').trim().toLowerCase() === 'pending',
+      approved: String(projected?.applicationStatus || '').trim().toLowerCase() === 'approved' || projected?.isApproved === true,
+      hasPixPayout: Boolean(row?.creator?.monetization?.payout?.key),
+      hasLegal: Boolean(row?.creator?.monetization?.legal?.fullName && row?.creator?.monetization?.legal?.cpf),
+    };
+  }
   const c = row?.creator?.monetization;
   if (c && typeof c === 'object') {
     return {

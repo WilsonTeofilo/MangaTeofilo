@@ -500,7 +500,7 @@ export default function Apoie({ user, perfil }) {
       setCreatorOffer(null);
       return () => {};
     }
-    const unsub = onValue(ref(db, `usuarios/${attributionCreatorIdParaCheckout}`), (snapshot) => {
+    const unsub = onValue(ref(db, `usuarios/${attributionCreatorIdParaCheckout}/publicProfile`), (snapshot) => {
       const row = snapshot.exists()
         ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, attributionCreatorIdParaCheckout)
         : {};

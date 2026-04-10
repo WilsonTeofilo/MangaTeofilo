@@ -117,7 +117,10 @@ export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = n
   const resolved = firstNonPlaceholder([
     resolvePublicProfileDisplayName(p, ''),
     p?.userHandle,
+    p?.creatorProfile?.username,
     p?.creatorUsername,
+    o?.creatorProfile?.displayName,
+    o?.creatorProfile?.username,
     o?.creatorDisplayName,
     o?.creatorUsername,
     o?.creatorHandle,
@@ -158,6 +161,8 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
   const chapterName = firstNonPlaceholder(extractCreatorNameCandidatesFromChapters(matchingCaps));
   if (chapterName) return chapterName;
   const obraName = firstNonPlaceholder([
+    obra?.creatorProfile?.displayName,
+    obra?.creatorProfile?.username,
     obra?.creatorDisplayName,
     obra?.creatorUsername,
     obra?.creatorHandle,

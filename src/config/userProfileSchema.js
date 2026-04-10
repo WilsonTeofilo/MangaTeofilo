@@ -51,6 +51,51 @@ function hasCanonicalCreatorState(source = {}) {
   );
 }
 
+function buildCreatorPublicMonetization(source = {}, creatorSupportOffer = {}) {
+  const creatorMonetization =
+    source?.creator?.monetization && typeof source.creator.monetization === 'object'
+      ? source.creator.monetization
+      : {};
+  const publicCreatorMonetization =
+    source?.creatorProfile?.monetization && typeof source.creatorProfile.monetization === 'object'
+      ? source.creatorProfile.monetization
+      : {};
+  const preference = asNonEmptyString(
+    creatorMonetization.preference || publicCreatorMonetization.preference,
+    'publish_only'
+  ).toLowerCase() === 'monetize'
+    ? 'monetize'
+    : 'publish_only';
+  const applicationStatus = asNonEmptyString(
+    creatorMonetization?.application?.status || publicCreatorMonetization.applicationStatus,
+    source?.creator?.meta?.isAdult === false ? 'blocked_underage' : 'not_requested'
+  ).toLowerCase();
+  const financialStatus = asNonEmptyString(
+    creatorMonetization?.financial?.status || publicCreatorMonetization.financialStatus,
+    'inactive'
+  ).toLowerCase();
+  const status =
+    applicationStatus === 'blocked_underage'
+      ? 'blocked_underage'
+      : applicationStatus === 'approved' && financialStatus === 'active'
+        ? 'active'
+        : 'disabled';
+  return {
+    preference,
+    applicationStatus,
+    financialStatus,
+    status,
+    isApproved: applicationStatus === 'approved',
+    isActive: financialStatus === 'active',
+    supportOffer: {
+      membershipEnabled: creatorSupportOffer?.membershipEnabled === true,
+      membershipPriceBRL: Number(creatorSupportOffer?.membershipPriceBRL || 0) || null,
+      donationSuggestedBRL: Number(creatorSupportOffer?.donationSuggestedBRL || 0) || null,
+      updatedAt: Number(creatorSupportOffer?.updatedAt || 0) || 0,
+    },
+  };
+}
+
 export function buildUsuarioBaseRecord({
   uid,
   email = '',
@@ -119,6 +164,9 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
       : source?.creatorProfile?.supportOffer && typeof source.creatorProfile.supportOffer === 'object'
         ? source.creatorProfile.supportOffer
         : null;
+  const publicCreatorMonetization = isCreatorProfile
+    ? buildCreatorPublicMonetization(source, creatorSupportOffer)
+    : null;
 
   return {
     uid: asNonEmptyString(uidOverride || source.uid, ''),
@@ -158,6 +206,7 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
               donationSuggestedBRL: Number(creatorSupportOffer?.donationSuggestedBRL || 0) || null,
               updatedAt: Number(creatorSupportOffer?.updatedAt || 0) || 0,
             },
+            monetization: publicCreatorMonetization,
           },
         }
       : {}),

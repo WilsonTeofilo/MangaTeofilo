@@ -37,7 +37,7 @@ export default function UsernamePublicRoute() {
             setDest('/');
             return;
           }
-          const userSnap = await get(ref(db, `usuarios/${uid}`));
+          const userSnap = await get(ref(db, `usuarios/${uid}/publicProfile`));
           if (!alive) return;
           const profile = userSnap.exists()
             ? buildPublicProfileFromUsuarioRow(userSnap.val() || {}, uid)
@@ -49,6 +49,10 @@ export default function UsernamePublicRoute() {
             : isReaderPublicProfileEffective(profile)
               ? 'likes'
               : '';
+          if (!userSnap.exists()) {
+            setDest(`/criador/${encodeURIComponent(uid)}${location.search || ''}`);
+            return;
+          }
           setDest(resolvePublicProfilePath(profile, uid, { tab: currentTab || defaultTab }));
         }
       })

@@ -71,6 +71,15 @@ export async function getMonetizableCreatorPublicProfile(
     ...creatorPublic,
     creatorProfile: {
       ...publicCreatorProfile,
+      monetization: {
+        preference: creatorMonetizationPreference,
+        applicationStatus: creatorMonetizationApplicationStatus,
+        status: creatorMonetizationStatus,
+        financialStatus: creatorFinancialStatus,
+        isApproved: creatorMonetizationApproved,
+        isActive: creatorMonetizationActive,
+        supportOffer: creatorSupportOffer,
+      },
       monetizationPreference: creatorMonetizationPreference,
       monetizationApplicationStatus: creatorMonetizationApplicationStatus,
       monetizationStatus: creatorMonetizationStatus,

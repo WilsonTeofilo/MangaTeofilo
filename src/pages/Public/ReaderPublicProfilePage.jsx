@@ -23,7 +23,7 @@ export default function ReaderPublicProfilePage() {
     if (!uid) return () => {};
     setReady(false);
     const unsub = onValue(
-      ref(db, `usuarios/${uid}`),
+      ref(db, `usuarios/${uid}/publicProfile`),
       (snap) => {
         setPub(snap.exists() ? buildPublicProfileFromUsuarioRow(snap.val() || {}, uid) : null);
         setReady(true);

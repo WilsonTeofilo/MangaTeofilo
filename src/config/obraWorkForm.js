@@ -60,7 +60,7 @@ export const SEO_KEYWORDS_MAX = 400;
 /** UID Firebase (segmentos alfanuméricos, típico 28 chars). */
 const UID_RE = /^[a-zA-Z0-9]{10,128}$/;
 
-/** URL HTTP(S) com caminho que parece imagem raster (evita texto aleatório no campo). */
+/** Aceita apenas imagem já salva no app (ou asset local) para edicao de obra existente. */
 export function isLikelyHttpImageUrl(url) {
   return isTrustedPlatformAssetUrl(url, { allowLocalAssets: true });
 }
@@ -203,7 +203,7 @@ export function validateObraWorkForm(p) {
   const capaUrlTrim = String(p.capaUrl || '').trim();
   const capaOk = Boolean(p.hasCapaFile) || isLikelyHttpImageUrl(capaUrlTrim);
   if (!capaOk) {
-    errors.push('Capa obrigatória: envie JPG/PNG/WebP (até 1,2 MB) ou uma URL https/http direta para .jpg, .png ou .webp.');
+    errors.push('Capa obrigatória: envie uma imagem JPG, PNG ou WEBP (até 1,2 MB), ou mantenha a capa já salva no app.');
   }
 
   const bannerUrlTrim = String(p.bannerUrl || '').trim();
@@ -212,7 +212,7 @@ export function validateObraWorkForm(p) {
       ? true
       : Boolean(p.hasBannerFile) || isLikelyHttpImageUrl(bannerUrlTrim);
   if (!bannerOk) {
-    errors.push('URL do banner inválida: use link direto terminando em .jpg, .png ou .webp, ou envie um arquivo.');
+    errors.push('Banner inválido: envie uma imagem nova ou mantenha o banner já salvo no app.');
   }
 
   const tc = String(p.tituloCurto || '').trim();

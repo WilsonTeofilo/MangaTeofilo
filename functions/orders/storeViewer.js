@@ -10,6 +10,7 @@ import {
 } from '../commerceGuard.js';
 import { assertTrustedAppRequest } from '../appCheckGuard.js';
 import {
+  assertOpaqueEntityId,
   STORE_ORDER_STATUS_CANON,
   buildStoreShippingQuoteForUser,
   normalizeStoreOrderStatusInput,
@@ -120,9 +121,7 @@ async function updateVisibleStoreOrderRuntime(request, { creatorOnly = false } =
 
   const body = request.data && typeof request.data === 'object' ? request.data : {};
   const orderId = String(body.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
+  assertOpaqueEntityId(orderId, 'orderId');
   const statusRaw = body.status == null ? '' : String(body.status).trim();
   const trackingCode = body.trackingCode == null ? null : String(body.trackingCode || '').trim();
   const productionChecklist =
@@ -235,20 +234,23 @@ export const quoteStoreShipping = onCall(
     if (!rawItems.length) throw new HttpsError('invalid-argument', 'Carrinho vazio.');
 
     const db = getDatabase();
-    await enforceCommerceAbuseShield(db, {
-      request,
-      scope: 'shippingQuote',
-      key: request.auth.uid,
-      minIntervalMs: 1200,
-      windowMs: 60 * 1000,
-      maxHits: 12,
-      networkMinIntervalMs: 500,
-      networkWindowMs: 60 * 1000,
-      networkMaxHits: 20,
-      ipWindowMs: 5 * 60 * 1000,
-      ipMaxHits: 35,
-      message: 'Muitas cotações de frete em pouco tempo. Aguarde alguns segundos.',
-    });
+  await enforceCommerceAbuseShield(db, {
+    request,
+    scope: 'shippingQuote',
+    key: request.auth.uid,
+    minIntervalMs: 1200,
+    windowMs: 60 * 1000,
+    maxHits: 12,
+    networkMinIntervalMs: 500,
+    networkWindowMs: 60 * 1000,
+    networkMaxHits: 20,
+    actorMinIntervalMs: 700,
+    actorWindowMs: 60 * 1000,
+    actorMaxHits: 16,
+    ipWindowMs: 5 * 60 * 1000,
+    ipMaxHits: 35,
+    message: 'Muitas cotações de frete em pouco tempo. Aguarde alguns segundos.',
+  });
     const quoteFingerprint = buildCommerceFingerprint({ items: rawItems });
     const cachedQuote = await readCommerceIdempotency(db, {
       scope: 'shippingQuote',
@@ -334,9 +336,7 @@ export const getStoreOrderForViewer = onCall({ region: 'us-central1' }, async (r
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
   const orderId = String(request.data?.orderId || '').trim();
-  if (!orderId) {
-    throw new HttpsError('invalid-argument', 'orderId obrigatorio.');
-  }
+  assertOpaqueEntityId(orderId, 'orderId');
   const db = getDatabase();
   await enforceCommerceAbuseShield(db, {
     request,
@@ -390,9 +390,8 @@ export const getStoreProductFileAccessUrl = onCall({ region: 'us-central1' }, as
   const body = request.data && typeof request.data === 'object' ? request.data : {};
   const orderId = String(body.orderId || '').trim();
   const productId = String(body.productId || '').trim();
-  if (!productId) {
-    throw new HttpsError('invalid-argument', 'productId obrigatorio.');
-  }
+  if (orderId) assertOpaqueEntityId(orderId, 'orderId');
+  assertOpaqueEntityId(productId, 'productId');
 
   const db = getDatabase();
   await enforceCommerceAbuseShield(db, {

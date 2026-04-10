@@ -13,6 +13,7 @@ import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
 import { obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
 import { resolveCreatorFeedLabel, resolveCreatorNameFromObra } from '../../utils/publicCreatorName';
+import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
 import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../utils/publicProfilesRealtime';
 import {
   filterAndRankMangaCatalogCards,
@@ -362,6 +363,9 @@ export default function ListaMangas({ user }) {
                     src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
                     alt={obra.titulo || obra.id}
                     className="lista-discovery-cover"
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                    decoding="async"
                   />
                   <div className="lista-discovery-body">
                     <strong>{obra.titulo || obra.id}</strong>
@@ -384,10 +388,16 @@ export default function ListaMangas({ user }) {
             </div>
             <div className="lista-discovery-row">
               {discovery.popularCreators.slice(0, 6).map((creator, index) => {
-                const creatorPath =
-                  creator.username && creator.username !== creator.creatorId
-                    ? `/@${encodeURIComponent(creator.username)}`
-                    : `/criador/${encodeURIComponent(creator.creatorId)}`;
+                const creatorPath = resolvePublicProfilePath(
+                  {
+                    uid: creator.creatorId,
+                    userHandle: creator.username || '',
+                    userName: creator.publicLabel || '',
+                    isCreatorProfile: true,
+                  },
+                  creator.creatorId,
+                  { tab: 'works' }
+                );
                 return (
                   <article
                     key={`discover-creator-${creator.creatorId}`}
@@ -407,6 +417,9 @@ export default function ListaMangas({ user }) {
                       src={creator.avatarUrl || '/assets/fotos/shito.jpg'}
                       alt={creator.publicLabel}
                       className="lista-discovery-cover"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      decoding="async"
                     />
                     <div className="lista-discovery-body">
                       <strong>{creator.publicLabel}</strong>
@@ -464,6 +477,7 @@ export default function ListaMangas({ user }) {
                     src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
                     alt={obra.titulo || obra.obraId}
                     className="manga-card-cover"
+                    referrerPolicy="no-referrer"
                     loading="lazy"
                     decoding="async"
                   />

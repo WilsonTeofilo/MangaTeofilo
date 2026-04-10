@@ -134,6 +134,17 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.criador-stat-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .criador-stats-grid strong,
 .criador-stats-grid span {
   display: block;
@@ -484,6 +495,116 @@
   color: #f3f0e8;
 }
 
+.criador-followers-modal__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(2, 4, 8, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.criador-followers-modal {
+  width: min(560px, 100%);
+  max-height: min(80vh, 720px);
+  overflow: auto;
+  padding: 22px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #0f1420;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.criador-followers-modal--private {
+  width: min(420px, 100%);
+}
+
+.criador-followers-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.criador-followers-modal__head h2 {
+  margin: 0 0 6px;
+}
+
+.criador-followers-modal__head p,
+.criador-followers-modal__empty,
+.criador-followers-modal__error,
+.criador-followers-modal--private p {
+  margin: 0;
+  color: rgba(243, 240, 232, 0.72);
+  line-height: 1.5;
+}
+
+.criador-followers-modal__close,
+.criador-followers-modal__actions button {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  color: #f3f0e8;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.criador-followers-modal__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.criador-follower-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f3f0e8;
+  text-align: left;
+  cursor: pointer;
+}
+
+.criador-follower-row img {
+  width: 54px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 50%;
+  flex: 0 0 54px;
+}
+
+.criador-follower-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.criador-follower-row__body strong,
+.criador-follower-row__body span {
+  display: block;
+}
+
+.criador-follower-row__body span {
+  color: rgba(243, 240, 232, 0.68);
+  font-size: 0.9rem;
+}
+
+.criador-followers-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
 @media (max-width: 760px) {
   .criador-hero__foreground {
     grid-template-columns: 1fr;
@@ -505,5 +626,13 @@
 
   .criador-stats-grid--reader {
     grid-template-columns: 1fr;
+  }
+
+  .criador-followers-modal {
+    padding: 18px;
+  }
+
+  .criador-followers-modal__head {
+    flex-direction: column;
   }
 }

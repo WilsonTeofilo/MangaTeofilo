@@ -384,6 +384,9 @@ export const adminBackfillCanonicalCreatorMonetization = onCall(
         patch[`usuarios/${uid}/creatorMonetizationStatus`] = null;
         patch[`usuarios/${uid}/creatorMonetizationReviewRequestedAt`] = null;
         patch[`usuarios/${uid}/creatorMonetizationReviewReason`] = null;
+        patch[`usuarios/${uid}/publicProfile/creatorMembershipEnabled`] = null;
+        patch[`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`] = null;
+        patch[`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`] = null;
       }
       updated += 1;
       if (sample.length < 100) {

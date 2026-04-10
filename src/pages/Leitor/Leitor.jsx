@@ -30,6 +30,7 @@ import { formatUserDisplayWithHandle, resolvePublicCreatorIdentity } from '../..
 import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
 import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../utils/publicProfilesRealtime';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
+import { obterEntitlementPremiumGlobal } from '../../auth/userEntitlements';
 import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../config/site';
 import LoadingScreen from '../../components/LoadingScreen';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
@@ -92,10 +93,11 @@ function buildCommentThreads(flat, filtro) {
   return roots;
 }
 
-/** Distintivo nos comentários: só assinatura Premium paga (não doação / membro manual). */
-const isContaPremium = (perfilPublico) => {
-  const tipo = String(perfilPublico?.accountType ?? 'comum').toLowerCase();
-  return tipo === 'premium';
+/** Distintivo nos comentários: apenas para o próprio usuário (entitlement canônico). */
+const isContaPremium = (commentUid, currentUser, currentProfile) => {
+  if (!currentUser?.uid || !currentProfile) return false;
+  if (String(commentUid || '') !== String(currentUser.uid)) return false;
+  return obterEntitlementPremiumGlobal(currentProfile).isPremium === true;
 };
 
 export default function Leitor({ user, perfil }) {
@@ -873,7 +875,7 @@ export default function Leitor({ user, perfil }) {
     const autorLabel = formatUserDisplayWithHandle(perfilPublico);
     const unifiedPublicPath = publicCriadorProfilePath(perfilPublico, c.userId);
     const isLiked = c.usuariosQueCurtiram?.[user?.uid];
-    const isPremium = isContaPremium(perfilPublico);
+      const isPremium = isContaPremium(c.userId, user, perfil);
     const maxDepth = 8;
     const authorProfileButtonLabel = autorLabel || 'Abrir perfil do comentarista';
 

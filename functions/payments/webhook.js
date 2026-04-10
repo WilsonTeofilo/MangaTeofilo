@@ -163,9 +163,6 @@ function buildPremiumStatusPatch(uid, entitlement, now, extra = {}) {
   const status = String(entitlement?.status || 'inativo').trim().toLowerCase() || 'inativo';
   const memberUntil = toMs(entitlement?.memberUntil) || null;
   return {
-    [`${basePath}/accountType`]: isPremium ? 'premium' : 'comum',
-    [`${basePath}/membershipStatus`]: status,
-    [`${basePath}/memberUntil`]: memberUntil,
     [`${basePath}/currentPlanId`]: isPremium ? PREMIUM_PLAN_ID : null,
     [`${basePath}/premium5dNotifiedForUntil`]: isPremium ? null : extra.premium5dNotifiedForUntil ?? null,
     [`${basePath}/userEntitlements/global/isPremium`]: isPremium,
@@ -1113,9 +1110,7 @@ export const assinaturasPremiumDiario = onSchedule(
       const mu = premiumEntitlement.memberUntil;
       const premiumProjectionStillActive =
         premiumEntitlement.isPremium === true ||
-        statusMembro === 'ativo' ||
-        String(profile?.accountType || 'comum').toLowerCase() === 'premium' ||
-        String(profile?.membershipStatus || '').trim().toLowerCase() === 'ativo';
+        statusMembro === 'ativo';
       const appStatus = profile?.status;
       if (appStatus !== 'ativo') continue;
 

@@ -203,7 +203,6 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
     userHandle,
     userAvatar,
     isCreatorProfile,
-    accountType: asString(source.accountType, 'comum'),
     signupIntent,
     status: asString(source.status),
     creatorDisplayName: isCreatorProfile ? creatorDisplayName : '',

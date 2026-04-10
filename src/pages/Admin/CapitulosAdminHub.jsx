@@ -27,6 +27,14 @@ function mergeCapitulosLists(...lists) {
   return Array.from(map.values());
 }
 
+function capituloDaObra(cap, obraId) {
+  const alvo = String(obraId || '').trim().toLowerCase();
+  if (!alvo) return true;
+  const workId = String(cap?.workId || '').trim().toLowerCase();
+  const obraRef = String(cap?.obraId || '').trim().toLowerCase();
+  return (workId && workId === alvo) || (obraRef && obraRef === alvo);
+}
+
 export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const user = auth.currentUser;
@@ -91,7 +99,8 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
       const unsubCreator = onValue(
         query(dbRef(db, 'capitulos'), orderByChild('creatorId'), equalTo(user.uid)),
         (snapshot) => {
-          setAllCapitulos(toRecordList(snapshot.exists() ? snapshot.val() : {}));
+          const lista = toRecordList(snapshot.exists() ? snapshot.val() : {});
+          setAllCapitulos(lista);
         },
         () => {
           setAllCapitulos([]);
@@ -145,10 +154,10 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
     [obras, obraId]
   );
 
-  const capitulosObra = useMemo(
-    () => [...allCapitulos].sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0)),
-    [allCapitulos]
-  );
+  const capitulosObra = useMemo(() => {
+    const filtrados = allCapitulos.filter((cap) => capituloDaObra(cap, obraId));
+    return [...filtrados].sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0));
+  }, [allCapitulos, obraId]);
 
   const capsSemWorkId = useMemo(
     () => capitulosObra.filter((cap) => !String(cap.workId || '').trim()).length,

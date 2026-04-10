@@ -13,7 +13,6 @@ export { adminAuditStoreFinancialIntegrity } from './maintenance.js';
 export { adminReconcileStoreFinancialIntegrity } from './maintenance.js';
 
 export {
-  submitPrintOnDemandOrder,
   listMyPrintOnDemandOrders,
   getMyPrintOnDemandOrder,
   adminListPrintOnDemandOrders,

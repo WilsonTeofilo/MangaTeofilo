@@ -110,7 +110,6 @@ export function buildUsuarioBaseRecord({
     userName: asNonEmptyString(userName, DEFAULT_USER_DISPLAY_NAME),
     userAvatar: asNonEmptyString(userAvatar, AVATAR_FALLBACK),
     role: 'user',
-    accountType: 'comum',
     gender: 'nao_informado',
     birthYear: null,
     status,
@@ -118,8 +117,6 @@ export function buildUsuarioBaseRecord({
     notifyPromotions: false,
     marketingOptIn: false,
     marketingOptInAt: null,
-    membershipStatus: 'inativo',
-    memberUntil: null,
     currentPlanId: null,
     lastPaymentAt: null,
     premium5dNotifiedForUntil: null,
@@ -174,7 +171,6 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
     userHandle,
     userAvatar,
     isCreatorProfile,
-    accountType: asNonEmptyString(source.accountType, 'comum'),
     signupIntent,
     status: asNonEmptyString(source.status, ''),
     creatorDisplayName: isCreatorProfile ? creatorDisplayName : '',
@@ -243,10 +239,8 @@ export function buildUsuarioMissingFieldsPatch(current = {}, options = {}) {
 
   if (!asNonEmptyString(current.uid)) patch.uid = desired.uid;
   if (!asNonEmptyString(current.role)) patch.role = desired.role;
-  if (!asNonEmptyString(current.accountType)) patch.accountType = desired.accountType;
   if (!asNonEmptyString(current.gender)) patch.gender = desired.gender;
   if (!asNonEmptyString(current.sourceAcquisition)) patch.sourceAcquisition = desired.sourceAcquisition;
-  if (!asNonEmptyString(current.membershipStatus)) patch.membershipStatus = desired.membershipStatus;
   if (!asNonEmptyString(current.signupIntent)) patch.signupIntent = desired.signupIntent;
   if (!hasOwn(current, 'creatorApplicationStatus')) patch.creatorApplicationStatus = desired.creatorApplicationStatus;
   if (!hasOwn(current, 'creatorRequestedAt')) patch.creatorRequestedAt = desired.creatorRequestedAt;
@@ -255,7 +249,6 @@ export function buildUsuarioMissingFieldsPatch(current = {}, options = {}) {
   if (typeof current.notifyPromotions !== 'boolean') patch.notifyPromotions = desired.notifyPromotions;
   if (typeof current.marketingOptIn !== 'boolean') patch.marketingOptIn = desired.marketingOptIn;
   if (typeof current.marketingOptInAt !== 'number' && current.marketingOptInAt !== null) patch.marketingOptInAt = desired.marketingOptInAt;
-  if (typeof current.memberUntil !== 'number' && current.memberUntil !== null) patch.memberUntil = desired.memberUntil;
   if (typeof current.currentPlanId !== 'string' && current.currentPlanId !== null) patch.currentPlanId = desired.currentPlanId;
   if (typeof current.lastPaymentAt !== 'number' && current.lastPaymentAt !== null) patch.lastPaymentAt = desired.lastPaymentAt;
   if (typeof current.premium5dNotifiedForUntil !== 'number' && current.premium5dNotifiedForUntil !== null) {

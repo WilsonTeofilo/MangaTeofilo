@@ -21,7 +21,7 @@ import {
   REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL,
   REGIONAL_FREIGHT_DISCOUNT_RATE,
   STORE_PROMO_THRESHOLDS,
-} from './printOnDemandPricing.js';
+} from '../shared/printOnDemandPricing.js';
 import {
   readCreatorStatsFromDb,
   resolveCreatorMonetizationPreferenceFromDb,
@@ -612,15 +612,6 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
   });
   return { orderId, order };
 }
-
-/** @deprecated Prefira createPrintOnDemandCheckout no cliente (pagamento antes da confirmação percebida). */
-export const submitPrintOnDemandOrder = onCall({ region: 'us-central1' }, async (request) => {
-  assertTrustedAppRequest(request);
-  throw new HttpsError(
-    'failed-precondition',
-    'Fluxo legado desativado. Atualize a pagina e use o checkout atual do print-on-demand.'
-  );
-});
 
 export const listMyPrintOnDemandOrders = onCall({ region: 'us-central1' }, async (request) => {
   assertTrustedAppRequest(request);

@@ -99,6 +99,54 @@ export function recordReadingProgress(payload) {
   }
 }
 
+function buildIdSet(value, normalizer = (v) => v) {
+  if (!value) return null;
+  if (value instanceof Set) return value;
+  const set = new Set();
+  for (const item of value) {
+    const key = normalizer(item);
+    if (key) set.add(key);
+  }
+  return set;
+}
+
+/**
+ * Remove entradas orfas (obra/capitulo inexistente) do historico local.
+ * @param {{ validWorkIds?: string[] | Set<string>, validChapterIds?: string[] | Set<string> }} payload
+ */
+export function pruneReadingHistory(payload = {}) {
+  if (typeof localStorage === 'undefined') return { changed: false, removed: 0 };
+  const workSet = buildIdSet(payload.validWorkIds, (v) => String(v || '').toLowerCase());
+  const chapterSet = buildIdSet(payload.validChapterIds, (v) => String(v || '').trim());
+  const hist = getReadHistory();
+  if (!hist.length) return { changed: false, removed: 0 };
+  const filtered = hist.filter((entry) => {
+    const workOk = !workSet || workSet.has(String(entry.workId || '').toLowerCase());
+    const chapterOk = !chapterSet || chapterSet.has(String(entry.chapterId || '').trim());
+    return workOk && chapterOk;
+  });
+  let changed = filtered.length !== hist.length;
+  if (changed) {
+    localStorage.setItem(READ_HISTORY_KEY, JSON.stringify(filtered.slice(0, MAX_HISTORY_ENTRIES)));
+  }
+
+  const last = getLastRead();
+  if (last) {
+    const lastWorkOk = !workSet || workSet.has(String(last.workId || '').toLowerCase());
+    const lastChapterOk = !chapterSet || chapterSet.has(String(last.chapterId || '').trim());
+    if (!lastWorkOk || !lastChapterOk) {
+      localStorage.removeItem(READ_LAST_KEY);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    window.dispatchEvent(new CustomEvent('mtf-reading-updated'));
+  }
+
+  return { changed, removed: Math.max(0, hist.length - filtered.length) };
+}
+
 export function subscribeReadingProgress(cb) {
   if (typeof window === 'undefined') return () => {};
   const fn = () => cb();

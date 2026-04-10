@@ -41,6 +41,26 @@ function pathObraFromFavoriteRow(row) {
   return `/work/${encodeURIComponent(obraSegmentoUrlPublica({ id: workId, slug }))}`;
 }
 
+function applyImageFallback(event, fallback = '/assets/fotos/shito.jpg') {
+  if (event?.currentTarget?.dataset?.fallbackApplied === 'true') return;
+  event.currentTarget.dataset.fallbackApplied = 'true';
+  event.currentTarget.src = fallback;
+}
+
+function resolveCreatorWorkCoverUrl(obra) {
+  const cover = String(obra?.capaUrl || obra?.coverUrl || '').trim();
+  if (cover) return cover;
+  const banner = String(obra?.bannerUrl || '').trim();
+  if (banner) return banner;
+  return '/assets/fotos/shito.jpg';
+}
+
+function resolveFavoriteWorkCoverUrl(row) {
+  const cover = String(row?.coverUrl || row?.capaUrl || '').trim();
+  if (cover) return cover;
+  return '/assets/fotos/shito.jpg';
+}
+
 function formatarPrecoBrl(valor) {
   const n = Number(valor);
   if (!Number.isFinite(n)) return 'R$ 0,00';
@@ -381,6 +401,7 @@ export default function CreatorPublicProfilePage({ user }) {
           savedAt: Number(row?.savedAt || row?.createdAt || 0) || 0,
         };
       })
+      .filter((row) => String(row?.workId || '').trim() && String(row?.title || '').trim())
       .sort((a, b) => Number(b.savedAt || 0) - Number(a.savedAt || 0));
   }, [favoritesMap, obras]);
 
@@ -597,6 +618,7 @@ export default function CreatorPublicProfilePage({ user }) {
                       loading="lazy"
                       referrerPolicy="no-referrer"
                       crossOrigin="anonymous"
+                      onError={(e) => applyImageFallback(e, '/assets/avatares/ava1.webp')}
                     />
                     <span className="criador-follower-row__body">
                       <strong>{follower.displayName || 'Leitor'}</strong>
@@ -645,7 +667,13 @@ export default function CreatorPublicProfilePage({ user }) {
         </div>
         <div className="criador-hero__foreground">
         <div className="criador-hero__avatar">
-          <img src={avatar} alt={publicLine} referrerPolicy="no-referrer" crossOrigin="anonymous" />
+          <img
+            src={avatar}
+            alt={publicLine}
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
+            onError={(e) => applyImageFallback(e)}
+          />
         </div>
         <div className="criador-hero__content">
           <span className={`criador-hero__pill${profileMode === 'reader' ? ' criador-hero__pill--reader' : ''}`}>
@@ -837,11 +865,12 @@ export default function CreatorPublicProfilePage({ user }) {
                   >
                     <div className="criador-obra-card__thumb">
                       <img
-                        src={obra.capaUrl || obra.bannerUrl || '/assets/fotos/shito.jpg'}
+                        src={resolveCreatorWorkCoverUrl(obra)}
                         alt={obra.titulo || obra.id}
                         loading="lazy"
                         referrerPolicy="no-referrer"
                         crossOrigin="anonymous"
+                        onError={(e) => applyImageFallback(e)}
                       />
                     </div>
                     <div className="criador-obra-card__body">
@@ -888,11 +917,12 @@ export default function CreatorPublicProfilePage({ user }) {
                 >
                   <div className="criador-favorite-card__thumb">
                     <img
-                      src={String(fav.coverUrl || '').trim() || '/assets/fotos/shito.jpg'}
+                      src={resolveFavoriteWorkCoverUrl(fav)}
                       alt={String(fav.title || fav.workId || '')}
                       loading="lazy"
                       referrerPolicy="no-referrer"
                       crossOrigin="anonymous"
+                      onError={(e) => applyImageFallback(e)}
                     />
                   </div>
                   <span className="criador-favorite-card__title">{fav.title || fav.workId}</span>

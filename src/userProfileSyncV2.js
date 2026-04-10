@@ -15,7 +15,6 @@ async function syncPublicProfileIdentity(uid, source = {}) {
     [`usuarios/${uid}/publicProfile/userName`]: publicProfile.userName || DEFAULT_USER_DISPLAY_NAME,
     [`usuarios/${uid}/publicProfile/userHandle`]: publicProfile.userHandle || null,
     [`usuarios/${uid}/publicProfile/userAvatar`]: publicProfile.userAvatar || AVATAR_FALLBACK,
-    [`usuarios/${uid}/publicProfile/accountType`]: publicProfile.accountType || 'comum',
     [`usuarios/${uid}/publicProfile/signupIntent`]: publicProfile.signupIntent || 'reader',
     [`usuarios/${uid}/publicProfile/status`]: publicProfile.status || '',
     [`usuarios/${uid}/publicProfile/updatedAt`]: Date.now(),

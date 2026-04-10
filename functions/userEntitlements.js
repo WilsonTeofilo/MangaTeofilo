@@ -8,33 +8,12 @@ function normalizeStatus(value, fallback = 'inativo') {
   return raw || fallback;
 }
 
-function hasCanonicalGlobalEntitlement(raw) {
-  if (!raw || typeof raw !== 'object') return false;
-  return (
-    typeof raw.isPremium === 'boolean' ||
-    typeof raw.memberUntil === 'number' ||
-    typeof raw.premiumUntil === 'number' ||
-    String(raw.status || '').trim().length > 0
-  );
-}
-
 function normalizeGlobalEntitlement(profile = {}) {
   const now = Date.now();
   const raw = profile?.userEntitlements?.global || {};
-  const rawExists = hasCanonicalGlobalEntitlement(raw);
-  const fallbackUntil = rawExists ? 0 : toMs(profile.memberUntil);
-  const fallbackStatus = rawExists
-    ? 'inativo'
-    : normalizeStatus(profile.membershipStatus, fallbackUntil > now ? 'ativo' : 'inativo');
-  const fallbackIsPremium = rawExists
-    ? false
-    : String(profile.accountType || '').toLowerCase() === 'premium' &&
-      fallbackStatus === 'ativo' &&
-      fallbackUntil > now;
-
-  const memberUntil = toMs(raw.memberUntil || raw.premiumUntil || fallbackUntil);
-  const status = normalizeStatus(raw.status, fallbackStatus);
-  const isPremium = raw.isPremium === true || (fallbackIsPremium && status === 'ativo' && memberUntil > now);
+  const memberUntil = toMs(raw.memberUntil || raw.premiumUntil);
+  const status = normalizeStatus(raw.status, memberUntil > now ? 'ativo' : 'inativo');
+  const isPremium = raw.isPremium === true;
 
   return {
     isPremium: Boolean(isPremium && memberUntil > now && status === 'ativo'),

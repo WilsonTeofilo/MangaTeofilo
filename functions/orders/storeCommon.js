@@ -1,5 +1,5 @@
 import { HttpsError } from 'firebase-functions/v2/https';
-import { buildStoreShippingQuote } from '../storeShipping.js';
+import { buildStoreShippingQuote } from '../shared/storeShipping.js';
 import { normalizeAndValidateCpf } from '../creatorCompliance.js';
 import { buildUserEntitlements } from '../userEntitlements.js';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';

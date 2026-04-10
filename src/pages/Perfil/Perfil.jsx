@@ -20,6 +20,7 @@ import {
 } from '../../constants'; // centralizado
 import {
   podeUsarAvataresPremiumDaLoja,
+  obterEntitlementPremiumGlobal,
 } from '../../utils/capituloLancamento';
 import { emptyAdminAccess } from '../../auth/adminAccess';
 import { apoieUrlAbsolutaParaCriador } from '../../utils/creatorSupportPaths';
@@ -39,13 +40,14 @@ import {
   safeDeleteStorageObject,
 } from '../../utils/storageCleanup';
 import {
-  creatorMonetizationStatusLabel,
   effectiveCreatorMonetizationStatus,
   normalizeCreatorMonetizationPreference,
+  resolveCreatorMonetizationEligibilityFromDb,
   resolveCreatorMonetizationApplicationStatusFromDb,
   resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorSupportOfferFromDb,
   resolveCreatorMonetizationStatusFromDb,
+  resolveCreatorMonetizationUiState,
 } from '../../utils/creatorMonetizationUi';
 import { BRAZILIAN_STATES, PERFIL_LOJA_DADOS_HASH } from '../../utils/brazilianStates';
 import { normalizeBuyerProfile, sanitizeBuyerProfileForSave } from '../../utils/storeBuyerProfile';
@@ -98,7 +100,6 @@ export default function Perfil({
   const [gender, setGender] = useState('nao_informado');
   const [birthDate, setBirthDate] = useState('');
   const [birthDateDraft, setBirthDateDraft] = useState('');
-  const [accountType, setAccountType] = useState('comum');
   const [loading, setLoading]                 = useState(false);
   const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
   const [perfilDb, setPerfilDb]               = useState(null);
@@ -193,9 +194,6 @@ export default function Perfil({
       setNotifyPromotions(Boolean(perfil.notifyPromotions));
       setNotifyCommentSocial(perfil.notificationPrefs?.commentSocialInApp !== false);
       setGender(perfil.gender || 'nao_informado');
-      const rawTipo = String(perfil.accountType ?? 'comum').toLowerCase();
-      const tipoValido = ['comum', 'membro', 'premium', 'admin'].includes(rawTipo) ? rawTipo : 'comum';
-      setAccountType(tipoValido);
       const fromDb = String(perfil.birthDate || '').trim();
       let birthIso = '';
       if (fromDb && parseBirthDateLocal(fromDb)) {
@@ -314,11 +312,6 @@ export default function Perfil({
     creatorMonetizationStatus
   );
   /** Ja aprovado pela equipe (ou equivalente) - religar monetizacao não pede formulário de novo. */
-  const hasMonetizationClearance = useMemo(() => {
-    if (creatorMonetizationApplicationStatus === 'approved') return true;
-    if (String(perfilDb?.creatorApplicationStatus || '').toLowerCase() === 'approved') return true;
-    return creatorMonetizationStatus === 'active';
-  }, [creatorMonetizationApplicationStatus, perfilDb, creatorMonetizationStatus]);
   const creatorReviewReason = String(perfilDb?.creatorReviewReason || '').trim();
   const creatorModerationAction = String(perfilDb?.creatorModerationAction || '').trim().toLowerCase();
   const creatorSignupIntent = String(perfilDb?.signupIntent || '').trim().toLowerCase();
@@ -326,7 +319,7 @@ export default function Perfil({
   const birthAge = birthIsoEffective ? ageFromBirthDateLocal(birthIsoEffective) : null;
   const isUnderageByBirthYear = birthAge != null && birthAge < 18;
   const isCreatorCandidate = creatorSignupIntent === 'creator' || creatorApplicationStatus !== '';
-  const podeUsarAvatarPremium = podeUsarAvataresPremiumDaLoja(user, perfilDb, accountType);
+  const podeUsarAvatarPremium = podeUsarAvataresPremiumDaLoja(user, perfilDb);
   const avataresLiberados = listaAvatares.filter((item) => {
     if (normalizarAcessoAvatar(item) === 'publico') return true;
     return podeUsarAvatarPremium;
@@ -354,10 +347,16 @@ export default function Perfil({
     adminAccess.isMangaka && creatorMonetizationApplicationStatus === 'not_requested';
   const monetizacaoBloqueadaPorIdade =
     creatorMonetizationStatus === 'blocked_underage' || isUnderageByBirthYear;
+  const monetizationEligibility = resolveCreatorMonetizationEligibilityFromDb(perfilDb || {});
+  const monetizationUiState = resolveCreatorMonetizationUiState(perfilDb || {});
 
   const handleMonetizarContaClick = () => {
     if (monetizacaoBloqueadaPorIdade) {
       setUnderageMonetizeModalOpen(true);
+      return;
+    }
+    if (monetizationUiState.key === 'locked_by_level') {
+      navigate('/creator/missoes');
       return;
     }
     navigate('/creator/onboarding?intent=mangaka_monetize');
@@ -366,12 +365,8 @@ export default function Perfil({
   const handleDesativarMonetizacaoClick = () => {
     navigate('/creator/monetizacao');
   };
-  const creatorStatusLabel = creatorMonetizationStatusLabel(
-    creatorMonetizationPreference,
-    creatorMonetizationStatus
-  );
-  const premiumAtivo = false;
-  const premiumEntitlement = null;
+  const premiumEntitlement = obterEntitlementPremiumGlobal(perfilDb || {});
+  const premiumAtivo = premiumEntitlement.isPremium === true;
   const membershipCriadorAtiva = false;
   const membershipsCriadorAtivas = [];
   const formatarTempoRestanteAssinatura = () => ({ ativo: false, texto: '' });
@@ -699,7 +694,6 @@ export default function Perfil({
         uid: user.uid,
         userName: accountDisplayName,
         userAvatar: finalAvatar,
-        accountType,
         userHandle: persistedHandle || perfilDb?.userHandle || '',
         signupIntent:
           privatePatch[`usuarios/${user.uid}/signupIntent`] ??
@@ -755,7 +749,6 @@ export default function Perfil({
         [`usuarios/${user.uid}/publicProfile/userHandle`]: publicProfileRecord.userHandle || null,
         [`usuarios/${user.uid}/publicProfile/userAvatar`]: publicProfileRecord.userAvatar || finalAvatar,
         [`usuarios/${user.uid}/publicProfile/isCreatorProfile`]: publicProfileRecord.isCreatorProfile === true,
-        [`usuarios/${user.uid}/publicProfile/accountType`]: publicProfileRecord.accountType || 'comum',
         [`usuarios/${user.uid}/publicProfile/signupIntent`]: publicProfileRecord.signupIntent || 'reader',
         [`usuarios/${user.uid}/publicProfile/status`]: publicProfileRecord.status || '',
         [`usuarios/${user.uid}/publicProfile/creatorDisplayName`]: publicProfileRecord.creatorDisplayName || null,
@@ -1014,7 +1007,11 @@ export default function Perfil({
                     {creatorHandleLocked || normalizeUsernameInput(userHandleDraft) || '...'}
                   </p>
                 ) : null}
-                <p className="perfil-creator-hero__meta">{creatorStatusLabel}</p>
+                <p className="perfil-creator-hero__meta">
+                  {monetizationUiState.key === 'locked_by_level'
+                    ? `${monetizationUiState.title} · nivel atual ${monetizationEligibility.level}`
+                    : monetizationUiState.title}
+                </p>
                 <div className="perfil-creator-hero__actions">
                   <button
                     type="button"
@@ -1332,34 +1329,36 @@ export default function Perfil({
               </header>
 
               <div className="perfil-creator-monetization-card">
-                {creatorMonetizationStatus === 'blocked_underage' || monetizacaoBloqueadaPorIdade ? (
-                  <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--warn">
-                    <strong>Status:</strong> indisponivel por idade (18+ para repasse).
+                <p
+                  className={`perfil-creator-monetization-card__status${
+                    monetizationUiState.key === 'financial_active'
+                      ? ' perfil-creator-monetization-card__status--on'
+                      : monetizationUiState.key === 'blocked_underage' ||
+                          monetizationUiState.key === 'documents_rejected'
+                        ? ' perfil-creator-monetization-card__status--warn'
+                        : ''
+                  }`}
+                >
+                  <strong>Status:</strong> {monetizationUiState.title}.
+                </p>
+                <p className="perfil-mangaka-apoio-label" style={{ marginTop: 10 }}>
+                  {monetizationUiState.detail}
+                </p>
+                {monetizationUiState.key === 'locked_by_level' ? (
+                  <p className="perfil-mangaka-apoio-label" style={{ marginTop: 10 }}>
+                    Seu nivel atual: <strong>{monetizationEligibility.level}</strong>. A solicitacao documental abre no
+                    nivel 2.
                   </p>
-                ) : creatorMonetizationStatusEffective === 'active' ? (
-                  <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--on">
-                    <strong>Status:</strong> ativa - recebendo repasses.
+                ) : null}
+                {creatorReviewReason && monetizationUiState.key === 'documents_rejected' ? (
+                  <p className="perfil-mangaka-apoio-label" style={{ marginTop: 10 }}>
+                    Motivo registrado pela equipe: <strong>{creatorReviewReason}</strong>
                   </p>
-                ) : creatorMonetizationApplicationStatus === 'pending' ? (
-                  <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> solicitacao enviada - aguardando analise da equipe.
-                  </p>
-                ) : creatorMonetizationApplicationStatus === 'rejected' ? (
-                  <p className="perfil-creator-monetization-card__status perfil-creator-monetization-card__status--warn">
-                    <strong>Status:</strong> monetizacao nao aprovada no momento.
-                  </p>
-                ) : hasMonetizationClearance ? (
-                  <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> documentos ja aprovados. Abra a area de monetizacao para acompanhar.
-                  </p>
-                ) : (
-                  <p className="perfil-creator-monetization-card__status">
-                    <strong>Status:</strong> publica normalmente. A monetizacao vira solicitacao separada depois das metas.
-                  </p>
-                )}
+                ) : null}
 
                 <div className="perfil-creator-monetization-card__actions">
-                  {creatorMonetizationStatusEffective === 'active' ? (
+                  {monetizationUiState.key === 'financial_active' ||
+                  monetizationUiState.key === 'documents_approved_waiting_activation' ? (
                     <button
                       type="button"
                       className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
@@ -1367,7 +1366,7 @@ export default function Perfil({
                     >
                       Abrir monetizacao
                     </button>
-                  ) : creatorMonetizationApplicationStatus === 'pending' ? (
+                  ) : monetizationUiState.key === 'documents_under_review' ? (
                     <button
                       type="button"
                       className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
@@ -1375,21 +1374,38 @@ export default function Perfil({
                     >
                       Ver solicitacao
                     </button>
+                  ) : monetizationUiState.key === 'locked_by_level' ? (
+                    <button
+                      type="button"
+                      className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
+                      onClick={() => navigate('/creator/missoes')}
+                    >
+                      Ver metas
+                    </button>
+                  ) : monetizationUiState.key === 'blocked_underage' ? (
+                    <button
+                      type="button"
+                      className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
+                      onClick={handleMonetizarContaClick}
+                    >
+                      Ver requisitos
+                    </button>
                   ) : (
                     <button
                       type="button"
                       className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--on"
                       onClick={handleMonetizarContaClick}
-                      disabled={monetizacaoBloqueadaPorIdade}
+                      disabled={monetizationUiState.canRequestNow !== true}
                     >
-                      Solicitar monetizacao
+                      {monetizationUiState.cta}
                     </button>
                   )}
                 </div>
 
-                {needsFirstMonetizationApplication ? (
+                {needsFirstMonetizationApplication && monetizationUiState.key === 'can_request_documents' ? (
                   <p className="perfil-mangaka-apoio-label" style={{ marginTop: 12 }}>
-                    Quando bater as metas da plataforma, abrimos o formulario com nome legal, CPF e PIX para a equipe revisar.
+                    O formulario documental ja foi liberado para sua conta. Agora envie nome legal, CPF e PIX para a
+                    equipe revisar manualmente.
                   </p>
                 ) : null}
               </div>
@@ -1716,18 +1732,18 @@ export default function Perfil({
           </div>
 
           <div className="input-group">
-            <label>TIPO DE CONTA</label>
-            <div
-              className={`account-type-badge ${
-                accountType === 'admin' ? 'admin' : accountType !== 'comum' ? 'premium' : ''
-              }`}
-            >
-              {accountType === 'admin'
-                ? 'Conta Admin'
-                : accountType === 'membro' || accountType === 'premium'
-                  ? 'Conta Premium'
-              : 'Conta Comum'}
-            </div>
+              <label>TIPO DE CONTA</label>
+              <div
+                className={`account-type-badge ${
+                  isStaffAdmin ? 'admin' : premiumAtivo ? 'premium' : ''
+                }`}
+              >
+                {isStaffAdmin
+                  ? 'Conta Admin'
+                  : premiumAtivo
+                    ? 'Conta Premium'
+                  : 'Conta Comum'}
+              </div>
           </div>
 
           <section id={PERFIL_LOJA_DADOS_HASH} className="perfil-section-loja-dados">

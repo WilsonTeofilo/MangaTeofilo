@@ -95,6 +95,8 @@ export function resolveCreatorSupportOfferFromDb(row) {
   };
 }
 
+import { buildCreatorProgressViewModel, metricsFromUsuarioRow } from './creatorProgression';
+
 /**
  * Consolida status quando `usuarios/{uid}` tem valores divergentes
  * (raiz vs `creatorProfile` vs `creator.monetization` apos migracoes ou updates parciais).
@@ -134,8 +136,154 @@ export function creatorMonetizationCanToggle(row, preference) {
 export function creatorMonetizationStatusLabel(preference, status) {
   const pref = normalizeCreatorMonetizationPreference(preference);
   const norm = effectiveCreatorMonetizationStatus(preference, status);
-  if (pref !== 'monetize') return 'Apenas publicar';
-  if (norm === 'active') return 'Monetizacao ativa - recebendo repasses';
-  if (norm === 'blocked_underage') return 'Monetizacao bloqueada por idade';
-  return 'Solicitacao em analise';
+  if (pref !== 'monetize') return 'Publicacao sem monetizacao';
+  if (norm === 'active') return 'Monetizacao ativa';
+  if (norm === 'blocked_underage') return 'Monetizacao indisponivel por idade';
+  return 'Monetizacao ainda nao liberada';
+}
+
+export function resolveCreatorMonetizationEligibilityFromDb(row) {
+  const progress = buildCreatorProgressViewModel(metricsFromUsuarioRow(row || {}));
+  return {
+    level: Number(progress?.level || 0) || 0,
+    unlocked: progress?.monetizationThresholdReached === true,
+    gapMessage: String(progress?.primaryMonetizationGapPhrase || '').trim(),
+    progressPercent: Number(progress?.monetizationProgressPercent || 0) || 0,
+  };
+}
+
+export function resolveCreatorMonetizationUiState(row) {
+  const preference = resolveCreatorMonetizationPreferenceFromDb(row);
+  const applicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(row);
+  const financialStatus = resolveCreatorFinancialStatusFromDb(row);
+  const effectiveStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);
+  const eligibility = resolveCreatorMonetizationEligibilityFromDb(row);
+  const creatorAccessStatus = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
+
+  if (creatorAccessStatus !== 'approved') {
+    return {
+      key: 'creator_access_pending',
+      title: 'Acesso de creator em andamento',
+      detail:
+        'Seu acesso de creator ainda nao foi concluido. A monetizacao so aparece depois que o perfil de creator estiver aprovado.',
+      cta: 'Concluir creator',
+      canRequestNow: false,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  if (applicationStatus === 'blocked_underage' || row?.creator?.meta?.isAdult === false) {
+    return {
+      key: 'blocked_underage',
+      title: 'Monetizacao indisponivel por idade',
+      detail:
+        'Voce pode publicar normalmente, mas repasses financeiros so ficam disponiveis para maiores de 18 anos.',
+      cta: 'Ver requisitos',
+      canRequestNow: false,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  if (!eligibility.unlocked) {
+    return {
+      key: 'locked_by_level',
+      title: 'Monetizacao desbloqueia no nivel 2 da plataforma',
+      detail:
+        eligibility.gapMessage ||
+        `Seu nivel atual e ${eligibility.level}. Continue crescendo para liberar a solicitacao documental.`,
+      cta: 'Ver metas',
+      canRequestNow: false,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  if (applicationStatus === 'pending') {
+    return {
+      key: 'documents_under_review',
+      title: 'Documentos enviados para analise',
+      detail:
+        'Sua solicitacao foi enviada. Agora a equipe precisa conferir os dados antes de liberar qualquer repasse.',
+      cta: 'Ver solicitacao',
+      canRequestNow: false,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  if (applicationStatus === 'rejected') {
+    return {
+      key: 'documents_rejected',
+      title: 'Solicitacao documental nao aprovada',
+      detail:
+        'A equipe recusou a solicitacao atual. Revise os dados e envie novamente quando estiver tudo certo.',
+      cta: 'Revisar dados',
+      canRequestNow: true,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  if (applicationStatus === 'approved' && financialStatus === 'active') {
+    return {
+      key: 'financial_active',
+      title: 'Monetizacao ativa',
+      detail:
+        'Equipe e financeiro ja liberaram sua conta para receber repasses e publicar apoio na pagina.',
+      cta: 'Abrir monetizacao',
+      canRequestNow: false,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  if (applicationStatus === 'approved') {
+    return {
+      key: 'documents_approved_waiting_activation',
+      title: 'Documentos aprovados pela equipe',
+      detail:
+        'A revisao manual foi concluida, mas a etapa financeira ainda nao foi ativada para repasses.',
+      cta: 'Abrir monetizacao',
+      canRequestNow: false,
+      preference,
+      applicationStatus,
+      financialStatus,
+      effectiveStatus,
+      eligibility,
+    };
+  }
+
+  return {
+    key: 'can_request_documents',
+    title: 'Voce ja pode solicitar monetizacao',
+    detail:
+      'Seu creator ja bateu as metas minimas. O proximo passo e enviar seus dados para a equipe revisar manualmente.',
+    cta: 'Solicitar monetizacao',
+    canRequestNow: true,
+    preference,
+    applicationStatus,
+    financialStatus,
+    effectiveStatus,
+    eligibility,
+  };
 }

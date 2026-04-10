@@ -364,10 +364,6 @@
             ".write": false
           }
         },
-        "creatorMemberships": {
-          ".read": false,
-          ".write": false
-        },
         "creator": {
           "profile": {
             "displayName": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
@@ -405,10 +401,6 @@
         "createdAt":         { ".validate": "newData.isNumber() && (!data.exists() || newData.val() === data.val())" },
         "lastLogin":         { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isNumber()" },
         "sourceAcquisition": { ".validate": "newData.isString() && newData.val().length > 0 && (!data.exists() || newData.val() === data.val())" },
-        "accountType": {
-          ".read": "auth != null",
-          ".validate": "(newData.val() === 'comum' || newData.val() === 'membro' || newData.val() === 'premium' || newData.val() === 'admin') && ((!data.exists() && newData.val() === 'comum') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
-        },
         "role": {
           ".write": false,
           ".validate": "(newData.val() === 'user' || newData.val() === 'admin' || newData.val() === 'mangaka' || newData.val() === 'super_admin' || newData.val() === 'membro') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
@@ -417,11 +409,6 @@
           ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
           ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
         },
-        "membershipStatus": {
-          ".write": false,
-          ".validate": "(newData.val() === 'inativo' || newData.val() === 'ativo' || newData.val() === 'vencido' || newData.val() === 'cancelado') && ((!data.exists() && newData.val() === 'inativo') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
-        },
-        "memberUntil":   { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
         "currentPlanId": { ".write": false, ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
         "lastPaymentAt": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
         "premium5dNotifiedForUntil": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },

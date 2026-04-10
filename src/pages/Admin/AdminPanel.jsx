@@ -71,6 +71,10 @@ function nomeArquivoComExtensao(name, novaExt) {
   return `${base}${novaExt}`;
 }
 
+function assinaturaArquivo(file) {
+  return `${file?.name || ''}|${file?.size || 0}|${file?.lastModified || 0}`;
+}
+
 function sanitizarSegmentoStorage(valor, fallback = 'item') {
   const limpo = String(valor || '')
     .normalize('NFD')
@@ -554,6 +558,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const dragCapaRef = useRef(null);
   const [arquivosPaginas, setArquivosPaginas] = useState([]);
   const [paginasExistentes, setPaginasExistentes] = useState([]);
+  const [paginasFileLabel, setPaginasFileLabel] = useState('');
 
   const [capitulos, setCapitulos] = useState([]);
   const [obras, setObras] = useState([]);
@@ -769,7 +774,17 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     const destino = Math.max(1, Math.min(5, Number(etapaDestino) || 1));
     if (destino <= etapaLiberadaMax) return '';
     if (!etapaUploadCompleta) {
-      return 'Envie uma capa válida e pelo menos uma página antes de avançar.';
+      const temCapa = Boolean(capaCapitulo || capituloEditando?.capaUrl);
+      const temPaginas = totalPaginasAtual > 0;
+      if (!temCapa && !temPaginas) {
+        return 'Faltam a capa e as páginas do capítulo.';
+      }
+      if (!temCapa) {
+        return 'Falta enviar a capa do capítulo.';
+      }
+      if (!temPaginas) {
+        return 'Falta enviar pelo menos uma página do capítulo.';
+      }
     }
     if (!etapaOrganizacaoCompleta) {
       return 'Adicione e organize ao menos uma página antes de seguir.';
@@ -794,6 +809,9 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     etapaCapaCompleta,
     tituloNormalizado,
     numeroCapituloNormalizado,
+    capaCapitulo,
+    capituloEditando?.capaUrl,
+    totalPaginasAtual,
   ]);
 
   const tentarIrParaEtapa = useCallback((etapaDestino) => {
@@ -1034,7 +1052,17 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       setErroModal(erros[0]);
       return;
     }
-    setArquivosPaginas((prev) => [...prev, ...novos]);
+    setArquivosPaginas((prev) => {
+      const existentes = new Set(prev.map(assinaturaArquivo));
+      const unicos = novos.filter((file) => !existentes.has(assinaturaArquivo(file)));
+      if (!unicos.length) {
+        setErroModal('Essas páginas já foram selecionadas. Remova ou troque para enviar outra.');
+        return prev;
+      }
+      const next = [...prev, ...unicos];
+      setPaginasFileLabel(`${next.length} página(s) selecionada(s)`);
+      return next;
+    });
     if (capaCapitulo || capituloEditando?.capaUrl) {
       tentarIrParaEtapa(2);
     }
@@ -1056,6 +1084,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       tentarIrParaEtapa(2);
     }
   };
+
+  useEffect(() => {
+    if (arquivosPaginas.length === 0) {
+      setPaginasFileLabel('');
+      return;
+    }
+    setPaginasFileLabel(`${arquivosPaginas.length} página(s) selecionada(s)`);
+  }, [arquivosPaginas]);
 
   const iniciarArrasteCapa = (event) => {
     if (!capaEditavel || !capaEditorRef.current || !capaDimensoes) return;
@@ -1234,21 +1270,35 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
 
       if (editandoId) {
-        if (
-          !dados.capaUrl &&
-          !capituloEditando?.capaUrl &&
-          !(Array.isArray(dados.paginas) && dados.paginas.length > 0) &&
-          !(Array.isArray(paginasExistentes) && paginasExistentes.length > 0)
-        ) {
-          throw new Error('Capítulo inválido: é obrigatório manter capa e pelo menos uma página.');
+        const temCapaFinal = Boolean(dados.capaUrl || capituloEditando?.capaUrl);
+        const temPaginasFinal = Boolean(
+          (Array.isArray(dados.paginas) && dados.paginas.length > 0) ||
+          (Array.isArray(paginasExistentes) && paginasExistentes.length > 0)
+        );
+        if (!temCapaFinal && !temPaginasFinal) {
+          throw new Error('Faltam a capa e as páginas do capítulo.');
+        }
+        if (!temCapaFinal) {
+          throw new Error('Falta a capa do capítulo.');
+        }
+        if (!temPaginasFinal) {
+          throw new Error('Faltam as páginas do capítulo.');
         }
         await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
         if (capaStoragePath) {
           await safeDeleteStorageObject(storage, capaAnterior);
         }
       } else {
-        if (!urlCapa || paginasUpload.length === 0) {
-            throw new Error('Obrigatório: capa e páginas válidas.');
+        const temCapaFinal = Boolean(urlCapa);
+        const temPaginasFinal = paginasUpload.length > 0;
+        if (!temCapaFinal && !temPaginasFinal) {
+          throw new Error('Faltam a capa e as páginas do capítulo.');
+        }
+        if (!temCapaFinal) {
+          throw new Error('Falta a capa do capítulo.');
+        }
+        if (!temPaginasFinal) {
+          throw new Error('Faltam as páginas do capítulo.');
         }
         await set(push(dbRef(db, 'capitulos')), dados);
       }
@@ -1266,6 +1316,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       setPublicReleaseAtInput('');
       setAntecipadoMembros(true);
       setCapaFileLabel('');
+      setPaginasFileLabel('');
       e.target.reset();
       setProgressoMsg('FORJADO COM SUCESSO!');
     } catch (err) { 
@@ -1306,6 +1357,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setPublicReleaseAtInput('');
     setAntecipadoMembros(true);
     setCapaFileLabel('');
+    setPaginasFileLabel('');
     navigate(chaptersHubPath);
   };
 
@@ -1497,8 +1549,17 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                       onChange={(e) => handleSelecionarCapa(e.target.files?.[0])}
                     />
                   </label>
-                  <label>
-                    Páginas (múltiplas)
+                  <label className="admin-capa-file-label">
+                    <span className="admin-capa-file-label__text">Páginas (múltiplas)</span>
+                    {paginasFileLabel ? (
+                      <span className="admin-capa-file-name" title={paginasFileLabel}>
+                        {paginasFileLabel}
+                      </span>
+                    ) : (
+                      <span className="admin-capa-file-name admin-capa-file-name--empty">
+                        Nenhuma página selecionada
+                      </span>
+                    )}
                     <input
                       type="file"
                       multiple

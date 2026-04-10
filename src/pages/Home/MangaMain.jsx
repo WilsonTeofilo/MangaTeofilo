@@ -11,7 +11,12 @@ import {
   obraSegmentoUrlPublica,
 } from '../../config/obras';
 import KokuinLegacyLandingSection from '../../components/KokuinLegacyLandingSection';
-import { getLastRead, getReadHistory, subscribeReadingProgress } from '../../utils/readingProgressLocal';
+import {
+  getLastRead,
+  getReadHistory,
+  pruneReadingHistory,
+  subscribeReadingProgress,
+} from '../../utils/readingProgressLocal';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { buildDiscoveryRanking } from '../../utils/discoveryRanking';
 import { toRecordList } from '../../utils/firebaseRecordList';
@@ -90,6 +95,30 @@ export default function MangaMain({ user }) {
     return () => unsub();
   }, []);
 
+  const validWorkIds = useMemo(
+    () => new Set(obrasPublicadas.map((obra) => normalizarObraId(obra?.id || ''))),
+    [obrasPublicadas]
+  );
+
+  const validChapterIds = useMemo(
+    () =>
+      new Set(
+        capitulos
+          .map((cap) => String(cap?.id || '').trim())
+          .filter(Boolean)
+      ),
+    [capitulos]
+  );
+
+  useEffect(() => {
+    if (loadingObras || loadingCapitulos) return;
+    if (!validWorkIds.size) return;
+    pruneReadingHistory({
+      validWorkIds,
+      validChapterIds: validChapterIds.size ? validChapterIds : undefined,
+    });
+  }, [loadingObras, loadingCapitulos, validWorkIds, validChapterIds]);
+
   const creatorIdsForLookup = useMemo(
     () => collectCreatorIdsFromWorksAndChapters(obrasPublicadas, capitulos),
     [obrasPublicadas, capitulos]
@@ -125,7 +154,8 @@ export default function MangaMain({ user }) {
     const lr = getLastRead();
     if (!lr) return null;
     const obra = obrasPublicadas.find((o) => normalizarObraId(o.id) === normalizarObraId(lr.workId));
-    return { lr, obra: obra || null };
+    if (!obra) return null;
+    return { lr, obra };
   }, [obrasPublicadas, readingTick]);
 
   const recentReads = useMemo(() => {
@@ -133,7 +163,8 @@ export default function MangaMain({ user }) {
     return raw.map((e) => ({
       entry: e,
       obra: obrasPublicadas.find((o) => normalizarObraId(o.id) === normalizarObraId(e.workId)) || null,
-    }));
+    }))
+    .filter((item) => Boolean(item.obra));
   }, [obrasPublicadas, readingTick]);
 
   const nomeCriador = (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos);

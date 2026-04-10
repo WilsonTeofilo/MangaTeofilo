@@ -57,10 +57,8 @@ function buildAdminUserSchemaPatch(uid, row = {}, authUser = null) {
   if (!String(current.userName || '').trim()) patch.userName = authName || 'Leitor';
   if (!String(current.userAvatar || '').trim()) patch.userAvatar = authAvatar || USER_AVATAR_FALLBACK;
   if (!String(current.role || '').trim()) patch.role = 'user';
-  if (!String(current.accountType || '').trim()) patch.accountType = 'comum';
   if (!String(current.gender || '').trim()) patch.gender = 'nao_informado';
   if (!String(current.status || '').trim()) patch.status = 'pendente';
-  if (!String(current.membershipStatus || '').trim()) patch.membershipStatus = 'inativo';
   if (!String(current.sourceAcquisition || '').trim()) patch.sourceAcquisition = 'organico';
   if (!String(current.signupIntent || '').trim()) patch.signupIntent = 'reader';
   if (!Object.prototype.hasOwnProperty.call(current, 'creatorApplicationStatus')) patch.creatorApplicationStatus = null;
@@ -70,14 +68,10 @@ function buildAdminUserSchemaPatch(uid, row = {}, authUser = null) {
   if (typeof current.notifyPromotions !== 'boolean') patch.notifyPromotions = false;
   if (typeof current.marketingOptIn !== 'boolean') patch.marketingOptIn = false;
   if (typeof current.marketingOptInAt !== 'number' && current.marketingOptInAt !== null) patch.marketingOptInAt = null;
-  if (typeof current.memberUntil !== 'number' && current.memberUntil !== null) patch.memberUntil = null;
   if (typeof current.currentPlanId !== 'string' && current.currentPlanId !== null) patch.currentPlanId = null;
   if (typeof current.lastPaymentAt !== 'number' && current.lastPaymentAt !== null) patch.lastPaymentAt = null;
   if (typeof current.premium5dNotifiedForUntil !== 'number' && current.premium5dNotifiedForUntil !== null) {
     patch.premium5dNotifiedForUntil = null;
-  }
-  if (Object.prototype.hasOwnProperty.call(current, 'creatorMemberships') && current.creatorMemberships != null) {
-    patch.creatorMemberships = null;
   }
   if (typeof current.createdAt !== 'number') patch.createdAt = now;
   if (typeof current.lastLogin !== 'number') patch.lastLogin = now;
@@ -118,9 +112,6 @@ function buildAdminPublicUserSchemaPatch(uid, row = {}, privateRow = {}, authUse
   }
   if (!String(current.userAvatar || '').trim()) {
     patch.userAvatar = String(source.userAvatar || authAvatar || USER_AVATAR_FALLBACK).trim() || USER_AVATAR_FALLBACK;
-  }
-  if (!String(current.accountType || '').trim()) {
-    patch.accountType = String(source.accountType || 'comum').trim() || 'comum';
   }
   if (!String(current.signupIntent || '').trim()) {
     patch.signupIntent = String(source.signupIntent || 'reader').trim() || 'reader';

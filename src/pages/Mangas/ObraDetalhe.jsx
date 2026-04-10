@@ -484,11 +484,6 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                 >
                   @{creatorHandle}
                 </button>
-                {creatorUidObra ? (
-                  <Link className="btn-obra-fav-page btn-obra-fav-page--creator" to={creatorPath}>
-                    Ver criador
-                  </Link>
-                ) : null}
               </div>
             ) : (
               <button type="button" className="obra-creator-chip" onClick={abrirCriador} disabled={!creatorUidObra}>
@@ -514,18 +509,14 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
             </div>
             <nav className="obra-seo-nav" aria-label="Navegação do catálogo">
               <Link to="/works">Mais mangás para ler online</Link>
-              <span aria-hidden="true"> · </span>
-              {creatorUidObra ? (
-                <Link to={creatorPath}>Página do autor</Link>
-              ) : null}
             </nav>
             {user?.uid ? (
               <div className="obra-notify-box">
-                <strong>Acompanhar esta obra</strong>
-                <p>Quando você acompanha uma obra, capítulos novos passam a aparecer no seu sino de notificações.</p>
+                <strong>Receber aviso quando lançar</strong>
+                <p>Ative para receber notificação quando o autor publicar um capítulo novo.</p>
                 <div className="obra-notify-box__options">
                   <button type="button" className="btn-obra-fav-page" onClick={salvarAvisosObra} disabled={workNotificationBusy}>
-                    {workNotificationBusy ? 'Salvando...' : isSubscribedWork ? 'Parar de acompanhar' : 'Acompanhar obra'}
+                    {workNotificationBusy ? 'Salvando...' : isSubscribedWork ? 'Parar avisos' : 'Receber avisos'}
                   </button>
                   <button
                     type="button"
@@ -533,7 +524,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                     onClick={toggleFavorito}
                     disabled={favoriteBusy}
                   >
-                    {favoriteBusy ? 'Salvando...' : (isFavorito ? 'Remover dos salvos' : 'Salvar obra')}
+                    {favoriteBusy ? 'Salvando...' : (isFavorito ? 'Remover da biblioteca' : 'Favoritar na biblioteca')}
                   </button>
                 </div>
                 {workActionMessage ? <p className="obra-notify-box__error">{workActionMessage}</p> : null}

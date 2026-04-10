@@ -6,7 +6,7 @@
 import {
   normalizeCreatorEngagementMetrics,
   resolveCreatorEngagementMetrics,
-} from './shared/creatorEngagementMetrics.js';
+} from '../shared/creatorEngagementMetrics.js';
 
 export const ENGAGEMENT_CYCLE_LEVEL_MIN = 1;
 export const ENGAGEMENT_CYCLE_LEVEL_MAX = 5;

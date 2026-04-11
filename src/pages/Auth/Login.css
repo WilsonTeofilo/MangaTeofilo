@@ -127,6 +127,21 @@
   margin-bottom: 12px;
 }
 
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 6px 0 14px;
+}
+
+.login-remember input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--naraa-gold);
+}
+
 .btn-submit-shito--secondary {
   margin-top: 0;
   background: transparent !important;

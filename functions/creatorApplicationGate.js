@@ -14,11 +14,11 @@ function norm(n) {
   return Math.max(0, Math.floor(Number(n) || 0));
 }
 
-export function metricsFromUsuarioRowForCreatorApproval(row) {
+export function metricsFromUsuarioRowForCreatorApproval(row, creatorStatsRow = null) {
   if (!row || typeof row !== 'object') {
     return { followers: 0, views: 0, likes: 0 };
   }
-  const stats = readCreatorStatsFromDb(row, row?.creatorStats || null);
+  const stats = readCreatorStatsFromDb(row, creatorStatsRow);
   return {
     followers: norm(stats.followersCount),
     views: norm(stats.totalViews),
@@ -29,8 +29,8 @@ export function metricsFromUsuarioRowForCreatorApproval(row) {
 /**
  * @returns {{ ok: boolean, metrics: object, thresholds: object, shortfalls: object, surplus: object }}
  */
-export function evaluateCreatorApplicationApprovalGate(row) {
-  const metrics = metricsFromUsuarioRowForCreatorApproval(row);
+export function evaluateCreatorApplicationApprovalGate(row, creatorStatsRow = null) {
+  const metrics = metricsFromUsuarioRowForCreatorApproval(row, creatorStatsRow);
   const thresholds = CREATOR_APPLICATION_APPROVAL_THRESHOLDS;
   const ok =
     metrics.followers >= thresholds.followers &&

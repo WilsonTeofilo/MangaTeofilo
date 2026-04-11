@@ -1,10 +1,11 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, onValue, ref as dbRef, set, update } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 
-import { auth, db, storage } from '../../services/firebase';
+import { auth, db, functions, storage } from '../../services/firebase';
 import { resolveAdminAccess } from '../../auth/adminAccess';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { formatarDataHoraBr } from '../../utils/datasBr';
@@ -17,17 +18,12 @@ import {
   obraCreatorId,
 } from '../../config/obras';
 import {
-  DESCRIPTION_MAX,
-  DESCRIPTION_MIN,
   MAX_COVER_UPLOAD_BYTES,
-  MAX_GENRES,
   OBRAS_WORK_GENRE_IDS,
-  OBRAS_WORK_GENRE_LABELS,
   OBRAS_WORK_STATUS,
   SEO_KEYWORDS_MAX,
   SEO_TITLE_MAX,
   TITULO_CURTO_MAX,
-  buildSeoDescriptionFromDescription,
   isValidCreatorUid,
   normalizeGenreList,
   normalizeStatusForForm,
@@ -53,6 +49,8 @@ import {
   getResponsiveCropZoomBounds,
   normalizeResponsiveCropAdjustment,
 } from '../../utils/responsiveCrop';
+import ObrasEditor from './obras/ObrasEditor.jsx';
+import ObrasList from './obras/ObrasList.jsx';
 import './ObrasAdmin.css';
 
 const STATUS_LABEL_BY_ID = Object.fromEntries(OBRAS_WORK_STATUS.map((s) => [s.id, s.label]));
@@ -340,6 +338,10 @@ function resolveCreatorLookupValue(rawValue, directory = []) {
 
 export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
+  const notifyCreatorContentRemoval = useMemo(
+    () => httpsCallable(functions, 'notifyCreatorContentRemoval'),
+    []
+  );
   const user = auth.currentUser;
   const isMangaka = Boolean(adminAccess?.isMangaka);
   const chaptersPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
@@ -1305,6 +1307,16 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) {
       return;
     }
+    let removalReason = '';
+    if (!isMangaka) {
+      removalReason = String(
+        window.prompt('Informe o motivo da exclusão (aparece ao criador):', '')
+      ).trim();
+      if (!removalReason) {
+        setErro('Exclusão cancelada. Motivo obrigatório para notificar o criador.');
+        return;
+      }
+    }
     try {
       const obraKey = normalizarObraId(obra.id);
       const capsSnap = await get(dbRef(db, 'capitulos'));
@@ -1342,6 +1354,15 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         safeDeleteStorageFolder(storage, `obras/${ownerUidStorage}/${obraKey}`),
         safeDeleteStorageFolder(storage, `manga/${ownerUidStorage}/${obraKey}`),
       ]);
+      if (!isMangaka && obraCreatorId(obra)) {
+        await notifyCreatorContentRemoval({
+          targetUid: obraCreatorId(obra),
+          contentType: 'obra',
+          contentId: obraKey,
+          contentTitle: obra.titulo || obra.id,
+          reason: removalReason,
+        });
+      }
       if (editandoId === obra.id) iniciarNovo();
       setOk('Obra e capítulos vinculados removidos do site.');
     } catch (e) {
@@ -1382,519 +1403,70 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       )}
 
       <section className="obras-admin-layout">
-        <div className="obras-admin-form">
-          <section className="obra-block obra-editor-mode">
-            <header className="obra-block-head">
-              <h2>{isMangaka ? 'Escolha uma obra para continuar' : 'Selecionar obra para edição'}</h2>
-              <p>
-                {isMangaka
-                  ? 'Abra uma obra existente para continuar o trabalho ou comece uma nova sem perder o que ja existe.'
-                  : 'Escolha uma obra existente para editar, ou inicie uma nova sem sobrescrever.'}
-              </p>
-            </header>
-            <div className="obra-editor-mode-row">
-              <label>
-                Obra cadastrada
-                <select value={obraSelecionadaId} onChange={(e) => setObraSelecionadaId(String(e.target.value || ''))}>
-                  <option value="">Selecione uma obra para editar</option>
-                  {obras.map((obra) => (
-                    <option key={obra.id} value={obra.id}>
-                      {obra.tituloCurto || obra.titulo || obra.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="obra-editor-mode-actions">
-                <button type="button" className="btn-sec" onClick={carregarObraSelecionada}>
-                  Editar selecionada
-                </button>
-                <button type="button" className="btn-pri" onClick={iniciarNovo}>
-                  Criar nova obra
-                </button>
-              </div>
-            </div>
-            <p className={`obra-editor-mode-status ${editandoId ? 'is-editing' : 'is-creating'}`}>
-              {editandoId
-                ? `Modo atual: editando "${form.titulo || editandoId}"`
-                : isMangaka
-                  ? 'Modo atual: preparando uma nova obra para seu catálogo'
-                  : 'Modo atual: criando nova obra'}
-            </p>
-          </section>
+        <ObrasEditor
+          obras={obras}
+          obraSelecionadaId={obraSelecionadaId}
+          setObraSelecionadaId={setObraSelecionadaId}
+          carregarObraSelecionada={carregarObraSelecionada}
+          iniciarNovo={iniciarNovo}
+          editandoId={editandoId}
+          form={form}
+          setForm={setForm}
+          validationLive={validationLive}
+          saveAttempted={saveAttempted}
+          isMangaka={isMangaka}
+          creatorLookupInput={creatorLookupInput}
+          handleCreatorLookupChange={handleCreatorLookupChange}
+          creatorDirectory={creatorDirectory}
+          formatCreatorLookupOption={formatCreatorLookupOption}
+          resolvedCreatorLookup={resolvedCreatorLookup}
+          creatorNeedsSelection={creatorNeedsSelection}
+          creatorWorkspaceProfile={creatorWorkspaceProfile}
+          onTituloChange={onTituloChange}
+          slugPreview={slugPreview}
+          toggleGenre={toggleGenre}
+          preview={preview}
+          statusLabelById={STATUS_LABEL_BY_ID}
+          selecionarCapa={selecionarCapa}
+          selecionarBanner={selecionarBanner}
+          capaEditorRef={capaEditorRef}
+          bannerEditorRef={bannerEditorRef}
+          capaEditavel={capaEditavel}
+          bannerEditavel={bannerEditavel}
+          iniciarArrasteMidia={iniciarArrasteMidia}
+          capaPreviewUrl={capaPreviewUrl}
+          bannerPreviewUrl={bannerPreviewUrl}
+          coverCrop={coverCrop}
+          bannerCrop={bannerCrop}
+          capaEditorImageStyle={capaEditorImageStyle}
+          bannerEditorImageStyle={bannerEditorImageStyle}
+          capaZoomBounds={capaZoomBounds}
+          bannerZoomBounds={bannerZoomBounds}
+          capaAjuste={capaAjuste}
+          bannerAjuste={bannerAjuste}
+          setCapaAjuste={setCapaAjuste}
+          setBannerAjuste={setBannerAjuste}
+          capaDimensoes={capaDimensoes}
+          bannerDimensoes={bannerDimensoes}
+          normalizarAjusteObra={normalizarAjusteObra}
+          coverEditorConfig={COVER_EDITOR_CONFIG}
+          bannerEditorConfig={BANNER_EDITOR_CONFIG}
+          salvarObra={salvarObra}
+          saving={saving}
+          user={user}
+          apagarObra={apagarObra}
+        />
 
-          <section className="obra-block">
-            <header className="obra-block-head">
-              <h2>Informações básicas</h2>
-              <p>{isMangaka ? 'Defina como sua obra vai aparecer para os leitores.' : 'Defina a identidade principal da obra.'}</p>
-            </header>
-            {!validationLive.ok && validationLive.errors.length > 0 ? (
-              <ul
-                className="obra-validation-errors"
-                aria-live={saveAttempted ? 'assertive' : 'polite'}
-                data-save-attempted={saveAttempted ? 'true' : 'false'}
-              >
-                {validationLive.errors.map((msg) => (
-                  <li key={msg}>{msg}</li>
-                ))}
-              </ul>
-            ) : null}
-            {!isMangaka ? (
-              <label className="obra-field-full">
-                Autor da obra{!editandoId ? ' *' : ''}
-                <input
-                  type="text"
-                  list="obra-creator-options"
-                  autoComplete="off"
-                  value={creatorLookupInput}
-                  onChange={(e) => handleCreatorLookupChange(e.target.value)}
-                  placeholder="Digite o @username do autor"
-                />
-                <datalist id="obra-creator-options">
-                  {creatorDirectory.map((entry) => (
-                    <option key={entry.uid} value={formatCreatorLookupOption(entry)} />
-                  ))}
-                </datalist>
-                <small className="field-help">
-                  {!editandoId
-                    ? 'Busque o autor por @username. A interface resolve o usuário e salva o uid internamente.'
-                    : 'Você pode reatribuir a obra buscando pelo @username do autor.'}
-                </small>
-                {resolvedCreatorLookup ? (
-                  <div className="obra-author-preview" role="status" aria-live="polite">
-                    <img
-                      className="obra-author-preview__avatar"
-                      src={resolvedCreatorLookup.avatarUrl || '/assets/fotos/shito.jpg'}
-                      alt={resolvedCreatorLookup.displayName || resolvedCreatorLookup.handle || 'Autor selecionado'}
-                    />
-                    <div className="obra-author-preview__meta">
-                      <strong>{resolvedCreatorLookup.displayName || 'Autor selecionado'}</strong>
-                      <span>{resolvedCreatorLookup.handle ? '@' + resolvedCreatorLookup.handle : 'Sem @username público'}</span>
-                      <small>{resolvedCreatorLookup.isCreator ? 'Perfil de creator ativo' : 'Conta encontrada no diretório'}</small>
-                    </div>
-                  </div>
-                ) : creatorNeedsSelection ? (
-                  <small className="field-help" style={{ color: '#ffb3b3' }}>
-                    Autor não encontrado. Escolha um resultado válido pelo @username antes de salvar.
-                  </small>
-                ) : form.adminCreatorId ? (
-                  <small className="field-help" style={{ color: '#ffb3b3' }}>
-                    O autor atual desta obra não foi resolvido no diretório. Reselecione um autor antes de salvar.
-                  </small>
-                ) : null}
-              </label>
-            ) : null}
-            {isMangaka ? (
-              <div className="obra-author-preview obra-field-full" role="status" aria-live="polite" style={{ marginBottom: '12px' }}>
-                <img
-                  className="obra-author-preview__avatar"
-                  src={creatorWorkspaceProfile?.avatarUrl || '/assets/fotos/shito.jpg'}
-                  alt={creatorWorkspaceProfile?.displayName || creatorWorkspaceProfile?.handle || 'Autor vinculado'}
-                />
-                <div className="obra-author-preview__meta">
-                  <strong>{creatorWorkspaceProfile?.displayName || 'Autor vinculado'}</strong>
-                  <span>
-                    {creatorWorkspaceProfile?.handle
-                      ? '@' + creatorWorkspaceProfile.handle
-                      : 'Sem @username público'}
-                  </span>
-                  <small>Autor vinculado: sua conta. O vínculo técnico continua salvo só internamente.</small>
-                </div>
-              </div>
-            ) : null}
-            <div className="obra-grid">
-              <label>
-                Título *
-                <input
-                  type="text"
-                  value={form.titulo}
-                  maxLength={80}
-                  onChange={(e) => onTituloChange(e.target.value)}
-                  placeholder="Nome oficial da obra"
-                />
-                <small className="field-help">{form.titulo.trim().length}/80 · mín. 3 caracteres</small>
-              </label>
-              <label>
-                Título curto (opcional)
-                <input
-                  type="text"
-                  value={form.tituloCurto}
-                  maxLength={40}
-                  onChange={(e) => setForm((p) => ({ ...p, tituloCurto: e.target.value }))}
-                  placeholder="Ex: KOKUIN"
-                />
-              </label>
-            </div>
-            <div className="obra-slug-preview obra-field-full">
-              <span className="obra-slug-preview-label">Slug na URL (automático, não editável)</span>
-              <code className="obra-slug-preview-value">/work/{slugPreview}</code>
-              <small className="field-help">
-                Novas obras usam este identificador como chave no banco. Ao editar, a chave permanece estável; o campo <code>slug</code> no registro acompanha o título para SEO.
-              </small>
-            </div>
-            <fieldset className="obra-genres-fieldset obra-field-full">
-              <legend>Gêneros * (até {MAX_GENRES})</legend>
-              <p className="field-help">Selecione até três. O gênero principal deve estar entre eles.</p>
-              <div className="obra-genre-chips" role="group" aria-label="Gêneros da obra">
-                {OBRAS_WORK_GENRE_IDS.map((gid) => {
-                  const on = form.genres.includes(gid);
-                  return (
-                    <button
-                      key={gid}
-                      type="button"
-                      className={`obra-genre-chip${on ? ' is-on' : ''}`}
-                      onClick={() => toggleGenre(gid)}
-                      aria-pressed={on}
-                    >
-                      {OBRAS_WORK_GENRE_LABELS[gid] || gid}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-            <div className="obra-grid">
-              <label>
-                Gênero principal *
-                <select
-                  value={form.mainGenre}
-                  onChange={(e) => setForm((p) => ({ ...p, mainGenre: e.target.value }))}
-                  disabled={form.genres.length === 0}
-                >
-                  <option value="">{form.genres.length ? 'Escolha entre os gêneros selecionados' : 'Selecione gêneros acima'}</option>
-                  {form.genres.map((gid) => (
-                    <option key={gid} value={gid}>
-                      {OBRAS_WORK_GENRE_LABELS[gid] || gid}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Tags (opcional, máx. 5, separadas por vírgula)
-                <input
-                  type="text"
-                  value={form.tagsRaw}
-                  onChange={(e) => setForm((p) => ({ ...p, tagsRaw: e.target.value }))}
-                  placeholder="ex: magia, escola, amizade"
-                />
-                <small className="field-help">Normalizadas em minúsculas, sem duplicar.</small>
-              </label>
-            </div>
-            <label className="obra-field-full">
-              Descrição (sinopse) *
-              <textarea
-                value={form.sinopse}
-                maxLength={DESCRIPTION_MAX}
-                onChange={(e) => setForm((p) => ({ ...p, sinopse: e.target.value }))}
-                rows={5}
-                placeholder={`Resumo da obra para leitores (mín. ${DESCRIPTION_MIN} caracteres)`}
-              />
-              <small className="field-help">
-                {form.sinopse.trim().length}/{DESCRIPTION_MAX} · mínimo {DESCRIPTION_MIN} caracteres
-              </small>
-            </label>
-          </section>
-
-          <section className="obra-block">
-            <header className="obra-block-head">
-              <h2>Mídia</h2>
-              <p>{isMangaka ? 'Suba capa e banner com enquadramento pronto para sua pagina publica.' : 'Faça upload da capa/banner e ajuste enquadramento antes de salvar.'}</p>
-            </header>
-            <div className="obra-media-grid">
-              <div className="obra-media-card">
-                <h3>Capa (3:4)</h3>
-                <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => selecionarCapa(e.target.files?.[0])} />
-                <small className="field-help">
-                  JPG, PNG ou WebP · arquivo até 1,2 MB · na publicação vira WebP comprimido (~até 500 KB)
-                </small>
-                <div
-                  ref={capaEditorRef}
-                  className={`obra-editor-mask obra-editor-mask--cover${capaEditavel ? ' is-editable' : ''}`}
-                  onMouseDown={(e) => iniciarArrasteMidia(e, 'capa')}
-                  onTouchStart={(e) => iniciarArrasteMidia(e, 'capa')}
-                  title={capaEditavel ? 'Arraste para ajustar o enquadramento da capa' : 'Envie uma capa para editar'}
-                >
-                  <img
-                    src={capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg'}
-                    alt=""
-                    aria-hidden="true"
-                    className="obra-editor-img obra-editor-img--background"
-                  />
-                  <img
-                    src={capaPreviewUrl || form.capaUrl || '/assets/fotos/shito.jpg'}
-                    alt="Editor da capa"
-                    className="obra-editor-img obra-editor-img--foreground"
-                    style={capaEditavel ? capaEditorImageStyle : undefined}
-                  />
-                  <div className="obra-editor-outside-mask" aria-hidden="true">
-                    <i style={{ left: 0, top: 0, width: '100%', height: `${coverCrop.topPct}%` }} />
-                    <i style={{ left: 0, top: `${coverCrop.topPct + coverCrop.heightPct}%`, width: '100%', height: `${coverCrop.topPct}%` }} />
-                    <i style={{ left: 0, top: `${coverCrop.topPct}%`, width: `${coverCrop.leftPct}%`, height: `${coverCrop.heightPct}%` }} />
-                    <i style={{ left: `${coverCrop.leftPct + coverCrop.widthPct}%`, top: `${coverCrop.topPct}%`, width: `${coverCrop.leftPct}%`, height: `${coverCrop.heightPct}%` }} />
-                  </div>
-                  <div
-                    className="obra-editor-crop-box"
-                    style={{
-                      left: `${coverCrop.leftPct}%`,
-                      top: `${coverCrop.topPct}%`,
-                      width: `${coverCrop.widthPct}%`,
-                      height: `${coverCrop.heightPct}%`,
-                    }}
-                  />
-                </div>
-                <div className="obra-media-controls">
-                  <label>Zoom
-                    <input type="range" min={capaZoomBounds.coverZoom || capaZoomBounds.minZoom} max={capaZoomBounds.maxZoom} step="0.01" value={capaAjuste.zoom} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }, capaDimensoes, COVER_EDITOR_CONFIG))} />
-                  </label>
-                  <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.x} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }, capaDimensoes, COVER_EDITOR_CONFIG))} />
-                  </label>
-                  <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={capaAjuste.y} disabled={!capaEditavel} onChange={(e) => setCapaAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }, capaDimensoes, COVER_EDITOR_CONFIG))} />
-                  </label>
-                </div>
-                <details>
-                  <summary>URL manual da plataforma (opcional)</summary>
-                  <input
-                    type="url"
-                    value={form.capaUrl}
-                    onChange={(e) => setForm((p) => ({ ...p, capaUrl: e.target.value }))}
-                    placeholder="Cole apenas uma URL do Storage da plataforma"
-                  />
-                  <small className="field-help">
-                    Links externos foram bloqueados para evitar tracker e troca de arquivo fora da plataforma.
-                  </small>
-                </details>
-              </div>
-              <div className="obra-media-card">
-                <h3>Banner (16:9)</h3>
-                <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => selecionarBanner(e.target.files?.[0])} />
-                <small className="field-help">
-                  JPG, PNG ou WebP · arquivo até 1,2 MB · na publicação vira WebP comprimido (~até 500 KB)
-                </small>
-                <div
-                  ref={bannerEditorRef}
-                  className={`obra-editor-mask obra-editor-mask--banner${bannerEditavel ? ' is-editable' : ''}`}
-                  onMouseDown={(e) => iniciarArrasteMidia(e, 'banner')}
-                  onTouchStart={(e) => iniciarArrasteMidia(e, 'banner')}
-                  title={bannerEditavel ? 'Arraste para ajustar o enquadramento do banner' : 'Envie um banner para editar'}
-                >
-                  <img
-                    src={bannerPreviewUrl || form.bannerUrl || '/assets/fotos/shito.jpg'}
-                    alt=""
-                    aria-hidden="true"
-                    className="obra-editor-img obra-editor-img--background"
-                  />
-                  <img
-                    src={bannerPreviewUrl || form.bannerUrl || '/assets/fotos/shito.jpg'}
-                    alt="Editor do banner"
-                    className="obra-editor-img obra-editor-img--foreground"
-                    style={bannerEditavel ? bannerEditorImageStyle : undefined}
-                  />
-                  <div className="obra-editor-outside-mask" aria-hidden="true">
-                    <i style={{ left: 0, top: 0, width: '100%', height: `${bannerCrop.topPct}%` }} />
-                    <i style={{ left: 0, top: `${bannerCrop.topPct + bannerCrop.heightPct}%`, width: '100%', height: `${bannerCrop.topPct}%` }} />
-                    <i style={{ left: 0, top: `${bannerCrop.topPct}%`, width: `${bannerCrop.leftPct}%`, height: `${bannerCrop.heightPct}%` }} />
-                    <i style={{ left: `${bannerCrop.leftPct + bannerCrop.widthPct}%`, top: `${bannerCrop.topPct}%`, width: `${bannerCrop.leftPct}%`, height: `${bannerCrop.heightPct}%` }} />
-                  </div>
-                  <div
-                    className="obra-editor-crop-box"
-                    style={{
-                      left: `${bannerCrop.leftPct}%`,
-                      top: `${bannerCrop.topPct}%`,
-                      width: `${bannerCrop.widthPct}%`,
-                      height: `${bannerCrop.heightPct}%`,
-                    }}
-                  />
-                </div>
-                <div className="obra-media-controls">
-                  <label>Zoom
-                    <input type="range" min={bannerZoomBounds.coverZoom || bannerZoomBounds.minZoom} max={bannerZoomBounds.maxZoom} step="0.01" value={bannerAjuste.zoom} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, zoom: Number(e.target.value) }, bannerDimensoes, BANNER_EDITOR_CONFIG))} />
-                  </label>
-                  <label>Eixo X
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.x} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, x: Number(e.target.value) }, bannerDimensoes, BANNER_EDITOR_CONFIG))} />
-                  </label>
-                  <label>Eixo Y
-                    <input type="range" min="-100" max="100" step="1" value={bannerAjuste.y} disabled={!bannerEditavel} onChange={(e) => setBannerAjuste((p) => normalizarAjusteObra({ ...p, y: Number(e.target.value) }, bannerDimensoes, BANNER_EDITOR_CONFIG))} />
-                  </label>
-                </div>
-                <details>
-                  <summary>URL manual da plataforma (opcional)</summary>
-                  <input
-                    type="url"
-                    value={form.bannerUrl}
-                    onChange={(e) => setForm((p) => ({ ...p, bannerUrl: e.target.value }))}
-                    placeholder="Cole apenas uma URL do Storage da plataforma"
-                  />
-                  <small className="field-help">
-                    Links externos foram bloqueados para evitar tracker e troca de arquivo fora da plataforma.
-                  </small>
-                </details>
-              </div>
-              <aside className="obra-preview obra-preview--in-media">
-                <header className="obra-block-head">
-                  <h2>Preview em tempo real</h2>
-                  <p>{isMangaka ? 'Veja como os leitores vão encontrar sua obra no site.' : 'Simulação de exibição da obra no site.'}</p>
-                </header>
-                <div
-                  className="obra-preview-banner"
-                  style={{ backgroundImage: `linear-gradient(180deg, rgba(8,12,20,0.2), rgba(8,12,20,0.9)), url('${preview.bannerUrl}')` }}
-                >
-                  <span className={`preview-pill ${preview.isPublished ? 'on' : 'off'}`}>
-                    {preview.isPublished ? 'Publicado' : 'Oculto'}
-                  </span>
-                </div>
-                <div className="obra-preview-card">
-                  <img src={preview.capaUrl} alt={preview.titulo} />
-                  <div className="obra-preview-card-body">
-                    <strong>{preview.tituloCurto}</strong>
-                    <p>{preview.sinopse}</p>
-                    {preview.genres.length > 0 ? (
-                      <span className="preview-genres">
-                        {preview.genres.map((g) => (
-                          <span key={g} className="preview-genre-pill">{OBRAS_WORK_GENRE_LABELS[g] || g}</span>
-                        ))}
-                      </span>
-                    ) : null}
-                    <span className="preview-meta">
-                      {STATUS_LABEL_BY_ID[preview.status] || 'Em lançamento'}
-                    </span>
-                  </div>
-                </div>
-              </aside>
-            </div>
-          </section>
-
-          <section className="obra-block">
-            <header className="obra-block-head">
-              <h2>SEO</h2>
-              <p>Título e palavras-chave você controla; o resumo para busca é gerado a partir da descrição (máx. 160 caracteres).</p>
-            </header>
-            <div className="obra-grid">
-              <label>
-                Título que aparece no Google
-                <input
-                  type="text"
-                  value={form.seoTitle}
-                  maxLength={SEO_TITLE_MAX}
-                  onChange={(e) => setForm((p) => ({ ...p, seoTitle: e.target.value }))}
-                  placeholder="Ex: Kokuin - Mangá brasileiro de fantasia sombria"
-                />
-                <small className="field-help">{form.seoTitle.length}/{SEO_TITLE_MAX}</small>
-              </label>
-              <label>
-                Palavras-chave (opcional; senão usamos as tags)
-                <input
-                  type="text"
-                  value={form.seoKeywords}
-                  onChange={(e) => setForm((p) => ({ ...p, seoKeywords: e.target.value }))}
-                  placeholder="mangá brasileiro, fantasia, ação, kokuin"
-                />
-              </label>
-            </div>
-            <div className="obra-seo-readonly obra-field-full">
-              <span className="obra-seo-readonly-label">Resumo para Google (automático)</span>
-              <p className="obra-seo-readonly-text">{buildSeoDescriptionFromDescription(form.sinopse) || '—'}</p>
-              <small className="field-help">
-                {buildSeoDescriptionFromDescription(form.sinopse).length}/160 caracteres
-              </small>
-            </div>
-            <p className="seo-help">
-              Dica: na descrição, explique gênero e gancho da história — isso alimenta o snippet de busca.
-            </p>
-          </section>
-
-          <section className="obra-block">
-            <header className="obra-block-head">
-              <h2>Status e visibilidade</h2>
-              <p>{isMangaka ? 'Controle quando sua obra fica pronta para aparecer no catálogo.' : 'Controle estágio editorial e publicação para o catálogo.'}</p>
-            </header>
-            <div className="obra-grid">
-              <label>
-                Status da obra
-                <select
-                  value={form.status}
-                  onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
-                >
-                  {OBRAS_WORK_STATUS.map((op) => (
-                    <option key={op.id} value={op.id}>{op.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.isPublished)}
-                  onChange={(e) => setForm((p) => ({ ...p, isPublished: e.target.checked }))}
-                />
-                Publicada (visível para usuários)
-              </label>
-              <label className="check-line">
-                <input
-                  type="checkbox"
-                  checked={Boolean(form.archived)}
-                  onChange={(e) => setForm((p) => ({ ...p, archived: e.target.checked }))}
-                />
-                Arquivada (fora do catálogo público; você e a equipe ainda veem no painel)
-              </label>
-            </div>
-          </section>
-
-          <div className="obra-form-actions">
-            <button
-              type="button"
-              className="btn-pri"
-              disabled={saving}
-              onClick={salvarObra}
-            >
-              {saving ? 'Salvando...' : editandoId ? 'Salvar alterações' : 'Criar obra'}
-            </button>
-            <button type="button" className="btn-sec" onClick={iniciarNovo}>Limpar</button>
-            {editandoId ? (
-              <button
-                type="button"
-                className="btn-inline danger"
-                onClick={() => apagarObra(
-                  obras.find((obra) => normalizarObraId(obra.id) === normalizarObraId(editandoId))
-                  || { id: editandoId, titulo: form.titulo || editandoId, creatorId: form.creatorId || user?.uid || '' }
-                )}
-              >
-                Apagar obra
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-      <section className="obras-admin-list">
-        <header className="obra-block-head">
-          <h2>{isMangaka ? 'Seu catalogo' : 'Obras cadastradas'}</h2>
-          <p>{isMangaka ? 'Edite, publique e acompanhe a evolução de cada obra sua.' : 'Edite, alterne visibilidade e acompanhe atualização por obra.'}</p>
-        </header>
-        <div className="obra-list-grid">
-          {obras.map((obra) => (
-            <article key={obra.id} className="obra-list-item">
-              <img src={obra.capaUrl || '/assets/fotos/shito.jpg'} alt={obra.titulo || obra.id} />
-              <div className="obra-list-body">
-                <strong>{obra.titulo || obra.id}</strong>
-                <span>{obra.slug || obra.id}</span>
-                <span>
-                  {STATUS_LABEL_BY_ID[obra.status] || 'Em lançamento'} ·{' '}
-                  {obra.isPublished ? 'Publicado' : 'Oculto'}
-                  {obraEstaArquivada(obra) ? ' · Arquivada' : ''}
-                </span>
-                <span>Atualizado em {formatarDataHoraBr(obra.updatedAt, { seVazio: 'Sem data' })}</span>
-              </div>
-              <div className="obra-list-actions">
-                <button type="button" className="btn-inline" onClick={() => editarObra(obra.id)}>Editar</button>
-                <button type="button" className="btn-inline" onClick={() => togglePublish(obra)}>
-                  {obra.isPublished ? 'Despublicar' : 'Publicar'}
-                </button>
-                <button type="button" className="btn-inline danger" onClick={() => apagarObra(obra)}>
-                  Apagar
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+        <ObrasList
+          obras={obras}
+          isMangaka={isMangaka}
+          statusLabelById={STATUS_LABEL_BY_ID}
+          obraEstaArquivada={obraEstaArquivada}
+          formatarDataHoraBr={formatarDataHoraBr}
+          editarObra={editarObra}
+          togglePublish={togglePublish}
+          apagarObra={apagarObra}
+        />
       </section>
       {createPortal(
         saveErrorModal.open ? (

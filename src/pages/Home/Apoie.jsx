@@ -513,8 +513,9 @@ export default function Apoie({ user, perfil }) {
         creatorId: attributionCreatorIdParaCheckout,
         creatorName: resolvePublicProfileDisplayName(row, 'Criador'),
         creatorSupportOffer:
-          row?.creatorProfile?.supportOffer && typeof row.creatorProfile.supportOffer === 'object'
-            ? row.creatorProfile.supportOffer
+          row?.creatorProfile?.monetization?.supportOffer &&
+          typeof row.creatorProfile.monetization.supportOffer === 'object'
+            ? row.creatorProfile.monetization.supportOffer
             : {},
       });
     });

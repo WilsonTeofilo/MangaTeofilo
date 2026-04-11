@@ -117,7 +117,7 @@ function creatorApprovalGateFromItem(item) {
       surplus: item.creatorApprovalSurplus || { followers: 0, views: 0, likes: 0 },
     };
   }
-  return evaluateCreatorApplicationApprovalGate(item);
+  return evaluateCreatorApplicationApprovalGate(item, item?.creatorStats || null);
 }
 
 function pixTypeLabel(t) {

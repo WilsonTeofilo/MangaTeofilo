@@ -11,7 +11,7 @@ function normalizeStatus(value, fallback = 'inativo') {
 function normalizeGlobalEntitlement(profile = {}) {
   const now = Date.now();
   const raw = profile?.userEntitlements?.global || {};
-  const memberUntil = toMs(raw.memberUntil || raw.premiumUntil);
+  const memberUntil = toMs(raw.memberUntil);
   const status = normalizeStatus(raw.status, memberUntil > now ? 'ativo' : 'inativo');
   const isPremium = raw.isPremium === true;
 
@@ -69,7 +69,7 @@ function applyCanonicalCreatorEntitlements(target, entCreators) {
  * - `usuarios/{uid}/userEntitlements/global`
  * - `usuarios/{uid}/userEntitlements/creators`
  *
- * Campos top-level de premium sobrevivem apenas como projecao compat.
+ * Campos top-level de premium nao sao mais considerados.
  */
 export function buildUserEntitlements(profile = {}) {
   const global = normalizeGlobalEntitlement(profile);

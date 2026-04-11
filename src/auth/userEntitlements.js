@@ -12,20 +12,10 @@ function normalizeStatus(value, fallback = 'inativo') {
   return raw || fallback;
 }
 
-function hasCanonicalGlobalEntitlement(raw) {
-  if (!raw || typeof raw !== 'object') return false;
-  return (
-    typeof raw.isPremium === 'boolean' ||
-    typeof raw.memberUntil === 'number' ||
-    typeof raw.premiumUntil === 'number' ||
-    String(raw.status || '').trim().length > 0
-  );
-}
-
 function normalizeGlobalPremiumEntitlement(perfil) {
   const now = Date.now();
   const raw = perfil?.userEntitlements?.global || {};
-  const memberUntil = toMs(raw.memberUntil || raw.premiumUntil);
+  const memberUntil = toMs(raw.memberUntil);
   const status = normalizeStatus(raw.status, memberUntil > now ? 'ativo' : 'inativo');
   const isPremium = normalizeBoolean(raw.isPremium);
 

@@ -242,11 +242,11 @@ export const criarCheckoutApoio = onCall(
           'Este criador ainda nao concluiu a identidade publica minima.'
         );
       }
-      creatorMembershipPrice = Number(
-        creatorPublic?.creatorProfile?.monetization?.supportOffer?.membershipPriceBRL ||
-        creatorPublic?.creatorProfile?.supportOffer?.membershipPriceBRL ||
-        creatorPublic?.creatorSupportOffer?.membershipPriceBRL
-      );
+      const supportOffer =
+        creatorPublic?.creatorSupportOffer ||
+        creatorPublic?.creatorProfile?.monetization?.supportOffer ||
+        {};
+      creatorMembershipPrice = Number(supportOffer?.membershipPriceBRL);
       if (!isValidCreatorMembershipPriceBRL(creatorMembershipPrice)) {
         throw new HttpsError(
           'failed-precondition',

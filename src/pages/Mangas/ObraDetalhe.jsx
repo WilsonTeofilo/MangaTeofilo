@@ -45,10 +45,9 @@ function chapterSort(a, b) {
   return (Number.isFinite(dA) ? dA : 0) - (Number.isFinite(dB) ? dB : 0);
 }
 
-/** Rota `/obra/:obraId` ou `/work/:slug` (slug ou id). */
+/** Rota `/work/:slug` (slug ou id). */
 export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAccess() }) {
   const params = useParams();
-  const routeObraId = params.obraId;
   const routeSlug = params.slug;
   const navigate = useNavigate();
   const location = useLocation();
@@ -84,7 +83,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return buildObraPageSeo({ obra: obraParaExibir });
   }, [obraParaExibir]);
 
-  /** Redireciona `/obra/shito`, `/work/shito`, `/work/kokuin` para `/work/{slug-canônico}` (SEO) sem mudar `obras/shito` no RTDB. */
+  /** Redireciona `/work/{slug}` para `/work/{slug-canônico}` (SEO) sem mudar `obras/shito` no RTDB. */
   useEffect(() => {
     if (loading || !obraParaExibir) return;
     const canon = obraSegmentoUrlPublica(obraParaExibir);
@@ -100,12 +99,6 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
       navigate(target, { replace: true });
       return;
     }
-    if (parts[0] === 'obra' && parts[1]) {
-      const legacyId = normalizarObraId(decodeURIComponent(parts[1]));
-      if (legacyId === normalizarObraId(obraParaExibir.id)) {
-        navigate(target, { replace: true });
-      }
-    }
   }, [
     loading,
     obraParaExibir,
@@ -116,11 +109,6 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
   ]);
 
   useEffect(() => {
-    if (routeObraId) {
-      setObraId(normalizarObraId(routeObraId));
-      setIdResolvido(true);
-      return;
-    }
     if (routeSlug) {
       setIdResolvido(false);
       const raw = decodeURIComponent(String(routeSlug || ''));
@@ -134,7 +122,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     }
     setObraId(null);
     setIdResolvido(true);
-  }, [routeObraId, routeSlug]);
+  }, [routeSlug]);
 
   useEffect(() => {
     if (!idResolvido || !obraId) {

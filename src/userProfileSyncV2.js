@@ -2,6 +2,7 @@ import { ref, get, set, update } from 'firebase/database';
 import { getIdToken, reload } from 'firebase/auth';
 import { db } from './services/firebase';
 import { AVATAR_FALLBACK, DEFAULT_USER_DISPLAY_NAME } from './constants';
+import { isTrustedPlatformAssetUrl } from './utils/trustedAssetUrls';
 import {
   buildUsuarioBaseRecord,
   buildUsuarioMissingFieldsPatch,
@@ -30,7 +31,8 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   const userRef = ref(db, `usuarios/${usuario.uid}`);
   const snapshot = await get(userRef);
   const agora = Date.now();
-  const avatar = fotoUrl || (listaAvatares && listaAvatares[0]) || AVATAR_FALLBACK;
+  const safeFotoUrl = isTrustedPlatformAssetUrl(fotoUrl, { allowLocalAssets: true }) ? fotoUrl : '';
+  const avatar = safeFotoUrl || (listaAvatares && listaAvatares[0]) || AVATAR_FALLBACK;
   const status = statusInicial;
   const email = String(usuario?.email || '').trim().toLowerCase();
 
@@ -55,11 +57,15 @@ export async function ensureUsuarioRecord(usuario, nome, fotoUrl, listaAvatares,
   }
 
   const atual = snapshot.val() || {};
+  const currentAvatar = isTrustedPlatformAssetUrl(atual?.userAvatar, { allowLocalAssets: true })
+    ? String(atual.userAvatar || '').trim()
+    : '';
+  const avatarForPatch = currentAvatar || avatar;
   const patch = buildUsuarioMissingFieldsPatch(atual, {
     uid: usuario.uid,
     email,
     userName: nome?.trim() || atual.userName || DEFAULT_USER_DISPLAY_NAME,
-    userAvatar: fotoUrl || avatar,
+    userAvatar: avatarForPatch,
     status,
     now: agora,
   });
@@ -84,9 +90,18 @@ export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) 
   const atual = snapshot.exists() ? snapshot.val() || {} : {};
   const persistedAvatar = String(atual.userAvatar || '').trim();
   const persistedReaderAvatar = String(atual.readerProfileAvatarUrl || '').trim();
-  const fallbackAvatar = usuario.photoURL || listaAvatares[0] || AVATAR_FALLBACK;
+  const trustedPersisted = isTrustedPlatformAssetUrl(persistedAvatar, { allowLocalAssets: true })
+    ? persistedAvatar
+    : '';
+  const trustedReader = isTrustedPlatformAssetUrl(persistedReaderAvatar, { allowLocalAssets: true })
+    ? persistedReaderAvatar
+    : '';
+  const trustedAuth = isTrustedPlatformAssetUrl(usuario.photoURL, { allowLocalAssets: true })
+    ? usuario.photoURL
+    : '';
+  const fallbackAvatar = trustedAuth || listaAvatares[0] || AVATAR_FALLBACK;
   /** Nunca preferir Auth sobre avatar já salvo no RTDB (ex.: preset da plataforma vs foto Google). */
-  const fotoParaRegistro = persistedAvatar || persistedReaderAvatar || fallbackAvatar;
+  const fotoParaRegistro = trustedPersisted || trustedReader || fallbackAvatar;
   const perfil = await ensureUsuarioRecord(
     usuario,
     usuario.displayName || DEFAULT_USER_DISPLAY_NAME,

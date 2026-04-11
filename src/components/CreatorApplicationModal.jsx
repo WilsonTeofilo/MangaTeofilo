@@ -406,7 +406,7 @@ export default function CreatorApplicationModal({
         })
         .catch((err) => {
           if (!cancelled) {
-            showFormError(err?.message || 'Nao foi possivel preparar a foto do creator.');
+            showFormError(err?.message || 'Não foi possível preparar a foto. Tente outra imagem (JPG/PNG/WebP até 1,5 MB).');
           }
         });
 
@@ -856,12 +856,12 @@ export default function CreatorApplicationModal({
                   <div className="creator-app-photo-empty">
                     <strong>
                       {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl)
-                        ? 'Carregando sua foto do perfilâ€¦'
-                        : 'Envie uma foto para comecar'}
+                        ? 'Carregando sua foto do perfil...'
+                        : 'Envie uma foto para começar'}
                     </strong>
                     <span>
                       {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl)
-                        ? 'Se a prévia não abrir, use Â«Escolher fotoÂ» — o envio ainda pode usar a URL do seu perfil.'
+                        ? 'Se a prévia não abrir, escolha outra foto — o envio usa a imagem salva no seu perfil.'
                         : 'Retrato 3:4 para o perfil e hero reutilizado no estilo Manga Plus Creators.'}
                     </span>
                   </div>

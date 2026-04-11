@@ -79,13 +79,17 @@ function getUserAuthMethods(userRecord) {
 
 function profileHasRetainedHistory(profile) {
   if (!profile || typeof profile !== 'object') return false;
+  const globalEnt = profile?.userEntitlements?.global;
+  const creatorEnts = profile?.userEntitlements?.creators;
+  const hasCreatorEnts =
+    creatorEnts && typeof creatorEnts === 'object' && Object.keys(creatorEnts).length > 0;
   return Boolean(
     profile?.role === 'mangaka' ||
       profile?.creator ||
       profile?.creatorApplication ||
-      profile?.premiumUntil ||
-      profile?.premiumActive === true ||
-      profile?.membership ||
+      globalEnt?.memberUntil ||
+      globalEnt?.isPremium === true ||
+      hasCreatorEnts ||
       profile?.ultimoPedidoId ||
       profile?.lastOrderId ||
       profile?.totalSpentBRL ||

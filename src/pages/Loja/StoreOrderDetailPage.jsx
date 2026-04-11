@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { Link, useParams } from 'react-router-dom';
 
@@ -386,7 +386,7 @@ export default function StoreOrderDetailPage({ user }) {
 
       {!isBuyer && checklistEntries.length ? (
         <section className="ot-detail-block">
-          <h2>Produção (checklist)</h2>
+        <h2>Produção (checklist)</h2>
           <ul className="ot-detail-checklist">
             {checklistEntries.map((row) => (
               <li key={row.key} className={row.on ? 'is-on' : 'is-off'}>
@@ -404,3 +404,4 @@ export default function StoreOrderDetailPage({ user }) {
     </main>
   );
 }
+

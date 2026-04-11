@@ -10,3 +10,4 @@ export {
   deleteUserNotification,
   upsertNotificationSubscription,
 } from './userNotifications.js';
+export { notifyCreatorContentRemoval } from './contentRemoval.js';

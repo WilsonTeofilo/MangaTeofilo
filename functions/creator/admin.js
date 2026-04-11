@@ -211,10 +211,7 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
     row?.creatorApplication && typeof row.creatorApplication === 'object'
       ? row.creatorApplication
       : {};
-  const approvalGate = evaluateCreatorApplicationApprovalGate({
-    ...row,
-    creatorStats: readCreatorStatsFromDb(row, creatorStatsRow),
-  });
+  const approvalGate = evaluateCreatorApplicationApprovalGate(row, creatorStatsRow);
   const creatorData = creatorDataRow && typeof creatorDataRow === 'object' ? creatorDataRow : {};
   const balance = creatorData?.balance && typeof creatorData.balance === 'object' ? creatorData.balance : null;
   const payoutsRaw = creatorData?.payouts && typeof creatorData.payouts === 'object' ? creatorData.payouts : null;
@@ -448,9 +445,6 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     [`usuarios/${uid}/creatorBannerUrl`]: null,
     [`usuarios/${uid}/creatorStatus`]: creatorStatusNext,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
-    [`usuarios/${uid}/creatorMembershipEnabled`]: false,
-    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
     [`usuarios/${uid}/publicProfile/signupIntent`]: 'creator',
     [`usuarios/${uid}/publicProfile/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
     [`usuarios/${uid}/publicProfile/creatorDisplayName`]: displayName,
@@ -460,12 +454,8 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     [`usuarios/${uid}/publicProfile/instagramUrl`]: instagramUrl || null,
     [`usuarios/${uid}/publicProfile/youtubeUrl`]: youtubeUrl || null,
     [`usuarios/${uid}/publicProfile/creatorStatus`]: creatorStatusNext,
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
     [`usuarios/${uid}/publicProfile/creatorProfile`]: publicCreatorProfile,
     [`usuarios/${uid}/publicProfile/userName`]: displayName,
-    [`usuarios/${uid}/publicProfile/accountType`]: String(row?.accountType || 'comum'),
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
     [`creators/${uid}/stats/followersCount`]: creatorStats.followersCount,
     [`creators/${uid}/stats/likesTotal`]: creatorStats.likesTotal,
@@ -656,17 +646,11 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
     [`usuarios/${uid}/creatorModerationBy`]: request.auth.uid,
     [`usuarios/${uid}/creatorModeratedAt`]: now,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/creatorMembershipEnabled`]: false,
-    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
     [`usuarios/${uid}/creatorPendingProfileImageUrl`]: null,
     [`usuarios/${uid}/creatorPendingProfileImageCrop`]: null,
     [`usuarios/${uid}/status`]: banUser ? 'banido' : null,
     [`usuarios/${uid}/banReason`]: banUser ? reason : null,
     [`usuarios/${uid}/publicProfile/creatorStatus`]: banUser ? 'banned' : 'rejected',
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
     [`usuarios/${uid}/publicProfile/status`]: banUser ? 'banido' : null,
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
@@ -765,18 +749,6 @@ export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' },
     [`usuarios/${uid}/creator`]: creatorDocMonApprove,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/creatorMembershipEnabled`]: null,
-    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorProfile/supportOffer`]: {
-      membershipEnabled: nextSupportOffer.membershipEnabled === true,
-      membershipPriceBRL: nextSupportOffer.membershipPriceBRL,
-      donationSuggestedBRL: nextSupportOffer.donationSuggestedBRL,
-      updatedAt: nextSupportOffer.updatedAt,
-    },
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
 
@@ -874,18 +846,6 @@ export const adminRejectCreatorMonetization = onCall({ region: 'us-central1' }, 
     [`usuarios/${uid}/creator`]: creatorDocMonReject,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: reason,
-    [`usuarios/${uid}/creatorMembershipEnabled`]: false,
-    [`usuarios/${uid}/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipEnabled`]: null,
-    [`usuarios/${uid}/publicProfile/creatorMembershipPriceBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorDonationSuggestedBRL`]: null,
-    [`usuarios/${uid}/publicProfile/creatorProfile/supportOffer`]: {
-      membershipEnabled: false,
-      membershipPriceBRL: creatorDocMonReject.monetization.offer?.membershipPriceBRL || null,
-      donationSuggestedBRL: creatorDocMonReject.monetization.offer?.donationSuggestedBRL || null,
-      updatedAt: now,
-    },
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
   });
 

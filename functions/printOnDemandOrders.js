@@ -21,7 +21,7 @@ import {
   REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL,
   REGIONAL_FREIGHT_DISCOUNT_RATE,
   STORE_PROMO_THRESHOLDS,
-} from '../shared/printOnDemandPricing.js';
+} from './shared/printOnDemandPricing.js';
 import {
   readCreatorStatsFromDb,
   resolveCreatorMonetizationPreferenceFromDb,

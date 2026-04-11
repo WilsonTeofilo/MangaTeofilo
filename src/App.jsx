@@ -336,6 +336,7 @@ function AppRoutes() {
     trafficSource === 'promo_email' ||
     trafficSource === 'promo_admin' ||
     trafficSource === 'chapter_email';
+  const hideGlobalChrome = location.pathname === '/kokuin';
   const birthDateGuardBypass =
     location.pathname === '/login' ||
     location.pathname === '/perfil' ||
@@ -353,11 +354,13 @@ function AppRoutes() {
     <>
       <SeoManager />
       <ScrollToTop />
-      <Header
-        usuario={podeAcessarApp ? usuario : null}
-        perfil={podeAcessarApp ? perfilUsuario : null}
-        adminAccess={adminAccess}
-      />
+      {hideGlobalChrome ? null : (
+        <Header
+          usuario={podeAcessarApp ? usuario : null}
+          perfil={podeAcessarApp ? perfilUsuario : null}
+          adminAccess={adminAccess}
+        />
+      )}
 
       <main className="shito-main-content">
         <Suspense fallback={<div className="shito-app-splash" aria-hidden="true" />}>
@@ -376,16 +379,6 @@ function AppRoutes() {
           />
           <Route
             path="/work/:slug"
-            element={
-              <ObraDetalhe
-                user={podeAcessarApp ? usuario : null}
-                perfil={podeAcessarApp ? perfilUsuario : null}
-                adminAccess={adminAccess}
-              />
-            }
-          />
-          <Route
-            path="/obra/:obraId"
             element={
               <ObraDetalhe
                 user={podeAcessarApp ? usuario : null}
@@ -669,7 +662,6 @@ function AppRoutes() {
               )
             }
           />
-          <Route path="/admin/loja" element={<Navigate to="/admin/products" replace />} />
           <Route
             path="/admin/store/settings"
             element={

@@ -100,7 +100,7 @@ export default function KokuinLegacyLandingSection({
           <p>
             Antes das feridas que retalharam o mundo, Kokuin era uma massa única regida pelas linhagens
             Kiraya e Moshiki. A guerra entre divindades, Yukio, Orochi e Matatabi trouxe o cataclismo
-            que fragmentou o planeta, dando origem aos continentes e às novas formas de vida.
+            que rompeu o planeta, dando origem aos continentes e às novas formas de vida.
           </p>
         </div>
         <div className="lore-banner-image">

@@ -67,14 +67,6 @@ export function readCreatorSupportOfferFromDb(row) {
   if (canonicalOffer) {
     return normalizeCreatorSupportOfferShape(canonicalOffer, { defaultEnabled: false });
   }
-  const projectedOffer =
-    row?.publicProfile?.creatorProfile?.supportOffer &&
-    typeof row.publicProfile.creatorProfile.supportOffer === 'object'
-      ? row.publicProfile.creatorProfile.supportOffer
-      : null;
-  if (projectedOffer) {
-    return normalizeCreatorSupportOfferShape(projectedOffer, { defaultEnabled: false });
-  }
   return normalizeCreatorSupportOfferShape({}, { defaultEnabled: false });
 }
 
@@ -121,9 +113,7 @@ export function readCreatorStatsFromDb(row, creatorStatsRow = null) {
   const canonical =
     creatorStatsRow && typeof creatorStatsRow === 'object'
       ? creatorStatsRow
-      : row?.creatorStats && typeof row.creatorStats === 'object'
-        ? row.creatorStats
-        : {};
+      : {};
   return {
     followersCount: toSafeNumber(canonical?.followersCount),
     totalViews: toSafeNumber(canonical?.totalViews),

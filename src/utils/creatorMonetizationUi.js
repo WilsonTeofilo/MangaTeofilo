@@ -64,26 +64,10 @@ export function resolveCreatorMonetizationFlags(row) {
 }
 
 export function resolveCreatorSupportOfferFromDb(row) {
-  const publicOffer =
-    row?.creatorProfile?.monetization?.supportOffer &&
-    typeof row.creatorProfile.monetization.supportOffer === 'object'
-      ? row.creatorProfile.monetization.supportOffer
-      : row?.creatorProfile?.supportOffer &&
-          typeof row.creatorProfile.supportOffer === 'object'
-        ? row.creatorProfile.supportOffer
-        : null;
-  const publicProjectedOffer =
-    row?.publicProfile?.creatorProfile?.monetization?.supportOffer &&
-    typeof row.publicProfile.creatorProfile.monetization.supportOffer === 'object'
-      ? row.publicProfile.creatorProfile.monetization.supportOffer
-      : row?.publicProfile?.creatorProfile?.supportOffer &&
-          typeof row.publicProfile.creatorProfile.supportOffer === 'object'
-        ? row.publicProfile.creatorProfile.supportOffer
-        : null;
   const canonicalOffer =
     row?.creator?.monetization?.offer && typeof row.creator.monetization.offer === 'object'
       ? row.creator.monetization.offer
-      : publicOffer || publicProjectedOffer || null;
+      : null;
   const source = canonicalOffer || {};
   const price = Number(source.membershipPriceBRL);
   const donation = Number(source.donationSuggestedBRL);
@@ -143,7 +127,9 @@ export function creatorMonetizationStatusLabel(preference, status) {
 }
 
 export function resolveCreatorMonetizationEligibilityFromDb(row) {
-  const progress = buildCreatorProgressViewModel(metricsFromUsuarioRow(row || {}));
+  const progress = buildCreatorProgressViewModel(
+    metricsFromUsuarioRow(row || {}, row?.creatorsStats || null)
+  );
   return {
     level: Number(progress?.level || 0) || 0,
     unlocked: progress?.monetizationThresholdReached === true,

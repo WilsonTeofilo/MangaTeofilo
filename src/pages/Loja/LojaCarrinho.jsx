@@ -47,6 +47,7 @@ export default function LojaCarrinho({ user, perfil }) {
   const [shippingQuote, setShippingQuote] = useState(null);
   const [serverCartPricing, setServerCartPricing] = useState(null);
   const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState('');
   const [shippingService, setShippingService] = useState('PAC');
   const [podDraft, setPodDraft] = useState(() => getPodCartDraft());
 
@@ -143,10 +144,16 @@ export default function LojaCarrinho({ user, perfil }) {
       if (!user?.uid || !detailed.length || hasInvalid || buyerMissingFields.length) {
         setShippingQuote(null);
         setServerCartPricing(null);
+        setShippingError(
+          buyerMissingFields.length
+            ? 'Complete o perfil de compra para calcular o frete.'
+            : 'Adicione itens válidos para calcular o frete.'
+        );
         setShippingLoading(false);
         return;
       }
       setShippingLoading(true);
+      setShippingError('');
       try {
         const items = detailed.map((line) => {
           const payload = { productId: line.productId, quantity: line.quantity };
@@ -167,6 +174,7 @@ export default function LojaCarrinho({ user, perfil }) {
         if (active) {
           setShippingQuote(null);
           setServerCartPricing(null);
+          setShippingError('Não foi possível calcular o frete agora. Tente novamente em instantes.');
         }
       } finally {
         if (active) setShippingLoading(false);
@@ -193,7 +201,7 @@ export default function LojaCarrinho({ user, perfil }) {
       return;
     }
     if (!checkoutTotalsReady) {
-      setErro('Aguarde a cotacao do frete para o servidor confirmar subtotal e total finais.');
+      setErro(shippingError || 'Aguarde a cotação do frete para o servidor confirmar subtotal e total finais.');
       return;
     }
     if (!config.acceptingOrders) {
@@ -414,6 +422,9 @@ export default function LojaCarrinho({ user, perfil }) {
               </div>
             ) : null}
             {shippingLoading ? <p className="loja-shipping-hint">Calculando PAC e SEDEX no servidor...</p> : null}
+            {!shippingLoading && shippingError ? (
+              <p className="loja-error" role="status">{shippingError}</p>
+            ) : null}
             {erro ? <p className="loja-error">{erro}</p> : null}
             {user?.uid && buyerMissingFields.length ? (
               <div className="loja-banner loja-banner--erro loja-banner--with-cta loja-cart__buyer-hint" role="status">

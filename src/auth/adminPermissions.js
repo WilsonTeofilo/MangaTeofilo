@@ -14,7 +14,6 @@ export const ADMIN_ROUTE_PREFIXES = [
   '/admin/financeiro',
   '/admin/store/settings',
   '/admin/products',
-  '/admin/loja',
   '/admin/pedidos',
   '/admin/producao-fisica',
   '/admin/orders',
@@ -97,7 +96,7 @@ export function canAccessAdminPath(pathname, access) {
   if (pathname.startsWith('/admin/store/settings')) {
     return perm.canAccessLojaAdmin === true;
   }
-  if (pathname.startsWith('/admin/products') || pathname.startsWith('/admin/loja')) {
+  if (pathname.startsWith('/admin/products')) {
     return perm.canAccessLojaAdmin === true;
   }
   if (pathname.startsWith('/admin/pedidos')) {
@@ -140,7 +139,6 @@ const ADMIN_HOME_CANDIDATES = [
   '/admin/dashboard',
   '/admin/financeiro',
   '/admin/products',
-  '/admin/loja',
   '/admin/pedidos',
   '/admin/sessoes',
   '/admin/equipe',

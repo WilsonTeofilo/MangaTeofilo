@@ -56,22 +56,15 @@ function buildCreatorPublicMonetization(source = {}, creatorSupportOffer = {}) {
     source?.creator?.monetization && typeof source.creator.monetization === 'object'
       ? source.creator.monetization
       : {};
-  const publicCreatorMonetization =
-    source?.creatorProfile?.monetization && typeof source.creatorProfile.monetization === 'object'
-      ? source.creatorProfile.monetization
-      : {};
-  const preference = asNonEmptyString(
-    creatorMonetization.preference || publicCreatorMonetization.preference,
-    'publish_only'
-  ).toLowerCase() === 'monetize'
+  const preference = asNonEmptyString(creatorMonetization.preference, 'publish_only').toLowerCase() === 'monetize'
     ? 'monetize'
     : 'publish_only';
   const applicationStatus = asNonEmptyString(
-    creatorMonetization?.application?.status || publicCreatorMonetization.applicationStatus,
+    creatorMonetization?.application?.status,
     source?.creator?.meta?.isAdult === false ? 'blocked_underage' : 'not_requested'
   ).toLowerCase();
   const financialStatus = asNonEmptyString(
-    creatorMonetization?.financial?.status || publicCreatorMonetization.financialStatus,
+    creatorMonetization?.financial?.status,
     'inactive'
   ).toLowerCase();
   const status =
@@ -158,9 +151,7 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
   const creatorSupportOffer =
     source?.creator?.monetization?.offer && typeof source.creator.monetization.offer === 'object'
       ? source.creator.monetization.offer
-      : source?.creatorProfile?.supportOffer && typeof source.creatorProfile.supportOffer === 'object'
-        ? source.creatorProfile.supportOffer
-        : null;
+      : null;
   const publicCreatorMonetization = isCreatorProfile
     ? buildCreatorPublicMonetization(source, creatorSupportOffer)
     : null;
@@ -195,12 +186,6 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
             socialLinks: {
               instagramUrl,
               youtubeUrl,
-            },
-            supportOffer: {
-              membershipEnabled: creatorSupportOffer?.membershipEnabled === true,
-              membershipPriceBRL: Number(creatorSupportOffer?.membershipPriceBRL || 0) || null,
-              donationSuggestedBRL: Number(creatorSupportOffer?.donationSuggestedBRL || 0) || null,
-              updatedAt: Number(creatorSupportOffer?.updatedAt || 0) || 0,
             },
             monetization: publicCreatorMonetization,
           },

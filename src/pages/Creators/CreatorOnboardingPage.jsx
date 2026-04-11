@@ -67,6 +67,16 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
     [perfil, user, isMangakaMonetizeIntent]
   );
 
+  const missingBasics = useMemo(() => {
+    const missing = [];
+    if (!String(perfil?.userHandle || '').trim()) missing.push('@username');
+    if (!String(perfil?.userName || '').trim()) missing.push('nome de perfil');
+    if (!String(perfil?.birthDate || '').trim()) missing.push('data de nascimento');
+    const gender = String(perfil?.gender || '').trim().toLowerCase();
+    if (!gender || gender === 'nao_informado') missing.push('gênero');
+    return missing;
+  }, [perfil]);
+
   if (!user?.uid) {
     return null;
   }
@@ -82,6 +92,33 @@ export default function CreatorOnboardingPage({ user, perfil, adminAccess }) {
   if (isStaffAdmin && !isMangaka) {
     const dest = canAccessAdminPath('/admin/criadores', adminAccess) ? '/admin/criadores' : '/admin';
     return <Navigate to={dest} replace />;
+  }
+
+  if (!isMangaka && !isStaffAdmin && missingBasics.length) {
+    return (
+      <main className="creators-apply-guest">
+        <div className="creators-apply-guest__inner">
+          <p className="creators-apply-guest__eyebrow">Cadastro obrigatório</p>
+          <h1>Complete seu perfil de leitor</h1>
+          <p className="creators-apply-guest__lead">
+            Para virar escritor direto, você precisa preencher os campos básicos do perfil de leitor primeiro.
+          </p>
+          <ul className="creators-apply-guest__bullets">
+            {missingBasics.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <div className="creators-apply-guest__actions">
+            <button type="button" className="creators-apply-guest__primary" onClick={() => navigate('/perfil?required=creator_basics')}>
+              Completar perfil
+            </button>
+            <button type="button" className="creators-apply-guest__secondary" onClick={() => navigate('/perfil')}>
+              Voltar ao perfil
+            </button>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   const handleClose = () => {

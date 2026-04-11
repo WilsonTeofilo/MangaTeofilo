@@ -149,7 +149,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
       return () => {};
     }
     const unsubs = workIds.map((workId) =>
-      onValue(ref(db, `workRetencao/${workId}`), (snap) => {
+      onValue(ref(db, `workRetention/${workId}`), (snap) => {
         setRetentionMap((prev) => ({
           ...prev,
           [workId]: snap.exists() ? snap.val() || {} : {},

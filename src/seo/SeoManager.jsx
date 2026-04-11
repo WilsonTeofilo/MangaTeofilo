@@ -44,15 +44,6 @@ function buildSeo(pathname) {
     };
   }
 
-  if (clean.startsWith('/obra/')) {
-    return {
-      ...defs,
-      ogType: 'article',
-      title: `Mangá autoral | ${SITE_NAME}`,
-      description: `Leia mangá autoral online, veja capítulos e detalhes da obra no ${SITE_NAME}.`,
-    };
-  }
-
   if (clean.startsWith('/ler/')) {
     return {
       ...defs,

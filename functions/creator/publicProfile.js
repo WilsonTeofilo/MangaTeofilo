@@ -87,7 +87,6 @@ export async function getMonetizableCreatorPublicProfile(
       isMonetizationActive: creatorMonetizationActive,
       isApproved: creatorMonetizationApproved,
       financialStatus: creatorFinancialStatus,
-      supportOffer: creatorSupportOffer,
     },
     stats: creatorStats,
     followersCount: creatorStats.followersCount,

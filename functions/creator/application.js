@@ -261,10 +261,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
         'Criadores menores de idade podem publicar, mas nao podem solicitar monetizacao.'
       );
     }
-    const approvalGate = evaluateCreatorApplicationApprovalGate({
-      ...row,
-      creatorStats: readCreatorStatsFromDb(row, creatorStatsRow),
-    });
+    const approvalGate = evaluateCreatorApplicationApprovalGate(row, creatorStatsRow);
     if (!approvalGate.ok) {
       throw new HttpsError(
         'failed-precondition',
@@ -377,10 +374,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   });
 
   if (monetizationPreference === 'monetize') {
-    const approvalGate = evaluateCreatorApplicationApprovalGate({
-      ...row,
-      creatorStats: readCreatorStatsFromDb(row, creatorStatsRow),
-    });
+    const approvalGate = evaluateCreatorApplicationApprovalGate(row, creatorStatsRow);
     if (!approvalGate.ok) {
       throw new HttpsError(
         'failed-precondition',

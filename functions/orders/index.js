@@ -8,9 +8,6 @@ export {
   adminUpdateVisibleStoreOrder,
   creatorUpdateOwnStoreOrder,
 } from './storeViewer.js';
-export { adminBackfillCanonicalOrderStatuses } from './maintenance.js';
-export { adminAuditStoreFinancialIntegrity } from './maintenance.js';
-export { adminReconcileStoreFinancialIntegrity } from './maintenance.js';
 
 export {
   listMyPrintOnDemandOrders,

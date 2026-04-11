@@ -1,6 +1,4 @@
-﻿import { Navigate } from 'react-router-dom';
-
-/** Compat: `/admin/loja` → catálogo em `/admin/products`. */
+// Legacy compat removido. Arquivo mantido vazio para evitar lock do Windows.
 export default function LojaAdmin() {
-  return <Navigate to="/admin/products" replace />;
+  return null;
 }

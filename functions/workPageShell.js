@@ -1,5 +1,5 @@
 /**
- * Shell HTML para /work/:segment e /obra/:id com OG/Twitter/canonical corretos para crawlers.
+ * Shell HTML para /work/:segment com OG/Twitter/canonical corretos para crawlers.
  * O SPA em React ajusta o <head> só no cliente; WhatsApp, Facebook e afins leem o HTML inicial.
  */
 import { getApps, initializeApp } from 'firebase-admin/app';
@@ -198,14 +198,12 @@ async function fetchIndexHtml() {
 
 const responseCache = new Map();
 
-function parseWorkRoute(req) {
-  const path = String(req.path || '');
-  const legacy = path.match(/\/obra\/([^/?#]+)/);
-  if (legacy) return { kind: 'id', value: decodeURIComponent(legacy[1]) };
-  const canonical = path.match(/\/work\/([^/?#]+)/);
-  if (canonical) return { kind: 'segment', value: decodeURIComponent(canonical[1]) };
-  return { kind: 'unknown', value: '' };
-}
+  function parseWorkRoute(req) {
+    const path = String(req.path || '');
+    const canonical = path.match(/\/work\/([^/?#]+)/);
+    if (canonical) return { kind: 'segment', value: decodeURIComponent(canonical[1]) };
+    return { kind: 'unknown', value: '' };
+  }
 
 async function resolveWorkByRouteTarget(route) {
   const db = getDatabase();

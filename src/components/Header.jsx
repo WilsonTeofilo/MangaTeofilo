@@ -120,7 +120,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
       if (
         adminWorkspaceCreatorStrip &&
         canAccessCreatorPath('/creator/loja', creatorNavAccess) &&
-        (canAccessAdminPath('/admin/loja', adminAccess) || canAccessAdminPath('/admin/pedidos', adminAccess))
+        (canAccessAdminPath('/admin/products', adminAccess) || canAccessAdminPath('/admin/pedidos', adminAccess))
       ) {
         if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
         lojaMenuBits.push({ label: 'Loja', path: '/creator/loja' });

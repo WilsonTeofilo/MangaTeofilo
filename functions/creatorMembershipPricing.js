@@ -20,12 +20,8 @@ export function hasPublicCreatorMembershipOffer(row) {
   const canonicalOffer =
     row?.creator?.monetization?.offer && typeof row.creator.monetization.offer === 'object'
       ? row.creator.monetization.offer
-      : row?.publicProfile?.creatorProfile?.supportOffer &&
-          typeof row.publicProfile.creatorProfile.supportOffer === 'object'
-        ? row.publicProfile.creatorProfile.supportOffer
-        : row?.creatorProfile?.supportOffer && typeof row.creatorProfile.supportOffer === 'object'
-          ? row.creatorProfile.supportOffer
-          : row;
+      : null;
+  if (!canonicalOffer) return false;
   if (canonicalOffer.membershipEnabled === false) return false;
   const p = Number(canonicalOffer.membershipPriceBRL);
   const d = Number(canonicalOffer.donationSuggestedBRL);

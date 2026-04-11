@@ -2,8 +2,9 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
+import { httpsCallable } from 'firebase/functions';
 
-import { db, storage, auth } from '../../services/firebase';
+import { db, storage, auth, functions } from '../../services/firebase';
 import { resolveAdminAccess } from '../../auth/adminAccess';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import {
@@ -25,6 +26,15 @@ import {
   safeDeleteStorageObject,
   safeDeleteStorageObjects,
 } from '../../utils/storageCleanup';
+import { useChapterWizard } from './hooks/useChapterWizard';
+import ChapterWizardSteps from './steps/ChapterWizardSteps.jsx';
+import ChapterStepUpload from './steps/ChapterStepUpload.jsx';
+import ChapterStepOrganize from './steps/ChapterStepOrganize.jsx';
+import ChapterStepCover from './steps/ChapterStepCover.jsx';
+import ChapterStepReview from './steps/ChapterStepReview.jsx';
+import ChapterStepPublish from './steps/ChapterStepPublish.jsx';
+import ChapterWizardNav from './steps/ChapterWizardNav.jsx';
+import ChapterUploadProgress from './steps/ChapterUploadProgress.jsx';
 import './AdminPanel.css';
 
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -48,7 +58,10 @@ function normalizarCapaAjuste(raw, dims = null) {
 
 function validarImagemUpload(file, label = 'arquivo') {
   if (!file) return `${label} não encontrado.`;
-  if (!IMAGE_TYPES.includes(file.type)) return `${label} inválido. Use JPG, PNG ou WEBP.`;
+  const name = String(file.name || '').toLowerCase();
+  const extOk = /\.(jpe?g|png|webp)$/.test(name);
+  const typeOk = IMAGE_TYPES.includes(file.type);
+  if (!typeOk && !extOk) return `${label} inválido. Use JPG, PNG ou WEBP.`;
   if (file.size > MAX_INPUT_IMAGE_SIZE_BYTES) return `${label} excede 3,5 MB.`;
   return '';
 }
@@ -515,6 +528,10 @@ function ModalPreviewPagina({ aberto, itens, indiceInicial = 0, aoFechar }) {
 export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const notifyCreatorContentRemoval = useMemo(
+    () => httpsCallable(functions, 'notifyCreatorContentRemoval'),
+    []
+  );
   const user = auth.currentUser;
   const isCreatorWorkspace = workspace === 'creator';
   const isMangaka = Boolean(adminAccess?.isMangaka);
@@ -568,7 +585,6 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const [loading, setLoading] = useState(false);
   const [progressoMsg, setProgressoMsg] = useState('');
   const [porcentagem, setPorcentagem] = useState(0);
-  const [etapaAtiva, setEtapaAtiva] = useState(1);
   const [dragUploadAtivo, setDragUploadAtivo] = useState(false);
   const [modalPreview, setModalPreview] = useState({ aberto: false, origem: 'novas', indice: 0 });
   const [erroModal, setErroModal] = useState('');
@@ -733,95 +749,26 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const statusRevisao = publicReleaseAtInput?.trim()
     ? 'Agendado'
     : (totalPaginasAtual > 0 ? 'Publicado ao salvar' : 'Rascunho');
-  const checklistPublicacao = useMemo(() => {
-    const etapa1 = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
-    const etapa2 = totalPaginasAtual > 0;
-    const etapa3 = Boolean(capaCapitulo || capituloEditando?.capaUrl);
-    const etapa4 = Boolean(String(titulo || '').trim() && Number(numeroCapitulo) > 0);
-    const etapa5 = etapa1 && etapa2 && etapa3 && etapa4;
-    return [
-      { id: 1, label: 'Upload (capa e paginas)', ok: etapa1 },
-      { id: 2, label: 'Organizar paginas', ok: etapa2 },
-      { id: 3, label: 'Ajustar capa', ok: etapa3 },
-      { id: 4, label: 'Revisar metadados', ok: etapa4 },
-      { id: 5, label: 'Publicar', ok: etapa5 },
-    ];
-  }, [capaCapitulo, capituloEditando?.capaUrl, numeroCapitulo, titulo, totalPaginasAtual]);
-  const etapaUploadCompleta = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
-  const etapaOrganizacaoCompleta = totalPaginasAtual > 0;
-  const etapaCapaCompleta = Boolean(capaCapitulo || capituloEditando?.capaUrl);
-  const etapaRevisaoCompleta = Boolean(String(titulo || '').trim() && Number(numeroCapitulo) > 0);
-  const tituloNormalizado = String(titulo || '').trim();
-  const numeroCapituloNormalizado = Number(numeroCapitulo);
-  const etapaLiberadaMax = useMemo(() => {
-    if (!etapaUploadCompleta) return 1;
-    if (!etapaOrganizacaoCompleta) return 2;
-    if (!etapaCapaCompleta) return 3;
-    if (!etapaRevisaoCompleta) return 4;
-    return 5;
-  }, [
-    etapaCapaCompleta,
-    etapaOrganizacaoCompleta,
-    etapaRevisaoCompleta,
-    etapaUploadCompleta,
-  ]);
-  const irParaEtapa = useCallback((etapaDestino) => {
-    const destino = Math.max(1, Math.min(5, Number(etapaDestino) || 1));
-    setEtapaAtiva(Math.min(destino, etapaLiberadaMax));
-  }, [etapaLiberadaMax]);
-
-  const mensagemBloqueioEtapa = useCallback((etapaDestino) => {
-    const destino = Math.max(1, Math.min(5, Number(etapaDestino) || 1));
-    if (destino <= etapaLiberadaMax) return '';
-    if (!etapaUploadCompleta) {
-      const temCapa = Boolean(capaCapitulo || capituloEditando?.capaUrl);
-      const temPaginas = totalPaginasAtual > 0;
-      if (!temCapa && !temPaginas) {
-        return 'Faltam a capa e as páginas do capítulo.';
-      }
-      if (!temCapa) {
-        return 'Falta enviar a capa do capítulo.';
-      }
-      if (!temPaginas) {
-        return 'Falta enviar pelo menos uma página do capítulo.';
-      }
-    }
-    if (!etapaOrganizacaoCompleta) {
-      return 'Adicione e organize ao menos uma página antes de seguir.';
-    }
-    if (!etapaCapaCompleta) {
-      return 'Selecione a capa do capítulo antes de seguir.';
-    }
-    if (!tituloNormalizado && (!Number.isFinite(numeroCapituloNormalizado) || numeroCapituloNormalizado <= 0)) {
-      return 'Faltam o título e o número do capítulo.';
-    }
-    if (!tituloNormalizado) {
-      return 'Falta preencher o título do capítulo.';
-    }
-    if (!Number.isFinite(numeroCapituloNormalizado) || numeroCapituloNormalizado <= 0) {
-      return 'Falta preencher um número de capítulo válido.';
-    }
-    return 'Complete a etapa atual antes de avançar.';
-  }, [
+  const {
+    etapaAtiva,
+    setEtapaAtiva,
+    checklistPublicacao,
     etapaLiberadaMax,
-    etapaUploadCompleta,
-    etapaOrganizacaoCompleta,
-    etapaCapaCompleta,
-    tituloNormalizado,
-    numeroCapituloNormalizado,
+    irParaEtapa,
+    tentarIrParaEtapa,
+  } = useChapterWizard({
     capaCapitulo,
-    capituloEditando?.capaUrl,
+    capituloCapaUrl: capituloEditando?.capaUrl,
     totalPaginasAtual,
-  ]);
-
-  const tentarIrParaEtapa = useCallback((etapaDestino) => {
-    const bloqueio = mensagemBloqueioEtapa(etapaDestino);
-    if (bloqueio) {
-      setErroModal(bloqueio);
-      return;
-    }
-    irParaEtapa(etapaDestino);
-  }, [irParaEtapa, mensagemBloqueioEtapa]);
+    titulo,
+    numeroCapitulo,
+  });
+  const tentarIrParaEtapaSeguro = useCallback(
+    (destino) => {
+      tentarIrParaEtapa(destino, setErroModal);
+    },
+    [tentarIrParaEtapa]
+  );
 
   const ensureMangakaClaimForWrite = useCallback(async (actionLabel = 'gravar este capítulo') => {
     if (!isMangaka || !user) return true;
@@ -1052,6 +999,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       setErroModal(erros[0]);
       return;
     }
+    let deveAvancar = false;
     setArquivosPaginas((prev) => {
       const existentes = new Set(prev.map(assinaturaArquivo));
       const unicos = novos.filter((file) => !existentes.has(assinaturaArquivo(file)));
@@ -1061,10 +1009,11 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
       const next = [...prev, ...unicos];
       setPaginasFileLabel(`${next.length} página(s) selecionada(s)`);
+      deveAvancar = Boolean((capaCapitulo || capituloEditando?.capaUrl) && next.length > 0);
       return next;
     });
-    if (capaCapitulo || capituloEditando?.capaUrl) {
-      tentarIrParaEtapa(2);
+    if (deveAvancar) {
+      irParaEtapa(2);
     }
   };
 
@@ -1081,7 +1030,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setCapaAjuste(ajustePadrao);
     setCapaAjusteInicial(ajustePadrao);
     if (totalPaginasAtual > 0) {
-      tentarIrParaEtapa(2);
+      irParaEtapa(2);
     }
   };
 
@@ -1251,13 +1200,20 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       };
 
       let publicMs = null;
-      if (publicReleaseAtInput?.trim()) {
-        const parsed = parseBrDateTimeToMs(publicReleaseAtInput);
-        if (parsed == null) {
-          throw new Error('Data de lançamento inválida. Use o formato dd/mm/aaaa hh:mm.');
+        if (publicReleaseAtInput?.trim()) {
+          const parsed = parseBrDateTimeToMs(publicReleaseAtInput);
+          if (parsed == null) {
+            throw new Error('Data de lançamento inválida. Use o formato dd/mm/aaaa hh:mm.');
+          }
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          const todayStartMs = todayStart.getTime();
+          if (parsed < todayStartMs) {
+            throw new Error('A data de lançamento deve ser hoje ou uma data futura.');
+          }
+          const now = Date.now();
+          publicMs = parsed < now ? now : parsed;
         }
-        publicMs = parsed;
-      }
       dados.publicReleaseAt = publicMs;
       dados.antecipadoMembros = Boolean(antecipadoMembros);
 
@@ -1363,9 +1319,19 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
   const apagarCapitulo = async (cap) => {
     if (!cap?.id) return;
-    if (!window.confirm(`Apagar fragmento ${cap.numero}?`)) return;
+    if (!window.confirm(`Apagar capítulo ${cap.numero}?`)) return;
+    let removalReason = '';
+    if (!isMangaka) {
+      removalReason = String(
+        window.prompt('Informe o motivo da exclusão (aparece ao criador):', '')
+      ).trim();
+      if (!removalReason) {
+        setErroModal('Exclusão cancelada. Motivo obrigatório para notificar o criador.');
+        return;
+      }
+    }
     setLoading(true);
-    setProgressoMsg(`Apagando fragmento ${cap.numero}...`);
+    setProgressoMsg(`Apagando capítulo ${cap.numero}...`);
     try {
       if (!(await ensureMangakaClaimForWrite('apagar o capítulo'))) {
         throw new Error('Permissão de criador não sincronizada.');
@@ -1380,6 +1346,15 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         safeDeleteStorageObjects(storage, arquivos),
         remove(dbRef(db, `capitulos/${cap.id}`)),
       ]);
+      if (!isMangaka && String(cap?.creatorId || '').trim()) {
+        await notifyCreatorContentRemoval({
+          targetUid: String(cap.creatorId || '').trim(),
+          contentType: 'capitulo',
+          contentId: cap.id,
+          contentTitle: cap.titulo || `Capítulo ${cap.numero || ''}`.trim(),
+          reason: removalReason,
+        });
+      }
       if (editandoId === cap.id) {
         cancelarEdicao();
       }
@@ -1497,336 +1472,90 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
               </label>
             </div>
 
-            <div className="editor-steps">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  className={`editor-step-chip${etapaAtiva === n ? ' active' : ''}`}
-                  disabled={n > etapaLiberadaMax}
-                  onClick={() => tentarIrParaEtapa(n)}
-                >
-                  {n === 1 && '1. Upload'}
-                  {n === 2 && '2. Organizar'}
-                  {n === 3 && '3. Ajustar capa'}
-                  {n === 4 && '4. Revisar'}
-                  {n === 5 && '5. Publicar'}
-                </button>
-              ))}
-            </div>
+            <ChapterWizardSteps
+              etapaAtiva={etapaAtiva}
+              etapaLiberadaMax={etapaLiberadaMax}
+              onSelect={tentarIrParaEtapaSeguro}
+            />
 
             {etapaAtiva === 1 && (
-              <div className="editor-step-panel">
-                <div
-                  className={`upload-dropzone${dragUploadAtivo ? ' is-active' : ''}`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragUploadAtivo(true);
-                  }}
-                  onDragLeave={() => setDragUploadAtivo(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragUploadAtivo(false);
-                    handleSelecionarArquivosPaginas(e.dataTransfer.files);
-                  }}
-                >
-                  <h3>Envie as páginas do capítulo</h3>
-                  <p>{isMangaka ? 'Arraste páginas aqui para montar seu capítulo.' : 'Arraste e solte imagens aqui, ou use o seletor abaixo.'}</p>
-                </div>
-                <div className="file-inputs">
-                  <label className="admin-capa-file-label">
-                    <span className="admin-capa-file-label__text">Capa do capítulo</span>
-                    {capaFileLabel ? (
-                      <span className="admin-capa-file-name" title={capaFileLabel}>
-                        {capaFileLabel}
-                      </span>
-                    ) : (
-                      <span className="admin-capa-file-name admin-capa-file-name--empty">Nenhum arquivo selecionado</span>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      onChange={(e) => handleSelecionarCapa(e.target.files?.[0])}
-                    />
-                  </label>
-                  <label className="admin-capa-file-label">
-                    <span className="admin-capa-file-label__text">Páginas (múltiplas)</span>
-                    {paginasFileLabel ? (
-                      <span className="admin-capa-file-name" title={paginasFileLabel}>
-                        {paginasFileLabel}
-                      </span>
-                    ) : (
-                      <span className="admin-capa-file-name admin-capa-file-name--empty">
-                        Nenhuma página selecionada
-                      </span>
-                    )}
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      onChange={(e) => {
-                        handleSelecionarArquivosPaginas(e.target.files);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
+              <ChapterStepUpload
+                dragUploadAtivo={dragUploadAtivo}
+                setDragUploadAtivo={setDragUploadAtivo}
+                handleSelecionarArquivosPaginas={handleSelecionarArquivosPaginas}
+                isMangaka={isMangaka}
+                capaFileLabel={capaFileLabel}
+                paginasFileLabel={paginasFileLabel}
+                handleSelecionarCapa={handleSelecionarCapa}
+              />
             )}
 
             {etapaAtiva === 2 && (
-              <div className="editor-step-panel">
-                {editandoId && paginasExistentes.length > 0 && (
-                  <div className="cirurgia-paginas">
-                    <div className="cirurgia-header">
-                      <div className="cirurgia-info">
-                        <h3>Páginas atuais ({paginasExistentes.length})</h3>
-                    <p>{isMangaka ? 'Reordene páginas, revise e troque trechos sem perder o fluxo.' : 'Arraste para reordenar, visualize em modal e troque páginas pontuais.'}</p>
-                      </div>
-                    </div>
-                    <div className="paginas-edit-grid">
-                      {paginasExistentes.map((url, index) => (
-                        <PaginaCard
-                          key={`${editandoId}-${url}`}
-                          index={index}
-                          url={url}
-                          total={paginasExistentes.length}
-                          onTrocar={(file) => handleTrocarPaginaUnica(index, file)}
-                          onReordenar={handleReordenarPagina}
-                          onErro={setErroModal}
-                          onVer={() => setModalPreview({ aberto: true, origem: 'atuais', indice: index })}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="cirurgia-paginas">
-                  <div className="cirurgia-header">
-                    <div className="cirurgia-info">
-                      <h3>Pré-visualização das novas páginas ({arquivosPaginas.length})</h3>
-                      <p>{isMangaka ? 'Confira as novas páginas antes de publicar.' : 'Cards com thumbnail, preview em modal, remoção e reorder por arraste.'}</p>
-                    </div>
-                  </div>
-                  {arquivosPaginas.length > 0 ? (
-                    <div className="paginas-edit-grid">
-                      {previewsPaginasSelecionadas.map((preview, index) => (
-                        <PaginaSelecionadaCard
-                          key={preview.key}
-                          index={index}
-                          url={preview.url}
-                          nome={preview.nome}
-                          total={previewsPaginasSelecionadas.length}
-                          onReordenar={handleReordenarSelecionada}
-                          onRemover={handleRemoverSelecionada}
-                          onErro={setErroModal}
-                          onVer={() => setModalPreview({ aberto: true, origem: 'novas', indice: index })}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="editor-empty">Nenhuma nova página selecionada ainda.</p>
-                  )}
-                </div>
-              </div>
+              <ChapterStepOrganize
+                editandoId={editandoId}
+                paginasExistentes={paginasExistentes}
+                isMangaka={isMangaka}
+                PaginaCard={PaginaCard}
+                PaginaSelecionadaCard={PaginaSelecionadaCard}
+                arquivosPaginas={arquivosPaginas}
+                previewsPaginasSelecionadas={previewsPaginasSelecionadas}
+                handleTrocarPaginaUnica={handleTrocarPaginaUnica}
+                handleReordenarPagina={handleReordenarPagina}
+                handleReordenarSelecionada={handleReordenarSelecionada}
+                handleRemoverSelecionada={handleRemoverSelecionada}
+                setErroModal={setErroModal}
+                setModalPreview={setModalPreview}
+              />
             )}
 
             {etapaAtiva === 3 && (
-              <div className="capa-ajuste-bloco">
-                <div className="cirurgia-header">
-                  <div className="cirurgia-info">
-                    <h3>Ajuste da capa (16:9)</h3>
-                    <p>{isMangaka ? 'Ajuste a capa que vai aparecer no catálogo e no leitor.' : 'Arraste na imagem e use sliders de ajuste fino. A prévia final replica o resultado real.'}</p>
-                  </div>
-                </div>
-
-                <div className="capa-ajuste-grid">
-                  <div className="capa-preview-frame">
-                    <div
-                      ref={capaEditorRef}
-                      className={`capa-preview-mask capa-preview-mask--editor${capaEditavel ? ' is-editable' : ''}`}
-                      onMouseDown={iniciarArrasteCapa}
-                    onTouchStart={iniciarArrasteCapa}
-                      title={capaEditavel ? 'Clique e arraste para mover o enquadramento' : 'Selecione uma capa para editar'}
-                    >
-                      <img
-                        src={capaVisualSrc}
-                        alt=""
-                        aria-hidden="true"
-                        className="capa-preview-img capa-preview-img--background"
-                      />
-                      <img
-                        src={capaVisualSrc}
-                        alt={capaEditavel ? 'Prévia da capa ajustada' : 'Prévia da capa atual'}
-                        className={`capa-preview-img capa-preview-img--foreground${capaEditavel ? '' : ' capa-preview-img--faded'}`}
-                        style={capaEditavel ? capaEditorImageStyle : undefined}
-                      />
-                      <div className="capa-editor-outside-mask" aria-hidden="true">
-                        <i style={{ left: 0, top: 0, width: '100%', height: `${capaCrop.topPct}%` }} />
-                        <i style={{ left: 0, top: `${capaCrop.topPct + capaCrop.heightPct}%`, width: '100%', height: `${capaCrop.topPct}%` }} />
-                        <i style={{ left: 0, top: `${capaCrop.topPct}%`, width: `${capaCrop.leftPct}%`, height: `${capaCrop.heightPct}%` }} />
-                        <i style={{ left: `${capaCrop.leftPct + capaCrop.widthPct}%`, top: `${capaCrop.topPct}%`, width: `${capaCrop.leftPct}%`, height: `${capaCrop.heightPct}%` }} />
-                      </div>
-                      <div
-                        className="capa-editor-crop-box"
-                        aria-hidden="true"
-                        style={{
-                          left: `${capaCrop.leftPct}%`,
-                          top: `${capaCrop.topPct}%`,
-                          width: `${capaCrop.widthPct}%`,
-                          height: `${capaCrop.heightPct}%`,
-                        }}
-                      />
-                      <span className="capa-preview-tag">1) Área dentro do quadro = o que vai para a capa</span>
-                    </div>
-
-                    <div className="capa-preview-mask capa-preview-mask--resultado">
-                      <img
-                        src={capaPreviewFinalUrl || capaVisualSrc}
-                        alt="Resultado final da capa"
-                        className="capa-preview-img capa-preview-img--resultado-main"
-                      />
-                      <span className="capa-preview-tag">2) Prévia final 16:9 (aba Capítulos)</span>
-                    </div>
-                  </div>
-
-                  <div className="capa-ajuste-controls">
-                    <label>
-                      Zoom ({capaAjuste.zoom.toFixed(2)}x)
-                      <input
-                        type="range"
-                        min={capaZoomBounds.coverZoom || capaZoomBounds.minZoom}
-                        max={capaZoomBounds.maxZoom}
-                        step="0.01"
-                        value={capaAjuste.zoom}
-                        disabled={!capaEditavel}
-                        onChange={(e) =>
-                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, zoom: Number(e.target.value) }, capaDimensoes))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Eixo X ({Math.round(capaAjuste.x)}%)
-                      <input
-                        type="range"
-                        min="-100"
-                        max="100"
-                        step="1"
-                        value={capaAjuste.x}
-                        disabled={!capaEditavel}
-                        onChange={(e) =>
-                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, x: Number(e.target.value) }, capaDimensoes))
-                        }
-                      />
-                    </label>
-                    <label>
-                      Eixo Y ({Math.round(capaAjuste.y)}%)
-                      <input
-                        type="range"
-                        min="-100"
-                        max="100"
-                        step="1"
-                        value={capaAjuste.y}
-                        disabled={!capaEditavel}
-                        onChange={(e) =>
-                          setCapaAjuste((prev) => normalizarCapaAjuste({ ...prev, y: Number(e.target.value) }, capaDimensoes))
-                        }
-                      />
-                    </label>
-                    <p className="capa-ajuste-dica">
-                      Dica: você pode arrastar direto na imagem para ajustar X/Y.
-                    </p>
-                    <button
-                      type="button"
-                      className="btn-reset-capa"
-                      disabled={!capaEditavel}
-                      onClick={() => setCapaAjuste(normalizarCapaAjuste({}, capaDimensoes))}
-                    >
-                      Resetar ajuste
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ChapterStepCover
+                isMangaka={isMangaka}
+                capaEditorRef={capaEditorRef}
+                capaEditavel={capaEditavel}
+                iniciarArrasteCapa={iniciarArrasteCapa}
+                capaVisualSrc={capaVisualSrc}
+                capaEditorImageStyle={capaEditorImageStyle}
+                capaCrop={capaCrop}
+                capaPreviewFinalUrl={capaPreviewFinalUrl}
+                capaZoomBounds={capaZoomBounds}
+                capaAjuste={capaAjuste}
+                setCapaAjuste={setCapaAjuste}
+                normalizarCapaAjuste={normalizarCapaAjuste}
+                capaDimensoes={capaDimensoes}
+              />
             )}
 
             {etapaAtiva === 4 && (
-              <div className="editor-step-panel review-panel">
-                <h3>{isMangaka ? 'Revisão final do capítulo' : 'Revisão final'}</h3>
-                <div className="review-checklist">
-                  {checklistPublicacao.map((item) => (
-                    <div key={item.id} className={`review-check-item ${item.ok ? 'ok' : 'pendente'}`}>
-                      <span>{item.ok ? 'OK' : 'Pendente'}</span>
-                      <p>Etapa {item.id}: {item.label}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="review-kpis">
-                  <span><strong>Status:</strong> {statusRevisao}</span>
-                  <span><strong>Páginas:</strong> {totalPaginasAtual}</span>
-                  <span><strong>Novas paginas:</strong> {arquivosPaginas.length}</span>
-                  <span><strong>Lançamento:</strong> {publicReleaseAtInput?.trim() || 'Imediato'}</span>
-                </div>
-                <div className="capa-preview-mask capa-preview-mask--resultado">
-                  <img
-                    src={capaPreviewFinalUrl || capaVisualSrc}
-                    alt="Prévia final para revisão"
-                    className="capa-preview-img capa-preview-img--resultado-main"
-                  />
-                  <span className="capa-preview-tag">Prévia final pronta para publicar</span>
-                </div>
-                <div className="review-mobile-preview">
-                  <div className="mobile-frame">
-                    <header>
-                      <strong>{titulo || 'Título do capítulo'}</strong>
-                      <span>#{String(numeroCapitulo || 0).padStart(2, '0')}</span>
-                    </header>
-                    <img
-                      src={capaPreviewFinalUrl || capaVisualSrc}
-                      alt="Prévia mobile da capa"
-                    />
-                    <footer>
-                      <span>{statusRevisao}</span>
-                      <button type="button" disabled>Ler agora</button>
-                    </footer>
-                  </div>
-                </div>
-              </div>
+              <ChapterStepReview
+                isMangaka={isMangaka}
+                checklistPublicacao={checklistPublicacao}
+                statusRevisao={statusRevisao}
+                totalPaginasAtual={totalPaginasAtual}
+                novasPaginasCount={arquivosPaginas.length}
+                publicReleaseAtInput={publicReleaseAtInput}
+                capaPreviewFinalUrl={capaPreviewFinalUrl}
+                capaVisualSrc={capaVisualSrc}
+                titulo={titulo}
+                numeroCapitulo={numeroCapitulo}
+              />
             )}
 
             {etapaAtiva === 5 && (
-              <div className="editor-step-panel review-panel">
-                <h3>{isMangaka ? 'Publicar capítulo' : 'Publicar capítulo'}</h3>
-                <p className="editor-empty">
-                  {isMangaka ? 'Confira tudo e publique sem depender do admin.' : 'Confira os dados e clique em publicar. O botão ficará fixo ao final para facilitar.'}
-                </p>
-              </div>
+              <ChapterStepPublish isMangaka={isMangaka} />
             )}
 
-            {loading && (
-              <div className="progress-container">
-                <div className="progress-bar" style={{ width: `${porcentagem}%` }}></div>
-                <p>{porcentagem}% - {progressoMsg}</p>
-              </div>
-            )}
+            <ChapterUploadProgress
+              loading={loading}
+              porcentagem={porcentagem}
+              progressoMsg={progressoMsg}
+            />
 
-            <div className="step-nav-actions">
-              <button
-                type="button"
-                className="btn-cancel"
-                disabled={etapaAtiva <= 1}
-                onClick={() => tentarIrParaEtapa(etapaAtiva - 1)}
-              >
-                Etapa anterior
-              </button>
-              <button
-                type="button"
-                className="btn-edit"
-                disabled={etapaAtiva >= 5}
-                onClick={() => tentarIrParaEtapa(etapaAtiva + 1)}
-              >
-                Próxima etapa
-              </button>
-            </div>
+            <ChapterWizardNav
+              etapaAtiva={etapaAtiva}
+              onPrev={() => tentarIrParaEtapaSeguro(etapaAtiva - 1)}
+              onNext={() => tentarIrParaEtapaSeguro(etapaAtiva + 1)}
+            />
 
             <div className="form-actions form-actions--sticky">
               <button type="submit" className="btn-save" disabled={loading}>

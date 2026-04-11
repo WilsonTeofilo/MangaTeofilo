@@ -9,8 +9,8 @@ function norm(n) {
   return Math.max(0, Math.floor(Number(n) || 0));
 }
 
-export function evaluateCreatorApplicationApprovalGate(row) {
-  const metrics = metricsFromUsuarioRow(row);
+export function evaluateCreatorApplicationApprovalGate(row, creatorStatsOverride = null) {
+  const metrics = metricsFromUsuarioRow(row, creatorStatsOverride || row?.creatorsStats || null);
   const thresholds = VITRINE_PROMO_THRESHOLDS;
   const ok =
     metrics.followers >= thresholds.followers &&

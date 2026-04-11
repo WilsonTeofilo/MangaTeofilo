@@ -146,7 +146,7 @@ function toMs(value) {
 
 function normalizePremiumEntitlement(profile = {}) {
   const raw = profile?.userEntitlements?.global;
-  const memberUntil = toMs(raw?.memberUntil || raw?.premiumUntil);
+  const memberUntil = toMs(raw?.memberUntil);
   const status = String(raw?.status || (memberUntil > Date.now() ? 'ativo' : 'inativo')).trim().toLowerCase() || 'inativo';
   const isPremium = raw?.isPremium === true;
 

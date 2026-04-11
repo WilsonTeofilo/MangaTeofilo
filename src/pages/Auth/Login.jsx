@@ -4,6 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
   updateProfile,
   signInWithPopup,
   sendPasswordResetEmail,
@@ -23,6 +26,14 @@ import { buildPublicFunctionUrl } from '../../config/functions';
 import { ensureUsuarioRecord, ativarContaUsuario, refreshAuthUser } from '../../userProfileSyncV2';
 import { resolveSafeInternalRedirect } from '../../utils/loginRedirectPath';
 import { avatarEhPublicoNoCadastro } from '../../utils/avatarAccess';
+import { normalizeUsernameInput, validateUsernameHandle } from '../../utils/usernameValidation';
+import { isTrustedPlatformAssetUrl } from '../../utils/trustedAssetUrls';
+import LoginEmailStep from './login/LoginEmailStep.jsx';
+import LoginCodeStep from './login/LoginCodeStep.jsx';
+import LoginNewUserStep from './login/LoginNewUserStep.jsx';
+import LoginExistingGoogleStep from './login/LoginExistingGoogleStep.jsx';
+import LoginExistingPasswordStep from './login/LoginExistingPasswordStep.jsx';
+import LoginAvatarModal from './login/LoginAvatarModal.jsx';
 import './Login.css';
 
 // --- Chaves de sessionStorage ───────────────────────────────────────────────
@@ -73,6 +84,12 @@ function registerAttemptResult(action, success) {
   }
   parsed[action] = entry;
   localStorage.setItem(ATTEMPT_LIMITS_KEY, JSON.stringify(parsed));
+}
+
+function resolveSafeAuthAvatar(authPhoto, fallback) {
+  const raw = String(authPhoto || '').trim();
+  if (isTrustedPlatformAssetUrl(raw, { allowLocalAssets: true })) return raw;
+  return fallback;
 }
 
 async function parseAuthJsonResponse(resp) {
@@ -152,8 +169,10 @@ export default function Login() {
   const [email,           setEmail]           = useState('');
   const [code,            setCode]            = useState('');
   const [displayName,     setDisplayName]     = useState('');
+  const [signupHandle,    setSignupHandle]    = useState('');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [rememberMe,      setRememberMe]      = useState(true);
   const [error,           setError]           = useState('');
   const [info,            setInfo]            = useState('');
   const [loading,         setLoading]         = useState(false);
@@ -259,6 +278,11 @@ export default function Login() {
     setError('');
     setInfo('');
     try {
+      try {
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      } catch {
+        /* ignore */
+      }
       const result     = await signInWithPopup(auth, googleProvider);
       const googleUser = result.user;
 
@@ -270,15 +294,30 @@ export default function Login() {
       }
 
       const av = listaAvatares[0] || AVATAR_FALLBACK;
-      await updateProfile(googleUser, {
-        photoURL:    av,
-        displayName: googleUser.displayName || DEFAULT_USER_DISPLAY_NAME,
-      });
+      const authPhoto = String(googleUser.photoURL || '').trim();
+      const authName = String(googleUser.displayName || '').trim();
+      if (!authPhoto || !authName) {
+        await updateProfile(googleUser, {
+          photoURL: authPhoto || av,
+          displayName: authName || DEFAULT_USER_DISPLAY_NAME,
+        });
+      }
       await refreshAuthUser(googleUser);
 
-      await ensureUsuarioRecord(googleUser, googleUser.displayName || DEFAULT_USER_DISPLAY_NAME, av, listaAvatares, 'ativo');
+      const safeAvatar = resolveSafeAuthAvatar(authPhoto, av);
+      const perfil = await ensureUsuarioRecord(
+        googleUser,
+        googleUser.displayName || DEFAULT_USER_DISPLAY_NAME,
+        safeAvatar,
+        listaAvatares,
+        'ativo'
+      );
       await ativarContaUsuario(googleUser.uid);
 
+      if (!String(perfil?.userHandle || '').trim()) {
+        navigate('/perfil?required=username', { replace: true });
+        return;
+      }
       await irParaAposLogin(googleUser);
     } catch (err) {
       const msgs = {
@@ -471,6 +510,9 @@ export default function Login() {
     }
 
     if (!displayName.trim()) { setError('Escolha um nome para sua alma.'); return; }
+    const handleNorm = normalizeUsernameInput(signupHandle);
+    const handleCheck = validateUsernameHandle(handleNorm);
+    if (!handleCheck.ok) { setError(handleCheck.message); return; }
     if (password !== confirmPassword) { setError('As senhas não coincidem.'); return; }
     if (!hasUpper || !hasNumber || !hasSpecial || !hasLength) {
       setError('A senha não atende aos requisitos.');
@@ -482,6 +524,18 @@ export default function Login() {
 
     setLoading(true);
     try {
+      try {
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      } catch {
+        /* ignore */
+      }
+      const handleSnap = await get(ref(db, `usernames/${handleNorm}`));
+      if (handleSnap.exists()) {
+        setError('Este @username jÃ¡ estÃ¡ em uso. Escolha outro.');
+        registerAttemptResult('registerPassword', false);
+        setLoading(false);
+        return;
+      }
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const agora = Date.now();
       await updateProfile(cred.user, {
@@ -503,6 +557,9 @@ export default function Login() {
       }
 
       await update(ref(db), {
+        [`usernames/${handleNorm}`]: cred.user.uid,
+        [`usuarios/${cred.user.uid}/userHandle`]: handleNorm,
+        [`usuarios/${cred.user.uid}/publicProfile/userHandle`]: handleNorm,
         [`usuarios/${cred.user.uid}/signupIntent`]: signupIntent,
         [`usuarios/${cred.user.uid}/creatorApplicationStatus`]:
           signupIntent === 'creator' ? 'draft' : null,
@@ -553,6 +610,11 @@ export default function Login() {
 
     setLoading(true);
     try {
+      try {
+        await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      } catch {
+        /* ignore */
+      }
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       await refreshAuthUser(cred.user);
 
@@ -564,10 +626,11 @@ export default function Login() {
       }
 
       const av = listaAvatares[0] || AVATAR_FALLBACK;
+      const safeAvatar = resolveSafeAuthAvatar(cred.user.photoURL, av);
       const perfil = await ensureUsuarioRecord(
         cred.user,
         cred.user.displayName || DEFAULT_USER_DISPLAY_NAME,
-        cred.user.photoURL || av,
+        safeAvatar,
         listaAvatares,
         'ativo'
       );
@@ -577,6 +640,10 @@ export default function Login() {
       }
 
       registerAttemptResult('loginPassword', true);
+      if (!String(perfil?.userHandle || '').trim()) {
+        navigate('/perfil?required=username', { replace: true });
+        return;
+      }
       await irParaAposLogin(cred.user);
     } catch (err) {
       registerAttemptResult('loginPassword', false);
@@ -639,67 +706,39 @@ export default function Login() {
           {step === 'existing-google' && 'Entre com Google'}
         </p>
 
-        {/* STEP 1: E-MAIL */}
         {step === 'email' && (
-          <>
-            <form onSubmit={handleSendCode} className="login-form">
-              <div className="input-field">
-                <i className="fa-solid fa-envelope" />
-                <input
-                  type="email"
-                  placeholder="E-mail"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'Enviar código (tenho conta)'}
-              </button>
-            </form>
-
-            {signupCodeMode ? (
-              <div className="login-signup-code-hint">
-                <p className="login-info-inline">
-                  Primeiro acesso com este e-mail? Receba o código só para cadastro, sem gastar tentativa de quem já tem conta.
-                </p>
-                <button
-                  type="button"
-                  className="btn-submit-shito btn-submit-shito--secondary"
-                  disabled={loading}
-                  onClick={handleSendCodeSignup}
-                >
-                  {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'Receber código para criar conta'}
-                </button>
-              </div>
-            ) : null}
-
-            <div className="social-divider"><span>OU</span></div>
-
-            <button type="button" className="btn-google-shito" onClick={handleGoogleSignIn} disabled={loading}>
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
-              CONECTAR COM GOOGLE
-            </button>
-
-            <p className="login-google-hint">
-              Conta criada com Google? Use o botão acima. A senha do Gmail <strong>não</strong> é usada neste
-              site — só o login oficial do Google.
-            </p>
-
-            <button
-              type="button"
-              className="btn-text-action"
-              onClick={handleForgotPassword}
-              disabled={loading || forgotCooldown > 0}
-            >
-              {forgotCooldown > 0 ? `Esqueci minha senha (${forgotCooldown}s)` : 'Esqueci minha senha'}
-            </button>
-          </>
+          <LoginEmailStep
+            email={email}
+            setEmail={setEmail}
+            loading={loading}
+            handleSendCode={handleSendCode}
+            signupCodeMode={signupCodeMode}
+            handleSendCodeSignup={handleSendCodeSignup}
+            handleGoogleSignIn={handleGoogleSignIn}
+            handleForgotPassword={handleForgotPassword}
+            forgotCooldown={forgotCooldown}
+          />
         )}
-
-        {/* STEP 2: CÓDIGO */}
         {step === 'code' && (
+          <LoginCodeStep
+            email={email}
+            setEmail={setEmail}
+            code={code}
+            setCode={setCode}
+            loading={loading}
+            handleVerifyCode={handleVerifyCode}
+            handleResendCode={handleResendCode}
+            resendCooldown={resendCooldown}
+            onBack={() => {
+              setStep('email');
+              setCode('');
+              setError('');
+              setInfo('');
+              setResendCooldown(0);
+            }}
+          />
+        )}
+        {/*
           <>
             <form onSubmit={handleVerifyCode} className="login-form">
               <div className="input-field">
@@ -756,8 +795,40 @@ export default function Login() {
           </>
         )}
 
-        {/* STEP 3: NOVO USUÁRIO */}
         {step === 'new-user' && (
+          <LoginNewUserStep
+            selectedAvatar={selectedAvatar}
+            setShowAvatarModal={setShowAvatarModal}
+            signupIntent={signupIntent}
+            setSignupIntent={setSignupIntent}
+            displayName={displayName}
+            setDisplayName={setDisplayName}
+            signupHandle={signupHandle}
+            onSignupHandleChange={(value) => setSignupHandle(normalizeUsernameInput(value))}
+            email={email}
+            password={password}
+            setPassword={setPassword}
+            confirmPassword={confirmPassword}
+            setConfirmPassword={setConfirmPassword}
+            rememberMe={rememberMe}
+            setRememberMe={setRememberMe}
+            loading={loading}
+            handleRegisterWithPassword={handleRegisterWithPassword}
+            onBack={() => {
+              setStep('code');
+              setPassword('');
+              setConfirmPassword('');
+              setError('');
+              setInfo('');
+            }}
+            hasLength={hasLength}
+            hasUpper={hasUpper}
+            hasNumber={hasNumber}
+            hasSpecial={hasSpecial}
+            displayNameMaxLength={DISPLAY_NAME_MAX_LENGTH}
+          />
+        */}
+        {/*
           <>
             <div className="avatar-preview-container" onClick={() => setShowAvatarModal(true)}>
               <div className="avatar-circle-wrapper">
@@ -803,6 +874,21 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
+              <div className="input-field">
+                <i className="fa-solid fa-at" />
+                <input
+                  type="text"
+                  placeholder="@username"
+                  value={signupHandle}
+                  onChange={(e) => setSignupHandle(normalizeUsernameInput(e.target.value))}
+                  maxLength={20}
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <p className="login-info-inline">
+                Seu @username Ã© Ãºnico na plataforma e nÃ£o pode ser alterado depois.
+              </p>
               <div className="input-field">
                 <i className="fa-solid fa-envelope" />
                 <input
@@ -853,6 +939,16 @@ export default function Login() {
                 </ul>
               </div>
 
+              <label className="login-remember">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  disabled={loading}
+                />
+                Manter conectado
+              </label>
+
               <button type="submit" className="btn-submit-shito" disabled={loading}>
                 {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'CRIAR CONTA'}
               </button>
@@ -875,8 +971,20 @@ export default function Login() {
           </>
         )}
 
-        {/* Conta existente só com Google (sem senha no Firebase) */}
         {step === 'existing-google' && (
+          <LoginExistingGoogleStep
+            loading={loading}
+            handleGoogleSignIn={handleGoogleSignIn}
+            onBack={() => {
+              setStep('email');
+              setCode('');
+              setError('');
+              setInfo('');
+              setResendCooldown(0);
+            }}
+          />
+        */}
+        {/*
           <>
             <p className="login-google-hint login-google-hint--block">
               Este e-mail foi cadastrado com <strong>Conectar com Google</strong>. O site não guarda a senha da
@@ -903,8 +1011,29 @@ export default function Login() {
           </>
         )}
 
-        {/* STEP 4: USUÁRIO EXISTENTE (SENHA) */}
         {step === 'existing-password' && (
+          <LoginExistingPasswordStep
+            email={email}
+            password={password}
+            setPassword={setPassword}
+            rememberMe={rememberMe}
+            setRememberMe={setRememberMe}
+            loading={loading}
+            handleExistingPasswordLogin={handleExistingPasswordLogin}
+            handleForgotPassword={handleForgotPassword}
+            forgotCooldown={forgotCooldown}
+            mostrarGoogleComoAlternativa={mostrarGoogleComoAlternativa}
+            handleGoogleSignIn={handleGoogleSignIn}
+            onBack={() => {
+              setStep('code');
+              setPassword('');
+              setError('');
+              setInfo('');
+              setMostrarGoogleComoAlternativa(false);
+            }}
+          />
+        */}
+        {/*
           <>
             <form onSubmit={handleExistingPasswordLogin} className="login-form">
               <div className="input-field">
@@ -929,10 +1058,27 @@ export default function Login() {
                   disabled={loading}
                 />
               </div>
+              <label className="login-remember">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  disabled={loading}
+                />
+                Manter conectado
+              </label>
               <button type="submit" className="btn-submit-shito" disabled={loading}>
                 {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENTRAR'}
               </button>
             </form>
+            <button
+              type="button"
+              className="btn-text-action"
+              onClick={handleForgotPassword}
+              disabled={loading || forgotCooldown > 0}
+            >
+              {forgotCooldown > 0 ? `Esqueci minha senha (${forgotCooldown}s)` : 'Esqueci minha senha'}
+            </button>
 
             {mostrarGoogleComoAlternativa && (
               <>
@@ -959,35 +1105,20 @@ export default function Login() {
               Voltar para código
             </button>
           </>
-        )}
+        */}
 
         {error && <div className="error-banner"><i className="fa-solid fa-circle-exclamation" /> {error}</div>}
         {info  && <div className="info-banner"><i className="fa-solid fa-circle-check" /> {info}</div>}
       </div>
 
-      {/* Modal de seleção de avatar */}
-      {showAvatarModal && (
-        <div className="avatar-modal-overlay">
-          <div className="avatar-modal-card">
-            <header className="avatar-modal-header">
-              <h3>Escolha sua Face</h3>
-              <button type="button" className="btn-close-modal" onClick={() => setShowAvatarModal(false)}>&times;</button>
-            </header>
-            <div className="avatar-modal-body">
-              <div className="avatar-selection-grid">
-                {listaAvatares.map((path, index) => (
-                  <button key={index} type="button"
-                    className={`avatar-option-item ${selectedAvatar === path ? 'selected' : ''}`}
-                    onClick={() => { setSelectedAvatar(path); setShowAvatarModal(false); }}>
-                    <img src={path} alt={`Avatar ${index + 1}`}
-                      onError={(e) => { e.target.src = AVATAR_FALLBACK; }} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <LoginAvatarModal
+        showAvatarModal={showAvatarModal}
+        listaAvatares={listaAvatares}
+        selectedAvatar={selectedAvatar}
+        setSelectedAvatar={setSelectedAvatar}
+        setShowAvatarModal={setShowAvatarModal}
+        fallbackAvatar={AVATAR_FALLBACK}
+      />
     </main>
   );
 }

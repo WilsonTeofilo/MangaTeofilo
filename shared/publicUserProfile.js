@@ -19,26 +19,15 @@ function buildCreatorPublicMonetization(root = {}, source = {}, supportOffer = {
     root?.creator?.monetization && typeof root.creator.monetization === 'object'
       ? root.creator.monetization
       : {};
-  const publicCreatorProfile =
-    source?.creatorProfile && typeof source.creatorProfile === 'object'
-      ? source.creatorProfile
-      : {};
-  const publicMonetization =
-    publicCreatorProfile?.monetization && typeof publicCreatorProfile.monetization === 'object'
-      ? publicCreatorProfile.monetization
-      : {};
-  const preference = asString(
-    creatorMonetization.preference || publicMonetization.preference,
-    'publish_only'
-  ).toLowerCase() === 'monetize'
+  const preference = asString(creatorMonetization.preference, 'publish_only').toLowerCase() === 'monetize'
     ? 'monetize'
     : 'publish_only';
   const applicationStatus = asString(
-    creatorMonetization?.application?.status || publicMonetization.applicationStatus,
+    creatorMonetization?.application?.status,
     root?.creator?.meta?.isAdult === false ? 'blocked_underage' : 'not_requested'
   ).toLowerCase();
   const financialStatus = asString(
-    creatorMonetization?.financial?.status || publicMonetization.financialStatus,
+    creatorMonetization?.financial?.status,
     'inactive'
   ).toLowerCase();
   const status =
@@ -67,40 +56,25 @@ function hasCanonicalCreatorState(source = {}, root = {}) {
   const sourceCreatorProfileDirect = asObject(source.creatorProfile);
   const rootCreatorProfileDirect = asObject(root.creatorProfile);
   const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
-  const signupIntent = asString(source.signupIntent || root.signupIntent).toLowerCase();
   const role = asString(
     source.role || root.role || source.panelRole || root.panelRole,
     'user'
   ).toLowerCase();
+  const signupIntent = asString(source.signupIntent || root.signupIntent, 'reader').toLowerCase();
   const sourceCreator = asObject(source.creator);
   const rootCreator = asObject(root.creator);
   const sourceCreatorProfile = asObject(sourceCreator.profile);
   const rootCreatorProfile = asObject(rootCreator.profile);
   const sourceCreatorSocial = asObject(sourceCreator.social);
   const rootCreatorSocial = asObject(rootCreator.social);
-  const hasCreatorProfileData =
-    asString(source.creatorDisplayName || root.creatorDisplayName) !== '' ||
-    asString(source.creatorBio || root.creatorBio) !== '' ||
-    asString(source.creatorUsername || root.creatorUsername) !== '' ||
-    asString(source.creatorBannerUrl || root.creatorBannerUrl) !== '' ||
-    asString(source.instagramUrl || root.instagramUrl) !== '' ||
-    asString(source.youtubeUrl || root.youtubeUrl) !== '' ||
-    asString(sourceCreatorProfileDirect.displayName || rootCreatorProfileDirect.displayName) !== '' ||
-    asString(sourceCreatorProfileDirect.bioFull || rootCreatorProfileDirect.bioFull) !== '' ||
-    asString(sourceCreatorProfileDirect.username || rootCreatorProfileDirect.username) !== '' ||
-    asString(sourceCreatorProfile.displayName || rootCreatorProfile.displayName) !== '' ||
-    asString(sourceCreatorProfile.bio || rootCreatorProfile.bio) !== '' ||
-    asString(sourceCreatorSocial.instagram || rootCreatorSocial.instagram) !== '' ||
-    asString(sourceCreatorSocial.youtube || rootCreatorSocial.youtube) !== '';
   return (
     source.isCreatorProfile === true ||
     root.isCreatorProfile === true ||
     creatorStatus === 'active' ||
     creatorStatus === 'onboarding' ||
-    signupIntent === 'creator' ||
     role === 'mangaka' ||
     role === 'creator' ||
-    hasCreatorProfileData
+    signupIntent === 'creator'
   );
 }
 
@@ -155,6 +129,13 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
   const creatorStatus = asString(root.creatorStatus || source.creatorStatus).toLowerCase();
   const signupIntent = asString(root.signupIntent || source.signupIntent, 'reader').toLowerCase();
   const isCreatorProfile = hasCanonicalCreatorState(source, root);
+  const supportOffer =
+    root?.creator?.monetization?.offer && typeof root.creator.monetization.offer === 'object'
+      ? root.creator.monetization.offer
+      : sourceCreatorProfile?.monetization?.supportOffer &&
+        typeof sourceCreatorProfile.monetization.supportOffer === 'object'
+        ? sourceCreatorProfile.monetization.supportOffer
+        : null;
   const creatorProfile = isCreatorProfile
     ? {
         ...sourceCreatorProfile,
@@ -167,30 +148,21 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
           instagramUrl,
           youtubeUrl,
         },
-        supportOffer: (() => {
-          const supportOffer =
-            sourceCreatorProfile?.supportOffer && typeof sourceCreatorProfile.supportOffer === 'object'
-              ? sourceCreatorProfile.supportOffer
-              : root?.creator?.monetization?.offer && typeof root.creator.monetization.offer === 'object'
-                ? root.creator.monetization.offer
-                : null;
-          return {
-            membershipEnabled: supportOffer?.membershipEnabled === true,
-            membershipPriceBRL:
-              Number.isFinite(Number(supportOffer?.membershipPriceBRL))
-                ? Number(supportOffer.membershipPriceBRL)
-                : null,
-            donationSuggestedBRL:
-              Number.isFinite(Number(supportOffer?.donationSuggestedBRL))
-                ? Number(supportOffer.donationSuggestedBRL)
-                : null,
-            updatedAt: asNumber(supportOffer?.updatedAt, 0),
-          };
-        })(),
       }
     : null;
   const creatorMonetization = creatorProfile
-    ? buildCreatorPublicMonetization(root, source, creatorProfile.supportOffer)
+    ? buildCreatorPublicMonetization(root, source, {
+        membershipEnabled: supportOffer?.membershipEnabled === true,
+        membershipPriceBRL:
+          Number.isFinite(Number(supportOffer?.membershipPriceBRL))
+            ? Number(supportOffer.membershipPriceBRL)
+            : null,
+        donationSuggestedBRL:
+          Number.isFinite(Number(supportOffer?.donationSuggestedBRL))
+            ? Number(supportOffer.donationSuggestedBRL)
+            : null,
+        updatedAt: asNumber(supportOffer?.updatedAt, 0),
+      })
     : null;
   if (creatorProfile && creatorMonetization) {
     creatorProfile.monetization = creatorMonetization;

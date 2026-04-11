@@ -21,17 +21,6 @@ export {
   adminDashboardRebuildRollup,
 } from './dashboard.js';
 export {
-  adminBackfillUserProfileSchema,
-  adminCleanupOrphanUserProfiles,
-  adminBackfillCanonicalCreatorMonetization,
-  adminDiagnosticarConsistenciaIdentificadores,
-  adminBackfillCanonicalIdentifiers,
-  adminBackfillObraCreatorIds,
-  adminDiagnosticarObrasAutorInconsistente,
-  adminBackfillChapterCreatorIds,
-  adminBackfillChapterWorkIds,
-  adminBackfillStoreProductCreatorIds,
-  adminAuditarPedidosLojaSemAtribuicao,
   adminRevokeUserSessions,
   adminRevokeAllSessions,
-} from './maintenance.js';
+} from './sessions.js';

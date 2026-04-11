@@ -44,8 +44,7 @@ function round2(value) {
 
 function canonicalPremiumMemberUntil(profile = {}) {
   const raw = profile?.userEntitlements?.global;
-  const value = raw?.memberUntil ?? raw?.premiumUntil;
-  return toNum(value, 0);
+  return toNum(raw?.memberUntil, 0);
 }
 
 function buildUserLabel(uid, usuarios, usuariosPublicos) {

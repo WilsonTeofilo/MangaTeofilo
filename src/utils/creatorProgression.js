@@ -102,9 +102,9 @@ function firstGapPhrase(gaps, suffix) {
   return `Faltam ${nf.format(gap.left)} ${gap.label}${suffix}`;
 }
 
-export function metricsFromUsuarioRow(row) {
+export function metricsFromUsuarioRow(row, creatorStatsOverride = null) {
   return resolveCreatorEngagementMetrics({
-    creatorStats: row?.creatorsStats || row?.creatorStats || null,
+    creatorStats: creatorStatsOverride || row?.creatorsStats || null,
     userRow: row,
   });
 }

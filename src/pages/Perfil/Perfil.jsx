@@ -71,6 +71,7 @@ function isCreatorProfileStorageAssetForUser(uid, pathOrUrl) {
 
 function isTrustedProfileImageUrl(url) {
   return isTrustedPlatformAssetUrl(url, {
+    allowLocalAssets: true,
     allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp'],
   });
 }
@@ -103,6 +104,7 @@ export default function Perfil({
   const [loading, setLoading]                 = useState(false);
   const [mensagem, setMensagem]               = useState({ texto: '', tipo: '' });
   const [perfilDb, setPerfilDb]               = useState(null);
+  const [creatorStatsLive, setCreatorStatsLive] = useState(null);
   const [creatorBio, setCreatorBio] = useState('');
   const [creatorDisplayName, setCreatorDisplayName] = useState('');
   const [mangakaAvatarUrlDraft, setMangakaAvatarUrlDraft] = useState('');
@@ -132,6 +134,7 @@ export default function Perfil({
   const [lojaAvatarAuthorUnlocked, setLojaAvatarAuthorUnlocked] = useState(false);
   const mangakaFormAnchorRef = useRef(null);
   const mangakaBirthInputRef = useRef(null);
+  const usernameInputRef = useRef(null);
   const mangakaAvatarPreserveRef = useRef(false);
   const savedUserAvatarRef = useRef('');
   useEffect(() => {
@@ -149,6 +152,8 @@ export default function Perfil({
   const isStaffAdmin = adminAccess.canAccessAdmin === true && adminAccess.isMangaka !== true;
   const mustCompleteBirthDate =
     new URLSearchParams(location.search || '').get('required') === 'birthDate';
+  const mustCompleteUsername =
+    new URLSearchParams(location.search || '').get('required') === 'username';
 
   useEffect(() => {
     const hash = String(location.hash || '').replace(/^#/, '');
@@ -177,6 +182,19 @@ export default function Perfil({
     }, 220);
     return () => window.clearTimeout(t);
   }, [mustCompleteBirthDate, birthDate, birthDateDraft]);
+
+  useEffect(() => {
+    if (!mustCompleteUsername) return;
+    const locked = String(perfilDb?.userHandle || '').trim().toLowerCase();
+    const wanted = normalizeUsernameInput(userHandleDraft);
+    if (locked || wanted) return;
+    setMensagem({ texto: 'Defina um @username para continuar.', tipo: 'erro' });
+    const t = window.setTimeout(() => {
+      usernameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      usernameInputRef.current?.focus?.();
+    }, 220);
+    return () => window.clearTimeout(t);
+  }, [mustCompleteUsername, userHandleDraft, perfilDb?.userHandle]);
 
   useEffect(() => {
     const carregarPerfil = async () => {
@@ -253,6 +271,14 @@ export default function Perfil({
   }, [user, navigate, adminAccess.isMangaka]);
 
   useEffect(() => {
+    if (!user?.uid) return () => {};
+    const unsub = onValue(ref(db, `creators/${user.uid}/stats`), (snap) => {
+      setCreatorStatsLive(snap.exists() ? snap.val() || null : null);
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
+  useEffect(() => {
     const unsub = onValue(ref(db, 'avatares'), (snap) => {
       if (!snap.exists()) return;
       const data = Object.entries(snap.val() || {})
@@ -307,6 +333,11 @@ export default function Perfil({
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
   const creatorMonetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(perfilDb || {});
   const creatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(perfilDb || {});
+  const perfilComStats = useMemo(() => {
+    const base = perfilDb && typeof perfilDb === 'object' ? perfilDb : {};
+    if (!creatorStatsLive) return base;
+    return { ...base, creatorsStats: creatorStatsLive };
+  }, [perfilDb, creatorStatsLive]);
   const creatorMonetizationStatusEffective = effectiveCreatorMonetizationStatus(
     creatorMonetizationPreference,
     creatorMonetizationStatus
@@ -347,8 +378,8 @@ export default function Perfil({
     adminAccess.isMangaka && creatorMonetizationApplicationStatus === 'not_requested';
   const monetizacaoBloqueadaPorIdade =
     creatorMonetizationStatus === 'blocked_underage' || isUnderageByBirthYear;
-  const monetizationEligibility = resolveCreatorMonetizationEligibilityFromDb(perfilDb || {});
-  const monetizationUiState = resolveCreatorMonetizationUiState(perfilDb || {});
+  const monetizationEligibility = resolveCreatorMonetizationEligibilityFromDb(perfilComStats || {});
+  const monetizationUiState = resolveCreatorMonetizationUiState(perfilComStats || {});
 
   const handleMonetizarContaClick = () => {
     if (monetizacaoBloqueadaPorIdade) {
@@ -356,7 +387,7 @@ export default function Perfil({
       return;
     }
     if (monetizationUiState.key === 'locked_by_level') {
-      navigate('/creator/missoes');
+      navigate('/creator/monetizacao');
       return;
     }
     navigate('/creator/onboarding?intent=mangaka_monetize');
@@ -507,7 +538,13 @@ export default function Perfil({
     let claimedNewHandle = null;
     try {
       let finalAvatar = avatarSelecionado;
-      const previousAvatar = String(perfilDb?.userAvatar || user?.photoURL || '').trim();
+      const persistedAvatar = String(perfilDb?.userAvatar || '').trim();
+      const authAvatar = String(user?.photoURL || '').trim();
+      const previousAvatar = isTrustedPlatformAssetUrl(persistedAvatar, { allowLocalAssets: true })
+        ? persistedAvatar
+        : isTrustedPlatformAssetUrl(authAvatar, { allowLocalAssets: true })
+          ? authAvatar
+          : '';
       const previousCreatorProfileAvatar =
         adminAccess.isMangaka && isCreatorProfileStorageAssetForUser(user.uid, previousAvatar)
           ? previousAvatar
@@ -529,7 +566,7 @@ export default function Perfil({
         }
       } else if (adminAccess.isMangaka && String(mangakaAvatarUrlDraft || '').trim()) {
         const u = String(mangakaAvatarUrlDraft || '').trim();
-        if (!isTrustedProfileImageUrl(u) || u.length > 2048) {
+        if (!isTrustedPlatformAssetUrl(u, { allowLocalAssets: true }) || u.length > 2048) {
           setMensagem({
             texto: 'Escolha uma foto enviada por aqui ou um avatar da plataforma.',
             tipo: 'erro',
@@ -540,7 +577,7 @@ export default function Perfil({
         finalAvatar = u;
       } else if (adminAccess.isMangaka) {
         const asUrl = String(avatarSelecionado || '').trim();
-        if (isTrustedProfileImageUrl(asUrl) && asUrl.length <= 2048) {
+        if (isTrustedPlatformAssetUrl(asUrl, { allowLocalAssets: true }) && asUrl.length <= 2048) {
           finalAvatar = asUrl;
         } else {
           const avatarEscolhido = listaAvatares.find((item) => item.url === avatarSelecionado);
@@ -552,9 +589,11 @@ export default function Perfil({
             }
             finalAvatar = avatarSelecionado;
           } else {
-            const keep = String(perfilDb?.userAvatar || user?.photoURL || '').trim();
-            finalAvatar =
-              /^https:\/\//i.test(keep) && keep.length <= 2048 ? keep : AVATAR_FALLBACK;
+            const keep =
+              isTrustedPlatformAssetUrl(persistedAvatar, { allowLocalAssets: true }) ? persistedAvatar :
+              isTrustedPlatformAssetUrl(authAvatar, { allowLocalAssets: true }) ? authAvatar :
+              '';
+            finalAvatar = keep || AVATAR_FALLBACK;
           }
         }
       } else {
@@ -762,27 +801,21 @@ export default function Perfil({
           publicProfileRecord.readerProfileAvatarUrl || finalAvatar,
         [`usuarios/${user.uid}/publicProfile/readerSince`]: publicProfileRecord.readerSince || nowTs,
         [`usuarios/${user.uid}/publicProfile/updatedAt`]: publicProfileRecord.updatedAt || nowTs,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/displayName`]:
-          publicProfileRecord?.creatorProfile?.displayName || null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/username`]:
-          publicProfileRecord?.creatorProfile?.username || null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/avatarUrl`]:
-          publicProfileRecord?.creatorProfile?.avatarUrl || null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/bioFull`]:
-          publicProfileRecord?.creatorProfile?.bioFull || null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/instagramUrl`]:
-          publicProfileRecord?.creatorProfile?.socialLinks?.instagramUrl || null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/youtubeUrl`]:
-          publicProfileRecord?.creatorProfile?.socialLinks?.youtubeUrl || null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/membershipEnabled`]:
-          publicProfileRecord?.creatorProfile?.supportOffer?.membershipEnabled === true,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/membershipPriceBRL`]:
-          publicProfileRecord?.creatorProfile?.supportOffer?.membershipPriceBRL ?? null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/donationSuggestedBRL`]:
-          publicProfileRecord?.creatorProfile?.supportOffer?.donationSuggestedBRL ?? null,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile/supportOffer/updatedAt`]:
-          publicProfileRecord?.creatorProfile?.supportOffer?.updatedAt || nowTs,
       };
+      if (publicProfileRecord.isCreatorProfile === true) {
+        publicProfilePatch[`usuarios/${user.uid}/publicProfile/creatorProfile/displayName`] =
+          publicProfileRecord?.creatorProfile?.displayName || null;
+        publicProfilePatch[`usuarios/${user.uid}/publicProfile/creatorProfile/username`] =
+          publicProfileRecord?.creatorProfile?.username || null;
+        publicProfilePatch[`usuarios/${user.uid}/publicProfile/creatorProfile/avatarUrl`] =
+          publicProfileRecord?.creatorProfile?.avatarUrl || null;
+        publicProfilePatch[`usuarios/${user.uid}/publicProfile/creatorProfile/bioFull`] =
+          publicProfileRecord?.creatorProfile?.bioFull || null;
+        publicProfilePatch[`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/instagramUrl`] =
+          publicProfileRecord?.creatorProfile?.socialLinks?.instagramUrl || null;
+        publicProfilePatch[`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/youtubeUrl`] =
+          publicProfileRecord?.creatorProfile?.socialLinks?.youtubeUrl || null;
+      }
       await update(ref(db), {
         ...publicProfilePatch,
       });
@@ -1234,6 +1267,7 @@ export default function Perfil({
                 <input
                   type="text"
                   className="perfil-input"
+                  ref={usernameInputRef}
                   autoComplete="username"
                   spellCheck={false}
                   value={userHandleDraft}
@@ -1378,7 +1412,7 @@ export default function Perfil({
                     <button
                       type="button"
                       className="perfil-creator-monetization-toggle perfil-creator-monetization-toggle--off"
-                      onClick={() => navigate('/creator/missoes')}
+                      onClick={() => navigate('/creator/monetizacao')}
                     >
                       Ver metas
                     </button>
@@ -1651,6 +1685,7 @@ export default function Perfil({
             <input
               type="text"
               className="perfil-input"
+              ref={usernameInputRef}
               autoComplete="username"
               spellCheck={false}
               value={userHandleDraft}

@@ -36,10 +36,7 @@ export function useCreatorWorkspaceData(user, perfil) {
 
   const dashMetrics = useMemo(() => {
     const baseRow = usuarioLive && typeof usuarioLive === 'object' ? usuarioLive : perfil;
-    return metricsFromUsuarioRow({
-      ...(baseRow || {}),
-      creatorsStats: creatorStatsLive || baseRow?.creatorsStats || null,
-    });
+    return metricsFromUsuarioRow(baseRow || {}, creatorStatsLive || null);
   }, [usuarioLive, perfil, creatorStatsLive]);
 
   const creatorProgressVm = useMemo(

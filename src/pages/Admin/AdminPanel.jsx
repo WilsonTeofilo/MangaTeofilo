@@ -771,11 +771,12 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
 
   useEffect(() => {
+    if (editandoId) return;
     if (etapaAtiva !== 1) return;
     const uploadCompleto = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
     if (!uploadCompleto) return;
     irParaEtapa(2);
-  }, [capaCapitulo, capituloEditando?.capaUrl, etapaAtiva, irParaEtapa, totalPaginasAtual]);
+  }, [capaCapitulo, capituloEditando?.capaUrl, editandoId, etapaAtiva, irParaEtapa, totalPaginasAtual]);
 
   useEffect(() => {
     return () => {

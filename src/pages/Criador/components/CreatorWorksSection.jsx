@@ -48,7 +48,6 @@ export default function CreatorWorksSection({
                     alt={obra.titulo || obra.id}
                     loading="lazy"
                     referrerPolicy="no-referrer"
-                    crossOrigin="anonymous"
                     onError={(e) => applyImageFallback(e)}
                   />
                 </div>

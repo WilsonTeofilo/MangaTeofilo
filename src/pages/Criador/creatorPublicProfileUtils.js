@@ -45,9 +45,6 @@ export function resolveCreatorWorkCoverUrl(obra, overrides = null, chapterOverri
   const coverRaw = String(obra?.capaUrl || obra?.coverUrl || '').trim();
   const cover = coverRaw && !isDefaultCreatorWorkCoverUrl(coverRaw) ? coverRaw : '';
   if (cover) return cover;
-  const bannerRaw = String(obra?.bannerUrl || '').trim();
-  const banner = bannerRaw && !isDefaultCreatorWorkCoverUrl(bannerRaw) ? bannerRaw : '';
-  if (banner) return banner;
   const id = resolveWorkKey(obra);
   if (overrides && id && overrides[id]) return overrides[id];
   if (chapterOverrides && id && chapterOverrides[id]) return chapterOverrides[id];

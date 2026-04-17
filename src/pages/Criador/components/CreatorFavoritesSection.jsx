@@ -38,7 +38,6 @@ export default function CreatorFavoritesSection({
                   alt={String(fav.title || fav.workId || '')}
                   loading="lazy"
                   referrerPolicy="no-referrer"
-                  crossOrigin="anonymous"
                   onError={(e) => applyImageFallback(e)}
                 />
               </div>

@@ -16,14 +16,16 @@ export default function ChapterStepOrganize(props) {
     setErroModal,
     setModalPreview,
   } = props;
+  const editandoCapitulo = Boolean(editandoId);
+  const totalPaginasEditor = paginasExistentes.length + arquivosPaginas.length;
   return (
     <div className="editor-step-panel">
-      {editandoId && paginasExistentes.length > 0 && (
+      {editandoCapitulo && totalPaginasEditor > 0 && (
         <div className="cirurgia-paginas">
           <div className="cirurgia-header">
             <div className="cirurgia-info">
-              <h3>Paginas atuais ({paginasExistentes.length})</h3>
-              <p>{isMangaka ? 'Reordene paginas, revise e troque trechos sem perder o fluxo.' : 'Arraste para reordenar, visualize em modal e troque paginas pontuais.'}</p>
+              <h3>Paginas do capitulo ({totalPaginasEditor})</h3>
+              <p>{isMangaka ? 'Mantenha tudo no mesmo fluxo: revise as paginas atuais, troque trechos e confira as novas sem duplicacao visual.' : 'Visualize as paginas atuais e as novas no mesmo bloco para editar sem confusao.'}</p>
             </div>
           </div>
           <div className="paginas-edit-grid">
@@ -39,11 +41,25 @@ export default function ChapterStepOrganize(props) {
                 onVer={() => setModalPreview({ aberto: true, origem: 'atuais', indice: index })}
               />
             ))}
+            {previewsPaginasSelecionadas.map((preview, index) => (
+              <PaginaSelecionadaCard
+                key={preview.key}
+                index={index}
+                url={preview.url}
+                nome={preview.nome}
+                total={previewsPaginasSelecionadas.length}
+                onReordenar={handleReordenarSelecionada}
+                onRemover={handleRemoverSelecionada}
+                onErro={setErroModal}
+                onVer={() => setModalPreview({ aberto: true, origem: 'novas', indice: index })}
+              />
+            ))}
           </div>
         </div>
       )}
 
-      <div className="cirurgia-paginas">
+      {!editandoCapitulo && (
+        <div className="cirurgia-paginas">
         <div className="cirurgia-header">
           <div className="cirurgia-info">
             <h3>Pre-visualizacao das novas paginas ({arquivosPaginas.length})</h3>
@@ -69,7 +85,8 @@ export default function ChapterStepOrganize(props) {
         ) : (
           <p className="editor-empty">Nenhuma nova pagina selecionada ainda.</p>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { equalTo, onValue, orderByChild, query, ref as dbRef, remove, update } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
@@ -179,11 +179,11 @@ export default function CreatorStoreOperations({ user }) {
     <>
       <section className="creator-state-card is-store">
         <div>
-          <p className="creator-state-card__eyebrow">Operacao do creator</p>
-          <h2>Produtos, pedidos e estoque no seu escopo</h2>
+          <p className="creator-state-card__eyebrow">Operacao da loja do creator</p>
+          <h2>Catalogo proprio, pedidos e estoque no seu escopo</h2>
           <p>
-            A vitrine global continua na plataforma, mas a execucao do seu catalogo fica aqui:
-            volume, status dos pedidos, rastreio e saude do estoque sem cair no painel admin.
+            A vitrine global continua na plataforma, mas a operacao do seu catalogo fica aqui:
+            pedidos, rastreio e saude do estoque sem cair no painel admin.
           </p>
         </div>
         <div className="creator-frame-actions">
@@ -219,8 +219,7 @@ export default function CreatorStoreOperations({ user }) {
         <article className="creator-panel-card">
           <div className="creator-panel-head">
             <div>
-              <p className="creator-frame-eyebrow">Catalogo</p>
-              <h2>Saude do seu estoque</h2>
+              <p className="creator-frame-eyebrow">Estoque</p>
             </div>
           </div>
           <ul className="creator-data-list">
@@ -230,7 +229,7 @@ export default function CreatorStoreOperations({ user }) {
             <li><span>Sem estoque</span><strong>{metrics.noStock}</strong></li>
           </ul>
           {!lowStockProducts.length ? (
-            <p className="creator-empty-copy">Seu catálogo não tem alerta imediato de estoque.</p>
+            <p className="creator-empty-copy">Seu catÃ¡logo nÃ£o tem alerta imediato de estoque.</p>
           ) : (
             <ul className="creator-activity-list">
               {lowStockProducts.map((product) => (
@@ -252,13 +251,13 @@ export default function CreatorStoreOperations({ user }) {
         <article className="creator-panel-card">
           <div className="creator-panel-head">
             <div>
-              <p className="creator-frame-eyebrow">Produtos</p>
-              <h2>Catalogo do creator</h2>
+              <p className="creator-frame-eyebrow">Catalogo</p>
+              <h2>Produtos do creator</h2>
             </div>
           </div>
           {!products.length ? (
             <p className="creator-empty-copy">
-              Nenhum produto vinculado ao seu creatorId ainda. Abra o catálogo completo e crie seu primeiro item.
+              Nenhum produto vinculado ao seu creatorId ainda. Abra o catÃ¡logo completo e crie seu primeiro item.
             </p>
           ) : (
             <ul className="creator-activity-list">
@@ -267,7 +266,7 @@ export default function CreatorStoreOperations({ user }) {
                   <div>
                     <strong>{product.title || product.id}</strong>
                     <span>
-                      {formatCurrency(product.isOnSale ? product.promoPrice || product.price : product.price)} · estoque{' '}
+                      {formatCurrency(product.isOnSale ? product.promoPrice || product.price : product.price)} Â· estoque{' '}
                       {Number(product.stock || 0)}
                     </span>
                   </div>
@@ -290,7 +289,7 @@ export default function CreatorStoreOperations({ user }) {
         <div className="creator-panel-head">
           <div>
             <p className="creator-frame-eyebrow">Pedidos</p>
-            <h2>Fila operacional</h2>
+            <h2>Fila de operacao</h2>
           </div>
         </div>
         {feedback ? <p className="creator-inline-feedback">{feedback}</p> : null}
@@ -304,7 +303,7 @@ export default function CreatorStoreOperations({ user }) {
                   <div>
                     <strong>Pedido {String(order.id || '').slice(-8)}</strong>
                     <span>
-                      {statusLabel(order.status)} · {formatarDataHoraBr(order.createdAt, { seVazio: 'agora' })}
+                      {statusLabel(order.status)} Â· {formatarDataHoraBr(order.createdAt, { seVazio: 'agora' })}
                     </span>
                   </div>
                   <div>
@@ -372,3 +371,4 @@ export default function CreatorStoreOperations({ user }) {
     </>
   );
 }
+

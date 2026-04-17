@@ -16,12 +16,7 @@ export default function CreatorChaptersPage({ adminAccess }) {
   const [selectedWorkId, setSelectedWorkId] = useState('');
 
   useEffect(() => {
-    if (!user?.uid) {
-      setCreatorWorks([]);
-      setSelectedWorkId('');
-      setWorksLoaded(true);
-      return () => {};
-    }
+    if (!user?.uid) return () => {};
 
     const unsub = onValue(
       dbRef(db, 'obras'),
@@ -53,15 +48,17 @@ export default function CreatorChaptersPage({ adminAccess }) {
     () => creatorWorks.find((obra) => obra.id === selectedWorkId) || null,
     [creatorWorks, selectedWorkId]
   );
+  const effectiveWorksLoaded = user?.uid ? worksLoaded : true;
+  const effectiveCreatorWorks = user?.uid ? creatorWorks : [];
 
   const openNewChapterFlow = () => {
-    if (!worksLoaded) return;
-    if (creatorWorks.length === 0) {
+    if (!effectiveWorksLoaded) return;
+    if (effectiveCreatorWorks.length === 0) {
       navigate('/creator/obras');
       return;
     }
-    if (creatorWorks.length === 1) {
-      navigate(`/creator/editor?obra=${encodeURIComponent(creatorWorks[0].id)}`);
+    if (effectiveCreatorWorks.length === 1) {
+      navigate(`/creator/editor?obra=${encodeURIComponent(effectiveCreatorWorks[0].id)}`);
       return;
     }
     setWorkPickerOpen(true);
@@ -90,7 +87,7 @@ export default function CreatorChaptersPage({ adminAccess }) {
               type="button"
               className="creator-frame-btn"
               onClick={openNewChapterFlow}
-              disabled={!worksLoaded}
+              disabled={!effectiveWorksLoaded}
             >
               Novo capítulo
             </button>
@@ -142,7 +139,7 @@ export default function CreatorChaptersPage({ adminAccess }) {
             <label className="creator-frame-modal__field">
               Obra
               <select value={selectedWorkId} onChange={(e) => setSelectedWorkId(String(e.target.value || ''))}>
-                {creatorWorks.map((obra) => (
+                {effectiveCreatorWorks.map((obra) => (
                   <option key={obra.id} value={obra.id}>
                     {obra.tituloCurto || obra.titulo || obra.id}
                   </option>

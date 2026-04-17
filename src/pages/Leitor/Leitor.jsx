@@ -1,30 +1,17 @@
 ﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { ref, onValue, get, query, orderByChild, equalTo } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 
 import { db, functions } from '../../services/firebase';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
 import { applyChapterReadDelta } from '../../utils/discoveryStats';
 import { getLastRead, recordReadingProgress } from '../../utils/readingProgressLocal';
-import { getAttribution, parseAttributionFromSearch, persistAttribution } from '../../utils/trafficAttribution';
 import {
   buildChapterCampaignId,
-  normalizarObraId,
-  obterObraIdCapitulo,
-  obraCreatorId,
-  obraSegmentoUrlPublica,
 } from '../../config/obras';
-import { apoiePathParaCriador } from '../../utils/creatorSupportPaths';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
-import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
-import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
-import { toRecordList } from '../../utils/firebaseRecordList';
-import { formatUserDisplayWithHandle, resolvePublicCreatorIdentity } from '../../utils/publicCreatorName';
-import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
-import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../utils/publicProfilesRealtime';
-import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../config/site';
+import { formatUserDisplayWithHandle } from '../../utils/publicCreatorName';
 import LoadingScreen from '../../components/LoadingScreen';
 import BrowserPushPreferenceModal from '../../components/BrowserPushPreferenceModal.jsx';
 import ChapterShareBar from '../../components/ChapterShareBar.jsx';
@@ -38,7 +25,8 @@ import ChapterFollowCallout from './components/ChapterFollowCallout.jsx';
 import ChapterComments from './components/ChapterComments.jsx';
 import { useChapterComments } from './hooks/useChapterComments';
 import { useReaderControls } from './hooks/useReaderControls';
-import { mergeCapitulosLists, publicCriadorProfilePath } from './leitorUtils';
+import { publicCriadorProfilePath } from './leitorUtils';
+import { useChapterReaderData } from './hooks/useChapterReaderData';
 import './Leitor.css';
 
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
@@ -51,29 +39,43 @@ export default function Leitor({ user, perfil }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [capitulo, setCapitulo]       = useState(null);
-  const [carregando, setCarregando]   = useState(true);
-  const [creatorsMap, setCreatorsMap] = useState({});
-
-  
   const [privateProfileModal, setPrivateProfileModal] = useState(null);
-  const [creatorUidApoio, setCreatorUidApoio] = useState(null);
-  const [creatorSupportEnabled, setCreatorSupportEnabled] = useState(false);
-  const [isSubscribedCurrentWork, setIsSubscribedCurrentWork] = useState(false);
   const [subscribeCurrentWorkBusy, setSubscribeCurrentWorkBusy] = useState(false);
   const [chapterBrowserPushModalOpen, setChapterBrowserPushModalOpen] = useState(false);
   const [chapterBrowserPushPermission, setChapterBrowserPushPermission] = useState('default');
-  const [obraMetaLeitor, setObraMetaLeitor] = useState(null);
-  const [capsObra, setCapsObra] = useState([]);
   const [chapterLikeBusy, setChapterLikeBusy] = useState(false);
 
   const jaContouVisualizacao = useRef(false);
-  const leituraAttributionRef = useRef({ source: 'normal', campaignId: null, clickId: null });
   const capNavErrorTimerRef = useRef(null);
   const profileToastTimerRef = useRef(null);
   const [capNavError, setCapNavError] = useState(false);
   const [profileToast, setProfileToast] = useState('');
   const chapterPageInitRef = useRef('');
+  const {
+    capitulo,
+    setCapitulo,
+    carregando,
+    creatorUidApoio,
+    creatorSupportEnabled,
+    obraMetaLeitor,
+    currentWorkId,
+    creatorIdentity,
+    authorUid,
+    authorPublicPath,
+    capsLiberadosLista,
+    anteriorCapituloId,
+    proximoCapituloId,
+    chapterSeo,
+    leituraAttributionRef,
+    isSubscribedCurrentWork,
+    apoieComCriadorPath,
+  } = useChapterReaderData({
+    db,
+    id,
+    searchParams,
+    user,
+    perfil,
+  });
   const totalPaginas = capitulo?.paginas?.length || 0;
   const {
     modoLeitura,
@@ -82,7 +84,6 @@ export default function Leitor({ user, perfil }) {
     setZoom,
     paginaAtual,
     setPaginaAtual,
-    verticalFocusIndex,
     setVerticalFocusIndex,
     mostrarConfig,
     setMostrarConfig,
@@ -92,7 +93,6 @@ export default function Leitor({ user, perfil }) {
     handleTouchMove,
     handleTouchEnd,
   } = useReaderControls({ totalPaginas });
-  const currentWorkId = obterObraIdCapitulo(capitulo);
   const chapterLikesCount = Number(capitulo?.likesCount || 0);
   const chapterLikedByUser = Boolean(user?.uid && capitulo?.usuariosQueCurtiram?.[user.uid]);
   const {
@@ -135,117 +135,20 @@ export default function Leitor({ user, perfil }) {
   }, [privateProfileModal]);
 
   useEffect(() => {
-    if (!capitulo) {
-      setCreatorUidApoio(null);
-      setCreatorSupportEnabled(false);
-      setObraMetaLeitor(null);
-      return () => {};
-    }
-    const fromCap = String(capitulo.creatorId || '').trim();
-    if (fromCap) {
-      setCreatorUidApoio(fromCap);
-      const oid = obterObraIdCapitulo(capitulo);
-      let cancelled = false;
-      get(ref(db, `obras/${oid}`))
-        .then((snap) => {
-          if (cancelled) return;
-          const data = snap.exists() ? snap.val() : {};
-          setObraMetaLeitor({ id: oid, ...data });
-        })
-        .catch(() => {
-          if (!cancelled) setObraMetaLeitor({ id: oid });
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-    const oid = obterObraIdCapitulo(capitulo);
-    let cancelled = false;
-    get(ref(db, `obras/${oid}`))
-      .then((snap) => {
-        if (cancelled) return;
-        const data = snap.exists() ? snap.val() : {};
-        setCreatorUidApoio(obraCreatorId({ ...data, id: oid }));
-        setObraMetaLeitor({ id: oid, ...data });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCreatorUidApoio(obraCreatorId({}));
-          setObraMetaLeitor({ id: oid });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [capitulo]);
-
-  useEffect(() => {
-    if (!creatorUidApoio) {
-      setCreatorSupportEnabled(false);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, `usuarios/${creatorUidApoio}/publicProfile`), (snapshot) => {
-      const row = snapshot.exists()
-        ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, creatorUidApoio)
-        : {};
-      const monetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);
-      setCreatorSupportEnabled(monetizationStatus === 'active');
-    });
-    return () => unsub();
-  }, [creatorUidApoio]);
-
-  useEffect(() => {
     if (!modalLoginComentario) return;
     const onKey = (e) => {
       if (e.key === 'Escape') setModalLoginComentario(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modalLoginComentario]);
-
-  const creatorIdsForLookup = useMemo(
-    () => collectCreatorIdsFromWorksAndChapters(obraMetaLeitor ? [obraMetaLeitor] : [], capsObra),
-    [obraMetaLeitor, capsObra]
-  );
-
-  useEffect(() => subscribePublicProfilesMap(db, creatorIdsForLookup, setCreatorsMap), [creatorIdsForLookup]);
+  }, [modalLoginComentario, setModalLoginComentario]);
 
   useEffect(() => {
-    setCarregando(true);
-    setCapitulo(null);
-    setCapsObra([]);
     setPaginaAtual(0);
     setVerticalFocusIndex(0);
     chapterPageInitRef.current = '';
     jaContouVisualizacao.current = false;
-
-    const attributionFromUrl = parseAttributionFromSearch(searchParams);
-    const fallbackAttribution = getAttribution();
-    const resolvedAttribution = attributionFromUrl || fallbackAttribution || { source: 'normal', campaignId: null, clickId: null };
-    leituraAttributionRef.current = resolvedAttribution;
-    if (attributionFromUrl) {
-      persistAttribution(attributionFromUrl);
-    }
-
-    const unsub = onValue(
-      ref(db, `capitulos/${id}`),
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          setCapitulo(null);
-          setCarregando(false);
-          return;
-        }
-        setCapitulo({ id, ...(snapshot.val() || {}) });
-        setCarregando(false);
-      },
-      () => {
-        setCapitulo(null);
-        setCarregando(false);
-      }
-    );
-
-    return () => unsub();
-  }, [id, searchParams]);
+  }, [id, searchParams, setPaginaAtual, setVerticalFocusIndex]);
 
   useEffect(() => {
     return () => {
@@ -254,88 +157,7 @@ export default function Leitor({ user, perfil }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!currentWorkId) {
-      setCapsObra([]);
-      return () => {};
-    }
-    let workList = [];
-    let obraList = [];
-
-    const syncCaps = () => {
-      setCapsObra(mergeCapitulosLists(workList, obraList));
-    };
-
-    const unsubWork = onValue(
-      query(ref(db, 'capitulos'), orderByChild('workId'), equalTo(currentWorkId)),
-      (snapshot) => {
-        workList = toRecordList(snapshot.exists() ? snapshot.val() : {});
-        syncCaps();
-      },
-      () => {
-        workList = [];
-        syncCaps();
-      }
-    );
-
-    const unsubObra = onValue(
-      query(ref(db, 'capitulos'), orderByChild('obraId'), equalTo(currentWorkId)),
-      (snapshot) => {
-        obraList = toRecordList(snapshot.exists() ? snapshot.val() : {});
-        syncCaps();
-      },
-      () => {
-        obraList = [];
-        syncCaps();
-      }
-    );
-
-    return () => {
-      unsubWork();
-      unsubObra();
-    };
-  }, [currentWorkId]);
-
-  const obraCanonical = useMemo(
-    () => ({
-      id: currentWorkId || obterObraIdCapitulo(capitulo) || '',
-      ...(obraMetaLeitor || {}),
-      creatorId:
-        String(obraMetaLeitor?.creatorId || capitulo?.creatorId || creatorUidApoio || '').trim(),
-    }),
-    [capitulo, creatorUidApoio, currentWorkId, obraMetaLeitor]
-  );
-  const creatorIdentity = useMemo(
-    () => resolvePublicCreatorIdentity(obraCanonical, creatorsMap, capsObra),
-    [obraCanonical, creatorsMap, capsObra]
-  );
-  const authorUid = String(
-    creatorIdentity?.creatorId || creatorUidApoio || obraCreatorId(obraMetaLeitor || capitulo || {})
-  ).trim();
-  const authorPublicPath =
-    creatorIdentity?.path || (authorUid ? resolvePublicProfilePath({ uid: authorUid }, authorUid) : '');
-  const capituloParaAcesso = capitulo;
-  const capsLiberadosLista = useMemo(
-    () =>
-      capsObra.filter((item) =>
-        capituloLiberadoParaUsuario(
-          { ...item, id: item.id },
-          user,
-          perfil,
-          { creatorIdFallback: authorUid || '' }
-        )
-      ),
-    [authorUid, capsObra, perfil, user]
-  );
-  const indiceCapituloAtual = useMemo(
-    () => capsLiberadosLista.findIndex((item) => item.id === id),
-    [capsLiberadosLista, id]
-  );
-  const anteriorCapituloId = indiceCapituloAtual > 0 ? capsLiberadosLista[indiceCapituloAtual - 1]?.id || '' : '';
-  const proximoCapituloId =
-    indiceCapituloAtual >= 0 && indiceCapituloAtual < capsLiberadosLista.length - 1
-      ? capsLiberadosLista[indiceCapituloAtual + 1]?.id || ''
-      : '';
+  const capituloParaAcesso = useMemo(() => capitulo, [capitulo]);
 
   const triggerCapNavError = useCallback(() => {
     if (capNavErrorTimerRef.current) clearTimeout(capNavErrorTimerRef.current);
@@ -357,40 +179,6 @@ export default function Leitor({ user, perfil }) {
     [navigate]
   );
 
-  const chapterSeo = useMemo(() => {
-    if (!capitulo) return null;
-    const obraSegmento = obraSegmentoUrlPublica({ id: currentWorkId, ...(obraMetaLeitor || {}) });
-    const obraPath = `/work/${encodeURIComponent(obraSegmento || normalizarObraId(currentWorkId || ''))}`;
-    const obraTitulo = String(obraMetaLeitor?.titulo || obraMetaLeitor?.tituloCurto || '').trim();
-    const chapterTitle = String(capitulo?.titulo || `Capítulo ${capitulo?.numero || ''}`).trim();
-    const title = obraTitulo ? `${chapterTitle} | ${obraTitulo} | MangaTeofilo` : `${chapterTitle} | MangaTeofilo`;
-    const description = obraTitulo
-      ? `Leia ${chapterTitle} de ${obraTitulo} no MangaTeofilo.`
-      : `Leia ${chapterTitle} no MangaTeofilo.`;
-    const shareImage =
-      String(capitulo?.capaUrl || '').trim() ||
-      String(obraMetaLeitor?.bannerUrl || '').trim() ||
-      String(obraMetaLeitor?.capaUrl || '').trim() ||
-      SITE_DEFAULT_IMAGE;
-    const canonical = `${SITE_ORIGIN}/ler/${encodeURIComponent(id)}`;
-    return {
-      title,
-      description,
-      canonical,
-      shareImage,
-      imageAlt: chapterTitle,
-      imgAltPrefix: chapterTitle,
-      obraPath,
-      jsonLd: {
-        '@context': 'https://schema.org',
-        '@type': 'Article',
-        headline: title,
-        description,
-        image: [shareImage],
-        mainEntityOfPage: canonical,
-      },
-    };
-  }, [capitulo, currentWorkId, id, obraMetaLeitor]);
 
   useEffect(() => {
     if (!capitulo || !currentWorkId) return;
@@ -412,7 +200,7 @@ export default function Leitor({ user, perfil }) {
     setPaginaAtual(0);
     setVerticalFocusIndex(0);
     chapterPageInitRef.current = id;
-  }, [capitulo, currentWorkId, id, location.state, totalPaginas]);
+  }, [capitulo, currentWorkId, id, location.state, totalPaginas, setPaginaAtual, setVerticalFocusIndex]);
 
   useEffect(() => {
     if (!capitulo || !currentWorkId) return;
@@ -432,12 +220,7 @@ export default function Leitor({ user, perfil }) {
     if (!capitulo || !currentWorkId) return;
     if (jaContouVisualizacao.current) return;
     if (
-      !capituloLiberadoParaUsuario(
-        { ...capitulo, id },
-        user,
-        perfil,
-        { creatorIdFallback: authorUid || '' }
-      )
+      !capituloLiberadoParaUsuario({ ...capitulo, id }, user, perfil)
     ) {
       return;
     }
@@ -459,7 +242,7 @@ export default function Leitor({ user, perfil }) {
       workId: currentWorkId,
       chapterId: id,
     }).catch(() => {});
-  }, [authorUid, capitulo, currentWorkId, id, perfil, user]);
+  }, [authorUid, capitulo, currentWorkId, id, perfil, user, leituraAttributionRef]);
 
   const navigateToChapter = useCallback(
     (chapterId, { forceStartAtPageOne = false } = {}) => {
@@ -478,7 +261,7 @@ export default function Leitor({ user, perfil }) {
       setVerticalFocusIndex(0);
       navigateToChapter(chapterId, { forceStartAtPageOne: true });
     },
-    [navigateToChapter]
+    [navigateToChapter, setPaginaAtual, setVerticalFocusIndex]
   );
 
   const handleSelectChapter = useCallback(
@@ -488,22 +271,6 @@ export default function Leitor({ user, perfil }) {
       resetAndNavigate(v);
     },
     [id, resetAndNavigate]
-  );
-
-  useEffect(() => {
-    if (!user?.uid || !currentWorkId) {
-      setIsSubscribedCurrentWork(false);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, `usuarios/${user.uid}/subscribedWorks/${currentWorkId}`), (snap) => {
-      setIsSubscribedCurrentWork(snap.exists());
-    });
-    return () => unsub();
-  }, [currentWorkId, user?.uid]);
-
-  const apoieComCriadorPath = useMemo(
-    () => apoiePathParaCriador(creatorUidApoio || ''),
-    [creatorUidApoio]
   );
 
   const irParaApoioDoCriador = () => {
@@ -596,9 +363,7 @@ export default function Leitor({ user, perfil }) {
 
   const capAcesso = { ...(capituloParaAcesso || capitulo), id };
   if (
-    !capituloLiberadoParaUsuario(capAcesso, user, perfil, {
-      creatorIdFallback: creatorUidApoio || '',
-    })
+    !capituloLiberadoParaUsuario(capAcesso, user, perfil)
   ) {
     const quando = formatarDataLancamento(capitulo.publicReleaseAt);
     return (

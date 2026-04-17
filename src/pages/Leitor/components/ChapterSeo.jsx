@@ -1,6 +1,6 @@
 import React from 'react';
 import { Helmet } from 'react-helmet-async';
-import { ogImageMimeHint } from '../../../components/ChapterShareBar.jsx';
+import { ogImageMimeHint } from '../../../utils/shareImageMime';
 
 export default function ChapterSeo({ chapterSeo, noIndex = false, includeJsonLd = true }) {
   if (!chapterSeo) return null;

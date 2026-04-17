@@ -267,7 +267,7 @@ export default function CreatorApplicationModal({
     }
   }, [open, variant]);
 
-  /** Fluxo mangaká: abriu pedido de monetização mas já é menor pela data — explica na hora. */
+  /** Creator que abriu pedido financeiro, mas ainda e menor de idade: avisar na hora. */
   useEffect(() => {
     if (variant === 'modal' && !open) return;
     if (intent !== 'mangaka_monetize' || !minorInForm) {
@@ -279,7 +279,7 @@ export default function CreatorApplicationModal({
     setUnderageMonetizationModalOpen(true);
   }, [open, variant, intent, minorInForm]);
 
-  /** /creators com perfil já em Â«monetizarÂ» e menor — aviso ao entrar. */
+  /** /creators em modo de pedido financeiro e menor de idade: avisar ao entrar. */
   useEffect(() => {
     if (variant !== 'page') {
       pageMonetizeMinorAutoRef.current = false;
@@ -646,7 +646,6 @@ export default function CreatorApplicationModal({
     birthDate,
     birthDateDraft,
     legalFullName,
-    documentCpfDraft,
     documentCpfNormalized,
     documentCpfFeedback,
     payoutPixType,
@@ -752,7 +751,7 @@ export default function CreatorApplicationModal({
 
   const isMangakaMonetizeIntent = allowImmediateMonetization;
   const monetizationAllowed = ageInForm != null && ageInForm >= 18;
-  /** Mostrar bloco legal sempre em Â«monetizarÂ», exceto menor confirmado; submit ainda exige 18+ e data válida. */
+  /** Mostrar bloco legal no pedido financeiro; o envio real continua exigindo 18+ e data valida. */
   const showMonetizationCompliance = monetizationPreference === 'monetize' && !minorInForm;
 
   const handleMonetizeToggleClick = () => {
@@ -779,7 +778,7 @@ export default function CreatorApplicationModal({
           <p>
             {isMangakaMonetizeIntent
               ? 'Envie seus dados para análise. Você continua publicando normalmente até a aprovação.'
-              : 'Seu perfil de creator pode ser liberado para publicar agora. Os ganhos só entram depois, quando você cumprir as metas e pedir a monetização.'}
+              : 'Seu perfil de creator pode ser liberado para publicar agora. A parte financeira so entra depois, quando voce bater as metas e pedir monetizacao.'}
           </p>
         </div>
         <button
@@ -820,7 +819,7 @@ export default function CreatorApplicationModal({
           <div className="creator-app-photo-meta">
             <span>Maximo 1,5 MB (entrada)</span>
             <span>Saida WebP comprimida (~250 a 400 KB)</span>
-            <span>Vai para o ar junto com o perfil de creator aprovado</span>
+            <span>Vai para o ar junto com o perfil publico liberado para publicar</span>
           </div>
           {isLikelyExistingProfilePhotoUrl(initial.existingProfileImageUrl) && !creatorProfileImageFile ? (
             <p className="creator-app-modal__hint" style={{ marginTop: 8 }}>
@@ -1015,8 +1014,8 @@ export default function CreatorApplicationModal({
           {isMangakaMonetizeIntent ? 'Pedido' : 'Objetivo'}
           {isMangakaMonetizeIntent ? (
             <p className="creator-app-modal__hint" style={{ marginTop: 6 }}>
-            Monetização na plataforma — os dados legais e a chave PIX abaixo seguem para revisão do time antes de
-            liberar seus ganhos.
+            Monetizacao na plataforma — os dados legais e a chave PIX abaixo seguem para revisao do time antes de
+            ativar sua area financeira.
             </p>
           ) : (
             <>
@@ -1045,8 +1044,8 @@ export default function CreatorApplicationModal({
                     : !birthIsoEffective
                       ? 'Informe a data de nascimento para concluir a candidatura.'
                       : allowImmediateMonetization
-                        ? 'Para liberar ganhos, precisamos revisar seus dados legais e a chave de recebimento.'
-                        : 'Você poderá monetizar ao completar as missões e liberar essa etapa depois. Por enquanto, seu perfil entra no modo só publicar.'}
+                        ? 'Para ativar a area financeira, precisamos revisar seus dados legais e a chave de recebimento.'
+                        : 'Voce podera solicitar monetizacao ao completar as metas. Por enquanto, seu perfil entra no modo so publicar.'}
               </p>
             </>
           )}
@@ -1312,4 +1311,5 @@ export default function CreatorApplicationModal({
     </>
   );
 }
+
 

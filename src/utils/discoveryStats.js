@@ -1,6 +1,6 @@
-import { get, ref } from 'firebase/database';
+﻿import { get, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
-import { WORK_FAVORITES_CANON_KEY } from '../../shared/readerPublicProfile.js';
+import { WORK_FAVORITES_CANON_KEY } from '../../functions/shared/readerPublicProfile.js';
 
 import { functions } from '../services/firebase';
 
@@ -13,7 +13,7 @@ function getRecordDiscoveryCallable() {
 }
 
 /**
- * Métricas agregadas do criador (creators/*, creatorStatsDaily/*, espelhos) — só no servidor.
+ * MÃ©tricas agregadas do criador (creators/*, creatorStatsDaily/*, espelhos) â€” sÃ³ no servidor.
  */
 async function recordCreatorMetricsServer(payload) {
   try {
@@ -25,7 +25,7 @@ async function recordCreatorMetricsServer(payload) {
   }
 }
 
-export async function applyWorkFavoriteDelta(db, { workId, creatorId: _creatorId, amount }) {
+export async function applyWorkFavoriteDelta(db, { workId, amount }) {
   const delta = Number(amount || 0);
   if (!workId || !delta) return;
   const sign = delta > 0 ? 1 : -1;
@@ -35,7 +35,6 @@ export async function applyWorkFavoriteDelta(db, { workId, creatorId: _creatorId
 export async function applyChapterReadDelta(db, {
   chapterId,
   workId,
-  creatorId: _creatorId,
   amount = 1,
   viewerUid = '',
 }) {
@@ -52,7 +51,7 @@ export async function applyChapterReadDelta(db, {
   });
 }
 
-export async function applyChapterCommentDelta(db, { chapterId, workId, creatorId: _creatorId, amount = 1 }) {
+export async function applyChapterCommentDelta(db, { chapterId, workId, amount = 1 }) {
   const delta = Number(amount || 0);
   if (!chapterId || !workId || !delta) return;
   const sign = delta > 0 ? 1 : -1;
@@ -60,11 +59,11 @@ export async function applyChapterCommentDelta(db, { chapterId, workId, creatorI
 }
 
 /**
- * Propaga o delta de like do capítulo para obra e agregados do criador.
- * O contador `capitulos/{chapterId}/likesCount` já deve ter sido ajustado
- * no mesmo fluxo (ex.: runTransaction no nó do capítulo) — não duplicar aqui.
+ * Propaga o delta de like do capÃ­tulo para obra e agregados do criador.
+ * O contador `capitulos/{chapterId}/likesCount` jÃ¡ deve ter sido ajustado
+ * no mesmo fluxo (ex.: runTransaction no nÃ³ do capÃ­tulo) â€” nÃ£o duplicar aqui.
  */
-export async function applyChapterLikeDelta(db, { chapterId, workId, creatorId: _creatorId, amount = 1 }) {
+export async function applyChapterLikeDelta(db, { chapterId, workId, amount = 1 }) {
   const delta = Number(amount || 0);
   if (!chapterId || !workId || !delta) return;
   const sign = delta > 0 ? 1 : -1;
@@ -76,3 +75,5 @@ export async function alreadyFavorited(db, uid, workId) {
   const canon = await get(ref(db, `usuarios/${uid}/${WORK_FAVORITES_CANON_KEY}/${workId}`));
   return canon.exists();
 }
+
+

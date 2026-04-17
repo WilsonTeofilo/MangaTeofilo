@@ -11,17 +11,13 @@ export const UNIFIED_TIMELINE_STEPS = Object.freeze([
   { key: 'delivered', label: 'Entregue' },
 ]);
 
+import { normalizeStoreOrderStatus } from './storeOrderDomain';
+
 /** @typedef {'all'|'payment_pending'|'production'|'transit'|'delivered'|'cancelled'|'problem'} OrderFilterBucket */
 
 /** @param {string} [status] */
 export function normalizeStoreStatus(status) {
-  const raw = String(status || '').trim().toLowerCase();
-  if (!raw) return '';
-  if (raw === 'pending_payment') return 'pending';
-  if (raw === 'order_received') return 'paid';
-  if (raw === 'processing') return 'in_production';
-  if (raw === 'ready_to_ship') return 'shipped';
-  return raw;
+  return normalizeStoreOrderStatus(status, '');
 }
 
 /**

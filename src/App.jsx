@@ -19,8 +19,9 @@ import {
   canAccessCreatorPath,
   getDefaultAdminRedirect,
   getDefaultCreatorRedirect,
+  hasAnyAdminWorkspaceAccess,
 } from './auth/adminPermissions';
-import { APP_ROLE, resolveAppRole, resolveCreatorRoleBootstrap } from './auth/appRoles';
+import { APP_ROLE, resolveAppRoleContext } from './auth/appRoles';
 import { syncAuthenticatedUserProfile } from './userProfileSyncV2';
 import { parseBirthDateLocal } from './utils/birthDateAge';
 import {
@@ -85,7 +86,7 @@ function RedirectToLogin() {
   return <Navigate to={buildLoginUrlWithRedirect(loc.pathname, loc.search)} replace />;
 }
 
-function resolveShellRedirectTarget(raw, { usuario, adminAccess }) {
+function resolveShellRedirectTarget(raw, { adminAccess }) {
   const target =
     raw != null && String(raw).trim() !== ''
       ? resolveSafeInternalRedirect(raw)
@@ -95,20 +96,20 @@ function resolveShellRedirectTarget(raw, { usuario, adminAccess }) {
     target.startsWith('/creator') ||
     target.startsWith('/print-on-demand?ctx=creator') ||
     target.includes('ctx=creator');
-  if (adminAccess?.canAccessAdmin && isCreatorFlow) {
-    if (adminAccess?.canAccessAdmin && canAccessAdminPath('/admin/criadores', adminAccess)) {
+  if (hasAnyAdminWorkspaceAccess(adminAccess) && isCreatorFlow) {
+    if (canAccessAdminPath('/admin/criadores', adminAccess)) {
       return '/admin/criadores';
     }
-    return '/admin';
+    return getDefaultAdminRedirect(adminAccess);
   }
   return target;
 }
 
-function LoginRoute({ podeAcessarApp, usuario, adminAccess }) {
+function LoginRoute({ podeAcessarApp, adminAccess }) {
   const [sp] = useSearchParams();
   if (podeAcessarApp) {
     const raw = sp.get('redirect');
-    const target = resolveShellRedirectTarget(raw, { usuario, adminAccess });
+    const target = resolveShellRedirectTarget(raw, { adminAccess });
     return <Navigate to={target} replace />;
   }
   return <Login />;
@@ -172,13 +173,13 @@ function AppRoutes() {
       window.clearTimeout(timeoutId);
       unsub();
     };
-  }, [usuario?.uid]);
+  }, [usuario]);
 
-  const staffBypassMangaka = adminAccess.canAccessAdmin === true;
-  const roleMk =
-    !staffBypassMangaka && String(perfilUsuario?.role || '').trim().toLowerCase() === 'mangaka';
-  const creatorCatalogUid =
-    usuario?.uid && (adminAccess.isMangaka === true || roleMk === true) ? usuario.uid : null;
+  const perfilBelongsToCurrentUser = Boolean(usuario?.uid) && perfilLoadedUid === usuario.uid;
+  const roleContext = resolveAppRoleContext(perfilUsuario, adminAccess, {
+    profileLoaded: perfilBelongsToCurrentUser,
+  });
+  const creatorCatalogUid = usuario?.uid && roleContext.isCreator ? usuario.uid : null;
   const { obrasVal: creatorObrasVal, capsVal: creatorCapsVal, produtosVal: creatorProdutosVal } =
     useCreatorScopedCatalog(db, creatorCatalogUid);
 
@@ -214,7 +215,7 @@ function AppRoutes() {
       ativo = false;
       window.clearTimeout(timeoutId);
     };
-  }, [usuario?.uid]);
+  }, [usuario]);
 
   useEffect(() => {
     if (!usuario?.uid) return () => {};
@@ -294,21 +295,12 @@ function AppRoutes() {
     return <Navigate to={buildLoginUrlWithRedirect(location.pathname, location.search)} replace />;
   }
 
-  const isAdmin = adminAccess.canAccessAdmin;
-  const creatorRoleFromResolvedBootstrap =
-    Boolean(usuario?.uid) &&
-    perfilLoadedUid === usuario.uid &&
-    resolveCreatorRoleBootstrap(perfilUsuario, adminAccess);
-  const roleBootstrapIsCreator = creatorRoleFromResolvedBootstrap;
-  const resolvedAppRole = resolveAppRole(perfilUsuario, adminAccess, roleBootstrapIsCreator);
-  const isMangakaEffective = resolvedAppRole === APP_ROLE.CREATOR;
-  const accessForCreatorRouting =
-    resolvedAppRole === APP_ROLE.CREATOR
-      ? { ...adminAccess, isMangaka: true, canAccessAdmin: false, panelRole: 'mangaka' }
-      : { ...adminAccess, isMangaka: false };
-  const routeShellReady =
-    !usuario || adminAccess.profileLoaded || creatorRoleFromResolvedBootstrap;
-  const canAccessAdminWorkspace = isAdmin && resolvedAppRole === APP_ROLE.ADMIN;
+  const resolvedAppRole = roleContext.appRole;
+  const isMangakaEffective = roleContext.isCreator;
+  const accessForCreatorRouting = roleContext.accessForCreatorRouting;
+  const routeShellReady = !usuario || adminAccess.profileLoaded || roleContext.creatorBootstrap;
+  const canAccessAdminWorkspace =
+    hasAnyAdminWorkspaceAccess(adminAccess) && resolvedAppRole === APP_ROLE.ADMIN;
   const canAccessCreator = canAccessCreatorPath('/creator', accessForCreatorRouting);
   const hasBirthDateOnProfile = Boolean(parseBirthDateLocal(String(perfilUsuario?.birthDate || '').trim()));
   const requiresBirthDateCompletion =
@@ -359,6 +351,11 @@ function AppRoutes() {
           usuario={podeAcessarApp ? usuario : null}
           perfil={podeAcessarApp ? perfilUsuario : null}
           adminAccess={adminAccess}
+          creatorAccess={accessForCreatorRouting}
+          shellRole={resolvedAppRole}
+          canSeeAdminWorkspace={canAccessAdminWorkspace}
+          canSeeCreatorWorkspace={canAccessCreator}
+          isMangakaEffective={isMangakaEffective}
         />
       )}
 
@@ -462,7 +459,8 @@ function AppRoutes() {
               <PrintOnDemandPage
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
-                adminAccess={adminAccess}
+                shellRole={resolvedAppRole}
+                isMangakaEffective={isMangakaEffective}
                 obrasVal={creatorObrasVal}
                 capsVal={creatorCapsVal}
               />
@@ -495,7 +493,12 @@ function AppRoutes() {
               usuario && !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : (
-                <CreatorsApplyPage user={podeAcessarApp ? usuario : null} adminAccess={adminAccess} />
+                <CreatorsApplyPage
+                  user={podeAcessarApp ? usuario : null}
+                  adminAccess={adminAccess}
+                  shellRole={resolvedAppRole}
+                  isMangakaEffective={isMangakaEffective}
+                />
               )
             }
           />
@@ -512,19 +515,21 @@ function AppRoutes() {
 
           <Route
             path="/login"
-            element={<LoginRoute podeAcessarApp={podeAcessarApp} usuario={usuario} adminAccess={adminAccess} />}
+            element={<LoginRoute podeAcessarApp={podeAcessarApp} adminAccess={adminAccess} />}
           />
 
           <Route
             path="/perfil"
             element={
-              podeAcessarApp ? (
-                <Perfil
-                  user={usuario}
-                  adminAccess={adminAccess}
-                  suppressCreatorProfileUi={canAccessAdminWorkspace}
-                />
-              ) : (
+                podeAcessarApp ? (
+                  <Perfil
+                    user={usuario}
+                    adminAccess={adminAccess}
+                    shellRole={resolvedAppRole}
+                    isMangakaEffective={isMangakaEffective}
+                    suppressCreatorProfileUi={canAccessAdminWorkspace}
+                  />
+                ) : (
                 <RedirectToLogin />
               )
             }
@@ -536,12 +541,18 @@ function AppRoutes() {
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : canAccessAdminWorkspace ? (
                 <Navigate to={getDefaultAdminRedirect(adminAccess)} replace />
-              ) : podeAcessarApp ? (
-                creatorPathOk('/creator/onboarding') ? (
-                  <CreatorOnboardingPage user={usuario} perfil={perfilUsuario} adminAccess={adminAccess} />
-                ) : (
-                  <Navigate to="/" replace />
-                )
+                ) : podeAcessarApp ? (
+                  creatorPathOk('/creator/onboarding') ? (
+                    <CreatorOnboardingPage
+                      user={usuario}
+                      perfil={perfilUsuario}
+                      adminAccess={adminAccess}
+                      shellRole={resolvedAppRole}
+                      isMangakaEffective={isMangakaEffective}
+                    />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
               ) : (
                 <RedirectToLogin />
               )
@@ -754,7 +765,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/criadores') ? (
-                <CriadoresAdmin />
+                <CriadoresAdmin adminAccess={adminAccess} />
               ) : (
                 <Navigate to="/" replace />
               )

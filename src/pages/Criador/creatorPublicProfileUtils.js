@@ -1,6 +1,6 @@
 import { obraSegmentoUrlPublica } from '../../config/obras';
 
-export const LEGACY_DEFAULT_COVER = '/assets/fotos/shito.jpg';
+export const DEFAULT_CREATOR_WORK_COVER = '/assets/mascote/vaquinhaERR.webp';
 
 export function normalizarRede(url) {
   const valor = String(url || '').trim();
@@ -20,15 +20,15 @@ export function pathObraFromFavoriteRow(row) {
   return `/work/${encodeURIComponent(obraSegmentoUrlPublica({ id: workId, slug }))}`;
 }
 
-export function applyImageFallback(event, fallback = LEGACY_DEFAULT_COVER) {
+export function applyImageFallback(event, fallback = DEFAULT_CREATOR_WORK_COVER) {
   if (event?.currentTarget?.dataset?.fallbackApplied === 'true') return;
   event.currentTarget.dataset.fallbackApplied = 'true';
   event.currentTarget.src = fallback;
 }
 
-export function isLegacyDefaultCoverUrl(url) {
+export function isDefaultCreatorWorkCoverUrl(url) {
   const normalized = String(url || '').trim().toLowerCase();
-  return normalized.endsWith(LEGACY_DEFAULT_COVER) || normalized.includes('/assets/fotos/shito.jpg');
+  return normalized.endsWith(DEFAULT_CREATOR_WORK_COVER) || normalized.includes('/assets/fotos/shito.jpg');
 }
 
 export function resolveWorkKey(obra) {
@@ -43,25 +43,25 @@ export function resolveWorkKeyFromCap(cap) {
 
 export function resolveCreatorWorkCoverUrl(obra, overrides = null, chapterOverrides = null) {
   const coverRaw = String(obra?.capaUrl || obra?.coverUrl || '').trim();
-  const cover = coverRaw && !isLegacyDefaultCoverUrl(coverRaw) ? coverRaw : '';
+  const cover = coverRaw && !isDefaultCreatorWorkCoverUrl(coverRaw) ? coverRaw : '';
   if (cover) return cover;
   const bannerRaw = String(obra?.bannerUrl || '').trim();
-  const banner = bannerRaw && !isLegacyDefaultCoverUrl(bannerRaw) ? bannerRaw : '';
+  const banner = bannerRaw && !isDefaultCreatorWorkCoverUrl(bannerRaw) ? bannerRaw : '';
   if (banner) return banner;
   const id = resolveWorkKey(obra);
   if (overrides && id && overrides[id]) return overrides[id];
   if (chapterOverrides && id && chapterOverrides[id]) return chapterOverrides[id];
-  return LEGACY_DEFAULT_COVER;
+  return DEFAULT_CREATOR_WORK_COVER;
 }
 
 export function resolveFavoriteWorkCoverUrl(row, overrides = null, chapterOverrides = null) {
   const coverRaw = String(row?.coverUrl || row?.capaUrl || '').trim();
-  const cover = coverRaw && !isLegacyDefaultCoverUrl(coverRaw) ? coverRaw : '';
+  const cover = coverRaw && !isDefaultCreatorWorkCoverUrl(coverRaw) ? coverRaw : '';
   if (cover) return cover;
   const workId = resolveWorkKey({ id: row?.workId });
   if (overrides && workId && overrides[workId]) return overrides[workId];
   if (chapterOverrides && workId && chapterOverrides[workId]) return chapterOverrides[workId];
-  return LEGACY_DEFAULT_COVER;
+  return DEFAULT_CREATOR_WORK_COVER;
 }
 
 export function formatarPrecoBrl(valor) {

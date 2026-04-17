@@ -6,15 +6,6 @@ function buildShareText(title, url) {
   return t ? `${t} — ${url}` : url;
 }
 
-/** @param {string} imageUrl */
-function ogImageMimeHint(imageUrl) {
-  const u = String(imageUrl || '').split('?')[0].toLowerCase();
-  if (u.endsWith('.png')) return 'image/png';
-  if (u.endsWith('.webp')) return 'image/webp';
-  if (u.endsWith('.gif')) return 'image/gif';
-  return 'image/jpeg';
-}
-
 export default function ChapterShareBar({ shareUrl, chapterTitle }) {
   const [feedback, setFeedback] = useState(null);
   const url = String(shareUrl || (typeof window !== 'undefined' ? window.location.href : '')).trim();
@@ -170,5 +161,3 @@ export default function ChapterShareBar({ shareUrl, chapterTitle }) {
     </section>
   );
 }
-
-export { ogImageMimeHint };

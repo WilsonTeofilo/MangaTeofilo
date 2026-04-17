@@ -9,6 +9,7 @@ import {
   requireSuperAdmin,
   resolveTargetUidByEmail,
 } from '../adminRbac.js';
+import { creatorAccessIsApprovedFromDb } from '../creatorRecord.js';
 
 export const adminListStaff = onCall({ region: 'us-central1' }, async (request) => {
   if (!request.auth) {
@@ -97,7 +98,10 @@ export const adminUpsertStaff = onCall({ region: 'us-central1' }, async (request
   const prevClaims = { ...(userRecord.customClaims || {}) };
   prevClaims.panelRole = 'admin';
   await getAuth().setCustomUserClaims(targetUid, prevClaims);
-  await getDatabase().ref(`usuarios/${targetUid}/role`).set('admin');
+  const userSnap = await getDatabase().ref(`usuarios/${targetUid}`).get();
+  const userRow = userSnap.exists() ? userSnap.val() || {} : {};
+  const nextUserRole = creatorAccessIsApprovedFromDb(userRow) ? 'mangaka' : 'user';
+  await getDatabase().ref(`usuarios/${targetUid}/role`).set(nextUserRole);
   return { ok: true, uid: targetUid, role: 'admin' };
 });
 

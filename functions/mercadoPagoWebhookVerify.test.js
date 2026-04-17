@@ -13,13 +13,13 @@ function req(headers) {
 }
 
 describe('verifyMercadoPagoWebhookSignature', () => {
-  it('skips verification when secret is empty', () => {
+  it('fails closed when secret is empty', () => {
     const r = req({
       'x-signature': 'ts=1,v1=ab',
       'x-request-id': 'rid',
     });
     const out = verifyMercadoPagoWebhookSignature(r, 'pay_1', '   ');
-    assert.deepStrictEqual(out, { ok: true, skipped: true });
+    assert.deepStrictEqual(out, { ok: false, reason: 'missing_webhook_secret' });
   });
 
   it('rejects when signature headers are missing', () => {

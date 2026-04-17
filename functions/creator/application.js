@@ -10,9 +10,9 @@ import {
 } from '../creatorCompliance.js';
 import {
   assembleCreatorRecordForRtdb,
+  creatorAccessIsApprovedFromDb,
   legalFullNameHasMinThreeWords,
   legalFullNameHasNoDigits,
-  readCreatorStatsFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../creatorRecord.js';
 import { coercePayoutPixType, normalizePixPayoutKey, validatePixPayout } from '../pixKey.js';
@@ -126,9 +126,9 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   const instagramUrl = normalizeCreatorSocialUrl(instagramRaw, ['instagram.com']);
   const youtubeUrl = normalizeCreatorSocialUrl(youtubeRaw, ['youtube.com', 'youtu.be']);
   let profileImageUrl = String(payload.profileImageUrl || row?.creatorApplication?.profileImageUrl || '').trim();
-  if (!isTrustedPlatformAssetUrl(profileImageUrl)) {
+  if (!isTrustedPlatformAssetUrl(profileImageUrl, { allowLocalAssets: true })) {
     const avatar = String(row?.userAvatar || '').trim();
-    if (isTrustedPlatformAssetUrl(avatar)) {
+    if (isTrustedPlatformAssetUrl(avatar, { allowLocalAssets: true })) {
       profileImageUrl = avatar;
     }
   }
@@ -153,7 +153,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     throw new HttpsError('invalid-argument', 'Data de nascimento invalida.');
   }
   const isAdult = age >= 18;
-  const isAlreadyCreator = String(row?.role || '').trim().toLowerCase() === 'mangaka';
+  const isAlreadyCreator = creatorAccessIsApprovedFromDb(row);
   const monetizationRequested =
     isAlreadyCreator &&
     String(payload.monetizationPreference || '').trim().toLowerCase() === 'monetize';
@@ -210,10 +210,10 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   if (bioShort.length > 450) {
     throw new HttpsError('invalid-argument', 'A bio pode ter no maximo 450 caracteres.');
   }
-  if (!isTrustedPlatformAssetUrl(profileImageUrl)) {
+  if (!isTrustedPlatformAssetUrl(profileImageUrl, { allowLocalAssets: true })) {
     throw new HttpsError(
       'invalid-argument',
-      'Envie a foto de perfil do creator usando uma imagem hospedada no Storage da plataforma.'
+      'Escolha uma foto valida do seu perfil ou envie uma nova imagem antes de continuar.'
     );
   }
   if (!acceptTerms) {
@@ -394,7 +394,6 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
       [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: null,
       [`usuarios/${uid}/birthDate`]: birthDateRaw,
       [`usuarios/${uid}/birthYear`]: Number.isInteger(birthYearFromDate) ? birthYearFromDate : null,
-      [`usuarios/${uid}/publicProfile/signupIntent`]: 'creator',
       [`usuarios/${uid}/publicProfile/updatedAt`]: now,
       [`usuarios/${uid}/creatorTermsAccepted`]: true,
       [`usuarios/${uid}/creatorCompliance`]: null,
@@ -435,7 +434,6 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     [`usuarios/${uid}/creatorModerationBy`]: null,
     [`usuarios/${uid}/creatorModeratedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/publicProfile/signupIntent`]: 'creator',
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
     [`usuarios/${uid}/creatorTermsAccepted`]: true,
     [`usuarios/${uid}/creatorCompliance`]: compliance || null,

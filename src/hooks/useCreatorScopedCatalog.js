@@ -21,17 +21,7 @@ export function useCreatorScopedCatalog(db, uidRaw) {
   const [produtosVal, setProdutosVal] = useState(null);
 
   useEffect(() => {
-    if (!uid) {
-      setObrasVal(null);
-      setCapsByCreatorId({});
-      setCapsByObra({});
-      setProdutosVal(null);
-      return () => {};
-    }
-    setObrasVal(null);
-    setProdutosVal(null);
-    setCapsByCreatorId({});
-    setCapsByObra({});
+    if (!uid) return () => {};
     const obrasQ = query(ref(db, 'obras'), orderByChild('creatorId'), equalTo(uid));
     const capsQ = query(ref(db, 'capitulos'), orderByChild('creatorId'), equalTo(uid));
     const prodQ = query(ref(db, 'loja/produtos'), orderByChild('creatorId'), equalTo(uid));
@@ -48,10 +38,7 @@ export function useCreatorScopedCatalog(db, uidRaw) {
   const obraIdsKey = useMemo(() => obraIdsSortedKey(obrasVal && typeof obrasVal === 'object' ? obrasVal : {}), [obrasVal]);
 
   useEffect(() => {
-    if (!uid || !obraIdsKey) {
-      setCapsByObra({});
-      return () => {};
-    }
+    if (!uid || !obraIdsKey) return () => {};
     const obraIds = obraIdsKey.split('\0');
     const chunks = Object.create(null);
     const flush = () => {

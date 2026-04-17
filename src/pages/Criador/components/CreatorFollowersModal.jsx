@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { AVATAR_FALLBACK } from '../../../constants';
 import { applyImageFallback } from '../creatorPublicProfileUtils';
 
 export default function CreatorFollowersModal({
@@ -52,12 +53,12 @@ export default function CreatorFollowersModal({
                     onClick={() => onFollowerClick(follower)}
                   >
                     <img
-                      src={String(follower.avatarUrl || '').trim() || '/assets/avatares/ava1.webp'}
+                      src={String(follower.avatarUrl || '').trim() || AVATAR_FALLBACK}
                       alt={String(follower.displayName || follower.userHandle || 'Usuario')}
                       loading="lazy"
                       referrerPolicy="no-referrer"
                       crossOrigin="anonymous"
-                      onError={(e) => applyImageFallback(e, '/assets/avatares/ava1.webp')}
+                      onError={(e) => applyImageFallback(e, AVATAR_FALLBACK)}
                     />
                     <span className="criador-follower-row__body">
                       <strong>{follower.displayName || 'Leitor'}</strong>

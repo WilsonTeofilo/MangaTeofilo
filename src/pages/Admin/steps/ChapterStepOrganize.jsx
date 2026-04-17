@@ -1,20 +1,21 @@
 import React from 'react';
 
-export default function ChapterStepOrganize({
-  editandoId,
-  paginasExistentes,
-  isMangaka,
-  PaginaCard,
-  PaginaSelecionadaCard,
-  arquivosPaginas,
-  previewsPaginasSelecionadas,
-  handleTrocarPaginaUnica,
-  handleReordenarPagina,
-  handleReordenarSelecionada,
-  handleRemoverSelecionada,
-  setErroModal,
-  setModalPreview,
-}) {
+export default function ChapterStepOrganize(props) {
+  const {
+    editandoId,
+    paginasExistentes,
+    isMangaka,
+    PaginaCard,
+    PaginaSelecionadaCard,
+    arquivosPaginas,
+    previewsPaginasSelecionadas,
+    handleTrocarPaginaUnica,
+    handleReordenarPagina,
+    handleReordenarSelecionada,
+    handleRemoverSelecionada,
+    setErroModal,
+    setModalPreview,
+  } = props;
   return (
     <div className="editor-step-panel">
       {editandoId && paginasExistentes.length > 0 && (

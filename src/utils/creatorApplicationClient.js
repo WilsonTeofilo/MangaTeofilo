@@ -53,7 +53,7 @@ export async function submitCreatorApplicationPayload({ creatorSubmitApplication
     );
   } else {
     const pass = String(payload.profileImageUrl || '').trim();
-    if (isTrustedPlatformAssetUrl(pass)) {
+    if (isTrustedPlatformAssetUrl(pass, { allowLocalAssets: true })) {
       callablePayload.profileImageUrl = pass;
     }
     if (payload.profileImageCrop && typeof payload.profileImageCrop === 'object') {

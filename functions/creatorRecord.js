@@ -109,6 +109,20 @@ export function resolveCreatorFinancialStatusFromDb(row) {
   return 'inactive';
 }
 
+export function creatorAccessIsApprovedFromDb(row) {
+  if (!row || typeof row !== 'object') return false;
+  const applicationStatus = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
+  const creatorStatus = String(row?.creatorStatus || '').trim().toLowerCase();
+  const creatorRoot = row?.creator && typeof row.creator === 'object' ? row.creator : {};
+
+  if (applicationStatus === 'approved') return true;
+  if (creatorStatus === 'active' || creatorStatus === 'onboarding') return true;
+  if (creatorRoot.onboardingCompleted === true) return true;
+  if (creatorRoot.isCreator === true) return true;
+
+  return false;
+}
+
 export function readCreatorStatsFromDb(row, creatorStatsRow = null) {
   const canonical =
     creatorStatsRow && typeof creatorStatsRow === 'object'

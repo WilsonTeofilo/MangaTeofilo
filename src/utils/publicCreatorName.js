@@ -147,7 +147,7 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
     allCapitulos && Array.isArray(allCapitulos)
       ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
       : [];
-  const { creatorId, profile } = matchingCaps.length
+  const { profile } = matchingCaps.length
     ? resolveCanonicalWorkCreator(obra, matchingCaps, creatorsMap)
     : {
         creatorId: String(obra?.creatorId || '').trim() || obraCreatorId(obra),
@@ -231,7 +231,7 @@ export function resolvePublicCreatorIdentity(obra, creatorsMap, allCapitulos = n
     handle: normalizePublicHandle(profile),
     avatarUrl: resolvePublicProfileAvatarUrl(profile, {
       mode: 'creator',
-      fallback: '/assets/fotos/shito.jpg',
+      fallback: '/assets/avatares/ava1.webp',
     }),
     path: resolvePublicProfilePath(profile, creatorId, { tab: 'works' }),
   };

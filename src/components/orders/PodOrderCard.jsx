@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
-import { formatPodBookFormatPt, formatPodOrderAmountDue, formatPodOrderStatusPt, formatPodSaleModelPt } from '../../utils/printOnDemandOrderUi';
+import {
+  formatPodBookFormatPt,
+  formatPodOrderAmountDue,
+  formatPodOrderStatusPt,
+  formatPodSaleModelPt,
+} from '../../utils/printOnDemandOrderUi';
 import { functions } from '../../services/firebase';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { buildTimelineStepsState, podOrderTimelineMeta, shortOrderPublicId } from '../../utils/orderTrackingUi';
@@ -18,8 +23,8 @@ const cancelMyPrintOnDemandOrderFn = httpsCallable(functions, 'cancelMyPrintOnDe
  * @param {object} props
  * @param {object} props.order
  * @param {string} [props.newOrderPath]
- * @param {() => void} [props.onPaymentLinkReady] — após gerar link (resume), atualizar lista no pai
- * @param {() => void} [props.onOrderUpdated] — após cancelar ou outras ações que mudam o pedido
+ * @param {() => void} [props.onPaymentLinkReady]
+ * @param {() => void} [props.onOrderUpdated]
  */
 export default function PodOrderCard({
   order,
@@ -46,15 +51,15 @@ export default function PodOrderCard({
 
   const title = useMemo(
     () =>
-      `${formatPodSaleModelPt(snap.saleModel)} · ${formatPodBookFormatPt(snap.format)} · ${snap.quantity != null ? `${snap.quantity} un.` : '—'}`,
+      `${formatPodSaleModelPt(snap.saleModel)} · ${formatPodBookFormatPt(snap.format)} · ${
+        snap.quantity != null ? `${snap.quantity} un.` : '-'
+      }`,
     [snap.saleModel, snap.format, snap.quantity]
   );
 
   const st = normalizePodStatus(order?.status);
-  const checkoutUrl = String(order?.checkoutUrl || '').trim();
   const needsPayment = isPodStatusPendingPayment(st);
-  const canPayNow = needsPayment && Boolean(checkoutUrl);
-  const canResumeCheckout = needsPayment && !checkoutUrl;
+  const canResumeCheckout = needsPayment;
   const paymentExpired = Boolean(
     needsPayment && Number(order?.expiresAt || 0) > 0 && nowTick > Number(order.expiresAt)
   );
@@ -75,15 +80,13 @@ export default function PodOrderCard({
       const { data } = await resumeCheckoutFn({ orderId: oid });
       const url = String(data?.url || '').trim();
       if (!data?.ok || !url) {
-        setResumeErrorModal(
-          'Não foi possível gerar o link de pagamento. Tente de novo ou fale com o suporte.'
-        );
+        setResumeErrorModal('Nao foi possivel gerar o link de pagamento. Tente de novo ou fale com o suporte.');
         return;
       }
       refreshList?.();
       window.location.assign(url);
     } catch (e) {
-      setResumeErrorModal(e?.message || 'Não foi possível gerar o link de pagamento.');
+      setResumeErrorModal(e?.message || 'Nao foi possivel gerar o link de pagamento.');
     } finally {
       setResumeLoading(false);
     }
@@ -94,7 +97,7 @@ export default function PodOrderCard({
     if (!oid || cancelBusy) return;
     const reason = cancelReason.trim();
     if (reason.length < 3) {
-      setCancelError('Informe o motivo (mínimo 3 caracteres).');
+      setCancelError('Informe o motivo (minimo 3 caracteres).');
       return;
     }
     setCancelBusy(true);
@@ -102,14 +105,14 @@ export default function PodOrderCard({
     try {
       const { data } = await cancelMyPrintOnDemandOrderFn({ orderId: oid, cancellationReason: reason });
       if (!data?.ok) {
-        setCancelError('Não foi possível cancelar. Tente de novo ou fale com o suporte.');
+        setCancelError('Nao foi possivel cancelar. Tente de novo ou fale com o suporte.');
         return;
       }
       setCancelModalOpen(false);
       setCancelReason('');
       refreshList?.();
     } catch (e) {
-      setCancelError(e?.message || 'Não foi possível cancelar o pedido.');
+      setCancelError(e?.message || 'Nao foi possivel cancelar o pedido.');
     } finally {
       setCancelBusy(false);
     }
@@ -118,11 +121,7 @@ export default function PodOrderCard({
   return (
     <article className="ot-card">
       {resumeErrorModal ? (
-        <div
-          className="ot-modal-backdrop"
-          role="presentation"
-          onClick={() => setResumeErrorModal(null)}
-        >
+        <div className="ot-modal-backdrop" role="presentation" onClick={() => setResumeErrorModal(null)}>
           <div
             className="ot-modal"
             role="dialog"
@@ -162,11 +161,11 @@ export default function PodOrderCard({
               Cancelar este pedido?
             </h2>
             <p className="ot-modal__body">
-              Só é possível cancelar por aqui enquanto o pagamento estiver pendente. Se você já pagou, fale com o
+              So e possivel cancelar por aqui enquanto o pagamento estiver pendente. Se voce ja pagou, fale com o
               suporte.
             </p>
             <label className="ot-modal__label" htmlFor="ot-card-cancel-reason">
-              Motivo (mín. 3 caracteres)
+              Motivo (min. 3 caracteres)
             </label>
             <textarea
               id="ot-card-cancel-reason"
@@ -187,7 +186,7 @@ export default function PodOrderCard({
                 Voltar
               </button>
               <button type="button" className="ot-btn ot-btn--primary" onClick={handleCancelPedido} disabled={cancelBusy}>
-                {cancelBusy ? 'Cancelando…' : 'Confirmar cancelamento'}
+                {cancelBusy ? 'Cancelando...' : 'Confirmar cancelamento'}
               </button>
             </div>
           </div>
@@ -196,25 +195,25 @@ export default function PodOrderCard({
 
       <div className="ot-card__top">
         <div>
-          <p className="ot-card__id">Mangá físico #{shortOrderPublicId(order?.id)}</p>
+          <p className="ot-card__id">Manga fisico #{shortOrderPublicId(order?.id)}</p>
           <p className="ot-card__date">{formatarDataHoraBr(Number(order?.createdAt || 0))}</p>
         </div>
-        <span className={podBadgeClass(order?.status)}>{formatPodOrderStatusPt(order?.status)}</span>
+        <span className={podStatusBadgeClass(order?.status)}>{formatPodOrderStatusPt(order?.status)}</span>
       </div>
 
       <div className="ot-card__mid">
         <div className="ot-card__thumb" aria-hidden="true">
-          <span>📚</span>
+          <span>Livro</span>
         </div>
         <div>
           <p className="ot-card__product-title">{title}</p>
           <p className="ot-card__product-meta">
-            Última atualização: {formatarDataHoraBr(Number(order?.updatedAt || order?.createdAt || 0))}
+            Ultima atualizacao: {formatarDataHoraBr(Number(order?.updatedAt || order?.createdAt || 0))}
             {meta.productionHint ? ` · ${meta.productionHint}` : ''}
           </p>
         </div>
         <div className="ot-card__money">
-          {amount ? <strong>{amount}</strong> : <strong>—</strong>}
+          {amount ? <strong>{amount}</strong> : <strong>-</strong>}
           <span>Valor do lote</span>
         </div>
       </div>
@@ -225,13 +224,13 @@ export default function PodOrderCard({
         <p className={`ot-card__pay-hint ${paymentExpired ? 'ot-card__pay-hint--warn' : ''}`} role="status">
           {paymentExpired ? (
             <>
-              <strong>Reserva encerrada.</strong> Prazo de pagamento passou — o pedido será cancelado automaticamente em
+              <strong>Reserva encerrada.</strong> Prazo de pagamento passou e o pedido sera cancelado automaticamente em
               breve.
             </>
           ) : (
             <>
               <strong>Aguardando pagamento</strong>
-              {' — '}
+              {' - '}
               {(() => {
                 const left = Math.max(0, Math.floor((Number(order.expiresAt) - nowTick) / 1000));
                 const h = Math.floor(left / 3600);
@@ -247,33 +246,21 @@ export default function PodOrderCard({
 
       {needsPayment ? (
         <p className="ot-card__pay-hint" role="status">
-          {canPayNow
-            ? 'Conclua o pagamento do lote para liberar a produção.'
-            : 'Sem link de checkout neste pedido — gere um novo link para pagar com segurança.'}
+          Conclua o pagamento do lote para liberar a producao.
         </p>
       ) : null}
 
       <div className="ot-card__actions">
-        {canPayNow ? (
+        {canResumeCheckout ? (
           paymentExpired ? (
             <span className="ot-btn ot-btn--primary ot-btn--disabled" style={{ opacity: 0.55, cursor: 'not-allowed' }}>
               Prazo de pagamento expirado
             </span>
           ) : (
-            <a className="ot-btn ot-btn--primary" href={checkoutUrl} rel="noopener noreferrer">
-              Pagar agora (Mercado Pago)
-            </a>
+            <button type="button" className="ot-btn ot-btn--primary" onClick={onResumePay} disabled={resumeLoading}>
+              {resumeLoading ? 'Gerando link...' : 'Pagar agora (Mercado Pago)'}
+            </button>
           )
-        ) : null}
-        {canResumeCheckout ? (
-          <button
-            type="button"
-            className="ot-btn ot-btn--primary"
-            onClick={onResumePay}
-            disabled={resumeLoading || paymentExpired}
-          >
-            {resumeLoading ? 'Gerando link…' : 'Gerar link de pagamento'}
-          </button>
         ) : null}
         {canCancelFromList ? (
           <button type="button" className="ot-btn ot-btn--ghost" onClick={() => setCancelModalOpen(true)}>
@@ -281,7 +268,7 @@ export default function PodOrderCard({
           </button>
         ) : null}
         <Link
-          className={canPayNow || canResumeCheckout ? 'ot-btn ot-btn--ghost' : 'ot-btn ot-btn--primary'}
+          className={canResumeCheckout ? 'ot-btn ot-btn--ghost' : 'ot-btn ot-btn--primary'}
           to={`/pedidos/fisico/${encodeURIComponent(order?.id)}`}
         >
           Ver detalhes
@@ -292,7 +279,7 @@ export default function PodOrderCard({
           </a>
         ) : null}
         <Link className="ot-btn ot-btn--ghost" to={newOrderPath}>
-          Novo pedido físico
+          Novo pedido fisico
         </Link>
         <Link className="ot-btn ot-btn--ghost" to="/sobre-autor">
           Falar com suporte

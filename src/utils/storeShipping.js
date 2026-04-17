@@ -1,5 +1,5 @@
-/**
- * Frete da loja — núcleo em `shared/storeShipping.js`; aqui só helpers de UI.
+﻿/**
+ * Frete da loja â€” nÃºcleo em `functions/shared/storeShipping.js`; aqui sÃ³ helpers de UI.
  */
 
 export {
@@ -10,17 +10,18 @@ export {
   normalizeShippingRegions,
   detectShippingRegionFromState,
   buildStoreShippingQuote,
-} from '../../shared/storeShipping.js';
+} from '../../functions/shared/storeShipping.js';
 
-/** Texto curto para carrinho / confirmação (dias úteis, parâmetros da tabela regional). */
+/** Texto curto para carrinho / confirmaÃ§Ã£o (dias Ãºteis, parÃ¢metros da tabela regional). */
 export function formatStoreShippingEtaLabel(option) {
   if (!option) return '';
   const low = Number(option.deliveryDaysLow);
   const high = Number(option.deliveryDaysHigh);
   const transit = Number(option.transitDays ?? option.deliveryDays);
   if (low > 0 && high >= low) {
-    return `${low}–${high} dias úteis (≈${transit} úteis nos Correios + preparação)`;
+    return `${low}â€“${high} dias Ãºteis (â‰ˆ${transit} Ãºteis nos Correios + preparaÃ§Ã£o)`;
   }
-  const t = transit > 0 ? transit : '—';
-  return `${t} dias úteis nos Correios (estimativa)`;
+  const t = transit > 0 ? transit : 'â€”';
+  return `${t} dias Ãºteis nos Correios (estimativa)`;
 }
+

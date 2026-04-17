@@ -151,16 +151,6 @@ export async function getAdminAuthContext(auth) {
     };
   }
 
-  if (panelRole === 'admin' || auth.token?.admin === true) {
-    return {
-      uid: auth.uid,
-      role: 'admin',
-      super: false,
-      mangaka: false,
-      permissions: defaultPermissionsAllTrue(),
-    };
-  }
-
   return null;
 }
 

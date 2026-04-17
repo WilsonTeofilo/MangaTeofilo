@@ -770,6 +770,13 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     [tentarIrParaEtapa]
   );
 
+  useEffect(() => {
+    if (etapaAtiva !== 1) return;
+    const uploadCompleto = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
+    if (!uploadCompleto) return;
+    irParaEtapa(2);
+  }, [capaCapitulo, capituloEditando?.capaUrl, etapaAtiva, irParaEtapa, totalPaginasAtual]);
+
   const ensureMangakaClaimForWrite = useCallback(async (actionLabel = 'gravar este capítulo') => {
     if (!isMangaka || !user) return true;
     try {
@@ -895,7 +902,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setEtapaAtiva(2);
     setPublicReleaseAtInput(formatarDataHora24Br(cap.publicReleaseAt));
     setAntecipadoMembros(Boolean(cap.antecipadoMembros));
-  }, [capituloEditQueryId, capitulosDaObra, editandoId]);
+  }, [capituloEditQueryId, capitulosDaObra, editandoId, setEtapaAtiva]);
 
   const handleReordenarPagina = async (indexAntigo, indexNovo) => {
     if (indexNovo < 0 || indexNovo >= paginasExistentes.length) return;
@@ -999,7 +1006,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       setErroModal(erros[0]);
       return;
     }
-    let deveAvancar = false;
+    setErroModal('');
     setArquivosPaginas((prev) => {
       const existentes = new Set(prev.map(assinaturaArquivo));
       const unicos = novos.filter((file) => !existentes.has(assinaturaArquivo(file)));
@@ -1009,12 +1016,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
       const next = [...prev, ...unicos];
       setPaginasFileLabel(`${next.length} página(s) selecionada(s)`);
-      deveAvancar = Boolean((capaCapitulo || capituloEditando?.capaUrl) && next.length > 0);
       return next;
     });
-    if (deveAvancar) {
-      irParaEtapa(2);
-    }
   };
 
   const handleSelecionarCapa = (file) => {
@@ -1024,6 +1027,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       setErroModal(erro);
       return;
     }
+    setErroModal('');
     setCapaCapitulo(file);
     setCapaFileLabel(String(file.name || 'arquivo selecionado').trim() || 'arquivo selecionado');
     const ajustePadrao = normalizarCapaAjuste();

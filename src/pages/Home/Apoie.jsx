@@ -1,9 +1,7 @@
-﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
-import { onValue, ref } from 'firebase/database';
-
-import { db, functions } from '../../services/firebase';
+import { functions } from '../../services/firebase';
 import { APOIO_PLANOS_UI } from '../../config/apoioPlanos';
 import {
   MENSAGEM_POR_PLANO,
@@ -12,13 +10,7 @@ import {
   montarTituloModalAgradecimento,
 } from '../../config/apoieMensagens';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
-import {
-  creatorMembershipAtiva,
-  assinaturaPremiumAtiva,
-  listarMembershipsDeCriadorAtivas,
-  obterEntitlementCriador,
-  obterEntitlementPremiumGlobal,
-} from '../../utils/capituloLancamento';
+import { obterEntitlementPremiumGlobal } from '../../utils/capituloLancamento';
 import { labelPrecoPremium } from '../../config/premiumAssinatura';
 import {
   getAttribution,
@@ -27,44 +19,16 @@ import {
 } from '../../utils/trafficAttribution';
 import { formatarDataLongaBr, formatarHoraBr } from '../../utils/datasBr';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
-import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
 import {
-  buildPublicProfileFromUsuarioRow,
-  resolvePublicProfileDisplayName,
-} from '../../utils/publicUserProfile';
+  formatarPrecoBrl,
+} from './apoieUtils';
+import useApoieEntitlementsAndAttribution from './hooks/useApoieEntitlementsAndAttribution';
 import './Apoie.css';
 
 const criarCheckoutApoio = httpsCallable(functions, 'criarCheckoutApoio');
 const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
-
-/** Inclui dias completos; antes usÃ¡vamos sÃ³ (seg % 86400)/3600 e promoÃ§Ãµes >24h pareciam ter ~1h. */
-function textoCountdownPromoSegundos(totalSegundos) {
-  const s = Math.max(0, Math.floor(Number(totalSegundos) || 0));
-  const dd = Math.floor(s / 86400);
-  const hh = Math.floor((s % 86400) / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const p2 = (n) => String(n).padStart(2, '0');
-  if (dd > 0) return `${dd}d ${p2(hh)}:${p2(mm)}:${p2(sec)}`;
-  return `${p2(hh)}:${p2(mm)}:${p2(sec)}`;
-}
-
-function formatarPrecoBrl(valor) {
-  const n = Number(valor);
-  if (!Number.isFinite(n)) return 'R$ 0,00';
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(n);
-}
-
-function sanitizeCreatorId(raw) {
-  const c = String(raw || '').trim();
-  if (c.length < 10 || c.length > 128) return null;
-  return /^[a-zA-Z0-9_-]+$/.test(c) ? c : null;
-}
 
 export default function Apoie({ user, perfil }) {
   const [searchParams] = useSearchParams();
@@ -106,7 +70,6 @@ export default function Apoie({ user, perfil }) {
     show: false,
     pendingReveal: false,
   });
-  const [creatorOffer, setCreatorOffer] = useState(null);
   const jaMostrouAgradecimento = useRef(false);
   const modalAgradecimentoRef = useRef(null);
   const modalFecharBtnRef = useRef(null);
@@ -382,11 +345,11 @@ export default function Apoie({ user, perfil }) {
     const normalizado = String(valorLivre).trim().replace(',', '.');
     const n = parseFloat(normalizado);
     if (!Number.isFinite(n) || n < 1) {
-      setErroValorLivre('Informe um valor mÃ­nimo de R$ 1,00.');
+      setErroValorLivre('Informe um valor mínimo de R$ 1,00.');
       return;
     }
     if (n > 5000) {
-      setErroValorLivre('Valor mÃ¡ximo neste fluxo: R$ 5.000,00.');
+      setErroValorLivre('Valor máximo neste fluxo: R$ 5.000,00.');
       return;
     }
 
@@ -424,11 +387,11 @@ export default function Apoie({ user, perfil }) {
       return;
     }
     if (!attributionCreatorIdParaCheckout || creatorOffer?.creatorSupportOffer?.membershipEnabled !== true) {
-      setErroMembershipCriador('Este criador ainda nÃ£o ativou a membership pÃƒÂºblica.');
+      setErroMembershipCriador('Este criador ainda não ativou a membership pública.');
       return;
     }
     if (attributionCreatorIdParaCheckout === user.uid) {
-      setErroMembershipCriador('VocÃª nÃ£o pode assinar a prÃƒÂ³pria membership de criador.');
+      setErroMembershipCriador('Você não pode assinar a própria membership de criador.');
       return;
     }
     setErroMembershipCriador('');
@@ -456,78 +419,27 @@ export default function Apoie({ user, perfil }) {
     }
   };
 
-  const premiumAtivo = assinaturaPremiumAtiva(perfil);
-  const premiumEntitlement = obterEntitlementPremiumGlobal(perfil);
-  const attributionPersistida = useMemo(() => getAttribution(), []);
-  const attributionCreatorIdParaCheckout = useMemo(() => {
-    const fromUrl = sanitizeCreatorId(searchParams.get('creatorId') || searchParams.get('criador'));
-    if (fromUrl) return fromUrl;
-    const fromCache = sanitizeCreatorId(attributionPersistida?.creatorId);
-    return fromCache || null;
-  }, [attributionPersistida, searchParams]);
-  const creatorIdNaSessao = attributionCreatorIdParaCheckout || '';
-  const membershipCriadorAtiva =
-    creatorIdNaSessao && perfil
-      ? creatorMembershipAtiva(perfil, creatorIdNaSessao)
-      : false;
-  const membershipAtualDoCriador = creatorIdNaSessao
-    ? obterEntitlementCriador(perfil, creatorIdNaSessao)
-    : null;
-  const membershipsAtivas = useMemo(() => listarMembershipsDeCriadorAtivas(perfil), [perfil]);
-  const fimPremium = formatarDataLongaBr(premiumEntitlement.memberUntil);
-  const precoBase = Number.isFinite(ofertaPremium.basePriceBRL) ? ofertaPremium.basePriceBRL : null;
-  const precoAtual = Number.isFinite(ofertaPremium.currentPriceBRL) ? ofertaPremium.currentPriceBRL : null;
-  const precoSeguro = Number.isFinite(precoAtual) && precoAtual > 0
-    ? precoAtual
-    : (Number.isFinite(precoBase) && precoBase > 0 ? precoBase : 23);
-  const promoStartsAt = Number(ofertaPremium?.promo?.startsAt || 0);
-  const promoEndsAt = Number(ofertaPremium?.promo?.endsAt || 0);
-  const promoProgramada = ofertaPremium.promoStatus === 'scheduled' && promoStartsAt > ofertaPremium.now;
-  const segundosAteInicio = promoProgramada
-    ? Math.floor((promoStartsAt - ofertaPremium.now) / 1000)
-    : 0;
-  const segundosRestantes =
-    ofertaPremium.isPromoActive && promoEndsAt > ofertaPremium.now
-      ? Math.floor((promoEndsAt - ofertaPremium.now) / 1000)
-      : 0;
-  const textoAteInicioPromo = textoCountdownPromoSegundos(segundosAteInicio);
-  const textoTerminaPromo = textoCountdownPromoSegundos(segundosRestantes);
-
-  /** AtribuiÃ§Ã£o de apoio/premium a um mangakÃƒÂ¡ (links: ?creatorId=UID ou ?criador=UID). */
-
-  useEffect(() => {
-    if (!attributionCreatorIdParaCheckout) {
-      setCreatorOffer(null);
-      return () => {};
-    }
-    const unsub = onValue(ref(db, `usuarios/${attributionCreatorIdParaCheckout}/publicProfile`), (snapshot) => {
-      const row = snapshot.exists()
-        ? buildPublicProfileFromUsuarioRow(snapshot.val() || {}, attributionCreatorIdParaCheckout)
-        : {};
-      const monetizationStatus = resolveEffectiveCreatorMonetizationStatusFromDb(row);
-      if (monetizationStatus !== 'active') {
-        setCreatorOffer(null);
-        return;
-      }
-      setCreatorOffer({
-        creatorId: attributionCreatorIdParaCheckout,
-        creatorName: resolvePublicProfileDisplayName(row, 'Criador'),
-        creatorSupportOffer:
-          row?.creatorProfile?.monetization?.supportOffer &&
-          typeof row.creatorProfile.monetization.supportOffer === 'object'
-            ? row.creatorProfile.monetization.supportOffer
-            : {},
-      });
-    });
-    return () => unsub();
-  }, [attributionCreatorIdParaCheckout]);
-
-  useEffect(() => {
-    if (!creatorOffer?.creatorSupportOffer?.donationSuggestedBRL) return;
-    setValorLivre((prev) =>
-      String(prev || '').trim() ? prev : String(creatorOffer.creatorSupportOffer.donationSuggestedBRL)
-    );
-  }, [creatorOffer?.creatorSupportOffer?.donationSuggestedBRL]);
+  const {
+    premiumAtivo,
+    premiumEntitlement,
+    attributionCreatorIdParaCheckout,
+    membershipCriadorAtiva,
+    membershipAtualDoCriador,
+    membershipsAtivas,
+    fimPremium,
+    precoBase,
+    precoAtual,
+    precoSeguro,
+    promoProgramada,
+    textoAteInicioPromo,
+    textoTerminaPromo,
+    creatorOffer,
+  } = useApoieEntitlementsAndAttribution({
+    perfil,
+    searchParams,
+    ofertaPremium,
+    setValorLivre,
+  });
 
   const capIdFromEmail = searchParams.get('capId');
   const fromChapterEmail =
@@ -839,7 +751,7 @@ export default function Apoie({ user, perfil }) {
                 <h3>
                   {acompanhamentoPremium.confirmado
                     ? 'Pagamento confirmado na tempestade'
-                    : 'Aguardando confirmaÃ§Ã£o do pagamento'}
+                    : 'Aguardando confirmação do pagamento'}
                 </h3>
                 {!acompanhamentoPremium.confirmado ? (
                   <>
@@ -859,7 +771,7 @@ export default function Apoie({ user, perfil }) {
                           <strong>
                             {formatarHoraBr(acompanhamentoPremium.confirmadoAt, { seVazio: '' })}
                           </strong>
-                          . Pode fechar com seguranÃƒÂ§a.
+                          . Pode fechar com segurança.
                         </>
                       )}
                   </p>
@@ -886,7 +798,7 @@ export default function Apoie({ user, perfil }) {
                       }
                     }
                   >
-                    {acompanhamentoPremium.confirmado ? 'Fechar confirmaÃ§Ã£o' : 'Parar acompanhamento'}
+                    {acompanhamentoPremium.confirmado ? 'Fechar confirmação' : 'Parar acompanhamento'}
                   </button>
                 </div>
               </div>
@@ -898,10 +810,10 @@ export default function Apoie({ user, perfil }) {
               onClick={abrirAssinaturaPremium}
             >
               {carregandoId === 'premium'
-                ? 'Abrindo checkoutÃ¢â‚¬Â¦'
+                ? 'Abrindo checkout...'
                 : premiumAtivo
                   ? 'Renovar Premium (30 dias)'
-                  : `Assinar Premium Ã¢â‚¬â€ ${labelPrecoPremium(precoSeguro)}`}
+                  : `Assinar Premium — ${labelPrecoPremium(precoSeguro)}`}
             </button>
           </div>
 
@@ -914,12 +826,12 @@ export default function Apoie({ user, perfil }) {
           <div className="apoie-doacao-livre">
             <h2 className="apoie-doacao-livre-titulo">
               {creatorOffer
-                ? `DoaÃ§Ã£o livre para ${creatorOffer.creatorName} (Pix / checkout)`
-                : 'DoaÃ§Ã£o livre (Pix / checkout)'}
+                ? `Doação livre para ${creatorOffer.creatorName} (Pix / checkout)`
+                : 'Doação livre (Pix / checkout)'}
             </h2>
             <p className="apoie-doacao-livre-desc">
-              Escolha o valor (mÃ­nimo <strong>R$ 1,00</strong>). Abre o mesmo checkout seguro do Mercado Pago.
-              {creatorOffer ? ` Nesta sessÃ£o o apoio vai para ${creatorOffer.creatorName}.` : ''}
+              Escolha o valor (mínimo <strong>R$ 1,00</strong>). Abre o mesmo checkout seguro do Mercado Pago.
+              {creatorOffer ? ` Nesta sessão o apoio vai para ${creatorOffer.creatorName}.` : ''}
             </p>
             {!user && (
               <p className="apoie-premium-login-hint">
@@ -939,7 +851,7 @@ export default function Apoie({ user, perfil }) {
                 value={valorLivre}
                 onChange={(e) => setValorLivre(e.target.value)}
                 disabled={carregandoId !== null || !user}
-                aria-label="Valor da doaÃ§Ã£o em reais"
+                aria-label="Valor da doação em reais"
               />
               <button
                 type="button"
@@ -984,8 +896,8 @@ export default function Apoie({ user, perfil }) {
 
           <p className="apoie-nota">
             <i className="fa-solid fa-shield-check" /> Checkout oficial do Mercado Pago.{' '}
-            <strong>Premium:</strong> apÃƒÂ³s o pagamento aprovado vocÃƒÂª recebe e-mail de confirmaÃ§Ã£o e, perto do
-            fim dos 30 dias, um lembrete para renovar. <strong>DoaÃ§Ãµes:</strong> agradecimento no site (modal),
+            <strong>Premium:</strong> após o pagamento aprovado você recebe e-mail de confirmação e, perto do
+            fim dos 30 dias, um lembrete para renovar. <strong>Doações:</strong> agradecimento no site (modal),
             sem e-mail automatico. <strong>Membership do criador:</strong> ativa acesso antecipado somente para o autor assinado.
           </p>
 
@@ -995,16 +907,16 @@ export default function Apoie({ user, perfil }) {
               <li>
                 <i className="fa-solid fa-crown" /> <strong>Assinatura Premium ({labelPrecoPremium()}):</strong>{' '}
                 regalias de
-                membro (lista acima), por 30 dias renovÃ¡veis.
+                membro (lista acima), por 30 dias renováveis.
               </li>
               <li>
-                <i className="fa-solid fa-heart" /> <strong>P / M / G e doaÃ§Ã£o livre:</strong> apoio Ã  obra â€”
-                sem regalias automÃ¡ticas no site; seu nome pode entrar nos crÃ©ditos combinando no Discord.
+                <i className="fa-solid fa-heart" /> <strong>P / M / G e doacao livre:</strong> apoio a obra -
+                sem regalias automaticas no site; seu nome pode entrar nos creditos combinando no Discord.
               </li>
             </ul>
             <div className="discord-notice-box">
               <p>
-                ApÃ³s o apoio, envie o comprovante no nosso <strong>Discord</strong>. Irei anotar sua alma
+                Após o apoio, envie o comprovante no nosso <strong>Discord</strong>. Irei anotar sua alma
                 para os agradecimentos oficiais.
               </p>
             </div>
@@ -1014,4 +926,7 @@ export default function Apoie({ user, perfil }) {
     </div>
   );
 }
+
+
+
 

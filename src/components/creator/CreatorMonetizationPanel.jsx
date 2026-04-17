@@ -1,6 +1,6 @@
 ﻿/**
- * Only platform growth and monetization goals live here.
- * XP, missions, boost, and the weekly cycle are separate.
+ * Aqui vivem apenas metas de crescimento da plataforma e elegibilidade financeira.
+ * XP, missoes, boost e ciclo semanal ficam em outro fluxo.
  */
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
@@ -17,24 +17,24 @@ function barPct(cur, target) {
 
 export default function CreatorMonetizationPanel({ progressVm }) {
   const vm = progressVm;
-
-  if (!vm) return null;
-
   const motivationalLine = useMemo(() => {
+    if (!vm) return '';
     if (vm.nextLevel == null) {
       return vm.monetizationThresholdReached
-        ? 'Metas do nível máximo batidas. Mantenha o ritmo e a monetização ativa no perfil para liberar ganhos.'
+        ? 'Metas do nivel maximo batidas. Agora mantenha o ritmo e deixe sua etapa financeira regularizada para receber pela plataforma.'
         : vm.primaryNextLevelGapPhrase;
     }
     return vm.primaryNextLevelGapPhrase || 'Publique com constância e compartilhe seu perfil para subir de nível na plataforma.';
-  }, [vm.monetizationThresholdReached, vm.nextLevel, vm.primaryNextLevelGapPhrase]);
+  }, [vm]);
+
+  if (!vm) return null;
 
   return (
     <div className="creator-dash">
       <header className="creator-dash__intro">
         <h2 className="creator-dash__intro-title">Monetização na plataforma</h2>
         <p className="creator-dash__intro-sub">
-          Crescimento real em seguidores, views e likes para liberar ganhos na plataforma, separado de missões e XP.
+          Crescimento real em seguidores, views e likes para atingir a elegibilidade financeira, separado de missoes e XP.
         </p>
       </header>
 
@@ -120,9 +120,9 @@ export default function CreatorMonetizationPanel({ progressVm }) {
           </p>
 
           <div className="creator-dash__mono-longterm" aria-label="Metas de monetização">
-            <h4 className="creator-dash__subhead">Desbloqueio de monetização (Nível 2)</h4>
+            <h4 className="creator-dash__subhead">Elegibilidade financeira (Nivel 2)</h4>
             <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-              Ao bater essas metas, você libera ganhos com a loja, membros e outros recursos financeiros no seu perfil.
+              Ao bater essas metas, voce libera o direito de solicitar monetizacao para loja, membros e outros recursos financeiros.
             </p>
             <ul className="creator-dash__mono-longterm-metrics">
               <li>Seguidores: {nf.format(MONETIZATION_THRESHOLDS.followers)}</li>
@@ -140,7 +140,7 @@ export default function CreatorMonetizationPanel({ progressVm }) {
               </>
             ) : (
               <p className="creator-dash__mono-lead creator-dash__mono-lead--tight">
-                Nas métricas, você já está no patamar de monetização. Agora é só manter a conta pronta e aprovada no perfil.
+                Nas metricas, voce ja atingiu o patamar para solicitar monetizacao. A ativacao financeira ainda depende do cadastro completo e da aprovacao da equipe.
               </p>
             )}
           </div>
@@ -161,10 +161,11 @@ export default function CreatorMonetizationPanel({ progressVm }) {
             Ir para Missões &amp; XP
           </Link>
           <p className="creator-dash__legal">
-            Missões, XP e boost não liberam ganhos por si só. Para vender na loja e receber pela plataforma, você precisa bater o Nível 2 nas métricas e ter monetização aprovada no perfil.
+            Missoes, XP e boost nao liberam ganhos por si so. Para vender na loja e receber pela plataforma, voce precisa bater o Nivel 2 nas metricas e ter a etapa financeira ativa.
           </p>
         </footer>
       </div>
     </div>
   );
 }
+

@@ -164,6 +164,7 @@ export default function Login() {
   };
   // step: 'email' | 'code' | 'new-user' | 'existing-password' | 'existing-google'
   const [step, setStep] = useState('email');
+  const [existingAccountBackStep, setExistingAccountBackStep] = useState('email');
   /** Após codigo: usuario tem senha no site e tambem Google — mostrar alternativa */
   const [mostrarGoogleComoAlternativa, setMostrarGoogleComoAlternativa] = useState(false);
   const [email,           setEmail]           = useState('');
@@ -222,6 +223,40 @@ export default function Login() {
       return { ok: false, message: 'Informe um e-mail valido (ex: usuario@email.com).' };
     }
     return { ok: true, email: norm };
+  };
+
+  const clearSignupDraft = () => {
+    setDisplayName('');
+    setSignupHandle('');
+    setPassword('');
+    setConfirmPassword('');
+    setSignupIntent('reader');
+    setMostrarGoogleComoAlternativa(false);
+  };
+
+  const moveToExistingAccountStep = ({ hasPassword = false, hasGoogle = false, message = '' } = {}) => {
+    clearSignupDraft();
+    setExistingAccountBackStep('email');
+    setSignupCodeMode(false);
+    lastCodeWasSignupRef.current = false;
+
+    if (hasGoogle && !hasPassword) {
+      setStep('existing-google');
+      setInfo(
+        message ||
+          'Este e-mail ja esta vinculado a login com Google. Use "Conectar com Google" para entrar.'
+      );
+      return;
+    }
+
+    setStep('existing-password');
+    setMostrarGoogleComoAlternativa(Boolean(hasPassword && hasGoogle));
+    setInfo(
+      message ||
+        (hasGoogle
+          ? 'Esta conta ja existe no site. Digite sua senha ou use "Conectar com Google" abaixo.'
+          : 'Esta conta ja existe no site. Digite sua senha para entrar.')
+    );
   };
 
   // --- Cooldowns ──────────────────────────────────────────────────────────
@@ -358,6 +393,26 @@ export default function Login() {
         signup: signupExplicit === true,
       });
       if (!resp.ok || !data.ok) {
+        if (data?.code === 'GOOGLE_ONLY_AUTH') {
+          moveToExistingAccountStep({
+            hasPassword: false,
+            hasGoogle: true,
+            message: String(
+              data?.error || 'Este e-mail ja esta cadastrado com login pelo Google. Use "Conectar com Google".'
+            ),
+          });
+          return;
+        }
+        if (signupExplicit && data?.code === 'ACCOUNT_ALREADY_EXISTS') {
+          moveToExistingAccountStep({
+            hasPassword: data?.hasPassword === true,
+            hasGoogle: data?.hasGoogle === true,
+            message: String(
+              data?.error || 'Este e-mail ja possui conta. Entre com sua senha ou com o metodo ja vinculado.'
+            ),
+          });
+          return false;
+        }
         if (!signupExplicit && data?.code === 'NO_AUTH_USER') {
           setSignupCodeMode(true);
           setError('');
@@ -367,6 +422,7 @@ export default function Login() {
           return false;
         }
         if (!signupExplicit && data?.code === 'GOOGLE_ONLY_AUTH') {
+          setExistingAccountBackStep('email');
           setStep('existing-google');
           setSignupCodeMode(false);
           setError('');
@@ -449,6 +505,16 @@ export default function Login() {
         code: code.trim(),
       });
       if (!resp.ok || !data.ok) {
+        if (data?.code === 'GOOGLE_ONLY_AUTH') {
+          moveToExistingAccountStep({
+            hasPassword: false,
+            hasGoogle: true,
+            message: String(
+              data?.error || 'Este e-mail ja esta cadastrado com login pelo Google. Use "Conectar com Google".'
+            ),
+          });
+          return;
+        }
         throw new Error(data.error || 'Código inválido.');
       }
 
@@ -465,6 +531,7 @@ export default function Login() {
       const temGoogle = data?.hasGoogle === true;
 
       if (temSenhaSite) {
+        setExistingAccountBackStep('code');
         setStep('existing-password');
         setPassword('');
         setMostrarGoogleComoAlternativa(temGoogle);
@@ -477,11 +544,13 @@ export default function Login() {
       }
 
       if (temGoogle) {
+        setExistingAccountBackStep('code');
         setStep('existing-google');
         setInfo('');
         return;
       }
 
+      setExistingAccountBackStep('code');
       setStep('existing-password');
       setPassword('');
       setMostrarGoogleComoAlternativa(false);
@@ -537,7 +606,6 @@ export default function Login() {
         return;
       }
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const agora = Date.now();
       await updateProfile(cred.user, {
         displayName: displayName.trim(),
         photoURL:    avatarSeguro,
@@ -579,6 +647,14 @@ export default function Login() {
       }
     } catch (err) {
       registerAttemptResult('registerPassword', false);
+      if (err.code === 'auth/email-already-in-use') {
+        moveToExistingAccountStep({
+          hasPassword: true,
+          hasGoogle: false,
+          message: 'Este e-mail ja possui conta. Entre com sua senha para continuar.',
+        });
+        return;
+      }
       const msgs = {
         'auth/invalid-email':        'E-mail inválido.',
         'auth/email-already-in-use': 'Este e-mail já está em uso.',
@@ -682,15 +758,18 @@ export default function Login() {
       setInfo('Link de redefinição enviado para seu e-mail.');
     } catch (err) {
       const msgs = {
-        'auth/invalid-email':     'E-mail inválido.',
+        'auth/invalid-email':     'E-mail invalido.',
         'auth/user-not-found':    'Nenhuma conta com esse e-mail.',
         'auth/too-many-requests': 'Muitas tentativas. Aguarde.',
       };
-      setError(msgs[err.code] || 'Não foi possível enviar o e-mail.');
-    } finally { setLoading(false); }
+      setError(msgs[err.code] || 'Nao foi possivel enviar o e-mail.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // --- RENDER ─────────────────────────────────────────────────────────────
+  // --- RENDER ---------------------------------------------------------------
+  // --- RENDER ---------------------------------------------------------------
   return (
     <main className="login-content">
       <div className="login-card">
@@ -700,13 +779,13 @@ export default function Login() {
         <h1 className="login-title">Bem-vindo de volta</h1>
         <p className="login-subtitle">
           {step === 'email' && 'Entrar ou criar conta'}
-          {step === 'code' && 'Insira o código enviado'}
+          {step === 'code' && 'Insira o codigo enviado'}
           {step === 'new-user' && 'Configure seu perfil'}
           {step === 'existing-password' && 'Digite sua senha'}
           {step === 'existing-google' && 'Entre com Google'}
         </p>
 
-        {step === 'email' && (
+        {step === 'email' ? (
           <LoginEmailStep
             email={email}
             setEmail={setEmail}
@@ -718,8 +797,9 @@ export default function Login() {
             handleForgotPassword={handleForgotPassword}
             forgotCooldown={forgotCooldown}
           />
-        )}
-        {step === 'code' && (
+        ) : null}
+
+        {step === 'code' ? (
           <LoginCodeStep
             email={email}
             setEmail={setEmail}
@@ -730,72 +810,19 @@ export default function Login() {
             handleResendCode={handleResendCode}
             resendCooldown={resendCooldown}
             onBack={() => {
-              setStep('email');
-              setCode('');
+              setStep(existingAccountBackStep);
+              if (existingAccountBackStep === 'email') {
+                setCode('');
+                clearSignupDraft();
+                setResendCooldown(0);
+              }
               setError('');
               setInfo('');
-              setResendCooldown(0);
             }}
           />
-        )}
-        {/*
-          <>
-            <form onSubmit={handleVerifyCode} className="login-form">
-              <div className="input-field">
-                <i className="fa-solid fa-envelope" />
-                <input
-                  type="email"
-                  placeholder="E-mail"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div className="input-field">
-                <i className="fa-solid fa-hashtag" />
-                <input
-                  type="text"
-                  placeholder="Código de 6 dígitos"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'VALIDAR CÓDIGO'}
-              </button>
-            </form>
+        ) : null}
 
-            <div className="login-code-actions">
-              <button
-                type="button"
-                className="btn-text-action"
-                onClick={handleResendCode}
-                disabled={loading || resendCooldown > 0}
-              >
-                {resendCooldown > 0 ? `Reenviar código (${resendCooldown}s)` : 'Reenviar código'}
-              </button>
-              <button
-                type="button"
-                className="btn-text-action"
-                onClick={() => {
-                  setStep('email');
-                  setCode('');
-                  setError('');
-                  setInfo('');
-                  setResendCooldown(0);
-                }}
-                disabled={loading}
-              >
-                Trocar e-mail
-              </button>
-            </div>
-          </>
-        )}
-
-        {step === 'new-user' && (
+        {step === 'new-user' ? (
           <LoginNewUserStep
             selectedAvatar={selectedAvatar}
             setShowAvatarModal={setShowAvatarModal}
@@ -827,191 +854,26 @@ export default function Login() {
             hasSpecial={hasSpecial}
             displayNameMaxLength={DISPLAY_NAME_MAX_LENGTH}
           />
-        */}
-        {/*
-          <>
-            <div className="avatar-preview-container" onClick={() => setShowAvatarModal(true)}>
-              <div className="avatar-circle-wrapper">
-                <img src={selectedAvatar} alt="Avatar" className="avatar-preview-img"
-                  onError={(e) => { e.target.src = AVATAR_FALLBACK; }} />
-                <div className="edit-overlay"><i className="fa-solid fa-camera" /></div>
-              </div>
-              <p className="avatar-change-text">TOQUE PARA MUDAR O VISUAL</p>
-            </div>
+        ) : null}
 
-            <form onSubmit={handleRegisterWithPassword} className="login-form">
-              <div className="signup-intent-picker">
-                <span className="signup-intent-picker__label">Como você quer entrar?</span>
-                <div className="signup-intent-picker__options">
-                  <button
-                    type="button"
-                    className={`signup-intent-card ${signupIntent === 'reader' ? 'is-active' : ''}`}
-                    onClick={() => setSignupIntent('reader')}
-                  >
-                    <strong>Leitor</strong>
-                    <span>Entra lendo na hora, com favoritos, biblioteca e loja.</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`signup-intent-card ${signupIntent === 'creator' ? 'is-active' : ''}`}
-                    onClick={() => setSignupIntent('creator')}
-                  >
-                    <strong>Quero ser mangaka</strong>
-                    <span>Cria a conta agora e envia a solicitação de creator logo depois, com revisão humana.</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="input-field">
-                <i className="fa-solid fa-user" />
-                <input
-                  type="text"
-                  placeholder="Nome do usuário"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  maxLength={DISPLAY_NAME_MAX_LENGTH}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div className="input-field">
-                <i className="fa-solid fa-at" />
-                <input
-                  type="text"
-                  placeholder="@username"
-                  value={signupHandle}
-                  onChange={(e) => setSignupHandle(normalizeUsernameInput(e.target.value))}
-                  maxLength={20}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <p className="login-info-inline">
-                Seu @username Ã© Ãºnico na plataforma e nÃ£o pode ser alterado depois.
-              </p>
-              <div className="input-field">
-                <i className="fa-solid fa-envelope" />
-                <input
-                  type="email"
-                  placeholder="E-mail"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled
-                />
-              </div>
-              <div className="input-field">
-                <i className="fa-solid fa-lock" />
-                <input
-                  type="password"
-                  placeholder="Senha"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div className="input-field">
-                <i className="fa-solid fa-shield-halved" />
-                <input
-                  type="password"
-                  placeholder="Confirmar Senha"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="password-requirements" style={{ marginBottom: '20px', paddingLeft: '5px' }}>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.82rem', textAlign: 'left' }}>
-                  {[
-                    { ok: hasLength,  label: 'Mínimo 8 caracteres' },
-                    { ok: hasUpper,   label: 'Uma letra maiúscula' },
-                    { ok: hasNumber,  label: 'Um número' },
-                    { ok: hasSpecial, label: 'Caractere especial (@$!%*?)' },
-                  ].map(({ ok, label }) => (
-                    <li key={label} style={{ color: ok ? '#4caf50' : '#ff4444', transition: '0.3s' }}>
-                      <i className={`fa-solid ${ok ? 'fa-check' : 'fa-xmark'}`} style={{ marginRight: '8px' }} />
-                      {label}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <label className="login-remember">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  disabled={loading}
-                />
-                Manter conectado
-              </label>
-
-              <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'CRIAR CONTA'}
-              </button>
-            </form>
-
-            <button
-              type="button"
-              className="btn-text-action"
-              onClick={() => {
-                setStep('code');
-                setPassword('');
-                setConfirmPassword('');
-                setError('');
-                setInfo('');
-              }}
-              disabled={loading}
-            >
-              Já tenho conta
-            </button>
-          </>
-        )}
-
-        {step === 'existing-google' && (
+        {step === 'existing-google' ? (
           <LoginExistingGoogleStep
             loading={loading}
             handleGoogleSignIn={handleGoogleSignIn}
             onBack={() => {
-              setStep('email');
-              setCode('');
+              setStep(existingAccountBackStep);
+              if (existingAccountBackStep === 'email') {
+                setCode('');
+                clearSignupDraft();
+                setResendCooldown(0);
+              }
               setError('');
               setInfo('');
-              setResendCooldown(0);
             }}
           />
-        */}
-        {/*
-          <>
-            <p className="login-google-hint login-google-hint--block">
-              Este e-mail foi cadastrado com <strong>Conectar com Google</strong>. O site não guarda a senha da
-              sua conta Google — por isso digitar o e-mail e a senha do Gmail aqui não funciona.
-            </p>
-            <button type="button" className="btn-google-shito" onClick={handleGoogleSignIn} disabled={loading}>
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
-              CONECTAR COM GOOGLE
-            </button>
-            <button
-              type="button"
-              className="btn-text-action"
-              onClick={() => {
-                setStep('email');
-                setCode('');
-                setError('');
-                setInfo('');
-                setResendCooldown(0);
-              }}
-              disabled={loading}
-            >
-              Usar outro e-mail
-            </button>
-          </>
-        )}
+        ) : null}
 
-        {step === 'existing-password' && (
+        {step === 'existing-password' ? (
           <LoginExistingPasswordStep
             email={email}
             password={password}
@@ -1025,90 +887,22 @@ export default function Login() {
             mostrarGoogleComoAlternativa={mostrarGoogleComoAlternativa}
             handleGoogleSignIn={handleGoogleSignIn}
             onBack={() => {
-              setStep('code');
+              setStep(existingAccountBackStep);
               setPassword('');
               setError('');
               setInfo('');
               setMostrarGoogleComoAlternativa(false);
+              if (existingAccountBackStep === 'email') {
+                setCode('');
+                clearSignupDraft();
+                setResendCooldown(0);
+              }
             }}
           />
-        */}
-        {/*
-          <>
-            <form onSubmit={handleExistingPasswordLogin} className="login-form">
-              <div className="input-field">
-                <i className="fa-solid fa-envelope" />
-                <input
-                  type="email"
-                  placeholder="E-mail"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled
-                />
-              </div>
-              <div className="input-field">
-                <i className="fa-solid fa-lock" />
-                <input
-                  type="password"
-                  placeholder="Senha"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <label className="login-remember">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  disabled={loading}
-                />
-                Manter conectado
-              </label>
-              <button type="submit" className="btn-submit-shito" disabled={loading}>
-                {loading ? <i className="fa-solid fa-spinner fa-spin" /> : 'ENTRAR'}
-              </button>
-            </form>
-            <button
-              type="button"
-              className="btn-text-action"
-              onClick={handleForgotPassword}
-              disabled={loading || forgotCooldown > 0}
-            >
-              {forgotCooldown > 0 ? `Esqueci minha senha (${forgotCooldown}s)` : 'Esqueci minha senha'}
-            </button>
+        ) : null}
 
-            {mostrarGoogleComoAlternativa && (
-              <>
-                <div className="social-divider"><span>OU</span></div>
-                <button type="button" className="btn-google-shito" onClick={handleGoogleSignIn} disabled={loading}>
-                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
-                  CONECTAR COM GOOGLE
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              className="btn-text-action"
-              onClick={() => {
-                setStep('code');
-                setPassword('');
-                setError('');
-                setInfo('');
-                setMostrarGoogleComoAlternativa(false);
-              }}
-              disabled={loading}
-            >
-              Voltar para código
-            </button>
-          </>
-        */}
-
-        {error && <div className="error-banner"><i className="fa-solid fa-circle-exclamation" /> {error}</div>}
-        {info  && <div className="info-banner"><i className="fa-solid fa-circle-check" /> {info}</div>}
+        {error ? <div className="error-banner"><i className="fa-solid fa-circle-exclamation" /> {error}</div> : null}
+        {info ? <div className="info-banner"><i className="fa-solid fa-circle-check" /> {info}</div> : null}
       </div>
 
       <LoginAvatarModal
@@ -1122,6 +916,3 @@ export default function Login() {
     </main>
   );
 }
-
-
-

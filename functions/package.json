@@ -9,7 +9,7 @@
   },
   "scripts": {
     "serve": "firebase emulators:start --only functions",
-    "lint": "node --check index.js",
+    "lint": "node ./scripts/check-all.mjs",
     "test": "node --test",
     "deploy": "firebase deploy --only functions"
   },

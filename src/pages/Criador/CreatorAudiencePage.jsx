@@ -105,6 +105,7 @@ function AudienceLineChart({ rows }) {
 export default function CreatorAudiencePage({ user, perfil }) {
   const navigate = useNavigate();
   const uid = String(user?.uid || '').trim();
+  const [nowSnapshot] = useState(() => Date.now());
   const creatorMonetizationIsActive =
     resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active';
   const [range, setRange] = useState('30d');
@@ -143,11 +144,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
   useEffect(() => {
     if (!uid) return () => {};
     const workIds = creatorWorks.map((w) => String(w.id || '').trim()).filter(Boolean);
-    setRetentionMap({});
-    if (!workIds.length) {
-      setRetentionMap({});
-      return () => {};
-    }
+    if (!workIds.length) return () => {};
     const unsubs = workIds.map((workId) =>
       onValue(ref(db, `workRetention/${workId}`), (snap) => {
         setRetentionMap((prev) => ({
@@ -178,7 +175,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
 
   const totals = useMemo(() => {
     const stats = creatorStats || {};
-    const activeMembros = Object.values(membersIndex || {}).filter((row) => safeNumber(row?.memberUntil) > Date.now()).length;
+    const activeMembros = Object.values(membersIndex || {}).filter((row) => safeNumber(row?.memberUntil) > nowSnapshot).length;
     return {
       followersCount: safeNumber(stats?.followersCount),
       totalViews: safeNumber(stats?.totalViews),
@@ -188,7 +185,7 @@ export default function CreatorAudiencePage({ user, perfil }) {
       membersCount: activeMembros || safeNumber(stats?.membersCount),
       revenueTotal: safeNumber(stats?.revenueTotal),
     };
-  }, [creatorStats, membersIndex]);
+  }, [creatorStats, membersIndex, nowSnapshot]);
 
   const periodSummary = useMemo(() => {
     return filteredDailyRows.reduce(

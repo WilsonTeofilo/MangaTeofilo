@@ -275,20 +275,6 @@ function buildEmptyForm(defaultCreatorId = '') {
   };
 }
 
-function pickCreatorDisplayName(row = {}) {
-  const publicProfile = row && typeof row.publicProfile === 'object' ? row.publicProfile : {};
-  const creator = row && typeof row.creator === 'object' ? row.creator : {};
-  return String(
-    publicProfile.creatorDisplayName ||
-      publicProfile.userName ||
-      creator.displayName ||
-      row.creatorDisplayName ||
-      row.userName ||
-      row.userHandle ||
-      ''
-  ).trim();
-}
-
 function buildCreatorDirectory(rows = {}) {
   const map = new Map();
   Object.entries(rows || {}).forEach(([uid, data]) => {

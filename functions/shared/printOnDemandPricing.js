@@ -256,7 +256,7 @@ function sumWorkMetricsFromCaps(capsVal, workId) {
   const wid = String(workId || '').trim();
   if (!wid || !capsVal || typeof capsVal !== 'object') return { views, likes };
   for (const row of Object.values(capsVal)) {
-    const cap = row && typeof cap === 'object' ? row : {};
+    const cap = row && typeof row === 'object' ? row : {};
     if (String(cap.obraId || cap.workId || '').trim() !== wid) continue;
     views += Number(cap.viewsCount ?? cap.visualizacoes ?? 0);
     likes += Number(cap.likesCount ?? cap.curtidas ?? 0);

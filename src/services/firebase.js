@@ -52,8 +52,8 @@ export const functions = getFunctions(
   readStringEnv(import.meta.env.VITE_FUNCTIONS_REGION, 'us-central1')
 );
 
-// Em desenvolvimento local, os emuladores entram por padrao.
-// Tudo vai direto pro Firebase de produção — simples e funcional.
+// Este cliente usa o Firebase configurado via Vite env.
+// Emuladores locais so entram se outra camada do app conectar explicitamente neles.
 
 export const firebaseRuntime = {
   appEnv,

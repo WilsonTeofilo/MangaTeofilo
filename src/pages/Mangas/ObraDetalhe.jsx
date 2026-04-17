@@ -12,6 +12,7 @@ import {
   obraCreatorId,
   obraSegmentoUrlPublica,
   resolverObraIdPorSlugOuId,
+  slugifyObraSlug,
 } from '../../config/obras';
 import { getLastRead, subscribeReadingProgress } from '../../utils/readingProgressLocal';
 import { capituloLiberadoParaUsuario, formatarDataLancamento } from '../../utils/capituloLancamento';
@@ -19,7 +20,7 @@ import { formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import { chapterCoverStyle } from '../../utils/chapterCoverStyle';
 import { toRecordList } from '../../utils/firebaseRecordList';
 import { removeWorkFavoriteBoth, saveWorkFavoriteBoth } from '../../utils/workFavorites';
-import { obraEstaArquivada, obraVisivelNoCatalogoPublico } from '../../utils/obraCatalogo';
+import { obraEstaArquivada } from '../../utils/obraCatalogo';
 import { resolvePublicCreatorIdentity } from '../../utils/publicCreatorName';
 import {
   resolvePublicProfileDisplayName,
@@ -200,12 +201,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     return () => unsub();
   }, [obraId, user?.uid]);
 
-  const capitulosResolvidos = useMemo(() => {
-    const fallbackCreatorId = obraCreatorId(obra);
-    return capitulos.map((cap) => (
-      cap?.creatorId ? cap : { ...cap, creatorId: fallbackCreatorId }
-    ));
-  }, [capitulos, obra]);
+  const capitulosResolvidos = useMemo(() => capitulos, [capitulos]);
 
   const creatorIdsForLookup = useMemo(
     () => collectCreatorIdsFromWorksAndChapters(obra ? [obra] : [], capitulosResolvidos),
@@ -216,7 +212,6 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
   useEffect(() => subscribeReadingProgress(() => setLastReadLocal(getLastRead())), []);
 
-  const fallbackCriadorObra = obraCreatorId(obra);
   const capitulosAsc = useMemo(
     () => [...capitulosResolvidos].sort((a, b) => Number(a?.numero || 0) - Number(b?.numero || 0)),
     [capitulosResolvidos]
@@ -228,10 +223,8 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
 
   const primeiroLiberado = useMemo(
     () =>
-      capitulosAsc.find((cap) =>
-        capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCriadorObra })
-      ) || null,
-    [capitulosAsc, user, perfil, fallbackCriadorObra]
+      capitulosAsc.find((cap) => capituloLiberadoParaUsuario(cap, user, perfil)) || null,
+    [capitulosAsc, user, perfil]
   );
 
   const continuarCap = useMemo(() => {
@@ -239,9 +232,9 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     if (normalizarObraId(lastReadLocal.workId) !== normalizarObraId(obraId)) return null;
     const cap = capitulosResolvidos.find((c) => c.id === lastReadLocal.chapterId);
     if (!cap) return null;
-    if (!capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCriadorObra })) return null;
+    if (!capituloLiberadoParaUsuario(cap, user, perfil)) return null;
     return cap;
-  }, [lastReadLocal, obraId, capitulosResolvidos, user, perfil, fallbackCriadorObra]);
+  }, [lastReadLocal, obraId, capitulosResolvidos, user, perfil]);
 
   const capMaisRecente = capitulosAsc[capitulosAsc.length - 1] || null;
   const novoCapLabel = useMemo(() => {
@@ -533,9 +526,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
           <div className="obra-capitulos-list shueisha-capitulos-list">
             {capitulosAsc.map((cap) => {
               if (!cap) return null;
-              const liberado = capituloLiberadoParaUsuario(cap, user, perfil, {
-                creatorIdFallback: fallbackCriadorObra,
-              });
+              const liberado = capituloLiberadoParaUsuario(cap, user, perfil);
               const agendado = Number(cap?.publicReleaseAt || 0) > 0;
               return (
                 <article

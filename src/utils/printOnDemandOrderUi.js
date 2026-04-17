@@ -6,29 +6,19 @@ import {
   formatBRL,
   getProductionDaysRange,
 } from './printOnDemandPricingV2';
-
-const POD_STATUS_LABELS = {
-  pending_payment: 'Aguardando pagamento',
-  paid: 'Pagamento confirmado',
-  in_production: 'Em produção',
-  ready_to_ship: 'Pronto para envio',
-  shipped: 'Enviado',
-  delivered: 'Entregue',
-  cancelled: 'Cancelado',
-};
+import { formatPodStatusLabel } from './podStatus';
 
 /** @param {string} [status] */
 export function formatPodOrderStatusPt(status) {
-  const k = String(status || '').trim();
-  return POD_STATUS_LABELS[k] || (k ? k : 'Status desconhecido');
+  return formatPodStatusLabel(status);
 }
 
 /** @param {string} [format] */
 export function formatPodBookFormatPt(format) {
   const f = String(format || '').trim().toLowerCase();
-  if (f === BOOK_FORMAT.TANKOBON) return 'Tankōbon';
-  if (f === BOOK_FORMAT.MEIO_TANKO) return 'Meio-Tankō';
-  return f || '—';
+  if (f === BOOK_FORMAT.TANKOBON) return 'Tankobon';
+  if (f === BOOK_FORMAT.MEIO_TANKO) return 'Meio-Tanko';
+  return f || '-';
 }
 
 /** @param {string} [saleModel] */
@@ -37,7 +27,7 @@ export function formatPodSaleModelPt(saleModel) {
   if (m === SALE_MODEL.PLATFORM) return 'Venda pela plataforma';
   if (m === SALE_MODEL.STORE_PROMO) return 'Vitrine (sem lucro)';
   if (m === SALE_MODEL.PERSONAL) return 'Produzir para mim';
-  return m || '—';
+  return m || '-';
 }
 
 /** @param {string} [id] */
@@ -62,7 +52,7 @@ export function formatPodOrderAmountDue(snapshot) {
 }
 
 /**
- * Texto único para checkout e pós-pagamento (prazo estimado).
+ * Texto unico para checkout e pos-pagamento (prazo estimado).
  * @param {string} [saleModel]
  * @param {string} [format]
  * @param {number} [quantity]
@@ -70,9 +60,9 @@ export function formatPodOrderAmountDue(snapshot) {
 export function describePodLeadTimePt(saleModel, format, quantity) {
   const r = getProductionDaysRange(saleModel, format, quantity);
   if (!r) return '';
-  const fila = `Confirmação do pagamento até ${POD_PRODUCTION_ORDER_CUTOFF_HOUR_BR}h (Brasil): entra na fila no mesmo dia útil; depois disso, no próximo dia útil.`;
+  const fila = `Confirmacao do pagamento ate ${POD_PRODUCTION_ORDER_CUTOFF_HOUR_BR}h (Brasil): entra na fila no mesmo dia util; depois disso, no proximo dia util.`;
   if (r.kind === 'approval') {
-    return `Prazo estimado: até ${r.low} dias úteis para análise e liberação na loja; em seguida entra na fila de produção. ${fila}`;
+    return `Prazo estimado: ate ${r.low} dias uteis para analise e liberacao na loja; em seguida entra na fila de producao. ${fila}`;
   }
-  return `Produção sob demanda (cada pedido é produzido individualmente). Prazo em dias úteis: ${r.low}–${r.high} (produção + envio aos Correios). ${fila}`;
+  return `Producao sob demanda (cada pedido e produzido individualmente). Prazo em dias uteis: ${r.low}-${r.high} (producao + envio aos Correios). ${fila}`;
 }

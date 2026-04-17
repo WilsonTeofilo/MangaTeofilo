@@ -26,7 +26,7 @@ export default function MangaCatalogSearchBar({
   const showList =
     searchQueryIsActive(q) && Array.isArray(suggestions) && suggestions.length > 0 && typeof onSelectWork === 'function';
 
-  const [listOpen, setListOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(true);
   const [activeIndex, setActiveIndex] = useState(-1);
 
   const clearBlurTimer = useCallback(() => {
@@ -44,20 +44,10 @@ export default function MangaCatalogSearchBar({
     }, 160);
   }, [clearBlurTimer]);
 
-  useEffect(() => {
-    if (!showList) {
-      setListOpen(false);
-      setActiveIndex(-1);
-      return;
-    }
-    setListOpen(true);
-    setActiveIndex((prev) => {
-      if (prev >= 0 && prev < suggestions.length) return prev;
-      return 0;
-    });
-  }, [showList, suggestions.length]);
-
   useEffect(() => () => clearBlurTimer(), [clearBlurTimer]);
+  const visibleList = showList && listOpen;
+  const resolvedActiveIndex =
+    suggestions.length > 0 ? Math.min(Math.max(activeIndex, 0), suggestions.length - 1) : -1;
 
   const openList = useCallback(() => {
     clearBlurTimer();
@@ -89,9 +79,9 @@ export default function MangaCatalogSearchBar({
       setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
       return;
     }
-    if (e.key === 'Enter' && listOpen && activeIndex >= 0 && suggestions[activeIndex]) {
+    if (e.key === 'Enter' && visibleList && resolvedActiveIndex >= 0 && suggestions[resolvedActiveIndex]) {
       e.preventDefault();
-      pick(suggestions[activeIndex]);
+      pick(suggestions[resolvedActiveIndex]);
       return;
     }
     if (e.key === 'Escape') {
@@ -101,8 +91,8 @@ export default function MangaCatalogSearchBar({
   };
 
   const activeDescendant =
-    listOpen && activeIndex >= 0 && suggestions[activeIndex]
-      ? `${listId}-opt-${activeIndex}`
+    visibleList && resolvedActiveIndex >= 0 && suggestions[resolvedActiveIndex]
+      ? `${listId}-opt-${resolvedActiveIndex}`
       : undefined;
 
   return (
@@ -124,7 +114,7 @@ export default function MangaCatalogSearchBar({
           autoComplete="off"
           spellCheck={false}
           role="combobox"
-          aria-expanded={listOpen && showList}
+          aria-expanded={visibleList}
           aria-controls={listId}
           aria-activedescendant={activeDescendant}
           aria-autocomplete="list"
@@ -165,7 +155,7 @@ export default function MangaCatalogSearchBar({
         </span>
       </div>
 
-      {listOpen && showList ? (
+      {visibleList ? (
         <ul
           id={listId}
           className="manga-catalog-search__dropdown"
@@ -176,7 +166,7 @@ export default function MangaCatalogSearchBar({
           {suggestions.map((card, i) => {
             const { primaryTitle, secondaryTitle, typeLabel } = catalogWorkDisplayMeta(card);
             const cover = String(card?.capaUrl || card?.bannerUrl || '').trim() || coverFallback;
-            const active = i === activeIndex;
+            const active = i === resolvedActiveIndex;
             return (
               <li key={String(card?.obraId || card?.id || i)} role="none">
                 <button

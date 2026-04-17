@@ -7,6 +7,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions';
 import nodemailer from 'nodemailer';
 import cors from 'cors';
+import { creatorAccessIsApprovedFromDb } from '../creatorRecord.js';
 
 const SMTP_HOST = defineSecret('SMTP_HOST');
 const SMTP_PORT = defineSecret('SMTP_PORT');
@@ -84,7 +85,7 @@ function profileHasRetainedHistory(profile) {
   const hasCreatorEnts =
     creatorEnts && typeof creatorEnts === 'object' && Object.keys(creatorEnts).length > 0;
   return Boolean(
-    profile?.role === 'mangaka' ||
+    creatorAccessIsApprovedFromDb(profile) ||
       profile?.creator ||
       profile?.creatorApplication ||
       globalEnt?.memberUntil ||
@@ -398,6 +399,22 @@ export const sendLoginCode = onRequest(
           ok: false,
           code: 'NO_AUTH_USER',
           error: 'Nenhuma conta com este e-mail. Use login com Google se foi assim que entrou, ou toque em criar conta para receber o código.',
+        });
+        return;
+      }
+      if (userExists && signupExplicit) {
+        const code = hasGoogle && !hasPassword ? 'GOOGLE_ONLY_AUTH' : 'ACCOUNT_ALREADY_EXISTS';
+        const error =
+          hasGoogle && !hasPassword
+            ? 'Este e-mail já está vinculado a login com Google. Use "Conectar com Google" para entrar.'
+            : 'Este e-mail já possui conta. Entre com sua senha ou use o método já vinculado.';
+        res.status(409).json({
+          ok: false,
+          code,
+          error,
+          userExists,
+          hasPassword,
+          hasGoogle,
         });
         return;
       }

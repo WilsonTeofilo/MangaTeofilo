@@ -52,6 +52,24 @@ export function adminHasFullPanel(access) {
   return access?.superAdmin === true;
 }
 
+export function hasAnyAdminWorkspaceAccess(access) {
+  if (!access?.canAccessAdmin) return false;
+  if (access?.isMangaka) return false;
+  if (adminHasFullPanel(access)) return true;
+  const perm = access.permissions || {};
+  return (
+    access.isChiefAdmin === true ||
+    perm.canAccessCapitulos === true ||
+    perm.canAccessObras === true ||
+    perm.canAccessAvatares === true ||
+    perm.canAccessDashboard === true ||
+    perm.canAccessFinanceiro === true ||
+    perm.canAccessLojaAdmin === true ||
+    perm.canAccessPedidos === true ||
+    perm.canRevokeUserSessions === true
+  );
+}
+
 function hasCreatorScopeAccess(access) {
   return access?.isMangaka === true && access?.canAccessAdmin !== true;
 }
@@ -65,7 +83,7 @@ export function canAccessAdminPath(pathname, access) {
   if (access?.isMangaka) return false;
   if (adminHasFullPanel(access)) return true;
   const perm = access.permissions || {};
-  if (pathname === '/admin') return true;
+  if (pathname === '/admin' || pathname === '/admin/') return hasAnyAdminWorkspaceAccess(access);
   if (pathname.startsWith('/admin/equipe')) {
     return access.isChiefAdmin === true;
   }

@@ -3,11 +3,11 @@
  * Canonical metrics source: creators/{uid}/stats.
  */
 
-import { STORE_PROMO_ELIGIBILITY_THRESHOLDS } from '../../shared/promoThresholds.js';
+import { STORE_PROMO_ELIGIBILITY_THRESHOLDS } from '../../functions/shared/promoThresholds.js';
 import {
   normalizeCreatorEngagementMetrics,
   resolveCreatorEngagementMetrics,
-} from '../../shared/creatorEngagementMetrics.js';
+} from '../../functions/shared/creatorEngagementMetrics.js';
 
 export const CREATOR_LEVEL_THRESHOLDS = {
   1: STORE_PROMO_ELIGIBILITY_THRESHOLDS,
@@ -176,3 +176,4 @@ export function creatorDiscoveryLevelBoost(metrics) {
   if (level === 2) return 480;
   return 820;
 }
+

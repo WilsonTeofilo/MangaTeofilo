@@ -9,6 +9,7 @@ import {
   SALE_MODEL,
   formatBRL,
 } from '../../utils/printOnDemandPricingV2';
+import { buildPodSaleModeOperation } from '../../utils/podSaleMode';
 import {
   describePodLeadTimePt,
   formatPodBookFormatPt,
@@ -66,7 +67,11 @@ export default function PrintOnDemandCheckoutPage({ user }) {
     return () => window.removeEventListener(POD_CART_CHANGED_EVENT, onCh);
   }, [sync]);
 
-  const needAddress = draft?.saleModel === SALE_MODEL.PERSONAL;
+  const podOperation = useMemo(
+    () => buildPodSaleModeOperation(draft?.saleModel || SALE_MODEL.PERSONAL),
+    [draft?.saleModel]
+  );
+  const needAddress = podOperation.requiresShippingAddress;
 
   useEffect(() => {
     if (!needAddress) {

@@ -14,7 +14,7 @@ function asNumber(value, fallback = 0) {
   return Number.isFinite(normalized) ? normalized : fallback;
 }
 
-function buildCreatorPublicMonetization(root = {}, source = {}, supportOffer = {}) {
+function buildCreatorPublicMonetization(root = {}, supportOffer = {}) {
   const creatorMonetization =
     root?.creator?.monetization && typeof root.creator.monetization === 'object'
       ? root.creator.monetization
@@ -41,78 +41,250 @@ function buildCreatorPublicMonetization(root = {}, source = {}, supportOffer = {
     applicationStatus,
     financialStatus,
     status,
-    supportOffer,
+    isApproved: applicationStatus === 'approved',
+    isActive: financialStatus === 'active',
+    supportOffer: {
+      membershipEnabled: supportOffer?.membershipEnabled === true,
+      membershipPriceBRL: asNumber(supportOffer?.membershipPriceBRL, 0) || null,
+      donationSuggestedBRL: asNumber(supportOffer?.donationSuggestedBRL, 0) || null,
+      updatedAt: asNumber(supportOffer?.updatedAt, 0),
+    },
   };
+}
+
+function creatorAccessIsApproved(source = {}, root = {}) {
+  const sourceCreatorProfileDirect = asObject(source.creatorProfile);
+  const rootCreatorProfileDirect = asObject(root.creatorProfile);
+  const creatorApplicationStatus = asString(
+    source.creatorApplicationStatus || root.creatorApplicationStatus
+  ).toLowerCase();
+  const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
+  const sourceCreator = asObject(source.creator);
+  const rootCreator = asObject(root.creator);
+
+  return (
+    source.isCreatorProfile === true ||
+    root.isCreatorProfile === true ||
+    creatorApplicationStatus === 'approved' ||
+    creatorStatus === 'active' ||
+    creatorStatus === 'onboarding' ||
+    sourceCreatorProfileDirect.isCreator === true ||
+    rootCreatorProfileDirect.isCreator === true ||
+    sourceCreator.isCreator === true ||
+    rootCreator.isCreator === true ||
+    sourceCreator.onboardingCompleted === true ||
+    rootCreator.onboardingCompleted === true
+  );
+}
+
+function hasCanonicalCreatorState(source = {}, root = {}) {
+  if (!creatorAccessIsApproved(source, root)) {
+    return false;
+  }
+  return true;
 }
 
 export function resolveProfileAvatarUrl(raw) {
   return asString(raw, AVATAR_FALLBACK) || AVATAR_FALLBACK;
 }
 
-export function buildPublicProfileFromUsuarioRow(raw = {}, uid = '') {
-  const root = asObject(raw);
-  const publicProfile = asObject(root.publicProfile);
-  const creatorProfile = asObject(publicProfile.creatorProfile);
-  const readerProfile = asObject(publicProfile.readerProfile);
-  const creatorRoot = asObject(root.creator);
-  const handle = asString(root.userHandle || root.username || publicProfile.userHandle || publicProfile.username);
-  const name = asString(root.userName || root.displayName || publicProfile.userName || publicProfile.displayName);
-  const avatar =
-    asString(publicProfile.userAvatar) ||
-    asString(root.userAvatar) ||
-    asString(readerProfile.avatarUrl) ||
-    asString(root.readerProfileAvatarUrl);
-  const isCreator =
-    root.isCreator === true ||
-    root.isMangaka === true ||
-    creatorProfile.isCreator === true ||
-    creatorRoot.onboardingCompleted === true ||
-    creatorRoot.isCreator === true;
-  const creatorDisplayName =
-    asString(publicProfile.creatorDisplayName) ||
-    asString(root.creatorDisplayName) ||
-    asString(creatorRoot.displayName) ||
-    name;
-  const supportOffer = asObject(creatorRoot?.monetization?.offer);
-  const monetization = buildCreatorPublicMonetization(root, creatorProfile, supportOffer);
+export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
+  const root = asObject(row);
+  const source = asObject(root.publicProfile).uid || Object.keys(asObject(root.publicProfile)).length
+    ? { ...root, ...asObject(root.publicProfile) }
+    : root;
+  const sourceCreatorProfile = asObject(source.creatorProfile);
+  const sourceCreatorSocial = asObject(sourceCreatorProfile.socialLinks);
+  const privateCreatorProfile = asObject(root?.creator?.profile);
+  const privateCreatorSocial = asObject(root?.creator?.social);
+  const userHandle = asString(
+    root.userHandle || source.userHandle || privateCreatorProfile.username || sourceCreatorProfile.username
+  ).toLowerCase();
+  const creatorDisplayName = asString(
+    privateCreatorProfile.displayName ||
+      sourceCreatorProfile.displayName ||
+      source.creatorDisplayName ||
+      root.userName ||
+      source.userName,
+    'Leitor'
+  );
+  const creatorBio = asString(
+    privateCreatorProfile.bio ||
+      sourceCreatorProfile.bioFull ||
+      sourceCreatorProfile.bioShort ||
+      source.creatorBio ||
+      root.creatorBio
+  );
+  const instagramUrl = asString(
+    privateCreatorSocial.instagram ||
+      sourceCreatorSocial.instagramUrl ||
+      source.instagramUrl ||
+      root.instagramUrl
+  );
+  const youtubeUrl = asString(
+    privateCreatorSocial.youtube ||
+      sourceCreatorSocial.youtubeUrl ||
+      source.youtubeUrl ||
+      root.youtubeUrl
+  );
+  const userAvatar = asString(root.userAvatar || source.userAvatar, AVATAR_FALLBACK);
+  const creatorAvatarUrl = asString(
+    sourceCreatorProfile.avatarUrl ||
+      privateCreatorProfile.avatarUrl ||
+      source.creatorAvatarUrl ||
+      source.readerProfileAvatarUrl ||
+      userAvatar,
+    userAvatar
+  );
+  const creatorStatus = asString(root.creatorStatus || source.creatorStatus).toLowerCase();
+  const isCreatorProfile = hasCanonicalCreatorState(source, root);
+  const supportOffer =
+    root?.creator?.monetization?.offer && typeof root.creator.monetization.offer === 'object'
+      ? root.creator.monetization.offer
+      : sourceCreatorProfile?.monetization?.supportOffer &&
+        typeof sourceCreatorProfile.monetization.supportOffer === 'object'
+        ? sourceCreatorProfile.monetization.supportOffer
+        : null;
+  const creatorProfile = isCreatorProfile
+    ? {
+        ...sourceCreatorProfile,
+        displayName: creatorDisplayName,
+        username: asString(sourceCreatorProfile.username || userHandle).toLowerCase(),
+        avatarUrl: creatorAvatarUrl,
+        bioFull: creatorBio,
+        socialLinks: {
+          ...sourceCreatorSocial,
+          instagramUrl,
+          youtubeUrl,
+        },
+      }
+    : null;
+  const creatorMonetization = creatorProfile
+    ? buildCreatorPublicMonetization(root, {
+        membershipEnabled: supportOffer?.membershipEnabled === true,
+        membershipPriceBRL:
+          Number.isFinite(Number(supportOffer?.membershipPriceBRL))
+            ? Number(supportOffer.membershipPriceBRL)
+            : null,
+        donationSuggestedBRL:
+          Number.isFinite(Number(supportOffer?.donationSuggestedBRL))
+            ? Number(supportOffer.donationSuggestedBRL)
+            : null,
+        updatedAt: asNumber(supportOffer?.updatedAt, 0),
+      })
+    : null;
+  if (creatorProfile && creatorMonetization) {
+    creatorProfile.monetization = creatorMonetization;
+  }
+
   return {
-    uid: asString(uid || root.uid || root.userId),
-    userHandle: handle,
-    userName: name,
-    userAvatar: resolveProfileAvatarUrl(avatar),
-    userBio: asString(publicProfile.userBio || root.userBio),
-    readerDisplayName: asString(readerProfile.displayName || root.readerDisplayName || name),
-    readerProfileAvatarUrl: resolveProfileAvatarUrl(asString(readerProfile.avatarUrl || root.readerProfileAvatarUrl || avatar)),
-    creatorDisplayName,
-    creatorBio: asString(creatorProfile.bio || creatorRoot.bio),
-    creatorAvatarUrl: resolveProfileAvatarUrl(asString(creatorProfile.avatarUrl || creatorRoot.avatarUrl || avatar)),
-    creatorSupportOffer: monetization.supportOffer,
-    creatorMonetization: monetization,
-    isCreatorProfile: Boolean(isCreator),
-    isReaderProfilePublic: readerProfile?.isPublic !== false,
-    isCreatorProfilePublic: isCreator ? true : creatorProfile?.isPublic === true,
-    stats: {
-      followers: asNumber(root.creatorStats?.followers || root.followers || creatorProfile?.followers),
-      works: asNumber(root.creatorStats?.works || creatorProfile?.works),
-      views: asNumber(root.creatorStats?.views || creatorProfile?.views),
-      likes: asNumber(root.creatorStats?.likes || creatorProfile?.likes),
-      comments: asNumber(root.creatorStats?.comments || creatorProfile?.comments),
-      favorites: asNumber(root.creatorStats?.favorites || creatorProfile?.favorites),
-    },
+    ...source,
+    uid: asString(uidOverride || source.uid),
+    userName: asString(source.userName || root.userName, 'Leitor'),
+    userHandle,
+    userAvatar,
+    isCreatorProfile,
+    status: asString(source.status),
+    creatorDisplayName: isCreatorProfile ? creatorDisplayName : '',
+    creatorUsername: userHandle,
+    creatorBio: isCreatorProfile ? creatorBio : '',
+    creatorBannerUrl: isCreatorProfile
+      ? asString(source.creatorBannerUrl || sourceCreatorProfile.bannerUrl || privateCreatorProfile.bannerUrl)
+      : '',
+    instagramUrl: isCreatorProfile ? instagramUrl : '',
+    youtubeUrl: isCreatorProfile ? youtubeUrl : '',
+    readerProfilePublic: source.readerProfilePublic === true,
+    readerProfileAvatarUrl: asString(source.readerProfileAvatarUrl, userAvatar),
+    readerSince: asNumber(source.readerSince || root.createdAt || root.readerSince || source.createdAt, 0),
+    creatorStatus: isCreatorProfile ? creatorStatus : '',
+    updatedAt:
+      asNumber(
+        source.updatedAt || root?.creator?.meta?.updatedAt || root.updatedAt || root.lastLogin || root.createdAt,
+        0
+      ),
+    ...(creatorProfile ? { creatorProfile } : {}),
   };
 }
 
-export function buildPublicProfilesMapFromUsuarios(raw = {}) {
-  const map = new Map();
-  Object.entries(raw || {}).forEach(([uid, row]) => {
-    map.set(uid, buildPublicProfileFromUsuarioRow(row || {}, uid));
-  });
-  return map;
+export function buildPublicProfilesMapFromUsuarios(rows = {}) {
+  const source = rows && typeof rows === 'object' ? rows : {};
+  return Object.fromEntries(
+    Object.entries(source)
+      .filter(([, row]) => row && typeof row === 'object')
+      .map(([uid, row]) => [uid, buildPublicProfileFromUsuarioRow(row, uid)])
+  );
 }
 
 export function formatUserDisplayWithHandle(profile = {}) {
-  const handle = asString(profile?.userHandle);
-  const name = asString(profile?.userName);
+  const normalized = buildPublicProfileFromUsuarioRow(profile);
+  const handle = asString(normalized?.userHandle);
+  const name = asString(normalized?.userName || normalized?.creatorDisplayName);
   if (handle && name) return `${name} (@${handle})`;
   return name || (handle ? `@${handle}` : '');
+}
+
+export function isCreatorPublicProfile(profile) {
+  const normalized = buildPublicProfileFromUsuarioRow(profile);
+  return normalized.isCreatorProfile === true;
+}
+
+export function resolvePublicProfileDisplayName(profile, fallback = 'Leitor') {
+  const normalized = buildPublicProfileFromUsuarioRow(profile);
+  return isCreatorPublicProfile(normalized)
+    ? asString(
+        normalized.creatorProfile?.displayName ||
+          normalized.creatorDisplayName ||
+          normalized.userName,
+        fallback
+      )
+    : asString(normalized.userName, fallback);
+}
+
+export function resolvePublicProfileBio(profile, mode = 'auto') {
+  const normalized = buildPublicProfileFromUsuarioRow(profile);
+  const isCreator = isCreatorPublicProfile(normalized);
+  if (mode === 'reader' || !isCreator) {
+    return '';
+  }
+  return asString(
+    normalized.creatorProfile?.bioFull || normalized.creatorBio || '',
+    ''
+  );
+}
+
+export function resolvePublicProfileAvatarUrl(profile, { mode = 'auto', fallback = AVATAR_FALLBACK } = {}) {
+  const normalized = buildPublicProfileFromUsuarioRow(profile);
+  const isCreator = isCreatorPublicProfile(normalized);
+  if (mode === 'reader') {
+    return asString(normalized.readerProfileAvatarUrl || normalized.userAvatar, fallback);
+  }
+  if (mode === 'creator') {
+    return asString(
+      isCreator ? normalized.creatorProfile?.avatarUrl || normalized.userAvatar : normalized.userAvatar,
+      fallback
+    );
+  }
+  return isCreator
+    ? asString(
+        normalized.creatorProfile?.avatarUrl ||
+          normalized.readerProfileAvatarUrl ||
+          normalized.userAvatar,
+        fallback
+      )
+    : asString(normalized.readerProfileAvatarUrl || normalized.userAvatar, fallback);
+}
+
+export function resolvePublicProfileSocialLinks(profile) {
+  const normalized = buildPublicProfileFromUsuarioRow(profile);
+  if (!isCreatorPublicProfile(normalized)) {
+    return {
+      instagramUrl: '',
+      youtubeUrl: '',
+    };
+  }
+  const socialLinks = asObject(normalized.creatorProfile?.socialLinks);
+  return {
+    instagramUrl: asString(normalized.instagramUrl || socialLinks.instagramUrl),
+    youtubeUrl: asString(normalized.youtubeUrl || socialLinks.youtubeUrl),
+  };
 }

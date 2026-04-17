@@ -1,4 +1,4 @@
-export {
+﻿export {
   buildPublicProfileFromUsuarioRow,
   buildPublicProfilesMapFromUsuarios,
   isCreatorPublicProfile,
@@ -6,4 +6,6 @@ export {
   resolvePublicProfileBio,
   resolvePublicProfileDisplayName,
   resolvePublicProfileSocialLinks,
-} from '../../shared/publicUserProfile.js';
+} from '../../functions/shared/publicUserProfile.js';
+
+

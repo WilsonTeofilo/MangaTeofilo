@@ -13,7 +13,8 @@
  * - Nao herda perks globais do Premium da plataforma.
  *
  * ADMIN
- * - Papel admin/super_admin no perfil RTDB.
+ * - Fonte real: `admins/registry` + claim `panelRole` resolvida no shell.
+ * - `perfil.role` legado nao deve ser tratado como fonte unica para staff.
  * - Bypass total para leitura antecipada.
  */
 import {
@@ -56,51 +57,53 @@ export function listarMembershipsDeCriadorAtivas(perfil) {
 export const creatorMembershipAtiva = creatorMembershipDoAutorAtiva;
 export const algumaCreatorMembershipAtiva = algumaMembershipDeCriadorAtiva;
 
-export function usuarioTemPapelAdminPlataforma(user, perfil) {
+export function usuarioTemPapelAdminPlataforma(user, perfil, adminAccess = null) {
   if (!user) return false;
-  const role = String(perfil?.role ?? '').toLowerCase();
-  return role === 'admin' || role === 'super_admin';
+  if (adminAccess?.canAccessAdmin === true && adminAccess?.isMangaka !== true) return true;
+  return false;
 }
 
-export function podeLerCapituloAntecipado(user, perfil, creatorIdResolvido) {
+export function podeLerCapituloAntecipado(user, perfil, creatorIdResolvido, adminAccess = null) {
   if (!user) return false;
-  if (usuarioTemPapelAdminPlataforma(user, perfil)) return true;
+  if (usuarioTemPapelAdminPlataforma(user, perfil, adminAccess)) return true;
   const cid = String(creatorIdResolvido || '').trim();
   if (!cid) return false;
   return creatorMembershipDoAutorAtiva(perfil, cid);
 }
 
-export function usuarioTemAcessoAntecipado(user, perfil, creatorId = null) {
-  return podeLerCapituloAntecipado(user, perfil, creatorId);
+export function usuarioTemAcessoAntecipado(user, perfil, creatorId = null, adminAccess = null) {
+  return podeLerCapituloAntecipado(user, perfil, creatorId, adminAccess);
 }
 
-export function resolverCreatorIdDoCapitulo(cap, creatorIdFallback) {
+export function resolverCreatorIdDoCapitulo(cap) {
   const fromCap = String(cap?.creatorId || '').trim();
   if (fromCap) return fromCap;
-  const fb = String(creatorIdFallback || '').trim();
-  return fb || null;
+  const fromProfile = String(cap?.creatorProfile?.creatorId || cap?.creatorProfile?.userId || '').trim();
+  if (fromProfile) return fromProfile;
+  const fromOwner = String(cap?.userId || cap?.uid || '').trim();
+  return fromOwner || null;
 }
 
 export function capituloLiberadoParaUsuario(cap, user, perfil, options = {}) {
   if (!cap) return false;
-  if (user && usuarioTemPapelAdminPlataforma(user, perfil)) return true;
+  if (user && usuarioTemPapelAdminPlataforma(user, perfil, options.adminAccess || null)) return true;
 
   const raw = cap.publicReleaseAt;
   const release = typeof raw === 'number' ? raw : raw != null ? Number(raw) : null;
   if (release == null || Number.isNaN(release) || release <= Date.now()) return true;
 
   if (!cap.antecipadoMembros) return false;
-  const resolved = resolverCreatorIdDoCapitulo(cap, options.creatorIdFallback ?? null);
-  return podeLerCapituloAntecipado(user, perfil, resolved);
+  const resolved = resolverCreatorIdDoCapitulo(cap);
+  return podeLerCapituloAntecipado(user, perfil, resolved, options.adminAccess || null);
 }
 
-export function podeUsarAvataresPremiumDaLoja(user, perfil) {
-  if (usuarioTemPapelAdminPlataforma(user, perfil)) return true;
+export function podeUsarAvataresPremiumDaLoja(user, perfil, adminAccess = null) {
+  if (usuarioTemPapelAdminPlataforma(user, perfil, adminAccess)) return true;
   return assinaturaPlataformaPremiumAtiva(perfil);
 }
 
-export function descontoVipLojaAtivo(perfil, user) {
-  if (usuarioTemPapelAdminPlataforma(user, perfil)) return true;
+export function descontoVipLojaAtivo(perfil, user, adminAccess = null) {
+  if (usuarioTemPapelAdminPlataforma(user, perfil, adminAccess)) return true;
   return assinaturaPlataformaPremiumAtiva(perfil);
 }
 

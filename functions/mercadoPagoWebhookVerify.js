@@ -38,8 +38,8 @@ export function verifyMercadoPagoWebhookSignature(req, resourceId, secretTrimmed
   const manifest = `id:${id};request-id:${String(requestId).trim()};ts:${ts};`;
   const hmacHex = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
   try {
-    const a = Buffer.from(hmacHex, 'hex');
-    const b = Buffer.from(String(v1).trim().toLowerCase(), 'hex');
+    const a = globalThis.Buffer.from(hmacHex, 'hex');
+    const b = globalThis.Buffer.from(String(v1).trim().toLowerCase(), 'hex');
     if (a.length !== b.length || a.length === 0) {
       return { ok: false, reason: 'signature_mismatch' };
     }

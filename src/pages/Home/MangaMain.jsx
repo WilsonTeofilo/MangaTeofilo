@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
@@ -54,7 +54,7 @@ function randToken() {
   return Math.random().toString(36).slice(2, 8);
 }
 
-export default function MangaMain({ user }) {
+export default function MangaMain() {
   const navigate = useNavigate();
   const [loadingObras, setLoadingObras] = useState(true);
   const [loadingCapitulos, setLoadingCapitulos] = useState(true);
@@ -62,16 +62,24 @@ export default function MangaMain({ user }) {
   const [capitulos, setCapitulos] = useState([]);
   const [creatorsMap, setCreatorsMap] = useState({});
   const [heroIndex, setHeroIndex] = useState(0);
-  const [readingTick, setReadingTick] = useState(0);
+  const [lastReadSnapshot, setLastReadSnapshot] = useState(() => getLastRead());
+  const [readHistorySnapshot, setReadHistorySnapshot] = useState(() => dedupeHistoryByWork(getReadHistory()));
   const blocoImpressionRef = useRef(new Set());
 
-  useEffect(() => subscribeReadingProgress(() => setReadingTick((n) => n + 1)), []);
+  useEffect(
+    () =>
+      subscribeReadingProgress(() => {
+        setLastReadSnapshot(getLastRead());
+        setReadHistorySnapshot(dedupeHistoryByWork(getReadHistory()));
+      }),
+    []
+  );
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
     const unsub = onValue(obrasRef, (snapshot) => {
       if (!snapshot.exists()) {
-        // Legado: se ainda não criou "obras", mantém home single de Shito.
+        // Fallback institucional: se ainda nao existe catalogo publicado, mostramos a landing de Kokuin.
         setObrasPublicadas([]);
         setLoadingObras(false);
         return;
@@ -151,21 +159,20 @@ export default function MangaMain({ user }) {
   }, [capitulos, creatorsMap, obrasPublicadas]);
 
   const continueReading = useMemo(() => {
-    const lr = getLastRead();
+    const lr = lastReadSnapshot;
     if (!lr) return null;
     const obra = obrasPublicadas.find((o) => normalizarObraId(o.id) === normalizarObraId(lr.workId));
     if (!obra) return null;
     return { lr, obra };
-  }, [obrasPublicadas, readingTick]);
+  }, [lastReadSnapshot, obrasPublicadas]);
 
   const recentReads = useMemo(() => {
-    const raw = dedupeHistoryByWork(getReadHistory());
-    return raw.map((e) => ({
+    return readHistorySnapshot.map((e) => ({
       entry: e,
       obra: obrasPublicadas.find((o) => normalizarObraId(o.id) === normalizarObraId(e.workId)) || null,
     }))
     .filter((item) => Boolean(item.obra));
-  }, [obrasPublicadas, readingTick]);
+  }, [obrasPublicadas, readHistorySnapshot]);
 
   const nomeCriador = (obra) => resolveCreatorNameFromObra(obra, creatorsMap, capitulos);
 
@@ -244,7 +251,7 @@ export default function MangaMain({ user }) {
       <section className="home-multi-top">
         <aside className="home-top-ranking">
           <div className="home-top-ranking-head">
-            <h3>🔥 Em alta agora</h3>
+            <h3>Em alta agora</h3>
             <button
               type="button"
               onClick={() => {
@@ -454,7 +461,7 @@ export default function MangaMain({ user }) {
 
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>🆕 Novos capítulos</h2>
+          <h2>Novos capítulos</h2>
           <button type="button" onClick={() => navigate('/works')}>Ver tudo</button>
         </div>
         {dadosMulti.updates.length > 0 ? (
@@ -496,7 +503,7 @@ export default function MangaMain({ user }) {
 
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>🔥 Em alta (descoberta)</h2>
+          <h2>Em alta (descoberta)</h2>
         </div>
         <div className="home-obras-grid">
           {dadosMulti.trending.map((obra) => (
@@ -564,7 +571,7 @@ export default function MangaMain({ user }) {
       </section>
       <section className="home-multi-section">
         <div className="home-multi-section-head">
-          <h2>🚀 Crescendo agora</h2>
+          <h2>Crescendo agora</h2>
         </div>
         <div className="home-obras-grid">
           {dadosMulti.recomendados.map((obra) => (
@@ -598,4 +605,5 @@ export default function MangaMain({ user }) {
     </div>
   );
 }
+
 

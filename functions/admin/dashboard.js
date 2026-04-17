@@ -462,8 +462,7 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
     : [];
   const rawMarketingEvents = marketingSnap.exists() ? Object.values(marketingSnap.val() || {}) : [];
   const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
-  const pub = buildPublicProfilesMapFromUsuarios(usuarios);
-  const usuariosPublicos = pubSnap.exists() ? pubSnap.val() || {} : {};
+  const usuariosPublicos = buildPublicProfilesMapFromUsuarios(usuarios);
 
   const current = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, period);
   const compare = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, comparePeriod);

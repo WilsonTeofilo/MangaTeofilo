@@ -19,13 +19,10 @@ export default function UsernamePublicRoute() {
   const { userHandle: raw } = useParams();
   const location = useLocation();
   const [dest, setDest] = useState(null);
+  const norm = normalizeUsernameInput(raw);
 
   useEffect(() => {
-    const norm = normalizeUsernameInput(raw);
-    if (!norm) {
-      setDest('/');
-      return undefined;
-    }
+    if (!norm) return undefined;
     let alive = true;
     get(ref(db, `usernames/${norm}`))
       .then(async (snap) => {
@@ -62,8 +59,9 @@ export default function UsernamePublicRoute() {
     return () => {
       alive = false;
     };
-  }, [location.search, raw]);
+  }, [location.search, norm]);
 
+  if (!norm) return <Navigate to="/" replace />;
   if (dest === null) return <LoadingScreen />;
   return <Navigate to={dest} replace />;
 }

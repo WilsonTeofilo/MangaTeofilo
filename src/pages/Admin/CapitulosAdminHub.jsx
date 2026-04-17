@@ -1,39 +1,10 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
-import { onValue, query, orderByChild, equalTo, ref as dbRef } from 'firebase/database';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { auth, db } from '../../services/firebase';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
-import { obraCreatorId } from '../../config/obras';
+import { useCapitulosAdminHubData } from './hooks/useCapitulosAdminHubData';
 import './CapitulosAdminHub.css';
-
-function toSortedObras(raw) {
-  return Object.entries(raw || {})
-    .map(([id, data]) => ({ id, ...(data || {}) }))
-    .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-}
-
-function toRecordList(raw) {
-  return Object.entries(raw || {}).map(([id, data]) => ({ id, ...(data || {}) }));
-}
-
-function mergeCapitulosLists(...lists) {
-  const map = new Map();
-  lists.flat().forEach((item) => {
-    const id = String(item?.id || '').trim();
-    if (!id) return;
-    map.set(id, item);
-  });
-  return Array.from(map.values());
-}
-
-function capituloDaObra(cap, obraId) {
-  const alvo = String(obraId || '').trim().toLowerCase();
-  if (!alvo) return true;
-  const workId = String(cap?.workId || '').trim().toLowerCase();
-  const obraRef = String(cap?.obraId || '').trim().toLowerCase();
-  return (workId && workId === alvo) || (obraRef && obraRef === alvo);
-}
 
 export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
@@ -45,124 +16,28 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   const canAccessWorkspace = isCreatorWorkspace
     ? isMangaka
     : canAccessAdminPath('/admin/capitulos', adminAccess);
-  const [loading, setLoading] = useState(true);
-  const [obras, setObras] = useState([]);
-  const [allCapitulos, setAllCapitulos] = useState([]);
-  const [obraId, setObraId] = useState('');
+  const {
+    loading,
+    obras,
+    obraId,
+    setObraId,
+    obraAtual,
+    capitulosObra,
+    capsSemWorkId,
+  } = useCapitulosAdminHubData({
+    db,
+    canAccessWorkspace,
+    isCreatorWorkspace,
+    userUid: user?.uid || '',
+  });
 
   useEffect(() => {
     if (!canAccessWorkspace) {
       navigate('/');
-      return;
+      return undefined;
     }
-
-    const unsubObras = onValue(
-      dbRef(db, 'obras'),
-      (snapshot) => {
-        const list = toSortedObras(snapshot.exists() ? snapshot.val() : {});
-        const visibleObras =
-          isCreatorWorkspace && user?.uid
-            ? list.filter((obra) => obraCreatorId(obra) === user.uid)
-            : list;
-
-        setObras(visibleObras);
-        setObraId((current) => {
-          if (visibleObras.some((obra) => obra.id === current)) return current;
-          return visibleObras[0]?.id || '';
-        });
-        setLoading(false);
-      },
-      () => {
-        setObras([]);
-        setObraId('');
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      unsubObras();
-    };
-  }, [canAccessWorkspace, isCreatorWorkspace, navigate, user?.uid]);
-
-  useEffect(() => {
-    if (!canAccessWorkspace) {
-      setAllCapitulos([]);
-      return () => {};
-    }
-
-    if (isCreatorWorkspace) {
-      if (!user?.uid) {
-        setAllCapitulos([]);
-        return () => {};
-      }
-
-      const unsubCreator = onValue(
-        query(dbRef(db, 'capitulos'), orderByChild('creatorId'), equalTo(user.uid)),
-        (snapshot) => {
-          const lista = toRecordList(snapshot.exists() ? snapshot.val() : {});
-          setAllCapitulos(lista);
-        },
-        () => {
-          setAllCapitulos([]);
-        }
-      );
-
-      return () => unsubCreator();
-    }
-
-    if (!obraId) {
-      setAllCapitulos([]);
-      return () => {};
-    }
-
-    let workList = [];
-    let obraList = [];
-    const syncCaps = () => setAllCapitulos(mergeCapitulosLists(workList, obraList));
-
-    const unsubWork = onValue(
-      query(dbRef(db, 'capitulos'), orderByChild('workId'), equalTo(obraId)),
-      (snapshot) => {
-        workList = toRecordList(snapshot.exists() ? snapshot.val() : {});
-        syncCaps();
-      },
-      () => {
-        workList = [];
-        syncCaps();
-      }
-    );
-
-    const unsubObra = onValue(
-      query(dbRef(db, 'capitulos'), orderByChild('obraId'), equalTo(obraId)),
-      (snapshot) => {
-        obraList = toRecordList(snapshot.exists() ? snapshot.val() : {});
-        syncCaps();
-      },
-      () => {
-        obraList = [];
-        syncCaps();
-      }
-    );
-
-    return () => {
-      unsubWork();
-      unsubObra();
-    };
-  }, [canAccessWorkspace, isCreatorWorkspace, obraId, user?.uid]);
-
-  const obraAtual = useMemo(
-    () => obras.find((obra) => obra.id === obraId) || null,
-    [obras, obraId]
-  );
-
-  const capitulosObra = useMemo(() => {
-    const filtrados = allCapitulos.filter((cap) => capituloDaObra(cap, obraId));
-    return [...filtrados].sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0));
-  }, [allCapitulos, obraId]);
-
-  const capsSemWorkId = useMemo(
-    () => capitulosObra.filter((cap) => !String(cap.workId || '').trim()).length,
-    [capitulosObra]
-  );
+    return undefined;
+  }, [canAccessWorkspace, navigate]);
 
   if (loading) return <div className="shito-app-splash" aria-hidden="true" />;
 

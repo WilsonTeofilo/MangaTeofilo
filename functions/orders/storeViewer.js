@@ -17,6 +17,10 @@ import {
   orderItemsForCreator,
   sanitizeStoreOrderForViewer,
 } from './storeCommon.js';
+import {
+  buildStoreOrderViewerCapabilities,
+  STORE_ORDER_VIEWER_ROLE,
+} from '../shared/storeOrderDomain.js';
 
 function extractStoragePathFromDownloadUrl(url) {
   const raw = String(url || '').trim();
@@ -358,7 +362,15 @@ export const getStoreOrderForViewer = onCall({ region: 'us-central1' }, async (r
   const row = snap.val() || {};
   const uid = request.auth.uid;
   if (String(row.uid || '') === uid) {
-    return { ok: true, viewerRole: 'buyer', order: { id: orderId, ...row } };
+    const order = { id: orderId, ...row };
+    return {
+      ok: true,
+      viewerRole: STORE_ORDER_VIEWER_ROLE.BUYER,
+      order: {
+        ...order,
+        viewerCapabilities: buildStoreOrderViewerCapabilities(order, STORE_ORDER_VIEWER_ROLE.BUYER),
+      },
+    };
   }
   const ctx = await getAdminAuthContext(request.auth);
   const isCreator = ctx ? false : await isCreatorAccountAuth(request.auth);
@@ -366,16 +378,20 @@ export const getStoreOrderForViewer = onCall({ region: 'us-central1' }, async (r
     throw new HttpsError('permission-denied', 'Sem permissao.');
   }
   if (ctx && canManageStoreOrdersGlobally(ctx)) {
+    const order = { id: orderId, ...row };
     return {
       ok: true,
-      viewerRole: 'admin',
-      order: { id: orderId, ...row },
+      viewerRole: STORE_ORDER_VIEWER_ROLE.ADMIN,
+      order: {
+        ...order,
+        viewerCapabilities: buildStoreOrderViewerCapabilities(order, STORE_ORDER_VIEWER_ROLE.ADMIN),
+      },
     };
   }
   if (isCreator && orderItemsForCreator({ id: orderId, ...row }, uid).length > 0) {
     return {
       ok: true,
-      viewerRole: 'seller',
+      viewerRole: STORE_ORDER_VIEWER_ROLE.SELLER,
       order: sanitizeStoreOrderForViewer(orderId, { id: orderId, ...row }, uid),
     };
   }

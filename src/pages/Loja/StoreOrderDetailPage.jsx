@@ -18,6 +18,12 @@ import {
   shortOrderPublicId,
   storeOrderTimelineMeta,
 } from '../../utils/orderTrackingUi';
+import {
+  buildStoreOrderViewerCapabilities,
+  canResumeStoreOrderPayment,
+  normalizeStoreOrderStatus,
+  STORE_ORDER_VIEWER_ROLE,
+} from '../../utils/storeOrderDomain';
 import { STORE_INTERNAL_PREP_DAYS_MAX, STORE_INTERNAL_PREP_DAYS_MIN } from '../../utils/storeShipping';
 import './Loja.css';
 
@@ -119,14 +125,19 @@ export default function StoreOrderDetailPage({ user }) {
   const trackUrl = correiosRastreamentoUrl(track);
   const items = Array.isArray(order?.items) ? order.items : [];
   const creatorId = String(items[0]?.creatorId || '').trim();
-  const isBuyer = viewerRole === 'buyer';
-  const canViewShippingAddress = isBuyer || viewerRole === 'admin';
-  const isPendingPayment = String(order?.status || '').trim().toLowerCase() === 'pending';
+  const viewerCapabilities = useMemo(
+    () => order?.viewerCapabilities || buildStoreOrderViewerCapabilities(order, viewerRole),
+    [order, viewerRole]
+  );
+  const isBuyer = viewerRole === STORE_ORDER_VIEWER_ROLE.BUYER;
+  const canViewShippingAddress = viewerCapabilities.canViewShippingAddress === true;
+  const isPendingPayment = normalizeStoreOrderStatus(order?.status, '') === 'pending';
   const expiresAt = Number(order?.expiresAt || 0);
   const orderExpired = isPendingPayment && expiresAt > 0 && Date.now() > expiresAt;
-  const canAccessPaidFiles = ['paid', 'in_production', 'shipped', 'delivered'].includes(
-    String(order?.status || '').trim().toLowerCase()
-  );
+  const canAccessPaidFiles = viewerCapabilities.canAccessPaidFiles === true;
+  const canResumePayment = viewerCapabilities.canResumePayment === true && canResumeStoreOrderPayment(order);
+  const canSeePayoutStatus = viewerCapabilities.canSeePayoutStatus === true;
+  const canSeeProductionChecklist = viewerCapabilities.canSeeProductionChecklist === true;
 
   const checklistEntries = useMemo(() => {
     const c = order?.productionChecklist && typeof order.productionChecklist === 'object' ? order.productionChecklist : {};
@@ -242,7 +253,7 @@ export default function StoreOrderDetailPage({ user }) {
       </section>
 
       <div className="ot-detail-actions" style={{ marginBottom: '16px' }}>
-        {isBuyer && isPendingPayment && !orderExpired ? (
+        {canResumePayment && !orderExpired ? (
           <button
             className="ot-btn ot-btn--primary"
             type="button"
@@ -338,7 +349,7 @@ export default function StoreOrderDetailPage({ user }) {
           Mercado Pago: {order.paymentStatus ? String(order.paymentStatus) : '—'}
           {order.paymentId ? ` · ID ${String(order.paymentId).slice(-10)}` : ''}
         </p>
-        {!isBuyer ? (
+        {canSeePayoutStatus ? (
           <p style={{ marginTop: '8px', marginBottom: 0 }}>
             Repasse: {formatLojaPayoutStatusPt(order.payoutStatus)}
           </p>
@@ -384,7 +395,7 @@ export default function StoreOrderDetailPage({ user }) {
         </section>
       ) : null}
 
-      {!isBuyer && checklistEntries.length ? (
+      {canSeeProductionChecklist && checklistEntries.length ? (
         <section className="ot-detail-block">
         <h2>Produção (checklist)</h2>
           <ul className="ot-detail-checklist">

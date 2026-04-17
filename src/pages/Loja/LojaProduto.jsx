@@ -45,6 +45,7 @@ export default function LojaProduto({ user, perfil }) {
   const sizes = Array.isArray(product?.sizes)
     ? product.sizes.map((entry) => String(entry || '').trim()).filter(Boolean)
     : [];
+  const resolvedSize = sizes.includes(size) ? size : sizes[0] || '';
   const managedStock = inventoryMode !== 'on_demand';
   const stock = Math.max(0, Number(product?.stock || 0));
   const maxQty = managedStock ? Math.max(1, stock) : 99;
@@ -63,21 +64,10 @@ export default function LojaProduto({ user, perfil }) {
     return () => unsubProd();
   }, [id]);
 
-  useEffect(() => {
-    if (!product) return;
-    if (sizes.length && !sizes.includes(size)) {
-      setSize(sizes[0]);
-    }
-  }, [product, size, sizes]);
-
   const images = useMemo(() => {
     if (!product || !Array.isArray(product.images)) return [];
     return product.images.map((url) => String(url || '').trim()).filter(Boolean);
   }, [product]);
-
-  useEffect(() => {
-    setImgIdx(0);
-  }, [id, images.length]);
 
   useEffect(() => {
     let active = true;
@@ -89,7 +79,7 @@ export default function LojaProduto({ user, perfil }) {
       }
       try {
         const items = [{ productId: product.id, quantity: qty }];
-        if (type === 'roupa' && size) items[0].size = size;
+        if (type === 'roupa' && resolvedSize) items[0].size = resolvedSize;
         const { data } = await quoteStoreShipping({ items });
         if (!active) return;
         const quote = data?.quote || null;
@@ -114,7 +104,7 @@ export default function LojaProduto({ user, perfil }) {
     return () => {
       active = false;
     };
-  }, [buyerMissingFields.length, product, qty, quoteStoreShipping, size, type, user?.uid]);
+  }, [buyerMissingFields.length, product, qty, quoteStoreShipping, resolvedSize, type, user?.uid]);
 
   if (!product) {
     return (
@@ -147,7 +137,8 @@ export default function LojaProduto({ user, perfil }) {
   const finalPrice = Number(serverPricing?.pricedLine?.unitPrice ?? basePrice);
   const finalSubtotal = Number.isFinite(Number(serverPricing?.subtotal)) ? Number(serverPricing.subtotal) : null;
   const badges = getStoreProductBadges(product);
-  const mainImg = images.length ? images[Math.min(imgIdx, images.length - 1)] : '/assets/fotos/shito.jpg';
+  const resolvedImgIdx = images.length ? Math.min(imgIdx, images.length - 1) : 0;
+  const mainImg = images.length ? images[resolvedImgIdx] : '/assets/fotos/shito.jpg';
   const collectionLine = getProductCollectionKey(product);
   const dropLine = getProductDropLabel(product);
   const selectedShippingOption = shippingQuote?.options?.find((option) => option.serviceCode === shippingService) || null;
@@ -180,14 +171,14 @@ export default function LojaProduto({ user, perfil }) {
       setErr('Pedidos estao fechados.');
       return;
     }
-    if (type === 'roupa' && sizes.length && !sizes.includes(size)) {
+    if (type === 'roupa' && sizes.length && !resolvedSize) {
       setErr('Escolha um tamanho.');
       return;
     }
     setLoadingCheckout(true);
     try {
       const item = { productId: product.id, quantity: managedStock ? Math.min(qty, stock) : qty };
-      if (type === 'roupa' && size) item.size = size;
+      if (type === 'roupa' && resolvedSize) item.size = resolvedSize;
       const url = await openStoreCheckout(functions, [item], shippingService);
       window.location.assign(url);
     } catch (e) {
@@ -213,8 +204,8 @@ export default function LojaProduto({ user, perfil }) {
                   key={src}
                   type="button"
                   role="tab"
-                  aria-selected={index === imgIdx}
-                  className={`loja-product-thumb ${index === imgIdx ? 'loja-product-thumb--active' : ''}`}
+                  aria-selected={index === resolvedImgIdx}
+                  className={`loja-product-thumb ${index === resolvedImgIdx ? 'loja-product-thumb--active' : ''}`}
                   onClick={() => setImgIdx(index)}
                 >
                   <img src={src} alt="" referrerPolicy="no-referrer" crossOrigin="anonymous" />
@@ -276,7 +267,7 @@ export default function LojaProduto({ user, perfil }) {
           {type === 'roupa' && sizes.length ? (
             <label className="loja-size-label">
               Tamanho
-              <select value={size} onChange={(e) => setSize(e.target.value)} className="loja-size-select">
+              <select value={resolvedSize} onChange={(e) => setSize(e.target.value)} className="loja-size-select">
                 {sizes.map((entry) => (
                   <option key={entry} value={entry}>
                     {entry}

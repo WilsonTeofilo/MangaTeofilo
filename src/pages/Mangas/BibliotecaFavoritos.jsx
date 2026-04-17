@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../../services/firebase';
 import {
   obterObraIdCapitulo,
-  obraCreatorId,
   obraSegmentoUrlPublica,
 } from '../../config/obras';
 import { capituloLiberadoParaUsuario } from '../../utils/capituloLancamento';
@@ -107,11 +106,8 @@ export default function BibliotecaFavoritos({ user, perfil }) {
         const favMeta = favoritosMap?.[obraIdRaw] || favoritosMap?.[obraId] || {};
         const obra = obrasMap.get(obraId) || null;
         const listaCaps = (capitulosPorObra.get(obraId) || []).sort(capSortDesc);
-        const fallbackCreator = obra ? obraCreatorId(obra) : '';
         const capAcessivel =
-          listaCaps.find((cap) =>
-            capituloLiberadoParaUsuario(cap, user, perfil, { creatorIdFallback: fallbackCreator })
-          ) || null;
+          listaCaps.find((cap) => capituloLiberadoParaUsuario(cap, user, perfil)) || null;
         const capUltimo = listaCaps[0] || null;
         const obraExcluida = !obra;
         return {

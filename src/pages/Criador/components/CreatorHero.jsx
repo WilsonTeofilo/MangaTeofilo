@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { AVATAR_FALLBACK } from '../../../constants';
 import { applyImageFallback, formatarPrecoBrl } from '../creatorPublicProfileUtils';
 
 export default function CreatorHero({
@@ -45,7 +46,7 @@ export default function CreatorHero({
             alt={publicLine}
             referrerPolicy="no-referrer"
             crossOrigin="anonymous"
-            onError={(e) => applyImageFallback(e)}
+            onError={(e) => applyImageFallback(e, AVATAR_FALLBACK)}
           />
         </div>
         <div className="criador-hero__content">

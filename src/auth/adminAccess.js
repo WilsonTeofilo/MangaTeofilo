@@ -94,10 +94,7 @@ export async function resolveAdminAccess(user, { force = false } = {}) {
   }
 
   const panelRoleFromClaim = String(tokenResult?.claims?.panelRole || '').trim().toLowerCase();
-  const byClaim =
-    tokenResult?.claims?.admin === true ||
-    panelRoleFromClaim === 'admin' ||
-    panelRoleFromClaim === 'super_admin';
+  const byClaim = panelRoleFromClaim === 'super_admin';
   const claimSuperAdmin = panelRoleFromClaim === 'super_admin';
 
   const base = {

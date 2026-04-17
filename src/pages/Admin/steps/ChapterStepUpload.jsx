@@ -40,7 +40,10 @@ export default function ChapterStepUpload({
           <input
             type="file"
             accept="image/jpeg,image/jpg,image/png,image/webp"
-            onChange={(e) => handleSelecionarCapa(e.target.files?.[0])}
+            onChange={(e) => {
+              handleSelecionarCapa(e.target.files?.[0]);
+              e.target.value = '';
+            }}
           />
         </label>
         <label className="admin-capa-file-label">

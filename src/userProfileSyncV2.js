@@ -16,8 +16,22 @@ async function syncPublicProfileIdentity(uid, source = {}) {
     [`usuarios/${uid}/publicProfile/userName`]: publicProfile.userName || DEFAULT_USER_DISPLAY_NAME,
     [`usuarios/${uid}/publicProfile/userHandle`]: publicProfile.userHandle || null,
     [`usuarios/${uid}/publicProfile/userAvatar`]: publicProfile.userAvatar || AVATAR_FALLBACK,
-    [`usuarios/${uid}/publicProfile/signupIntent`]: publicProfile.signupIntent || 'reader',
+    [`usuarios/${uid}/publicProfile/isCreatorProfile`]: publicProfile.isCreatorProfile === true,
     [`usuarios/${uid}/publicProfile/status`]: publicProfile.status || '',
+    [`usuarios/${uid}/publicProfile/creatorApplicationStatus`]:
+      publicProfile.creatorApplicationStatus || null,
+    [`usuarios/${uid}/publicProfile/creatorDisplayName`]: publicProfile.creatorDisplayName || null,
+    [`usuarios/${uid}/publicProfile/creatorUsername`]: publicProfile.creatorUsername || null,
+    [`usuarios/${uid}/publicProfile/creatorBio`]: publicProfile.creatorBio || null,
+    [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: publicProfile.creatorBannerUrl || null,
+    [`usuarios/${uid}/publicProfile/instagramUrl`]: publicProfile.instagramUrl || null,
+    [`usuarios/${uid}/publicProfile/youtubeUrl`]: publicProfile.youtubeUrl || null,
+    [`usuarios/${uid}/publicProfile/readerProfilePublic`]: publicProfile.readerProfilePublic === true,
+    [`usuarios/${uid}/publicProfile/readerProfileAvatarUrl`]: publicProfile.readerProfileAvatarUrl || AVATAR_FALLBACK,
+    [`usuarios/${uid}/publicProfile/readerSince`]: publicProfile.readerSince || Date.now(),
+    [`usuarios/${uid}/publicProfile/creatorStatus`]: publicProfile.creatorStatus || null,
+    [`usuarios/${uid}/publicProfile/creatorProfile`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile || null : null,
     [`usuarios/${uid}/publicProfile/updatedAt`]: Date.now(),
   });
 }

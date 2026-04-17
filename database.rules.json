@@ -12,7 +12,7 @@
       "$h": {
         ".read": true,
         ".validate": "$h.matches(/^[a-z][a-z0-9_]{2,19}$/) && $h !== 'admin' && $h !== 'support' && $h !== 'api' && $h !== 'root' && $h !== 'staff' && $h !== 'moderador' && $h !== 'mangateofilo' && $h !== 'shito' && $h !== 'suporte' && $h !== 'sistema' && $h !== 'oficial'",
-        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')) || (!data.exists() && newData.val() === auth.uid) || (data.exists() && data.val() === auth.uid && newData.val() === auth.uid) || (data.exists() && data.val() === auth.uid && !newData.exists()))"
+        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')) || (!data.exists() && newData.val() === auth.uid) || (data.exists() && data.val() === auth.uid && newData.val() === auth.uid) || (data.exists() && data.val() === auth.uid && !newData.exists()))"
       }
     },
 
@@ -23,7 +23,7 @@
 
     "admins": {
       "registry": {
-        ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+        ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
         ".write": "auth != null && auth.token.panelRole === 'super_admin'"
       }
     },
@@ -33,7 +33,7 @@
       ".write": false,
       ".indexOn": ["creatorId", "obraId", "workId"],
       "$capId": {
-        ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
+        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessCapitulos').val() === true) || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
         "obraId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
         },
@@ -69,7 +69,7 @@
         "comentarios": {
           ".read": true,
           "$comentId": {
-            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && ((!data.exists() && newData.hasChildren(['texto','userId','data','likes']) && newData.child('userId').val() === auth.uid && newData.child('texto').isString() && newData.child('texto').val().length > 0 && newData.child('texto').val().length <= 500 && newData.child('likes').isNumber() && newData.child('likes').val() === 0 && (!newData.hasChild('parentId') || (newData.child('parentId').isString() && newData.child('parentId').val().matches(/^[A-Za-z0-9_\\-]{10,128}$/)))) || (data.exists() && (((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')) || (newData.child('texto').val() === data.child('texto').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('data').val() === data.child('data').val() && ((!newData.hasChild('parentId') && !data.hasChild('parentId')) || (newData.hasChild('parentId') && data.hasChild('parentId') && newData.child('parentId').val() === data.child('parentId').val())) && newData.child('likes').isNumber() && newData.child('likes').val() >= 0))))",
+            ".write": "auth != null && root.child('usuarios').child(auth.uid).child('status').val() === 'ativo' && ((!data.exists() && newData.hasChildren(['texto','userId','data','likes']) && newData.child('userId').val() === auth.uid && newData.child('texto').isString() && newData.child('texto').val().length > 0 && newData.child('texto').val().length <= 500 && newData.child('likes').isNumber() && newData.child('likes').val() === 0 && (!newData.hasChild('parentId') || (newData.child('parentId').isString() && newData.child('parentId').val().matches(/^[A-Za-z0-9_\\-]{10,128}$/)))) || (data.exists() && ((((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessCapitulos').val() === true || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessObras').val() === true)) || (newData.child('texto').val() === data.child('texto').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('data').val() === data.child('data').val() && ((!newData.hasChild('parentId') && !data.hasChild('parentId')) || (newData.hasChild('parentId') && data.hasChild('parentId') && newData.child('parentId').val() === data.child('parentId').val())) && newData.child('likes').isNumber() && newData.child('likes').val() >= 0))))",
             "likes": {
               ".write": "auth != null && data.isNumber() && newData.isNumber() && newData.val() >= 0 && (newData.val() === data.val() + 1 || newData.val() === data.val() - 1)"
             },
@@ -89,7 +89,7 @@
       ".indexOn": ["creatorId"],
       "$obraId": {
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
-        ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessObras').val() === true) || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
         "titulo": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
         },
@@ -160,7 +160,7 @@
 
     "creatorData": {
       "$creatorUid": {
-        ".read": "auth != null && (auth.uid === $creatorUid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+        ".read": "auth != null && (auth.uid === $creatorUid || root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin' || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessFinanceiro').val() === true)",
         ".write": false,
         "balance": {
           ".write": false
@@ -176,7 +176,7 @@
         },
         "promotions": {
           "$promoId": {
-            ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.uid === $creatorUid && auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists()) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))"
+            ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessFinanceiro').val() === true) || (auth.uid === $creatorUid && auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists()) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))"
           }
         }
       }
@@ -184,20 +184,20 @@
 
     "avatares": {
       ".read": true,
-      ".write": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
+      ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessAvatares').val() === true)"
     },
 
     "loja": {
       "config": {
         ".read": true,
-        ".write": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
+        ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessLojaAdmin').val() === true)"
       },
       "produtos": {
         ".read": true,
         ".write": false,
         ".indexOn": ["creatorId"],
         "$productId": {
-          ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+          ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessLojaAdmin').val() === true) || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
           "title": {
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length >= 2 && newData.val().length <= 120)"
           },
@@ -268,8 +268,8 @@
       "pedidos": {
         ".indexOn": ["uid", "createdAt"],
         "$pedidoId": {
-          ".read": "auth != null && (data.child('uid').val() === auth.uid || data.child('sellers').child(auth.uid).val() === true || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-          ".write": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')"
+          ".read": "auth != null && (data.child('uid').val() === auth.uid || data.child('sellers').child(auth.uid).val() === true || root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin' || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessPedidos').val() === true || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessLojaAdmin').val() === true)",
+          ".write": "auth != null && (root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin' || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessPedidos').val() === true || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessLojaAdmin').val() === true)"
         }
       },
       "printOnDemandOrders": {
@@ -279,14 +279,14 @@
     },
 
     "financas": {
-      ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+      ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin' || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessDashboard').val() === true || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessFinanceiro').val() === true)",
       ".write": false
     },
 
     "usuarios": {
       "$uid": {
-        ".read": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))",
-        ".write": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))",
+        ".read": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))",
+        ".write": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))",
         "userName":          { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60" },
         "userHandle":        { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')" },
         "email":             { ".write": "auth != null && auth.uid === $uid && !data.exists()", ".validate": "!newData.exists() || (auth.token.email != null && newData.isString() && newData.val() === auth.token.email && newData.val().length <= 100)" },
@@ -371,8 +371,8 @@
             "birthDate": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/))" }
           },
           "social": {
-            "instagram": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" },
-            "youtube": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" }
+            "instagram": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/([A-Za-z0-9-]+\\.)*instagram\\.com(\\/.*)?$/))" },
+            "youtube": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/(([A-Za-z0-9-]+\\.)*youtube\\.com|([A-Za-z0-9-]+\\.)*youtu\\.be)(\\/.*)?$/))" }
           },
           "monetization": {
             "enabled": { ".write": false, ".validate": "!newData.exists() || newData.isBoolean()" },
@@ -403,125 +403,125 @@
         "sourceAcquisition": { ".validate": "newData.isString() && newData.val().length > 0 && (!data.exists() || newData.val() === data.val())" },
         "role": {
           ".write": false,
-          ".validate": "(newData.val() === 'user' || newData.val() === 'admin' || newData.val() === 'mangaka' || newData.val() === 'super_admin' || newData.val() === 'membro') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))"
+          ".validate": "(newData.val() === 'user' || newData.val() === 'mangaka' || newData.val() === 'super_admin') && ((!data.exists() && newData.val() === 'user') || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))))"
         },
         "status": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-          ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
+          ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
+          ".validate": "(newData.val() === 'pendente' || newData.val() === 'ativo' || newData.val() === 'inativo' || newData.val() === 'banido') && ((!data.exists() && newData.val() === 'pendente') || (data.exists() && ((root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin') || (auth.uid === $uid && data.val() === 'pendente' && newData.val() === 'ativo') || newData.val() === data.val())))"
         },
-        "currentPlanId": { ".write": false, ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
-        "lastPaymentAt": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
-        "premium5dNotifiedForUntil": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))))" },
+        "currentPlanId": { ".write": false, ".validate": "(newData.val() === null || newData.isString()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))))" },
+        "lastPaymentAt": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))))" },
+        "premium5dNotifiedForUntil": { ".write": false, ".validate": "(newData.val() === null || newData.isNumber()) && ((!data.exists() && newData.val() === null) || (data.exists() && (newData.val() === data.val() || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))))" },
         "creatorDisplayName": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)" },
         "creatorBio": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)" },
         "creatorTermsAccepted": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
-        "instagramUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" },
-        "youtubeUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200)" },
+        "instagramUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/([A-Za-z0-9-]+\\.)*instagram\\.com(\\/.*)?$/))" },
+        "youtubeUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.val() === null || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/(([A-Za-z0-9-]+\\.)*youtube\\.com|([A-Za-z0-9-]+\\.)*youtu\\.be)(\\/.*)?$/))" },
         "creatorBannerUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))" },
         "creatorOnboardingChecklistHidden": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "creatorOnboardingStoreSkipped": { ".validate": "!newData.exists() || newData.isBoolean()" },
         "readerProfilePublic": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
         "readerProfileAvatarUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))" },
         "publicProfile": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin') || (data.child('isCreatorProfile').val() === true && root.child('usuarios').child($uid).child('role').val() === 'mangaka') || root.child('usuarios').child($uid).child('readerProfilePublic').val() === true",
+          ".read": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin') || (data.child('isCreatorProfile').val() === true && root.child('usuarios').child($uid).child('role').val() === 'mangaka') || root.child('usuarios').child($uid).child('readerProfilePublic').val() === true",
           ".write": false,
           "uid": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || newData.val() === $uid"
           },
           "userName": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length > 0 && newData.val().length <= 60)"
           },
           "userHandle": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || !newData.isString() || newData.val().length === 0 || (newData.val().matches(/^[a-z][a-z0-9_]{2,19}$/) && newData.val() !== 'admin' && newData.val() !== 'support' && newData.val() !== 'api' && newData.val() !== 'root' && newData.val() !== 'staff' && newData.val() !== 'moderador' && newData.val() !== 'mangateofilo' && newData.val() !== 'shito' && newData.val() !== 'suporte')"
           },
           "userAvatar": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
           },
           "isCreatorProfile": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || newData.isBoolean()"
           },
           "signupIntent": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.val() === 'reader' || newData.val() === 'creator')"
           },
           "status": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || newData.isString()"
           },
           "creatorDisplayName": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)"
           },
           "creatorUsername": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)"
           },
           "creatorBio": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)"
           },
           "creatorBannerUrl": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
           },
           "instagramUrl": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/([A-Za-z0-9-]+\\.)*instagram\\.com(\\/.*)?$/))"
           },
           "youtubeUrl": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/(([A-Za-z0-9-]+\\.)*youtube\\.com|([A-Za-z0-9-]+\\.)*youtu\\.be)(\\/.*)?$/))"
           },
           "readerProfilePublic": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || newData.isBoolean()"
           },
           "readerProfileAvatarUrl": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
           },
           "readerSince": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || newData.isNumber()"
           },
           "creatorStatus": { ".write": false, ".validate": "!newData.exists() || newData.isString()" },
           "updatedAt": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
             ".validate": "!newData.exists() || newData.isNumber()"
           },
           "creatorProfile": {
             ".write": false,
             ".validate": "!newData.exists() || newData.hasChildren(['displayName','username','bioFull','socialLinks'])",
             "displayName": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
               ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 60)"
             },
             "username": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
               ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 40)"
             },
             "avatarUrl": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
               ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))"
             },
             "bioFull": {
-              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+              ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
               ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 450)"
             },
             "socialLinks": {
               ".write": false,
               "instagramUrl": {
-                ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+                ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/([A-Za-z0-9-]+\\.)*instagram\\.com(\\/.*)?$/))"
               },
               "youtubeUrl": {
-                ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
-                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)"
+                ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
+                ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200 && newData.val().matches(/^https?:\\/\\/(([A-Za-z0-9-]+\\.)*youtube\\.com|([A-Za-z0-9-]+\\.)*youtu\\.be)(\\/.*)?$/))"
               }
             }
           },
@@ -539,7 +539,7 @@
           }
         },
         "userEntitlements": {
-          ".read": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin'))",
+          ".read": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))",
           ".write": false
         },
         "notifications": {
@@ -574,7 +574,7 @@
 
     "creators": {
       "$creatorId": {
-        ".read": "auth != null && (auth.uid === $creatorId || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+        ".read": "auth != null && (auth.uid === $creatorId || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
         ".write": false,
         "stats": {
           "$field": {
@@ -586,7 +586,7 @@
 
     "creatorStatsDaily": {
       "$creatorId": {
-        ".read": "auth != null && (auth.uid === $creatorId || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin')",
+        ".read": "auth != null && (auth.uid === $creatorId || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
         ".write": false,
         "$dateKey": {
           "$metric": {
@@ -598,7 +598,7 @@
 
     "workRetention": {
       "$workId": {
-        ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.admin === true || auth.token.panelRole === 'admin' || auth.token.panelRole === 'super_admin' || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
+        ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin' || root.child('obras').child($workId).child('creatorId').val() === auth.uid)",
         ".write": false,
         "chapters": {
           "$chapterId": {

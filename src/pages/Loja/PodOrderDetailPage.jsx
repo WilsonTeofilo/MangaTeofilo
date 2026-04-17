@@ -55,7 +55,7 @@ export default function PodOrderDetailPage({ user }) {
     if (!Number(order.expiresAt || 0)) return undefined;
     const t = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [order?.id, order?.status, order?.expiresAt]);
+  }, [order]);
 
   useEffect(() => {
     let on = true;
@@ -353,34 +353,22 @@ export default function PodOrderDetailPage({ user }) {
         <OrderTimeline steps={steps} layout="vertical" />
       </section>
 
-      {String(order.status || '').toLowerCase() === 'pending_payment' && !String(order.checkoutUrl || '').trim() ? (
-        <p className="ot-card__pay-hint ot-detail-pay-hint" role="status">
-          Não há link de pagamento salvo neste pedido (por exemplo, se o fluxo foi interrompido). Gere um novo link para
-          pagar com o Mercado Pago; após a aprovação, o status atualiza automaticamente.
-        </p>
-      ) : null}
-
       <div className="ot-detail-actions" style={{ marginBottom: '16px' }}>
-        {isPodStatusPendingPayment(order.status) && String(order.checkoutUrl || '').trim() ? (
+        {isPodStatusPendingPayment(order.status) ? (
           paymentExpired ? (
             <span className="ot-btn ot-btn--primary ot-btn--disabled" style={{ opacity: 0.55, cursor: 'not-allowed' }}>
               Prazo de pagamento expirado
             </span>
           ) : (
-            <a className="ot-btn ot-btn--primary" href={String(order.checkoutUrl)} rel="noopener noreferrer">
-              Pagar agora (Mercado Pago)
-            </a>
+            <button
+              type="button"
+              className="ot-btn ot-btn--primary"
+              onClick={handleResumeCheckout}
+              disabled={resumeLoading}
+            >
+              {resumeLoading ? 'Gerando link…' : 'Pagar agora (Mercado Pago)'}
+            </button>
           )
-        ) : null}
-        {isPodStatusPendingPayment(order.status) && !String(order.checkoutUrl || '').trim() ? (
-          <button
-            type="button"
-            className="ot-btn ot-btn--primary"
-            onClick={handleResumeCheckout}
-            disabled={resumeLoading || paymentExpired}
-          >
-            {resumeLoading ? 'Gerando link…' : 'Gerar link de pagamento'}
-          </button>
         ) : null}
         {track && trackUrl ? (
           <a className="ot-btn ot-btn--primary" href={trackUrl} target="_blank" rel="noopener noreferrer">

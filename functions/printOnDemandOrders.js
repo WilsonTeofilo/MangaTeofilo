@@ -22,7 +22,9 @@ import {
   REGIONAL_FREIGHT_DISCOUNT_RATE,
   STORE_PROMO_THRESHOLDS,
 } from './shared/printOnDemandPricing.js';
+import { buildPodSaleModeOperation, normalizePodSaleMode } from './shared/podSaleMode.js';
 import {
+  creatorAccessIsApprovedFromDb,
   readCreatorStatsFromDb,
   resolveCreatorMonetizationPreferenceFromDb,
   resolveCreatorMonetizationStatusFromDb,
@@ -228,7 +230,7 @@ function assertPodUrlsInUserStorage(uid, pdfUrl, coverUrl) {
 }
 
 function usuarioIsMangaka(row) {
-  return String(row?.role || '').trim().toLowerCase() === 'mangaka';
+  return creatorAccessIsApprovedFromDb(row);
 }
 
 function usuarioMonetizacaoAtiva(row) {
@@ -278,7 +280,7 @@ async function pushPodOrderEvent(db, orderId, evt) {
 }
 
 /** UIDs da equipe (super admins + registry exceto mangaka) — alinhado a `notifyCreatorRequestAdmins` em index.js */
-async function collectStaffAdminUids(db) {
+async function collectStaffAdminUids() {
   const adminIds = await listStaffUids();
   return [...new Set(adminIds.map((uid) => String(uid || '').trim()).filter(Boolean))];
 }
@@ -366,22 +368,20 @@ async function pushUserNotification(db, uid, payload) {
  */
 export async function persistPrintOnDemandOrder(db, uid, body) {
   assertNoClientControlledPodFinancialFields(body);
-  const saleModel = String(body.saleModel || '').trim().toLowerCase();
+  const saleModelRaw = String(body.saleModel || '').trim().toLowerCase();
+  const saleModel = normalizePodSaleMode(saleModelRaw);
+  const podOperation = buildPodSaleModeOperation(saleModel);
   const format = String(body.format || '').trim().toLowerCase();
   const quantity = Number(body.quantity);
 
-  if (
-    saleModel !== SALE_MODEL.PLATFORM &&
-    saleModel !== SALE_MODEL.PERSONAL &&
-    saleModel !== SALE_MODEL.STORE_PROMO
-  ) {
+  if (saleModelRaw !== saleModel) {
     throw new HttpsError('invalid-argument', 'Modelo de venda invalido.');
   }
   if (format !== BOOK_FORMAT.TANKOBON && format !== BOOK_FORMAT.MEIO_TANKO) {
     throw new HttpsError('invalid-argument', 'Formato invalido.');
   }
 
-  if (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO) {
+  if (podOperation.touchesCatalog) {
     if (!PLATFORM_QUANTITIES.includes(quantity)) {
       throw new HttpsError('invalid-argument', 'Quantidade invalida para este modo de loja.');
     }
@@ -406,7 +406,7 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
   assertPodUrlsInUserStorage(uid, pdfUrl, coverUrl);
 
   const addr = body.shippingAddress && typeof body.shippingAddress === 'object' ? body.shippingAddress : {};
-  const needAddress = saleModel === SALE_MODEL.PERSONAL;
+  const needAddress = podOperation.requiresShippingAddress;
   const zipRaw = String(addr.zip || addr.cep || '').trim();
   const zipDigits = zipRaw.replace(/\D/g, '');
   const streetBase = String(addr.street || addr.logradouro || addr.streetBase || '').trim();
@@ -505,6 +505,12 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
         likes: elig.likes,
         thresholds: elig.thresholds,
       },
+      operation: {
+        catalogScope: podOperation.catalogScope,
+        productionScope: podOperation.productionScope,
+        financeScope: podOperation.financeScope,
+        creatorGetsProfit: podOperation.creatorGetsProfit,
+      },
       ...calc,
       platformApprovalDays: pr.high,
       platformListingUnlocksOnStatus: 'paid',
@@ -522,6 +528,12 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
       saleModel,
       format,
       quantity,
+      operation: {
+        catalogScope: podOperation.catalogScope,
+        productionScope: podOperation.productionScope,
+        financeScope: podOperation.financeScope,
+        creatorGetsProfit: podOperation.creatorGetsProfit,
+      },
       ...calc,
       shippingNote: 'Sem frete nesta etapa. Depois do pagamento confirmado, o admin tem ate 2 dias uteis para aprovar e liberar o produto na loja.',
       platformApprovalDays: pr.high,
@@ -550,6 +562,12 @@ export async function persistPrintOnDemandOrder(db, uid, body) {
       saleModel,
       format,
       quantity,
+      operation: {
+        catalogScope: podOperation.catalogScope,
+        productionScope: podOperation.productionScope,
+        financeScope: podOperation.financeScope,
+        creatorGetsProfit: podOperation.creatorGetsProfit,
+      },
       ...calc,
       shippingBRL,
       shippingCarrierDefault: 'Correios',

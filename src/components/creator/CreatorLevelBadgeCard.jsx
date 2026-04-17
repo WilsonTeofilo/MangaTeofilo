@@ -9,15 +9,14 @@ const nf = new Intl.NumberFormat('pt-BR');
  */
 export default function CreatorLevelBadgeCard({ progressVm, className = '' }) {
   const vm = progressVm;
-
-  if (!vm) return null;
-
-  const nextMeta = vm.nextLevelMeta;
+  const nextMeta = vm?.nextLevelMeta || null;
   const gapLines = useMemo(() => {
-    if (!nextMeta) return [];
+    if (!vm || !nextMeta) return [];
     const rows = vm.nextLevel === 2 ? vm.monetizationGapRows : vm.nextLevelGapRows;
     return rows.map((row) => `Faltam ${nf.format(row.left)} ${row.label}`);
-  }, [nextMeta, vm.monetizationGapRows, vm.nextLevel, vm.nextLevelGapRows]);
+  }, [nextMeta, vm]);
+
+  if (!vm) return null;
 
   return (
     <div className={`creator-lvl-card ${className}`.trim()}>

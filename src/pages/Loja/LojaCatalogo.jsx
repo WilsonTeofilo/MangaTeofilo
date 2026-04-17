@@ -57,7 +57,7 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const isAdmin = adminAccess?.canAccessAdmin === true && adminAccess?.isMangaka !== true;
-  const vip = descontoVipLojaAtivo(perfil, user);
+  const vip = descontoVipLojaAtivo(perfil, user, adminAccess);
   const buyerMissingFields = useMemo(
     () => getStoreBuyerProfileMissingFields(perfil?.buyerProfile),
     [perfil?.buyerProfile]

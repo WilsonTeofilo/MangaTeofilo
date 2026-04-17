@@ -3,95 +3,25 @@ import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../../services/firebase';
+import { labelPrecoPremium } from '../../config/premiumAssinatura';
+import {
+  PRECO_BASE,
+  PROMO_TEMPLATES,
+  avisosAntesPublicarComEmail,
+  buildApoieTrackedUrl,
+  downloadCsv,
+  formatarPct1,
+  humanizarDuracaoMs,
+  kpisPerformance,
+  pillClassCampanhaStatus,
+  statusCampanhaDerivado,
+  textoLogPromocao,
+  textoResumoEmailPromocao,
+  toDatetimeLocal,
+} from './financeiroAdminUtils';
+import useFinanceiroPromoPanel from './hooks/useFinanceiroPromoPanel';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { formatarDataHoraSegBr } from '../../utils/datasBr';
-
-function escapeCsv(value) {
-  const s = String(value ?? '');
-  if (/[",\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
-
-function downloadCsv(filename, headers, rows) {
-  const csv = [headers.join(';'), ...rows.map((row) => row.map(escapeCsv).join(';'))].join('\r\n');
-  const blob = new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function formatarPct1(n) {
-  return `${Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
-}
-
-function kpisPerformance(perf) {
-  if (!perf) return null;
-  const sent = Number(perf.sentEmails || 0);
-  const clicks = Number(perf.clicks || 0);
-  const checkouts = Number(perf.checkouts || 0);
-  const payments = Number(perf.payments || 0);
-  const revenue = Number(perf.revenue || 0);
-  const ctrPct = sent > 0 ? (clicks / sent) * 100 : Number(perf.ctrPct || 0);
-  const conversaoPct = sent > 0 ? (payments / sent) * 100 : Number(perf.paidFromSentPct || 0);
-  const ticketMedio = payments > 0 ? revenue / payments : 0;
-  const checkoutToPaid = Number(perf.checkoutToPaidPct || 0);
-  const abandonoCheckoutPct = checkouts > 0 ? Math.max(0, 100 - checkoutToPaid) : null;
-  return {
-    sent,
-    clicks,
-    checkouts,
-    payments,
-    revenue,
-    ctrPct,
-    conversaoPct,
-    ticketMedio,
-    abandonoCheckoutPct,
-    checkoutToPaidPct: checkoutToPaid,
-  };
-}
-
-function humanizarDuracaoMs(ms) {
-  const sec = Math.max(0, Math.floor(ms / 1000));
-  const d = Math.floor(sec / 86400);
-  const h = Math.floor((sec % 86400) / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const parts = [];
-  if (d) parts.push(`${d} ${d === 1 ? 'dia' : 'dias'}`);
-  if (h) parts.push(`${h} h`);
-  if (m || parts.length === 0) parts.push(`${m} min`);
-  return parts.join(' · ');
-}
-
-function pillClassCampanhaStatus(st) {
-  const x = String(st || '').toLowerCase();
-  if (x.includes('agend')) return 'agendada';
-  if (x.includes('encerr')) return 'encerrada';
-  if (x.includes('ativa')) return 'ativa';
-  return 'neutro';
-}
-
-function sugestaoPorHistorico(history) {
-  const rows = (history || []).filter((c) => Number(c?.performance?.sentEmails || 0) >= 8);
-  if (rows.length < 4) return null;
-  const under = rows.filter((c) => Number(c.priceBRL) < 20);
-  const over = rows.filter((c) => Number(c.priceBRL) >= 20);
-  if (under.length < 2 || over.length < 2) return null;
-  const avg = (arr) =>
-    arr.reduce((s, c) => s + Number(c?.performance?.paidFromSentPct || 0), 0) / arr.length;
-  const a = avg(under);
-  const b = avg(over);
-  if (a > b * 1.25) {
-    return `No seu histórico, campanhas abaixo de R$ 20 tiveram conversão média de ${formatarPct1(a)} frente a ${formatarPct1(b)} nas de R$ 20 ou mais (mín. 8 e-mails/campanha).`;
-  }
-  if (b > a * 1.25) {
-    return `No seu histórico, preços a partir de R$ 20 tiveram conversão média de ${formatarPct1(b)} vs ${formatarPct1(a)} nas mais baratas — vale testar faixas diferentes.`;
-  }
-  return null;
-}
-import { labelPrecoPremium, PREMIUM_PRECO_BRL } from '../../config/premiumAssinatura';
 import './FinanceiroAdmin.css';
 
 const adminAuditCreatorLedgerReconciliation = httpsCallable(functions, 'adminAuditCreatorLedgerReconciliation');
@@ -100,51 +30,6 @@ const adminObterPromocaoPremium = httpsCallable(functions, 'adminObterPromocaoPr
 const adminSalvarPromocaoPremium = httpsCallable(functions, 'adminSalvarPromocaoPremium');
 const adminIncrementarDuracaoPromocaoPremium = httpsCallable(functions, 'adminIncrementarDuracaoPromocaoPremium');
 const adminDefinirMetaPromocaoPremium = httpsCallable(functions, 'adminDefinirMetaPromocaoPremium');
-const PRECO_BASE = Number(PREMIUM_PRECO_BRL || 23);
-const PROMO_TEMPLATES = [
-  {
-    id: 'flash24',
-    nome: 'Flash 24h',
-    tag: 'Alta urgência',
-    hint: 'Boa para picos de conversão em janela curta.',
-    mensagem: 'Oferta relâmpago para virar Membro Kokuin nas próximas 24h.',
-    dias: 0,
-    horas: 24,
-    minutos: 0,
-    segundos: 0,
-    descontoPct: 13,
-  },
-  {
-    id: 'fimSemana',
-    nome: 'Fim de semana da Tempestade',
-    tag: 'Receita estável',
-    hint: 'Mais tempo para o funil respirar.',
-    mensagem: 'Promo de fim de semana para reforçar a base premium.',
-    dias: 2,
-    horas: 0,
-    minutos: 0,
-    segundos: 0,
-    descontoPct: 18,
-  },
-  {
-    id: 'retomada7d',
-    nome: 'Retomada da Guilda (7 dias)',
-    tag: 'Volume',
-    hint: 'Útil para reativar quem parou na metade.',
-    mensagem: 'Campanha de retomada para acelerar assinaturas no início do mês.',
-    dias: 7,
-    horas: 0,
-    minutos: 0,
-    segundos: 0,
-    descontoPct: 10,
-  },
-];
-
-function toDatetimeLocal(ms) {
-  const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 /** Se o campo de início está claramente "velho" (ex.: página aberta há minutos), alinhar ao relógio atual. */
 const MARGEM_INICIO_NO_PASSADO_MS = 2 * 60 * 1000;
@@ -154,91 +39,6 @@ const AJUSTE_INICIO_AO_SALVAR_MS = 3 * 60 * 1000;
 
 /** Segunda confirmação ao publicar com e-mail se a janela útil for curta ou o desconto for mínimo. */
 const MS_PROMO_CONFIRMA_CURTA = 6 * 60 * 60 * 1000;
-
-function buildApoieTrackedUrl(promoId) {
-  if (typeof window === 'undefined' || !promoId) return '';
-  const camp = encodeURIComponent(String(promoId));
-  return `${window.location.origin}/apoie?src=promo_admin&camp=${camp}`;
-}
-
-function avisosAntesPublicarComEmail(agora, inicioMs, fimMs, preco, precoBase) {
-  const avisos = [];
-  const inicioEfetivo = Math.max(inicioMs, agora);
-  const duracaoVisivel = fimMs - inicioEfetivo;
-  if (duracaoVisivel > 0 && duracaoVisivel < MS_PROMO_CONFIRMA_CURTA) {
-    avisos.push(
-      `A janela da promo no ar (a partir de agora) é de ${humanizarDuracaoMs(duracaoVisivel)} — e-mail em massa com pouco tempo pode frustrar quem abre tarde.`
-    );
-  }
-  if (precoBase > 0 && preco < precoBase) {
-    const pctOff = ((precoBase - preco) / precoBase) * 100;
-    if (pctOff < 1) {
-      avisos.push(
-        `O desconto sobre o preço base é de apenas ${pctOff.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%. Confira se o valor está certo.`
-      );
-    }
-  }
-  return avisos;
-}
-
-function textoResumoEmailPromocao(stats) {
-  const s = stats || {};
-  const sent = Number(s.sent || 0);
-  const failed = Number(s.failed || 0);
-  const tail =
-    ' Os links usam a página Apoie (/apoie) com rastreio; se abrir só a home sem parâmetros, o clique não entra no funil.';
-  const optInKnown = s.optInAtivos != null && Number.isFinite(Number(s.optInAtivos));
-  if (optInKnown) {
-    const optIn = Number(s.optInAtivos);
-    const noEmail = Number(s.skippedOptInNoEmail || 0);
-    if (optIn <= 0) {
-      return `Nenhuma conta elegível para receber e-mail (cadastro ativo + notificação de promo nas preferências).${tail}`;
-    }
-    let msg = `${sent} e-mail(s) enviado(s) para quem ativou notificação de promo no app (${optIn} ${optIn === 1 ? 'conta elegível' : 'contas elegíveis'}).`;
-    if (failed > 0) msg += ` Falhas na entrega: ${failed}.`;
-    if (noEmail > 0) {
-      msg += ` ${noEmail} ${noEmail === 1 ? 'conta' : 'contas'} com notificação ativada sem e-mail válido no login (Auth).`;
-    }
-    return msg + tail;
-  }
-  const skipped = Number(s.skipped || 0);
-  if (sent > 0 || failed > 0 || skipped > 0) {
-    return `${sent} enviado(s), ${failed} falha(s). (Campanha antiga no histórico — sem detalhe de opt-in.)${tail}`;
-  }
-  return `Nenhum envio registrado nesta rodada.${tail}`;
-}
-
-function textoLogPromocao(entry) {
-  const at = formatarDataHoraSegBr(entry.at, { seVazio: '—' });
-  const d = entry.detail || {};
-  if (entry.action === 'publish') {
-    const mail = d.notifyUsers ? 'com envio de e-mail' : 'sem e-mail (só checkout)';
-    return `${at} · Publicação ${mail} · ${d.name || 'Campanha'} · término ${formatarDataHoraSegBr(d.endsAt, { seVazio: '—' })}`;
-  }
-  if (entry.action === 'extend') {
-    const ad = d.added || {};
-    return `${at} · Tempo estendido (+${ad.days || 0}d ${ad.hours || 0}h ${ad.minutes || 0}min) · novo término ${formatarDataHoraSegBr(d.endsAtAfter, { seVazio: '—' })}`;
-  }
-  if (entry.action === 'disable') {
-    return `${at} · Encerrada ou cancelada manualmente · ${d.name || entry.promoId || '—'}`;
-  }
-  if (entry.action === 'meta') {
-    return `${at} · Meta de pagamentos ${d.goalPayments != null ? `definida: ${d.goalPayments}` : 'removida'}`;
-  }
-  return `${at} · ${entry.action || 'evento'}`;
-}
-
-/** Status coerente com relógio atual (o campo gravado no histórico pode ficar desatualizado). */
-function statusCampanhaDerivado(camp, nowMs = Date.now()) {
-  if (!camp) return '—';
-  const s = Number(camp.startsAt || 0);
-  const e = Number(camp.endsAt || 0);
-  if (!s || !e) return String(camp.status || 'registrada');
-  if (nowMs < s) return 'Agendada';
-  if (nowMs <= e) return 'Ativa';
-  return 'Encerrada';
-}
-
 export default function FinanceiroAdmin() {
   const navigate = useNavigate();
   const [aba, setAba] = useState('visao');
@@ -419,7 +219,14 @@ export default function FinanceiroAdmin() {
         return;
       }
       if (notifyUsers) {
-        const avisos = avisosAntesPublicarComEmail(agora, inicio, fim, preco, PRECO_BASE);
+        const avisos = avisosAntesPublicarComEmail(
+          agora,
+          inicio,
+          fim,
+          preco,
+          PRECO_BASE,
+          MS_PROMO_CONFIRMA_CURTA
+        );
         if (avisos.length) {
           const ok = window.confirm(
             `Antes de enviar e-mails:\n\n${avisos.map((a) => `• ${a}`).join('\n')}\n\nPublicar e enviar mesmo assim?`
@@ -549,98 +356,29 @@ export default function FinanceiroAdmin() {
     }
   };
 
-  const promoStartMs = Number(promoAtual?.startsAt || 0);
-  const promoEndMs = Number(promoAtual?.endsAt || 0);
-  const promoAtivaAgora = Boolean(promoAtual && nowMs >= promoStartMs && nowMs <= promoEndMs);
-  const promoAgendada = Boolean(promoAtual && nowMs < promoStartMs);
-  const promoEncerrada = Boolean(promoAtual && nowMs > promoEndMs);
-  const restante = Math.max(0, promoEndMs - nowMs);
-  const totalSec = Math.floor(restante / 1000);
-  const dd = String(Math.floor(totalSec / 86400)).padStart(2, '0');
-  const hh = String(Math.floor((totalSec % 86400) / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
-  const ss = String(totalSec % 60).padStart(2, '0');
-  const timerFormatado = `${dd}:${hh}:${mm}:${ss}`;
-
-  const perfCampanhaPainel = useMemo(() => {
-    if (!promoAtual?.promoId) return null;
-    if (currentPerformance) return currentPerformance;
-    const row = promoHistory.find((h) => h.promoId === promoAtual.promoId);
-    return row?.performance || null;
-  }, [promoAtual, currentPerformance, promoHistory]);
-
-  const kpisPainel = useMemo(() => kpisPerformance(perfCampanhaPainel), [perfCampanhaPainel]);
-  const metaAtualCampanha = useMemo(() => {
-    if (!promoAtual?.promoId) return null;
-    const row = promoHistory.find((h) => h.promoId === promoAtual.promoId);
-    return row?.goalPayments ?? null;
-  }, [promoAtual?.promoId, promoHistory]);
-  const sugestaoHistorica = useMemo(() => sugestaoPorHistorico(promoHistory), [promoHistory]);
-  const kpisUltimaCampanha = useMemo(() => kpisPerformance(lastCampaign?.performance), [lastCampaign]);
-
-  const simulador = useMemo(() => {
-    const preco = Number.isFinite(precoNumerico) ? precoNumerico : 0;
-    const descontoPct = PRECO_BASE > 0 ? ((PRECO_BASE - preco) / PRECO_BASE) * 100 : 0;
-    const baselineAssinaturas = Math.max(
-      10,
-      Number(lastCampaign?.performance?.payments || currentPerformance?.payments || 10)
-    );
-    const receitaBase = PRECO_BASE * baselineAssinaturas;
-    const cenarios = [
-      { id: 'conservador', nome: 'Conservador', lift: 1.1 },
-      { id: 'medio', nome: 'Médio', lift: 1.35 },
-      { id: 'agressivo', nome: 'Agressivo', lift: 1.6 },
-    ].map((c) => {
-      const assinaturas = Math.round(baselineAssinaturas * c.lift);
-      const receita = assinaturas * preco;
-      const delta = receita - receitaBase;
-      return {
-        ...c,
-        assinaturas,
-        receita,
-        delta,
-      };
-    });
-    const breakEvenAssinaturas = preco > 0 ? Math.ceil(receitaBase / preco) : 0;
-    return {
-      descontoPct: Math.round(descontoPct * 10) / 10,
-      baselineAssinaturas,
-      receitaBase,
-      breakEvenAssinaturas,
-      cenarios,
-    };
-  }, [precoNumerico, lastCampaign, currentPerformance]);
-
-  const inicioCampanhaMs = useMemo(() => new Date(promoInicio).getTime(), [promoInicio]);
-  const fimCampanhaEstimadoMs = useMemo(() => {
-    if (!Number.isFinite(inicioCampanhaMs) || duracaoMs <= 0) return null;
-    return inicioCampanhaMs + duracaoMs;
-  }, [inicioCampanhaMs, duracaoMs]);
-  const cenarioRecomendado = useMemo(
-    () => simulador.cenarios.find((c) => c.id === 'medio'),
-    [simulador.cenarios]
-  );
-
-  const warningsConfig = useMemo(() => {
-    const arr = [];
-    if (Number.isFinite(precoNumerico) && precoNumerico >= PRECO_BASE) {
-      arr.push('O preço promocional precisa ser menor que o preço base da assinatura.');
-    }
-    if (Number.isFinite(precoNumerico) && precoNumerico > 0 && precoNumerico < 10) {
-      arr.push('Promoções muito abaixo de R$ 10 podem reduzir lucro; use só com estratégia clara.');
-    }
-    if (Number.isFinite(precoNumerico) && precoNumerico < PRECO_BASE * 0.6) {
-      arr.push('Preço muito baixo: pode reduzir receita se o volume não subir bastante.');
-    }
-    if (duracaoMs > 30 * 24 * 60 * 60 * 1000) {
-      arr.push('Duração acima de 30 dias: pode banalizar o valor percebido da assinatura.');
-    }
-    if (duracaoMs <= 0) {
-      arr.push('Defina uma duração maior que zero para evitar promoção inválida.');
-    }
-    return arr;
-  }, [precoNumerico, duracaoMs]);
-
+  const {
+    promoAtivaAgora,
+    promoAgendada,
+    promoEncerrada,
+    timerFormatado,
+    kpisPainel,
+    metaAtualCampanha,
+    sugestaoHistorica,
+    kpisUltimaCampanha,
+    simulador,
+    fimCampanhaEstimadoMs,
+    cenarioRecomendado,
+    warningsConfig,
+  } = useFinanceiroPromoPanel({
+    promoAtual,
+    nowMs,
+    currentPerformance,
+    promoHistory,
+    lastCampaign,
+    precoNumerico,
+    promoInicio,
+    duracaoMs,
+  });
   const abrirAbaConfigPromo = () => {
     setConfigHint('');
     setPromoInicio((atual) => {
@@ -878,7 +616,7 @@ export default function FinanceiroAdmin() {
                   <span className="promo-price-was">era {labelPrecoPremium()}</span>
                 </p>
                 <p className="promo-dates-line">
-                  {formatarDataHoraSegBr(promoAtual.startsAt, { seVazio: '--' })} → {formatarDataHoraSegBr(promoAtual.endsAt, { seVazio: '--' })}
+                  {formatarDataHoraSegBr(promoAtual.startsAt, { seVazio: '--' })} ? {formatarDataHoraSegBr(promoAtual.endsAt, { seVazio: '--' })}
                 </p>
                 {(promoAtivaAgora || promoAgendada) && promoAtual.promoId ? (
                   <div className="financeiro-promo-quicklinks">
@@ -1184,8 +922,8 @@ export default function FinanceiroAdmin() {
                       const k2p = checkouts > 0 ? (payments / checkouts) * 100 : 0;
                       const bridges = [
                         { label: 'CTR', pct: ctr },
-                        { label: 'Clique → checkout', pct: c2k },
-                        { label: 'Checkout → pago', pct: k2p },
+                        { label: 'Clique ? checkout', pct: c2k },
+                        { label: 'Checkout ? pago', pct: k2p },
                       ];
                       return (
                         <div className="financeiro-funil-row">
@@ -1200,7 +938,7 @@ export default function FinanceiroAdmin() {
                               </div>
                               {i < steps.length - 1 && (
                                 <div className="financeiro-funil-bridge">
-                                  <span className="financeiro-funil-bridge-arrow" aria-hidden="true">→</span>
+                                  <span className="financeiro-funil-bridge-arrow" aria-hidden="true">?</span>
                                   <span className="financeiro-funil-bridge-pct">{formatarPct1(bridges[i].pct)}</span>
                                   <span className="financeiro-funil-bridge-hint">{bridges[i].label}</span>
                                 </div>
@@ -1264,7 +1002,7 @@ export default function FinanceiroAdmin() {
           <div className="financeiro-promocao financeiro-config">
             <h2 className="financeiro-config-titulo">Criar / editar campanha</h2>
             <p className="financeiro-config-lead">
-              Fluxo sugerido: template → preço e tempo → simulador → prévia do e-mail abaixo → publicar (depois use a visão geral para link da Apoie e acompanhamento).
+              Fluxo sugerido: template ? preço e tempo ? simulador ? prévia do e-mail abaixo ? publicar (depois use a visão geral para link da Apoie e acompanhamento).
             </p>
             {configHint && (
               <div className="financeiro-config-hint" role="status">
@@ -1278,7 +1016,7 @@ export default function FinanceiroAdmin() {
                 <div>
                   <span className="financeiro-resumo-label">Preço</span>
                   <p className="financeiro-resumo-valor">
-                    {labelPrecoPremium(PRECO_BASE)} → <strong>{labelPrecoPremium(precoNumerico)}</strong>
+                    {labelPrecoPremium(PRECO_BASE)} ? <strong>{labelPrecoPremium(precoNumerico)}</strong>
                   </p>
                 </div>
                 <div>
@@ -1682,6 +1420,9 @@ export default function FinanceiroAdmin() {
     </main>
   );
 }
+
+
+
 
 
 

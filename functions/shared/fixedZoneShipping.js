@@ -1,76 +1,136 @@
-export const REGIONAL_FREIGHT_DISCOUNT_RATE = 0.3;
+/**
+ * Frete fixo por UF + R$ 2/unidade extra + desconto regional no frete.
+ * Usado pela loja física, cotação e POD «Produzir para mim».
+ */
+
+import { isStoreWtShippingAllowed } from './shippingEnv.js';
+
+export const SHIPPING_EXTRA_PER_UNIT_BRL = 2;
+
+export const REGIONAL_FREIGHT_DISCOUNT_ELIGIBLE_UFS = [
+  'SP',
+  'RJ',
+  'MG',
+  'ES',
+  'PR',
+  'SC',
+  'RS',
+  'DF',
+  'GO',
+  'MT',
+  'MS',
+];
+
 export const REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL = 165;
 export const REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY = 3;
+export const REGIONAL_FREIGHT_DISCOUNT_RATE = 0.3;
 export const REGIONAL_FREIGHT_DISCOUNT_CAP_BRL = 20;
 
-const REGION_BY_UF = {
-  AC: 'norte',
-  AL: 'nordeste',
-  AP: 'norte',
-  AM: 'norte',
-  BA: 'nordeste',
-  CE: 'nordeste',
-  DF: 'centro-oeste',
-  ES: 'sudeste',
-  GO: 'centro-oeste',
-  MA: 'nordeste',
-  MT: 'centro-oeste',
-  MS: 'centro-oeste',
-  MG: 'sudeste',
-  PA: 'norte',
-  PB: 'nordeste',
-  PR: 'sul',
-  PE: 'nordeste',
-  PI: 'nordeste',
-  RJ: 'sudeste',
-  RN: 'nordeste',
-  RS: 'sul',
-  RO: 'norte',
-  RR: 'norte',
-  SC: 'sul',
-  SP: 'sudeste',
-  SE: 'nordeste',
-  TO: 'norte',
+/** @deprecated Preferir REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL. */
+export const FREE_SHIPPING_MIN_SUBTOTAL_BRL = REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL;
+
+/** @deprecated Não usado na regra atual. */
+export const FREE_SHIPPING_MAX_SHIPPING_BRL = 60;
+
+export const SHIPPING_UNKNOWN_UF_BASE_BRL = 60;
+
+export const SHIPPING_BASE_BRL_BY_UF = {
+  SP: 35,
+  RJ: 44,
+  MG: 48,
+  ES: 48,
+  PR: 48,
+  SC: 54,
+  RS: 54,
+  DF: 37,
+  GO: 35,
+  MT: 72,
+  MS: 55,
+  BA: 62,
+  PE: 86,
+  CE: 78,
+  RN: 115,
+  PB: 100,
+  AL: 110,
+  SE: 105,
+  PI: 105,
+  MA: 105,
+  AC: 120,
+  AM: 115,
+  RR: 140,
+  AP: 100,
+  PA: 75,
+  RO: 40,
+  TO: 70,
 };
 
-const DEFAULT_PRICES = {
-  sudeste: 27,
-  sul: 29,
-  'centro-oeste': 34,
-  nordeste: 42,
-  norte: 48,
-};
-
-export function normalizeRegionalFreightRegion(uf) {
-  const raw = String(uf || '').trim().toUpperCase();
-  if (!raw) return null;
-  if (Object.values(DEFAULT_PRICES).includes(raw)) return raw;
-  return REGION_BY_UF[raw] || null;
-}
-
-export function computeFixedZoneShippingParts({
-  region,
-  subtotal,
-  quantity,
-}) {
-  const base = DEFAULT_PRICES[region] ?? DEFAULT_PRICES.sudeste;
-  const qty = Number(quantity || 0);
-  const shouldDiscount =
-    region === 'sudeste' || region === 'sul'
-      ? Number(subtotal || 0) >= REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL ||
-        qty >= REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY
-      : false;
-  if (!shouldDiscount) {
+/**
+ * @param {number} raw Frete bruto (PAC ou já com multiplicador SEDEX).
+ * @param {{ state?: string, quantity?: number, cartTotal?: number }} p
+ */
+export function getRegionalFreightDiscountBreakdown(raw, p) {
+  const uf = String(p?.state || '').trim().toUpperCase();
+  if (uf === 'WT' && isStoreWtShippingAllowed()) {
+    const test = 0.5;
     return {
-      base,
-      discount: 0,
-      total: base,
+      priceBrl: test,
+      originalPriceBrl: test,
+      discountBrl: 0,
+      regionalFreightDiscountApplied: false,
+      freeApplied: false,
     };
   }
-  const discount = Math.min(REGIONAL_FREIGHT_DISCOUNT_CAP_BRL, Math.round(base * REGIONAL_FREIGHT_DISCOUNT_RATE * 100) / 100);
+  const r = Math.max(0, Math.ceil(Number(raw) || 0));
+  const subtotal = Number(p?.cartTotal || 0);
+  const qty = Math.max(1, Math.floor(Number(p?.quantity) || 1));
+  const isEligibleRegion = REGIONAL_FREIGHT_DISCOUNT_ELIGIBLE_UFS.includes(uf);
+  const meetsCondition =
+    subtotal >= REGIONAL_FREIGHT_DISCOUNT_MIN_SUBTOTAL_BRL ||
+    qty >= REGIONAL_FREIGHT_DISCOUNT_MIN_QUANTITY;
+  if (!isEligibleRegion || !meetsCondition) {
+    return {
+      priceBrl: r,
+      originalPriceBrl: r,
+      discountBrl: 0,
+      regionalFreightDiscountApplied: false,
+      freeApplied: false,
+    };
+  }
+  const nominalDiscount = Math.min(r * REGIONAL_FREIGHT_DISCOUNT_RATE, REGIONAL_FREIGHT_DISCOUNT_CAP_BRL);
+  const priceBrl = Math.max(0, Math.ceil(r - nominalDiscount));
+  const discountBrl = r - priceBrl;
   return {
-    base,
-    discount,
-    total: Math.max(0, Math.round((base - discount) * 100) / 100),
+    priceBrl,
+    originalPriceBrl: r,
+    discountBrl,
+    regionalFreightDiscountApplied: true,
+    freeApplied: false,
+  };
+}
+
+/**
+ * @param {{ state?: string, quantity?: number, cartTotal?: number }} p
+ */
+export function computeFixedZoneShippingParts(p) {
+  const uf = String(p?.state || '').trim().toUpperCase();
+  if (uf === 'WT' && isStoreWtShippingAllowed()) {
+    const test = 0.5;
+    return {
+      ...getRegionalFreightDiscountBreakdown(test, p),
+      baseBrl: test,
+      extraBrl: 0,
+    };
+  }
+  const baseBrl = Number.isFinite(SHIPPING_BASE_BRL_BY_UF[uf])
+    ? SHIPPING_BASE_BRL_BY_UF[uf]
+    : SHIPPING_UNKNOWN_UF_BASE_BRL;
+  const q = Math.max(1, Math.floor(Number(p?.quantity) || 1));
+  const extraBrl = Math.max(0, q - 1) * SHIPPING_EXTRA_PER_UNIT_BRL;
+  const raw = Math.ceil(Math.max(baseBrl + extraBrl, 0));
+  const br = getRegionalFreightDiscountBreakdown(raw, p);
+  return {
+    ...br,
+    baseBrl,
+    extraBrl,
   };
 }

@@ -1,5 +1,10 @@
 import { HttpsError } from 'firebase-functions/v2/https';
-import { buildStoreShippingQuote } from '../../shared/storeShipping.js';
+import { buildStoreShippingQuote } from '../shared/storeShipping.js';
+import {
+  buildStoreOrderViewerCapabilities,
+  normalizeStoreOrderStatus,
+  STORE_ORDER_VIEWER_ROLE,
+} from '../shared/storeOrderDomain.js';
 import { normalizeAndValidateCpf } from '../creatorCompliance.js';
 import { buildUserEntitlements } from '../userEntitlements.js';
 import { sanitizeCreatorId } from '../creatorDataLedger.js';
@@ -28,14 +33,7 @@ export function assertOpaqueEntityId(raw, label = 'id') {
 }
 
 export function normalizeStoreOrderStatusInput(raw, fallback = 'pending') {
-  const value = String(raw || fallback).trim().toLowerCase().replace(/\s+/g, '_');
-  if (!value) return fallback;
-  if (value === 'pending_payment') return 'pending';
-  if (value === 'order_received') return 'paid';
-  if (value === 'processing') return 'in_production';
-  if (value === 'ready_to_ship') return 'in_production';
-  if (value === 'canceled') return 'cancelled';
-  return value;
+  return normalizeStoreOrderStatus(raw, fallback);
 }
 
 export function normalizeStoreBuyerProfile(raw) {
@@ -218,7 +216,7 @@ export function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
         city: String(rawShippingAddress.city || '').trim(),
       }
     : null;
-  return {
+  const order = {
     id: orderId,
     status: normalizeStoreOrderStatusInput(row?.status, ''),
     createdAt: Number(row?.createdAt || 0),
@@ -240,6 +238,10 @@ export function sanitizeStoreOrderForViewer(orderId, row, viewerUid) {
     subtotal: creatorSubtotal,
     containsForeignItems,
     items,
+  };
+  return {
+    ...order,
+    viewerCapabilities: buildStoreOrderViewerCapabilities(order, STORE_ORDER_VIEWER_ROLE.SELLER),
   };
 }
 

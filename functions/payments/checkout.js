@@ -661,19 +661,6 @@ export const resumeStoreCheckout = onCall(
       );
     }
 
-    const checkoutUrl = String(row.checkoutUrl || '').trim();
-    if (checkoutUrl) {
-      const response = { ok: true, url: checkoutUrl, reused: true };
-      await writeCommerceIdempotency(db, {
-        scope: 'resumeCheckoutLoja',
-        key: request.auth.uid,
-        fingerprint: checkoutFingerprint,
-        ttlMs: 60 * 1000,
-        response,
-      });
-      return response;
-    }
-
     const notificationUrl = notificationUrlForWebhook();
     const orderItems = Array.isArray(row.items) ? row.items : [];
     const shippingBrl = round2(Number(row.shippingBrl || 0));

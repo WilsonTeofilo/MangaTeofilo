@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 
 import { functions } from '../../services/firebase';
-import { STAFF_PERMISSION_FIELDS } from '../../auth/adminPermissions';
+import { STAFF_PERMISSION_FIELDS, canAccessAdminPath } from '../../auth/adminPermissions';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import './FinanceiroAdmin.css';
 import './AdminStaff.css';
@@ -46,7 +46,8 @@ export default function EquipeAdmin({ adminAccess }) {
   const [formEmail, setFormEmail] = useState('');
   const [formPermissions, setFormPermissions] = useState(() => buildEmptyPermissions());
 
-  const canManageMembers = adminAccess?.superAdmin === true || adminAccess?.isChiefAdmin === true;
+  const canViewTeamPage = canAccessAdminPath('/admin/equipe', adminAccess);
+  const canManageMembers = canViewTeamPage && (adminAccess?.superAdmin === true || adminAccess?.isChiefAdmin === true);
 
   const permissionGroups = useMemo(() => {
     return STAFF_PERMISSION_FIELDS.reduce((groups, item) => {
@@ -177,6 +178,22 @@ export default function EquipeAdmin({ adminAccess }) {
 
   const adminMembers = staff.filter((member) => member?.role === 'admin');
   const superAdmins = staff.filter((member) => member?.role === 'super_admin');
+
+  if (!canViewTeamPage) {
+    return (
+      <main className="admin-empty-page admin-team-page">
+        <section className="admin-empty-card admin-team-shell">
+          <header className="financeiro-header admin-team-header">
+            <div>
+              <p className="admin-team-eyebrow">Administracao</p>
+              <h1>Equipe</h1>
+              <p>Esta area fica restrita para admins chefes da plataforma.</p>
+            </div>
+          </header>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="admin-empty-page admin-team-page">

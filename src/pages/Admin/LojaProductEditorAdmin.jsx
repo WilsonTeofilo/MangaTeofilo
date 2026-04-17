@@ -60,12 +60,10 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
 
   const [config, setConfig] = useState(STORE_DEFAULT_CONFIG);
   const configRef = useRef(config);
-  configRef.current = config;
   const [form, setForm] = useState(() => ({ ...EMPTY_PRODUCT, creatorId: isMangaka ? creatorUid : '' }));
   const [editingId, setEditingId] = useState('');
   const [msg, setMsg] = useState('');
   const [coverFile, setCoverFile] = useState(null);
-  const [coverPreview, setCoverPreview] = useState('');
   const [pdfFile, setPdfFile] = useState(null);
 
   useEffect(() => {
@@ -76,14 +74,15 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
   }, []);
 
   useEffect(() => {
-    if (!coverFile) {
-      setCoverPreview('');
-      return undefined;
-    }
-    const u = URL.createObjectURL(coverFile);
-    setCoverPreview(u);
-    return () => URL.revokeObjectURL(u);
-  }, [coverFile]);
+    configRef.current = config;
+  }, [config]);
+
+  const coverPreview = useMemo(() => (coverFile ? URL.createObjectURL(coverFile) : ''), [coverFile]);
+
+  useEffect(() => {
+    if (!coverPreview) return undefined;
+    return () => URL.revokeObjectURL(coverPreview);
+  }, [coverPreview]);
 
   const storageTargetUid = useMemo(() => {
     if (isMangaka) return creatorUid;
@@ -124,7 +123,7 @@ export default function LojaProductEditorAdmin({ user, adminAccess, workspace = 
   }, [creatorUid, isCreate, isMangaka, navigate, productId, productsBase]);
 
   useEffect(() => {
-    loadProduct();
+    Promise.resolve().then(() => loadProduct());
   }, [loadProduct]);
 
   const previewImages = useMemo(() => parseImages(form.imagesText), [form.imagesText]);

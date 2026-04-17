@@ -794,7 +794,7 @@ async function tratarNotificacaoPagamentoPremium(accessToken, paymentId) {
     if (expAt && Date.now() > expAt) return;
     const amount = Number(pay.transaction_amount);
     const snap = orderPre.snapshot && typeof orderPre.snapshot === 'object' ? orderPre.snapshot : {};
-    const expected = round2(Number(snap.amountDueBRL ?? orderPre.expectedPayBRL ?? 0));
+    const expected = round2(Number(snap.amountDueBRL ?? 0));
     if (isRefundLikeStatus(status)) {
       await db.ref(`loja/printOnDemandOrders/${podRef.orderId}`).update({
         paymentStatus: status,

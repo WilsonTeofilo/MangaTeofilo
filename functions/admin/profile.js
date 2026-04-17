@@ -32,9 +32,6 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
   }
   const ctx = await getAdminAuthContext(request.auth);
   const creatorOnly = !ctx && (await isCreatorAccountAuth(request.auth));
-  if (!ctx && !creatorOnly) {
-    return { ok: true, admin: false };
-  }
   if (ctx) {
     try {
       await reconcileStaffRtdbRoleFromMangaka(request.auth.uid, ctx);
@@ -51,11 +48,19 @@ export const adminGetMyAdminProfile = onCall({ region: 'us-central1' }, async (r
   try {
     const authUser = await getAuth().getUser(request.auth.uid);
     const prevClaims = { ...(authUser.customClaims || {}) };
-    if (prevClaims.panelRole !== panelRole) {
-      await getAuth().setCustomUserClaims(request.auth.uid, {
-        ...prevClaims,
-        panelRole,
-      });
+    const nextClaims = { ...prevClaims };
+    if (panelRole) nextClaims.panelRole = panelRole;
+    else delete nextClaims.panelRole;
+    if (!ctx) delete nextClaims.admin;
+    const prevPanelRole = prevClaims.panelRole ?? null;
+    const nextPanelRole = nextClaims.panelRole ?? null;
+    const prevAdmin = prevClaims.admin === true;
+    const nextAdmin = nextClaims.admin === true;
+    if (prevPanelRole !== nextPanelRole || prevAdmin !== nextAdmin) {
+      await getAuth().setCustomUserClaims(
+        request.auth.uid,
+        Object.keys(nextClaims).length ? nextClaims : null
+      );
       claimsSynced = true;
     }
   } catch (e) {

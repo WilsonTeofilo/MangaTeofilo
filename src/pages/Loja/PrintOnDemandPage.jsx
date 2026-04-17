@@ -2,9 +2,7 @@
 import { Helmet } from 'react-helmet-async';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { equalTo, onValue, orderByChild, query, ref as dbRef } from 'firebase/database';
-
-import { db, storage } from '../../services/firebase';
+import { storage } from '../../services/firebase';
 import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../config/site';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
 import {
@@ -17,85 +15,35 @@ import {
   computePlatformOrder,
   computePersonalOrder,
   computeStorePromoOrder,
-  computeStorePromoEligibilityClient,
   formatBRL,
   getProductionDaysRange,
   computePlatformCreatorProfit,
 } from '../../utils/printOnDemandPricingV2';
-import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../utils/creatorMonetizationUi';
-import {
-  buildCreatorProgressViewModel,
-  metricsFromUsuarioRow,
-} from '../../utils/creatorProgression';
+import { buildPodSaleModeOperation } from '../../utils/podSaleMode';
+import PodMetricBar from '../../components/pod/PodMetricBar';
 import PodConfirmModal from '../../components/pod/PodConfirmModal';
 import { getPodCartDraft, POD_CART_CHANGED_EVENT, setPodCartDraft } from '../../store/podCartStore';
+import {
+  POD_FORMAT_CARDS,
+  POD_STEPS,
+  fmtCountPt,
+  formatLabel,
+  saleModelLabel,
+} from './podPageUtils';
+import usePodCreatorContext from './hooks/usePodCreatorContext';
 import './PrintOnDemandPage.css';
 
 const MAX_PDF_BYTES = 55 * 1024 * 1024;
 const MAX_COVER_BYTES = 8 * 1024 * 1024;
 
-const STEPS = [
-  { id: 'modelo', label: 'Modelo' },
-  { id: 'venda', label: 'Venda' },
-  { id: 'quantidade', label: 'Quantidade' },
-  { id: 'arquivos', label: 'Arquivos' },
-  { id: 'revisao', label: 'Revisão' },
-];
-
-const FORMAT_CARDS = [
-  {
-    id: BOOK_FORMAT.TANKOBON,
-    title: 'tankōbon',
-    lines: ['180–220 páginas', 'Mais completo e profissional'],
-  },
-  {
-    id: BOOK_FORMAT.MEIO_TANKO,
-    title: 'Meio-tankō',
-    lines: ['80–100 páginas', 'Mais rápido e barato'],
-  },
-];
-
-function formatLabel(id) {
-  return id === BOOK_FORMAT.TANKOBON ? 'tankōbon' : 'Meio-tankō';
-}
-
-function saleModelLabel(m) {
-  if (m === SALE_MODEL.PLATFORM) return 'Venda pela plataforma';
-  if (m === SALE_MODEL.STORE_PROMO) return 'Vitrine (sem lucro)';
-  return 'Produzir para mim';
-}
-
-function fmtCountPt(n) {
-  return new Intl.NumberFormat('pt-BR').format(Math.max(0, Math.floor(Number(n) || 0)));
-}
-
-function PodMetricBar({ label, current, max }) {
-  const cap = Math.max(1, Number(max) || 1);
-  const cur = Math.max(0, Number(current) || 0);
-  const pct = Math.min(100, Math.round((cur / cap) * 100));
-  return (
-    <div className="pod-metric">
-      <div className="pod-metric__head">
-        <span className="pod-metric__label">{label}</span>
-        <span className="pod-metric__nums">
-          {fmtCountPt(cur)} / {fmtCountPt(cap)}
-        </span>
-      </div>
-      <div
-        className="pod-metric__bar"
-        role="progressbar"
-        aria-valuenow={cur}
-        aria-valuemin={0}
-        aria-valuemax={cap}
-        aria-label={`${label}: ${fmtCountPt(cur)} de ${fmtCountPt(cap)}`}
-      >
-        <div className="pod-metric__fill" style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
-}
-
-export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal = null, capsVal = null }) {
+export default function PrintOnDemandPage({
+  user,
+  perfil,
+  shellRole = null,
+  isMangakaEffective = null,
+  obrasVal = null,
+  capsVal = null,
+}) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const canonicalUrl = `${SITE_ORIGIN}/print-on-demand`;
@@ -139,6 +87,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   }, [searchParams, scrollToStep]);
 
   const [saleModel, setSaleModel] = useState(SALE_MODEL.PLATFORM);
+  const podOperation = useMemo(() => buildPodSaleModeOperation(saleModel), [saleModel]);
   const [format, setFormat] = useState(BOOK_FORMAT.TANKOBON);
   const [quantity, setQuantity] = useState(10);
   const [unitSalePrice, setUnitSalePrice] = useState(
@@ -153,12 +102,28 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [linkedWorkId, setLinkedWorkId] = useState('');
-  const [followerCount, setFollowerCount] = useState(0);
-  const [creatorStatsLive, setCreatorStatsLive] = useState(null);
-  /** Catálogo local: o app só envia obras quando detecta mangaká; aqui garantimos dados para o select. */
-  const [rtObras, setRtObras] = useState(null);
-  const [rtCaps, setRtCaps] = useState(null);
   const [podCartActive, setPodCartActive] = useState(() => Boolean(getPodCartDraft()));
+  const {
+    isMangakaUser,
+    creatorMonetizationActive,
+    monetizationGaps,
+    platformSaleNeedsMonetization,
+    platformSaleLevelHintVisible,
+    platformSaleBlocked,
+    myWorks,
+    storePromoOrderEligible,
+    selectedObraRow,
+    storePromoMetrics,
+  } = usePodCreatorContext({
+    user,
+    perfil,
+    shellRole,
+    isMangakaEffective,
+    obrasVal,
+    capsVal,
+    saleModel,
+    linkedWorkId,
+  });
 
   useEffect(() => {
     const sync = () => setPodCartActive(Boolean(getPodCartDraft()));
@@ -167,119 +132,12 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
     return () => window.removeEventListener(POD_CART_CHANGED_EVENT, sync);
   }, []);
 
-  useEffect(() => {
-    if (!user?.uid || (obrasVal != null && capsVal != null)) {
-      setRtObras(null);
-      setRtCaps(null);
-      return undefined;
-    }
-    const obrasQuery = query(dbRef(db, 'obras'), orderByChild('creatorId'), equalTo(user.uid));
-    const capsQuery = query(dbRef(db, 'capitulos'), orderByChild('creatorId'), equalTo(user.uid));
-    const uo = onValue(obrasQuery, (snap) => setRtObras(snap.exists() ? snap.val() : {}));
-    const uc = onValue(capsQuery, (snap) => setRtCaps(snap.exists() ? snap.val() : {}));
-    return () => {
-      uo();
-      uc();
-    };
-  }, [capsVal, obrasVal, user?.uid]);
-
-  useEffect(() => {
-    if (!user?.uid) {
-      setCreatorStatsLive(null);
-      return undefined;
-    }
-    const statsRef = dbRef(db, `creators/${user.uid}/stats`);
-    const unsubscribe = onValue(statsRef, (snap) => {
-      setCreatorStatsLive(snap.exists() ? snap.val() : null);
-    });
-    return () => unsubscribe();
-  }, [user?.uid]);
-
-  const effectiveObras = obrasVal != null ? obrasVal : rtObras;
-  const effectiveCaps = capsVal != null ? capsVal : rtCaps;
-
-  const isMangakaUser = useMemo(
-    () =>
-      String(perfil?.role || '').trim().toLowerCase() === 'mangaka' ||
-      Boolean(adminAccess?.isMangaka),
-    [adminAccess?.isMangaka, perfil?.role]
-  );
-  const creatorMonetizationActive = useMemo(
-    () => resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active',
-    [perfil]
-  );
-
-  const creatorProgressMetrics = useMemo(
-    () =>
-      metricsFromUsuarioRow(perfil || {}, creatorStatsLive || null),
-    [perfil, creatorStatsLive]
-  );
-  const creatorProgressVm = useMemo(
-    () => buildCreatorProgressViewModel(creatorProgressMetrics),
-    [creatorProgressMetrics]
-  );
-  const monetizationGaps = creatorProgressVm.monetizationGapRows;
-
-  const platformSaleNeedsMonetization =
-    isMangakaUser && (perfil == null || !creatorMonetizationActive);
-  const platformSaleLevelHintVisible =
-    isMangakaUser && creatorMonetizationActive && !creatorProgressVm.monetizationThresholdReached;
-  const platformSaleBlocked = platformSaleNeedsMonetization;
-
   const flowSteps = useMemo(() => {
-    if (saleModel === SALE_MODEL.STORE_PROMO) {
-      return [{ id: 'obra', label: 'Obra na loja' }, ...STEPS];
+    if (podOperation.touchesCatalog && saleModel === SALE_MODEL.STORE_PROMO) {
+      return [{ id: 'obra', label: 'Obra na loja' }, ...POD_STEPS];
     }
-    return STEPS;
-  }, [saleModel]);
-
-  const myWorks = useMemo(() => {
-    if (!user?.uid || !effectiveObras || typeof effectiveObras !== 'object') return [];
-    const uid = user.uid;
-    return Object.entries(effectiveObras)
-      .map(([id, row]) => ({ id, ...(row && typeof row === 'object' ? row : {}) }))
-      .filter((w) => String(w.creatorId || '').trim() === uid)
-      .sort((a, b) =>
-        String(a.title || a.titulo || a.nome || a.name || '').localeCompare(
-          String(b.title || b.titulo || b.nome || b.name || ''),
-          'pt'
-        )
-      );
-  }, [effectiveObras, user?.uid]);
-
-  /** Pode concluir pedido "postar sem monetização" (login + criador com obra + sem monetização ativa). */
-  const storePromoOrderEligible =
-    Boolean(user?.uid) && !creatorMonetizationActive && (isMangakaUser || myWorks.length > 0);
-
-  const selectedObraRow = useMemo(() => {
-    if (!linkedWorkId || !effectiveObras || typeof effectiveObras !== 'object') return null;
-    const row = effectiveObras[linkedWorkId];
-    if (!row || typeof row !== 'object') return null;
-    return row;
-  }, [linkedWorkId, effectiveObras]);
-
-  const storePromoMetrics = useMemo(
-    () =>
-      computeStorePromoEligibilityClient({
-        obra: selectedObraRow,
-        workId: linkedWorkId,
-        capsVal: effectiveCaps,
-        followersCount: followerCount,
-      }),
-    [selectedObraRow, linkedWorkId, effectiveCaps, followerCount]
-  );
-
-  useEffect(() => {
-    if (!user?.uid || saleModel !== SALE_MODEL.STORE_PROMO) {
-      setFollowerCount(0);
-      return undefined;
-    }
-    const r = dbRef(db, `creators/${user.uid}/stats/followersCount`);
-    const unsub = onValue(r, (snap) => {
-      setFollowerCount(snap.exists() ? Number(snap.val() || 0) : 0);
-    });
-    return () => unsub();
-  }, [user?.uid, saleModel]);
+    return POD_STEPS;
+  }, [podOperation.touchesCatalog, saleModel]);
 
   useEffect(() => {
     if (saleModel !== SALE_MODEL.STORE_PROMO) {
@@ -315,17 +173,14 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
   }, [format]);
 
   useEffect(() => {
-    if (saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO) {
+    if (podOperation.touchesCatalog) {
       setQuantity((q) => (PLATFORM_QUANTITIES.includes(q) ? q : 10));
     } else {
       setQuantity((q) => (PERSONAL_QUANTITIES.includes(q) ? q : 10));
     }
-  }, [saleModel]);
+  }, [podOperation.touchesCatalog]);
 
-  const qtyOptions =
-    saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
-      ? PLATFORM_QUANTITIES
-      : PERSONAL_QUANTITIES;
+  const qtyOptions = podOperation.touchesCatalog ? PLATFORM_QUANTITIES : PERSONAL_QUANTITIES;
 
   const retail = PLATFORM_RETAIL_UNIT_BRL[format];
 
@@ -586,9 +441,9 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
       : '—';
 
   const shippingLine =
-    saleModel === SALE_MODEL.STORE_PROMO
+    !podOperation.requiresShippingAddress && saleModel === SALE_MODEL.STORE_PROMO
       ? null
-      : saleModel === SALE_MODEL.PLATFORM
+      : !podOperation.requiresShippingAddress && saleModel === SALE_MODEL.PLATFORM
         ? platformCalc?.shippingNote
         : personalCalc?.shippingNote;
 
@@ -606,20 +461,20 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         <title>Lance sua linha | MangaTeofilo</title>
         <meta
           name="description"
-          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
+          content="Tankobon e meio-tanko fisico na MangaTeofilo: venda pela plataforma, producao para voce ou vitrine editorial na loja. Catalogo, producao e financeiro em etapas separadas."
         />
         <meta property="og:type" content="website" />
         <meta property="og:title" content="Lance sua linha | MangaTeofilo" />
         <meta
           property="og:description"
-          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
+          content="Tankobon e meio-tanko fisico na MangaTeofilo: venda pela plataforma, producao para voce ou vitrine editorial na loja. Catalogo, producao e financeiro em etapas separadas."
         />
         <meta property="og:url" content={canonicalUrl} />
         <meta property="og:image" content={SITE_DEFAULT_IMAGE} />
         <meta name="twitter:title" content="Lance sua linha | MangaTeofilo" />
         <meta
           name="twitter:description"
-          content="Tankōbon e meio-tankō físico na MangaTeofilo: venda com repasse, produção para você ou modo vitrine para divulgar na loja. Programa CREATORS para publicar."
+          content="Tankobon e meio-tanko fisico na MangaTeofilo: venda pela plataforma, producao para voce ou vitrine editorial na loja. Catalogo, producao e financeiro em etapas separadas."
         />
         <meta name="twitter:image" content={SITE_DEFAULT_IMAGE} />
         <link rel="canonical" href={canonicalUrl} />
@@ -639,7 +494,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         >
           <div className="pod-modal" role="dialog" aria-modal="true" aria-labelledby="pod-modal-mono-title">
             <h2 id="pod-modal-mono-title" className="pod-modal__title">
-              Venda na loja exige perfil monetizado
+              Venda na loja exige area financeira ativa
             </h2>
             <div className="pod-modal__body">
               <p>
@@ -651,16 +506,15 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 menor de idade ou cadastro sem dados bancários.
               </p>
               <p>
-                Solicite a monetização no seu perfil; após a <strong>aprovação do administrador</strong>, você recebe
-                uma notificação e aí sim pode escolher &quot;Venda pela plataforma&quot; e produzir o lote para a vitrine.
+                Solicite a monetizacao no seu perfil; apos a <strong>aprovacao do administrador</strong>, voce recebe
+                uma notificacao e ai sim pode escolher &quot;Venda pela plataforma&quot; para entrar na fila comercial da loja.
               </p>
               <p className="pod-modal__hint">
-                Enquanto isso, você pode usar <strong>Produzir para mim</strong> e informar o endereço no checkout ao pagar.
+                Enquanto isso, voce pode usar <strong>Produzir para mim</strong> e informar o endereco no checkout ao pagar.
               </p>
               {storePromoOrderEligible ? (
                 <p className="pod-modal__hint">
-                  Quer só divulgar? Use o cartão <strong>Modo vitrine</strong> ao lado — com metas de engajamento para
-                  liberar o envio.
+                  Quer so divulgar? Use o cartao <strong>Modo vitrine</strong> ao lado — ele funciona como vitrine editorial, sem repasse financeiro.
                 </p>
               ) : null}
             </div>
@@ -681,8 +535,8 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
         title={saleModel === SALE_MODEL.STORE_PROMO ? 'Enviar este lote ao carrinho?' : 'Adicionar lote ao carrinho?'}
         description={
           saleModel === SALE_MODEL.STORE_PROMO
-            ? 'Você será levado ao carrinho para revisar e pagar. O pedido só entra na fila depois do pagamento aprovado. No modo vitrine não há lucro para o creator nas vendas da loja.'
-            : 'Os arquivos serão enviados ao armazenamento seguro e o lote vai para o carrinho. Na próxima etapa você informa endereço (se for "Produzir para mim") e paga no Mercado Pago — sem pagamento, não há pedido confirmado.'
+            ? 'Voce sera levado ao carrinho para revisar e pagar. O pedido so entra na fila depois do pagamento aprovado. No modo vitrine, a loja opera como exposicao editorial e nao gera repasse ao creator.'
+            : 'Os arquivos serao enviados ao armazenamento seguro e o lote vai para o carrinho. Na proxima etapa voce informa endereco (se for "Produzir para mim") e paga no Mercado Pago — sem pagamento, nao ha pedido confirmado.'
         }
         confirmLabel="Continuar"
         cancelLabel="Cancelar"
@@ -739,7 +593,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 </h2>
                 <p className="pod-mode-card__kicker">Venda pela plataforma</p>
                 <p className="pod-mode-card__desc">
-                  Você define o preço na faixa da loja, paga o lote agora e recebe ganhos por unidade vendida na vitrine.
+                  Voce define o preco na faixa da loja, paga o lote agora e recebe repasse por unidade vendida na operacao comercial da plataforma.
                 </p>
                 {platformSaleNeedsMonetization ? (
                   <p className="pod-mode-card__lock">Disponível com monetização aprovada na plataforma.</p>
@@ -776,7 +630,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 <h2 className="pod-mode-card__title">Produzir para mim</h2>
                 <p className="pod-mode-card__kicker">Encomenda pessoal</p>
                 <p className="pod-mode-card__desc">
-                  Encomende os exemplares para um endereço seu — produção e envio direto para você revender ou presentear.
+                  Encomende os exemplares para um endereco seu — producao e envio direto para voce revender ou presentear.
                 </p>
               </button>
               <button
@@ -786,13 +640,13 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 onClick={() => selectSaleModel(SALE_MODEL.STORE_PROMO)}
               >
                 <span className="pod-mode-card__badge pod-mode-card__badge--secondary">Divulgação na loja</span>
-                <h2 className="pod-mode-card__title">Modo vitrine</h2>
+                <h2 className="pod-mode-card__title">Vitrine editorial</h2>
                 <p className="pod-mode-card__kicker">Publicação para exposição</p>
                 <div className="pod-mode-card__body pod-mode-card__body--vitrine">
-                  <p className="pod-mode-card__desc">Publique sua obra na loja sem custos.</p>
+                  <p className="pod-mode-card__desc">Publique sua obra na loja como vitrine editorial, sem custo de entrada.</p>
                   <p className="pod-mode-card__desc">A MangaTeofilo define o preço e cuida da venda.</p>
                   <p className="pod-mode-card__desc">Ideal para ganhar visibilidade.</p>
-                  <p className="pod-mode-card__footnote">(sem repasse de lucro neste modo)</p>
+                  <p className="pod-mode-card__footnote">(sem repasse financeiro neste modo)</p>
                 </div>
                 <p className="pod-mode-card__desc pod-mode-card__desc--after">
                   Lotes <strong>10, 20 ou 30</strong> un. · metas de engajamento e aprovação da equipe antes de publicar.
@@ -834,7 +688,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
           {saleModel === SALE_MODEL.STORE_PROMO ? (
             <section ref={obraRef} id="pod-step-obra" className="pod-panel pod-panel--obra">
               <h2 className="pod-panel__title">
-                {stepIndex('obra')} · Qual obra vai para a vitrine?
+                {stepIndex('obra')} · Qual obra vai para a vitrine editorial?
               </h2>
               {!user ? (
                 <p className="pod-panel__hint">
@@ -921,7 +775,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                     />
                   </div>
                   <p className="pod-promo-warn pod-promo-warn--soft" role="note">
-                    Neste modo a loja vende para divulgar sua obra; <strong>não há repasse de lucro</strong> para você.
+                    Neste modo a loja exibe sua obra para descoberta; <strong>nao ha repasse financeiro</strong> para voce.
                   </p>
                   {!storePromoMetrics.ok ? (
                     <div className="pod-promo-gate">
@@ -953,7 +807,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
             <h2 className="pod-panel__title">{stepIndex('modelo')} · Modelo</h2>
             <p className="pod-panel__hint">Escolha o formato do volume.</p>
             <div className="pod-format-grid">
-              {FORMAT_CARDS.map((c) => (
+              {POD_FORMAT_CARDS.map((c) => (
                 <button
                   key={c.id}
                   type="button"
@@ -977,7 +831,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
             </h2>
             {saleModel === SALE_MODEL.PLATFORM ? (
               <>
-                <p className="pod-panel__hint">Defina o preço da vitrine dentro da faixa permitida. O lote já é pago agora e o seu lucro aparece por unidade vendida.</p>
+                <p className="pod-panel__hint">Defina o preco comercial dentro da faixa permitida. O lote e pago agora e o seu repasse aparece por unidade vendida.</p>
                 <div className="pod-price-block">
                   <div className="pod-price-row">
                     <label className="pod-price-label" htmlFor="pod-unit-price">
@@ -1023,15 +877,15 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                     </div>
                   ) : null}
                   <p className="pod-footnote">
-                    {platformCalc?.shippingNote} Depois disso, o produto entra na fila para aparecer na loja.
+                    {platformCalc?.shippingNote} Depois disso, o produto entra na fila comercial para aparecer na loja.
                   </p>
                 </div>
               </>
             ) : saleModel === SALE_MODEL.STORE_PROMO ? (
               <div className="pod-price-block pod-price-block--fixed">
                 <p className="pod-panel__hint">
-                  Você publica na loja <strong>sem custos</strong>. A MangaTeofilo define o preço e cuida da venda. Você{' '}
-                  <strong>não recebe lucro</strong> nesse modo — é vitrine para visibilidade e prova social.
+                  Voce publica na loja <strong>sem custos</strong>. A MangaTeofilo define o preco e cuida da venda. Voce{' '}
+                  <strong>nao recebe repasse financeiro</strong> nesse modo — ele existe para visibilidade e prova social.
                 </p>
                 <p className="pod-footnote pod-footnote--tight">
                   Depois do envio, a equipe analisa em até 2 dias úteis antes de publicar.
@@ -1200,7 +1054,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 ) : null}
                 {saleModel !== SALE_MODEL.STORE_PROMO ? (
                   <div>
-                    <dt>Total (produção agora)</dt>
+                    <dt>Total de producao agora</dt>
                     <dd className="pod-review-dl__emph">{formatBRL(sidebarTotal ?? 0)}</dd>
                   </div>
                 ) : null}
@@ -1224,8 +1078,8 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                   <dt>Prazo</dt>
                   <dd>
                     {saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
-                      ? 'Até 2 dias úteis para aprovação do admin e liberação na loja'
-                      : `${prazoLabel} (produção + entrega)`}
+                      ? 'Ate 2 dias uteis para aprovacao do admin e liberacao na loja'
+                      : `${prazoLabel} (producao + entrega)`}
                   </dd>
                 </div>
                 {saleModel === SALE_MODEL.PERSONAL ? (
@@ -1238,7 +1092,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               {shippingLine ? <p className="pod-footnote">{shippingLine}</p> : null}
               {saleModel === SALE_MODEL.STORE_PROMO ? (
                 <p className="pod-footnote pod-footnote--tight">
-                  O produto será analisado pelo admin antes de entrar na loja.
+                  O produto sera analisado pelo admin antes de entrar na loja.
                 </p>
               ) : null}
             </div>
@@ -1252,7 +1106,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               </p>
               {saleModel === SALE_MODEL.STORE_PROMO ? (
                 <p className="pod-panel__hint pod-footnote--tight">
-                  Vitrine (sem lucro): após o pagamento, a equipe analisa o material em até 2 dias úteis.
+                  Vitrine editorial (sem repasse): apos o pagamento, a equipe analisa o material em ate 2 dias uteis.
                 </p>
               ) : null}
             </div>
@@ -1277,7 +1131,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
               {busy ? 'Enviando...' : 'Adicionar ao carrinho'}
             </button>
             {saleModel === SALE_MODEL.STORE_PROMO ? (
-              <p className="pod-cta-note">O produto será analisado pelo admin antes de entrar na loja.</p>
+              <p className="pod-cta-note">O produto sera analisado pelo admin antes de entrar na loja.</p>
             ) : null}
           </section>
 
@@ -1285,7 +1139,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
 
         <aside className="pod-summary" aria-label="Resumo do pedido">
           <div className="pod-summary__inner">
-            <h2 className="pod-summary__title">Resumo</h2>
+            <h2 className="pod-summary__title">Resumo operacional</h2>
             <dl className="pod-summary__dl">
               <div>
                 <dt>Modelo</dt>
@@ -1321,8 +1175,8 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
                 <dt>Prazo</dt>
                 <dd>
                   {saleModel === SALE_MODEL.PLATFORM || saleModel === SALE_MODEL.STORE_PROMO
-                    ? 'Aprovação em até 2 dias úteis'
-                    : `${prazoLabel} (produção + entrega)`}
+                    ? 'Aprovacao em ate 2 dias uteis'
+                    : `${prazoLabel} (producao + entrega)`}
                 </dd>
               </div>
             </dl>
@@ -1340,5 +1194,7 @@ export default function PrintOnDemandPage({ user, perfil, adminAccess, obrasVal 
     </main>
   );
 }
+
+
 
 

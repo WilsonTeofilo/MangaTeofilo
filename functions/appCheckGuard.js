@@ -1,7 +1,7 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 
 function isEmulatorRuntime() {
-  return String(process.env.FUNCTIONS_EMULATOR || '').trim().toLowerCase() === 'true';
+  return String(globalThis.process?.env?.FUNCTIONS_EMULATOR || '').trim().toLowerCase() === 'true';
 }
 
 function hasLocalDevOrigin(request) {

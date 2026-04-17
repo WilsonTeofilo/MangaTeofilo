@@ -1,1 +1,3 @@
-export * from '../../shared/fixedZoneShipping.js';
+﻿export * from '../../functions/shared/fixedZoneShipping.js';
+
+

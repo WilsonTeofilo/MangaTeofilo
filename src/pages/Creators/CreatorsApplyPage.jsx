@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 
+import { APP_ROLE } from '../../auth/appRoles';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { CREATOR_FUTURE_PROGRAM } from '../../utils/creatorFutureProgramTeaser';
 import { buildLoginUrlWithRedirect } from '../../utils/loginRedirectPath';
@@ -9,11 +10,18 @@ import './CreatorsApplyPage.css';
 /**
  * Página pública de apresentação do programa. Contas logadas vão para `/creator/onboarding`.
  */
-export default function CreatorsApplyPage({ user, adminAccess }) {
+export default function CreatorsApplyPage({
+  user,
+  adminAccess,
+  shellRole = null,
+  isMangakaEffective = null,
+}) {
   const navigate = useNavigate();
 
-  const isMangaka = adminAccess?.isMangaka === true;
-  const isStaffAdmin = adminAccess?.canAccessAdmin === true;
+  const resolvedShellRole = shellRole || APP_ROLE.USER;
+  const isMangaka =
+    typeof isMangakaEffective === 'boolean' ? isMangakaEffective : resolvedShellRole === APP_ROLE.CREATOR;
+  const isStaffAdmin = resolvedShellRole === APP_ROLE.ADMIN;
 
   if (isMangaka) {
     return <Navigate to="/creator" replace />;

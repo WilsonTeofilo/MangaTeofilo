@@ -1,5 +1,8 @@
-﻿import { normalizeShippingRegions } from '../../shared/storeShipping.js';
-import { normalizeStoreStatus } from '../utils/orderTrackingUi';
+﻿import { normalizeShippingRegions } from '../../functions/shared/storeShipping.js';
+import {
+  formatStoreOrderStatusPt,
+  formatStorePayoutStatusPt,
+} from '../utils/storeOrderDomain';
 
 /** Chaves de categoria na loja (UI + RTDB `product.category`) */
 export const STORE_CATEGORY_KEYS = {
@@ -159,20 +162,11 @@ export function getStoreProductBadges(product, now = Date.now()) {
 
 /** Status do pedido para o leitor (envio manual / Correios). */
 export function formatLojaOrderStatusPt(status) {
-  const normalized = normalizeStoreStatus(status);
-  if (normalized === 'pending') return 'Aguardando pagamento';
-  if (normalized === 'paid') return 'Pedido confirmado';
-  if (normalized === 'in_production') return 'Em produção';
-  if (normalized === 'shipped') return 'Enviado · em trânsito';
-  if (normalized === 'delivered') return 'Entregue';
-  if (normalized === 'cancelled') return 'Cancelado';
-  return 'Em andamento';
+  return formatStoreOrderStatusPt(status);
 }
 
 export function formatLojaPayoutStatusPt(status) {
-  const v = String(status || '').toLowerCase();
-  if (v === 'released') return 'Liberado ao criador';
-  return 'Retido até a entrega';
+  return formatStorePayoutStatusPt(status);
 }
 
 /** URL oficial de rastreio dos Correios (código sem espaços). */
@@ -181,4 +175,6 @@ export function correiosRastreamentoUrl(codigo) {
   if (!c) return '';
   return `https://rastreamento.correios.com.br/app/index.php?objeto=${encodeURIComponent(c)}`;
 }
+
+
 

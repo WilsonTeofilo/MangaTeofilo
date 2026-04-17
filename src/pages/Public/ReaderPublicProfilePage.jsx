@@ -16,25 +16,27 @@ export default function ReaderPublicProfilePage() {
   const { readerUid } = useParams();
   const navigate = useNavigate();
   const uid = String(readerUid || '').trim();
-  const [pub, setPub] = useState(null);
-  const [ready, setReady] = useState(false);
+  const [profileState, setProfileState] = useState({ uid: '', pub: null, ready: false });
 
   useEffect(() => {
     if (!uid) return () => {};
-    setReady(false);
     const unsub = onValue(
       ref(db, `usuarios/${uid}/publicProfile`),
       (snap) => {
-        setPub(snap.exists() ? buildPublicProfileFromUsuarioRow(snap.val() || {}, uid) : null);
-        setReady(true);
+        setProfileState({
+          uid,
+          pub: snap.exists() ? buildPublicProfileFromUsuarioRow(snap.val() || {}, uid) : null,
+          ready: true,
+        });
       },
       () => {
-        setPub(null);
-        setReady(true);
+        setProfileState({ uid, pub: null, ready: true });
       }
     );
     return () => unsub();
   }, [uid]);
+  const pub = profileState.uid === uid ? profileState.pub : null;
+  const ready = uid ? profileState.uid === uid && profileState.ready === true : true;
 
   if (!uid) {
     return (

@@ -27,14 +27,6 @@ function normalizeCreatorId(raw) {
   return String(raw || '').trim();
 }
 
-function normalizeLooseKey(raw) {
-  return String(raw || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
-
 function collectChapterCreatorIds(caps) {
   if (!Array.isArray(caps) || caps.length === 0) return [];
   const out = [];
@@ -55,32 +47,6 @@ export function resolveCreatorPublicProfileById(creatorsMap, creatorId) {
   const cid = normalizeCreatorId(creatorId);
   if (!cid) return null;
   return creatorsMap[cid] || creatorsMap[cid.toLowerCase()] || null;
-}
-
-export function resolveCreatorPublicProfileFromHints(creatorsMap, hints = []) {
-  if (!creatorsMap || typeof creatorsMap !== 'object') return null;
-  const normalizedHints = [...new Set((Array.isArray(hints) ? hints : [hints]).map(normalizeLooseKey).filter(Boolean))];
-  if (!normalizedHints.length) return null;
-
-  for (const row of Object.values(creatorsMap)) {
-    if (!row || typeof row !== 'object') continue;
-    const candidates = [
-      row.userHandle,
-      row.creatorUsername,
-      row.username,
-      row.userName,
-      row.creatorDisplayName,
-      row.displayName,
-      row.creatorProfile?.username,
-      row.creatorProfile?.displayName,
-    ]
-      .map(normalizeLooseKey)
-      .filter(Boolean);
-    if (candidates.some((candidate) => normalizedHints.includes(candidate))) {
-      return row;
-    }
-  }
-  return null;
 }
 
 export function resolveCanonicalWorkCreator(obra, caps, creatorsMap = null) {
@@ -106,45 +72,6 @@ export function resolveCanonicalWorkCreator(obra, caps, creatorsMap = null) {
     return {
       creatorId: preferredCandidate,
       profile: resolveCreatorPublicProfileById(creatorsMap, preferredCandidate),
-    };
-  }
-
-  const hintedProfile = resolveCreatorPublicProfileFromHints(creatorsMap, [
-    obra?.creatorProfile?.username,
-    obra?.creatorProfile?.displayName,
-    obra?.creatorUsername,
-    obra?.creatorDisplayName,
-    obra?.creatorName,
-    obra?.authorName,
-    obra?.authorDisplayName,
-    obra?.autor,
-    obra?.autorNome,
-    obra?.writerName,
-    obra?.userName,
-    obra?.username,
-    ...((Array.isArray(caps) ? caps : []).flatMap((cap) => [
-      cap?.creatorDisplayName,
-      cap?.creatorName,
-      cap?.authorName,
-      cap?.authorDisplayName,
-      cap?.autor,
-      cap?.autorNome,
-      cap?.writerName,
-      cap?.userName,
-      cap?.displayName,
-      cap?.creatorProfile?.displayName,
-      cap?.creatorProfile?.username,
-    ])),
-  ]);
-  if (hintedProfile) {
-    const hintedCreatorId = normalizeCreatorId(
-      hintedProfile.creatorId ||
-        hintedProfile.userId ||
-        hintedProfile.uid
-    );
-    return {
-      creatorId: hintedCreatorId || fallbackCreatorId,
-      profile: hintedProfile,
     };
   }
 

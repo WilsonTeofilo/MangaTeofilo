@@ -1,92 +1,154 @@
-import { SHIPPING_MODE } from './shippingEnv.js';
-import { computeFixedZoneShippingParts } from './fixedZoneShipping.js';
+/**
+ * Frete da loja (PAC/SEDEX): mesma lógica no app e nas Cloud Functions.
+ */
 
-export { SHIPPING_MODE };
+import { computeFixedZoneShippingParts, getRegionalFreightDiscountBreakdown } from './fixedZoneShipping.js';
+import { isStoreWtShippingAllowed } from './shippingEnv.js';
 
-const REGION_SHIPPING_RATES = {
-  sudeste: 27,
-  sul: 29,
-  'centro-oeste': 34,
-  nordeste: 42,
-  norte: 48,
+function round2(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+export const STORE_INTERNAL_PREP_DAYS_MIN = 2;
+export const STORE_INTERNAL_PREP_DAYS_MAX = 4;
+
+export const STORE_SHIPPING_REGIONS = {
+  sudeste: { label: 'Sudeste', states: ['SP', 'RJ', 'MG', 'ES'], pacBase: 25, sedexBase: 34, pacPerKg: 6, sedexPerKg: 9, pacDays: 5, sedexDays: 2 },
+  sul: { label: 'Sul', states: ['PR', 'SC', 'RS'], pacBase: 30, sedexBase: 39, pacPerKg: 7, sedexPerKg: 10, pacDays: 6, sedexDays: 3 },
+  centro_oeste: { label: 'Centro-Oeste', states: ['DF', 'GO', 'MT', 'MS'], pacBase: 35, sedexBase: 45, pacPerKg: 8, sedexPerKg: 11, pacDays: 7, sedexDays: 3 },
+  nordeste: { label: 'Nordeste', states: ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE'], pacBase: 45, sedexBase: 58, pacPerKg: 10, sedexPerKg: 14, pacDays: 9, sedexDays: 4 },
+  norte: { label: 'Norte', states: ['AC', 'AM', 'AP', 'PA', 'RO', 'RR', 'TO'], pacBase: 60, sedexBase: 76, pacPerKg: 13, sedexPerKg: 18, pacDays: 11, sedexDays: 5 },
 };
 
-export function normalizeShippingRegions(config = {}) {
+export const STORE_SHIPPING_SERVICES = {
+  PAC: { label: 'PAC' },
+  SEDEX: { label: 'SEDEX' },
+};
+
+export function normalizeShippingRegions(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
   const out = {};
-  Object.entries(config || {}).forEach(([key, raw]) => {
-    const v = Number(raw);
-    if (Number.isFinite(v) && v > 0) out[key] = v;
-  });
+  for (const [key, base] of Object.entries(STORE_SHIPPING_REGIONS)) {
+    const patch = src[key] && typeof src[key] === 'object' ? src[key] : {};
+    out[key] = {
+      ...base,
+      pacBase: Number.isFinite(Number(patch.pacBase)) ? Math.max(0, Number(patch.pacBase)) : base.pacBase,
+      sedexBase: Number.isFinite(Number(patch.sedexBase)) ? Math.max(0, Number(patch.sedexBase)) : base.sedexBase,
+      pacPerKg: Number.isFinite(Number(patch.pacPerKg)) ? Math.max(0, Number(patch.pacPerKg)) : base.pacPerKg,
+      sedexPerKg: Number.isFinite(Number(patch.sedexPerKg)) ? Math.max(0, Number(patch.sedexPerKg)) : base.sedexPerKg,
+      pacDays: Number.isFinite(Number(patch.pacDays)) ? Math.max(1, Number(patch.pacDays)) : base.pacDays,
+      sedexDays: Number.isFinite(Number(patch.sedexDays)) ? Math.max(1, Number(patch.sedexDays)) : base.sedexDays,
+    };
+  }
   return out;
 }
 
-export function computeRegionalShippingByUf(uf, config = {}) {
-  const ufUpper = String(uf || '').trim().toUpperCase();
-  const map = {
-    AC: 'norte',
-    AL: 'nordeste',
-    AP: 'norte',
-    AM: 'norte',
-    BA: 'nordeste',
-    CE: 'nordeste',
-    DF: 'centro-oeste',
-    ES: 'sudeste',
-    GO: 'centro-oeste',
-    MA: 'nordeste',
-    MT: 'centro-oeste',
-    MS: 'centro-oeste',
-    MG: 'sudeste',
-    PA: 'norte',
-    PB: 'nordeste',
-    PR: 'sul',
-    PE: 'nordeste',
-    PI: 'nordeste',
-    RJ: 'sudeste',
-    RN: 'nordeste',
-    RS: 'sul',
-    RO: 'norte',
-    RR: 'norte',
-    SC: 'sul',
-    SP: 'sudeste',
-    SE: 'nordeste',
-    TO: 'norte',
-  };
-  const region = map[ufUpper] || 'sudeste';
-  const normalized = normalizeShippingRegions(config);
-  return normalized[region] ?? REGION_SHIPPING_RATES[region];
+export function detectShippingRegionFromState(state) {
+  const uf = String(state || '').trim().toUpperCase();
+  for (const [key, region] of Object.entries(STORE_SHIPPING_REGIONS)) {
+    if (region.states.includes(uf)) return key;
+  }
+  return 'sudeste';
 }
 
-export function computeStoreShipping({
-  mode,
-  uf,
-  regionalRates,
-  quantity,
-  subtotal,
-}) {
-  const m = mode || SHIPPING_MODE.API;
-  if (m === SHIPPING_MODE.FIXED) {
-    return {
-      total: Number(subtotal || 0) >= 99999 ? 0 : 29,
-      mode: SHIPPING_MODE.FIXED,
-    };
+export function buildStoreShippingQuote({ items, productsById, config, buyerProfile, subtotal }) {
+  const normalizedRegions = normalizeShippingRegions(config?.shippingRegions);
+  const regionKey = detectShippingRegionFromState(buyerProfile?.state);
+  const region = normalizedRegions[regionKey] || normalizedRegions.sudeste;
+  const sub = Number(subtotal || 0);
+
+  let totalUnits = 0;
+  let totalWeightGrams = 0;
+  for (const item of items || []) {
+    const product = productsById?.[item.productId];
+    if (!product) continue;
+    const qty = Math.max(1, Number(item.quantity) || 1);
+    totalUnits += qty;
+    totalWeightGrams += Math.max(1, Number(product.weightGrams || 450)) * qty;
   }
-  if (m === SHIPPING_MODE.REGION) {
-    const base = computeRegionalShippingByUf(uf, regionalRates);
-    return {
-      total: base,
-      mode: SHIPPING_MODE.REGION,
-    };
-  }
-  const region = computeRegionalShippingByUf(uf, regionalRates);
-  const parts = computeFixedZoneShippingParts({
-    region: Object.keys(REGION_SHIPPING_RATES).find((k) => REGION_SHIPPING_RATES[k] === region) || 'sudeste',
-    subtotal,
-    quantity,
+  if (totalUnits < 1) totalUnits = 1;
+
+  const zoneParts = computeFixedZoneShippingParts({
+    state: buyerProfile?.state,
+    quantity: totalUnits,
+    cartTotal: sub,
   });
+
+  const buyerUf = String(buyerProfile?.state || '').trim().toUpperCase();
+  if (buyerUf === 'WT' && isStoreWtShippingAllowed()) {
+    const testShip = 0.5;
+    const optionsWt = Object.keys(STORE_SHIPPING_SERVICES).map((serviceCode) => {
+      const transitDays = serviceCode === 'SEDEX' ? region.sedexDays : region.pacDays;
+      const deliveryDaysLow = transitDays + STORE_INTERNAL_PREP_DAYS_MIN;
+      const deliveryDaysHigh = transitDays + STORE_INTERNAL_PREP_DAYS_MAX;
+      return {
+        serviceCode,
+        label: STORE_SHIPPING_SERVICES[serviceCode].label,
+        regionKey,
+        regionLabel: region.label,
+        totalWeightGrams,
+        originalPriceBrl: round2(testShip),
+        discountBrl: 0,
+        priceBrl: round2(testShip),
+        internalCostBrl: round2(testShip),
+        transitDays,
+        deliveryDays: transitDays,
+        deliveryDaysLow,
+        deliveryDaysHigh,
+      };
+    });
+    return {
+      regionKey,
+      regionLabel: region.label,
+      options: optionsWt,
+      defaultServiceCode: optionsWt[0]?.serviceCode || 'PAC',
+    };
+  }
+
+  const pCommon = { state: buyerProfile?.state, quantity: totalUnits, cartTotal: sub };
+  const options = Object.keys(STORE_SHIPPING_SERVICES).map((serviceCode) => {
+    const mult = serviceCode === 'SEDEX' ? 1.35 : 1;
+    let originalPriceBrl;
+    let discountBrl;
+    let priceBrl;
+    let rawInternal;
+    if (mult === 1) {
+      originalPriceBrl = zoneParts.originalPriceBrl;
+      discountBrl = zoneParts.discountBrl;
+      priceBrl = zoneParts.priceBrl;
+      rawInternal = zoneParts.originalPriceBrl;
+    } else {
+      const rawSedex = Math.max(0, Math.ceil((zoneParts.baseBrl + zoneParts.extraBrl) * mult));
+      const sedexParts = getRegionalFreightDiscountBreakdown(rawSedex, pCommon);
+      originalPriceBrl = sedexParts.originalPriceBrl;
+      discountBrl = sedexParts.discountBrl;
+      priceBrl = sedexParts.priceBrl;
+      rawInternal = rawSedex;
+    }
+    const transitDays = serviceCode === 'SEDEX' ? region.sedexDays : region.pacDays;
+    const deliveryDaysLow = transitDays + STORE_INTERNAL_PREP_DAYS_MIN;
+    const deliveryDaysHigh = transitDays + STORE_INTERNAL_PREP_DAYS_MAX;
+    return {
+      serviceCode,
+      label: STORE_SHIPPING_SERVICES[serviceCode].label,
+      regionKey,
+      regionLabel: region.label,
+      totalWeightGrams,
+      originalPriceBrl: round2(originalPriceBrl),
+      discountBrl: round2(discountBrl),
+      priceBrl: round2(priceBrl),
+      internalCostBrl: round2(rawInternal),
+      transitDays,
+      deliveryDays: transitDays,
+      deliveryDaysLow,
+      deliveryDaysHigh,
+    };
+  });
+
   return {
-    total: parts.total,
-    base: parts.base,
-    discount: parts.discount,
-    mode: SHIPPING_MODE.API,
+    regionKey,
+    regionLabel: region.label,
+    options,
+    defaultServiceCode: options[0]?.serviceCode || 'PAC',
   };
 }

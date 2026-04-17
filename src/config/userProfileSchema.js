@@ -13,41 +13,16 @@ function hasCanonicalCreatorState(source = {}) {
   const creator = source?.creator && typeof source.creator === 'object' ? source.creator : {};
   const creatorProfilePublic =
     source?.creatorProfile && typeof source.creatorProfile === 'object' ? source.creatorProfile : {};
-  const creatorSocialPublic =
-    creatorProfilePublic?.socialLinks && typeof creatorProfilePublic.socialLinks === 'object'
-      ? creatorProfilePublic.socialLinks
-      : {};
-  const creatorProfile =
-    creator?.profile && typeof creator.profile === 'object' ? creator.profile : {};
-  const creatorSocial =
-    creator?.social && typeof creator.social === 'object' ? creator.social : {};
+  const creatorApplicationStatus = asNonEmptyString(source.creatorApplicationStatus, '').toLowerCase();
   const creatorStatus = asNonEmptyString(source.creatorStatus, '').toLowerCase();
-  const signupIntent = asNonEmptyString(source.signupIntent, '').toLowerCase();
-  const role = asNonEmptyString(source.role || source.panelRole, 'user').toLowerCase();
-  const hasCreatorProfileData =
-    asNonEmptyString(source.creatorDisplayName, '') !== '' ||
-    asNonEmptyString(source.creatorBio, '') !== '' ||
-    asNonEmptyString(source.creatorUsername, '') !== '' ||
-    asNonEmptyString(source.creatorBannerUrl, '') !== '' ||
-    asNonEmptyString(source.instagramUrl, '') !== '' ||
-    asNonEmptyString(source.youtubeUrl, '') !== '' ||
-    asNonEmptyString(creatorProfilePublic.displayName, '') !== '' ||
-    asNonEmptyString(creatorProfilePublic.bioFull, '') !== '' ||
-    asNonEmptyString(creatorProfilePublic.username, '') !== '' ||
-    asNonEmptyString(creatorSocialPublic.instagramUrl, '') !== '' ||
-    asNonEmptyString(creatorSocialPublic.youtubeUrl, '') !== '' ||
-    asNonEmptyString(creatorProfile.displayName, '') !== '' ||
-    asNonEmptyString(creatorProfile.bio, '') !== '' ||
-    asNonEmptyString(creatorSocial.instagram, '') !== '' ||
-    asNonEmptyString(creatorSocial.youtube, '') !== '';
   return (
     source.isCreatorProfile === true ||
+    creatorApplicationStatus === 'approved' ||
     creatorStatus === 'active' ||
     creatorStatus === 'onboarding' ||
-    signupIntent === 'creator' ||
-    role === 'mangaka' ||
-    role === 'creator' ||
-    hasCreatorProfileData
+    creatorProfilePublic.isCreator === true ||
+    creator.isCreator === true ||
+    creator.onboardingCompleted === true
   );
 }
 
@@ -128,6 +103,10 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
     source?.creator?.profile && typeof source.creator.profile === 'object'
       ? source.creator.profile
       : {};
+  const publicCreatorProfile =
+    source?.creatorProfile && typeof source.creatorProfile === 'object'
+      ? source.creatorProfile
+      : {};
   const creatorSocial =
     source?.creator?.social && typeof source.creator.social === 'object'
       ? source.creator.social
@@ -142,16 +121,24 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
   const youtubeUrl = asNonEmptyString(creatorSocial.youtube || source.youtubeUrl, '');
   const userAvatar = asNonEmptyString(source.userAvatar, AVATAR_FALLBACK);
   const creatorAvatarUrl = asNonEmptyString(
-    creatorProfile.avatarUrl || source.creatorAvatarUrl || source.readerProfileAvatarUrl || userAvatar,
+    creatorProfile.avatarUrl ||
+      publicCreatorProfile.avatarUrl ||
+      source.creatorAvatarUrl ||
+      source.readerProfileAvatarUrl ||
+      userAvatar,
     userAvatar
   );
   const creatorStatus = asNonEmptyString(source.creatorStatus, '');
-  const signupIntent = asNonEmptyString(source.signupIntent, 'reader');
+  const creatorApplicationStatus = asNonEmptyString(source.creatorApplicationStatus, '');
   const isCreatorProfile = hasCanonicalCreatorState(source);
   const creatorSupportOffer =
     source?.creator?.monetization?.offer && typeof source.creator.monetization.offer === 'object'
       ? source.creator.monetization.offer
       : null;
+  const creatorBannerUrl = asNonEmptyString(
+    source.creatorBannerUrl || publicCreatorProfile.bannerUrl || creatorProfile.bannerUrl,
+    ''
+  );
   const publicCreatorMonetization = isCreatorProfile
     ? buildCreatorPublicMonetization(source, creatorSupportOffer)
     : null;
@@ -162,18 +149,18 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
     userHandle,
     userAvatar,
     isCreatorProfile,
-    signupIntent,
     status: asNonEmptyString(source.status, ''),
     creatorDisplayName: isCreatorProfile ? creatorDisplayName : '',
     creatorUsername: userHandle,
     creatorBio: isCreatorProfile ? creatorBio : '',
-    creatorBannerUrl: isCreatorProfile ? asNonEmptyString(source.creatorBannerUrl, '') : '',
+    creatorBannerUrl: isCreatorProfile ? creatorBannerUrl : '',
     instagramUrl: isCreatorProfile ? instagramUrl : '',
     youtubeUrl: isCreatorProfile ? youtubeUrl : '',
     readerProfilePublic: source.readerProfilePublic === true,
     readerProfileAvatarUrl: asNonEmptyString(source.readerProfileAvatarUrl, userAvatar),
     readerSince: Number(source.createdAt || source.readerSince || 0) || 0,
     creatorStatus: isCreatorProfile ? creatorStatus : '',
+    creatorApplicationStatus: isCreatorProfile ? creatorApplicationStatus : '',
     updatedAt:
       Number(source?.creator?.meta?.updatedAt || source.updatedAt || source.lastLogin || source.createdAt || 0) || 0,
     ...(isCreatorProfile
@@ -182,6 +169,7 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
             displayName: creatorDisplayName,
             username: userHandle,
             avatarUrl: creatorAvatarUrl,
+            bannerUrl: creatorBannerUrl || null,
             bioFull: creatorBio,
             socialLinks: {
               instagramUrl,

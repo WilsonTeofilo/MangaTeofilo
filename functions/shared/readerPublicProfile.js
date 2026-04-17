@@ -1,8 +1,12 @@
-export const WORK_FAVORITES_CANON_KEY = 'workFavorites';
+/**
+ * Regras compartilhadas para espelho público do perfil de leitor.
+ * Mantém a composição de favorites/likedWorks em um único lugar.
+ */
 
-export function isReaderPublicProfileEffective(row = {}) {
+export const WORK_FAVORITES_CANON_KEY = 'favorites';
+
+export function isReaderPublicProfileEffective(row) {
   if (!row || typeof row !== 'object') return false;
-  if (row.isReaderProfilePublic === false) return false;
-  if (row.readerProfile?.isPublic === false) return false;
-  return true;
+  return row.readerProfilePublic === true;
 }
+

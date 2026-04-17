@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { onValue, ref } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from '../services/firebase';
 import { AVATAR_FALLBACK } from '../constants';
-import { canAccessAdminPath, canAccessCreatorPath } from '../auth/adminPermissions';
+import NotificationCenter from './header/NotificationCenter.jsx';
+import WorkspaceNav from './header/WorkspaceNav.jsx';
+import { canAccessAdminPath, canAccessCreatorPath, hasAnyAdminWorkspaceAccess } from '../auth/adminPermissions';
 import { assinaturaPremiumAtiva } from '../utils/capituloLancamento';
 import {
   resolveEffectiveCreatorMonetizationStatusFromDb,
@@ -14,11 +16,20 @@ import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../store/cartStore'
 import { getPodCartDraft, POD_CART_CHANGED_EVENT } from '../store/podCartStore';
 import './HeaderV2.css';
 
-/** Menu hambúrguer só em viewport típica de telemóvel / tablet estreito — não em PC com janela estreita até ~laptop 13". */
+/** Menu hambÃºrguer sÃ³ em viewport tÃ­pica de telemÃ³vel / tablet estreito â€” nÃ£o em PC com janela estreita atÃ© ~laptop 13". */
 const MOBILE_BREAKPOINT = 768;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
 
-export default function Header({ usuario, perfil, adminAccess }) {
+export default function Header({
+  usuario,
+  perfil,
+  adminAccess,
+  creatorAccess = null,
+  shellRole = null,
+  canSeeAdminWorkspace: canSeeAdminWorkspaceProp = null,
+  canSeeCreatorWorkspace: canSeeCreatorWorkspaceProp = null,
+  isMangakaEffective = false,
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuAberto, setMenuAberto] = useState(false);
@@ -39,24 +50,23 @@ export default function Header({ usuario, perfil, adminAccess }) {
     []
   );
 
-  const isAdmin = adminAccess?.canAccessAdmin === true;
-  /** Alinha a App.jsx: perfil RTDB = mangaka antes do callable devolver `isMangaka`. */
+  const isAdmin = hasAnyAdminWorkspaceAccess(adminAccess);
   const creatorNavAccess = useMemo(() => {
+    if (creatorAccess) return creatorAccess;
     if (adminAccess?.canAccessAdmin === true) {
       return { ...adminAccess, isMangaka: false };
     }
-    if (adminAccess?.canAccessAdmin && adminAccess?.profileLoaded && adminAccess?.isMangaka !== true) {
-      return { ...adminAccess, isMangaka: false };
-    }
-    const rM = String(perfil?.role || '').toLowerCase() === 'mangaka';
-    if (rM && adminAccess?.isMangaka !== true && adminAccess?.profileLoaded === false) {
-      return { ...adminAccess, isMangaka: true, canAccessAdmin: false, panelRole: 'mangaka' };
-    }
     return adminAccess;
-  }, [perfil?.role, adminAccess]);
-  const isMangakaPanel = Boolean(creatorNavAccess?.isMangaka);
-  const canSeeAdminWorkspace = !isMangakaPanel && canAccessAdminPath('/admin', adminAccess);
-  const canSeeCreatorWorkspace = canAccessCreatorPath('/creator', creatorNavAccess);
+  }, [creatorAccess, adminAccess]);
+  const isMangakaPanel = Boolean(isMangakaEffective || creatorNavAccess?.isMangaka);
+  const canSeeAdminWorkspace =
+    typeof canSeeAdminWorkspaceProp === 'boolean'
+      ? canSeeAdminWorkspaceProp
+      : !isMangakaPanel && canAccessAdminPath('/admin', adminAccess);
+  const canSeeCreatorWorkspace =
+    typeof canSeeCreatorWorkspaceProp === 'boolean'
+      ? canSeeCreatorWorkspaceProp
+      : canAccessCreatorPath('/creator', creatorNavAccess);
 
   const storeCartCount = cartCount(storeCartItems);
   const combinedCartCount = storeCartCount + (podCartActive ? 1 : 0);
@@ -72,12 +82,16 @@ export default function Header({ usuario, perfil, adminAccess }) {
     resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active';
 
   /** Candidatura publica: quem ja abre ADMIN (Criadores etc.) nao precisa do atalho CREATORS. */
-  const showCreatorsNav = !isMangakaPanel && !canSeeAdminWorkspace;
+  const showCreatorsNav =
+    shellRole !== 'creator' &&
+    shellRole !== 'admin' &&
+    !isMangakaPanel &&
+    !canSeeAdminWorkspace;
 
   const lanceSuaLinhaPath =
     usuario && creatorNavAccess?.isMangaka && creatorMonetizationIsActive ? '/creator/print' : '/print-on-demand';
 
-  /** Navegação central (site leitor) — CTA «Lance sua linha» fica à parte. */
+  /** Navegacao central do site leitor; o CTA de Lance sua linha fica separado. */
   const primaryNavItems = useMemo(
     () => [
       { label: 'Obras', path: '/works' },
@@ -107,7 +121,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
       }
       if (canAccessAdminPath('/admin/store/settings', adminAccess)) {
         if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
-        lojaMenuBits.push({ label: 'Configurações', path: '/admin/store/settings' });
+        lojaMenuBits.push({ label: 'ConfiguraÃ§Ãµes', path: '/admin/store/settings' });
       }
       if (
         adminWorkspaceCreatorStrip &&
@@ -160,13 +174,13 @@ export default function Header({ usuario, perfil, adminAccess }) {
         subtitle: isMangakaPanel ? 'Meu conteudo' : 'Conteudo global',
         items: [
           canAccessCreatorPath('/perfil', creatorNavAccess)
-            ? { label: 'Identidade pública', path: '/perfil' }
+            ? { label: 'Identidade pÃºblica', path: '/perfil' }
             : null,
           canAccessCreatorPath('/creator/monetizacao', creatorNavAccess)
-            ? { label: 'Monetização', path: '/creator/monetizacao' }
+            ? { label: 'MonetizaÃ§Ã£o', path: '/creator/monetizacao' }
             : null,
           canAccessCreatorPath('/creator/missoes', creatorNavAccess)
-            ? { label: 'Missões & XP', path: '/creator/missoes' }
+            ? { label: 'MissÃµes & XP', path: '/creator/missoes' }
             : null,
           canAccessCreatorPath('/creator/audience', creatorNavAccess) ? { label: 'Analytics', path: '/creator/audience' } : null,
           canAccessCreatorPath('/creator/obras', creatorNavAccess)
@@ -253,9 +267,9 @@ export default function Header({ usuario, perfil, adminAccess }) {
     /**
      * Fechar dropdowns ao clicar fora. Regras:
      * - `click` em fase de bolha (sem capture): no Firefox, capture no document quebrava
-     *   interação com botões do menu (ex.: Sair).
-     * - Não usar `mousedown`: ao arrastar a scrollbar nativa o target costuma ser html/body
-     *   e o painel fechava; `click` não dispara após arrastar só a barra.
+     *   interaÃ§Ã£o com botÃµes do menu (ex.: Sair).
+     * - NÃ£o usar `mousedown`: ao arrastar a scrollbar nativa o target costuma ser html/body
+     *   e o painel fechava; `click` nÃ£o dispara apÃ³s arrastar sÃ³ a barra.
      * - `touchstart` removido: gerava fechamento falso e conflito com rolagem/toque no menu.
      */
     const hitInside = (event, className) => {
@@ -297,6 +311,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
     const onVis = () => {
       if (document.visibilityState === 'visible') syncCart();
     };
+    syncCart();
     window.addEventListener('storage', syncCart);
     window.addEventListener(CART_CHANGED_EVENT, syncCart);
     document.addEventListener('visibilitychange', onVis);
@@ -305,10 +320,6 @@ export default function Header({ usuario, perfil, adminAccess }) {
       window.removeEventListener(CART_CHANGED_EVENT, syncCart);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, []);
-
-  useEffect(() => {
-    setStoreCartItems(getCartItems());
   }, [usuario?.uid]);
 
   useEffect(() => {
@@ -460,30 +471,30 @@ export default function Header({ usuario, perfil, adminAccess }) {
 
   const renderWorkspaceAccountSections = () =>
     workspaceMenus.map((workspace) => {
-      const dashPath =
+      const workspaceHomePath =
         workspace.id === 'admin'
           ? '/admin/dashboard'
           : isMangakaPanel
             ? '/perfil'
             : '/creator/dashboard';
-      const canDash =
+      const canOpenWorkspaceHome =
         workspace.id === 'admin'
-          ? canAccessAdminPath(dashPath, adminAccess)
+          ? canAccessAdminPath(workspaceHomePath, adminAccess)
           : canSeeAdminWorkspace
             ? false
-            : canAccessCreatorPath(dashPath, adminAccess);
+            : canAccessCreatorPath(workspaceHomePath, creatorNavAccess);
       return (
         <div key={workspace.id} className="header-account-menu__cluster">
           <div className="header-account-menu__heading">
-            {workspace.clusterTitle || (workspace.id === 'admin' ? 'Administração' : 'Criador')}
+            {workspace.clusterTitle || (workspace.id === 'admin' ? 'AdministraÃ§Ã£o' : 'Criador')}
           </div>
-          {canDash ? (
+          {canOpenWorkspaceHome ? (
             <button
               type="button"
               className="header-account-menu__dash"
-              onClick={() => pushRoute(dashPath, workspace.id)}
+              onClick={() => pushRoute(workspaceHomePath, workspace.id)}
             >
-              {workspace.id === 'admin' ? 'Painel admin' : 'Criador'}
+              {workspace.id === 'admin' ? 'Painel admin' : 'Workspace do creator'}
             </button>
           ) : null}
           {workspace.items.map((item, idx) =>
@@ -491,7 +502,7 @@ export default function Header({ usuario, perfil, adminAccess }) {
               <div key={`${item.label}-${idx}`} className="header-account-menu__subhead">
                 {item.label}
               </div>
-            ) : item.path === dashPath && canDash ? null : (
+            ) : item.path === workspaceHomePath && canOpenWorkspaceHome ? null : (
               <button key={item.path} type="button" onClick={() => pushRoute(item.path, workspace.id)}>
                 {item.label}
               </button>
@@ -510,240 +521,45 @@ export default function Header({ usuario, perfil, adminAccess }) {
           MangaTeofilo
         </button>
 
-        <div className="nav-center-wrap">
-          <ul className={`nav-menu nav-menu--primary ${menuAberto ? 'active' : ''}`}>
-            {primaryNavItems.map((item) => (
-              <li key={item.path} className={primaryNavIsActive(item) ? 'is-active' : ''}>
-                <button
-                  type="button"
-                  className="nav-link-btn"
-                  onClick={() => pushRoute(item.path)}
-                  aria-current={primaryNavIsActive(item) ? 'page' : undefined}
-                >
-                  {item.label}
-                </button>
-              </li>
-            ))}
-            <li className="nav-menu__cta-mobile">
-              <button
-                type="button"
-                className={`header-cta-lance header-cta-lance--block ${isLanceRouteActive ? 'is-active' : ''}`}
-                onClick={() => pushRoute(lanceSuaLinhaPath)}
-              >
-                Lance sua linha
-              </button>
-            </li>
-            {showCreatorsNav ? (
-              <li className="nav-menu__extra">
-                <button type="button" className="nav-link-btn" onClick={() => pushRoute('/creators')}>
-                  CREATORS
-                </button>
-              </li>
-            ) : null}
-          </ul>
+        <WorkspaceNav
+          menuAberto={menuAberto}
+          setMenuAberto={setMenuAberto}
+          primaryNavItems={primaryNavItems}
+          primaryNavIsActive={primaryNavIsActive}
+          isLanceRouteActive={isLanceRouteActive}
+          lanceSuaLinhaPath={lanceSuaLinhaPath}
+          showCreatorsNav={showCreatorsNav}
+          pushRoute={pushRoute}
+        />
 
-          <button
-            type="button"
-            className={`header-cta-lance header-cta-lance--desktop ${isLanceRouteActive ? 'is-active' : ''}`}
-            onClick={() => pushRoute(lanceSuaLinhaPath)}
-            title="Produção de mangá físico e venda na loja"
-          >
-            Lance sua linha
-          </button>
-        </div>
+        <NotificationCenter
+          usuario={usuario}
+          showCreatorsNav={showCreatorsNav}
+          pushRoute={pushRoute}
+          combinedCartCount={combinedCartCount}
+          notificationsOpen={notificationsOpen}
+          handleToggleNotifications={handleToggleNotifications}
+          unreadNotificationsCount={unreadNotificationsCount}
+          allNotifications={allNotifications}
+          openNotificationTarget={openNotificationTarget}
+          handleMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+          handleDeleteAllNotifications={handleDeleteAllNotifications}
+          handleDeleteNotification={handleDeleteNotification}
+          accountMenuOpen={accountMenuOpen}
+          handleToggleAccountMenu={handleToggleAccountMenu}
+          headerAvatarSrc={headerAvatarSrc}
+          isPremium={isPremium}
+          workspaceMenus={workspaceMenus}
+          renderWorkspaceAccountSections={renderWorkspaceAccountSections}
+          handleLogout={handleLogout}
+          selectedNotification={selectedNotification}
+          priorityLabel={priorityLabel}
+          openSelectedNotificationPath={openSelectedNotificationPath}
+          setSelectedNotification={setSelectedNotification}
+        />
 
-        <div className="nav-auth">
-          <button
-            type="button"
-            className="header-store-cart-btn"
-            onClick={() => pushRoute('/loja/carrinho')}
-            aria-label={
-              combinedCartCount
-                ? `Carrinho: ${combinedCartCount} itens (loja + lote físico se houver)`
-                : 'Carrinho'
-            }
-            title="Carrinho — loja e mangá físico no mesmo lugar; cada tipo tem seu checkout"
-          >
-            <svg
-              className="header-store-cart-icon"
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M9 22a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm10 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM1 4h2l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 8H6"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {combinedCartCount > 0 ? (
-              <span className="header-store-cart-badge">
-                {combinedCartCount > 99 ? '99+' : combinedCartCount}
-              </span>
-            ) : null}
-          </button>
-          {!usuario ? (
-            <>
-              {showCreatorsNav ? (
-                <button
-                  type="button"
-                  className="header-guest-creators"
-                  onClick={() => pushRoute('/creators')}
-                >
-                  CREATORS
-                </button>
-              ) : null}
-              <button
-                className="btn-login-header"
-                onClick={() => pushRoute('/login')}
-                aria-label="Entrar ou cadastrar"
-                title="Entrar ou cadastrar"
-              >
-                <span className="btn-login-long">ENTRAR / CADASTRAR</span>
-                <span className="btn-login-short">ENTRAR</span>
-                <span className="btn-login-icon" aria-hidden="true">&#10230;</span>
-              </button>
-            </>
-          ) : (
-            <div className="user-info-header" title="Notificações e menu da conta">
-              <div className={`header-notification-shell ${notificationsOpen ? 'is-open' : ''}`}>
-                <button
-                  type="button"
-                  className="header-notification-btn"
-                  onClick={handleToggleNotifications}
-                  aria-label="Abrir notificacoes"
-                  aria-expanded={notificationsOpen}
-                >
-                  <span className="header-notification-icon" aria-hidden="true">&#128276;</span>
-                  {unreadNotificationsCount > 0 ? (
-                    <span className="header-notification-badge">{unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}</span>
-                  ) : null}
-                </button>
-                {notificationsOpen ? (
-                  <div className="header-notification-panel">
-                    <div className="header-notification-panel-head">
-                      <div>
-                        <strong>Notificações</strong>
-                        <small>Tudo que importa da conta e dos criadores.</small>
-                      </div>
-                      {allNotifications.length ? (
-                        <div className="header-notification-panel-actions">
-                          <button type="button" className="header-notification-link" onClick={handleMarkAllNotificationsRead}>
-                            Marcar lidas
-                          </button>
-                          <button type="button" className="header-notification-link header-notification-link--danger" onClick={handleDeleteAllNotifications}>
-                            Apagar todas
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="header-notification-panel-body">
-                      {!allNotifications.length ? (
-                        <p className="header-notification-empty">Nenhuma notificação por enquanto.</p>
-                      ) : (
-                        allNotifications.map((item) => (
-                          <div
-                            key={item.id}
-                            className={`header-notification-item-row ${item.read ? 'is-read' : ''} priority-${Number(item.priority || 0)}`}
-                          >
-                            <button
-                              type="button"
-                              className="header-notification-item"
-                              onClick={() => openNotificationTarget(item)}
-                            >
-                              <small className="header-notification-meta">{priorityLabel(item)}</small>
-                              <strong>{item.title || 'Atualização'}</strong>
-                              <span>{item.message || 'Sem detalhes.'}</span>
-                              {Number(item?.aggregate?.count || 1) > 1 ? (
-                                <em className="header-notification-group-count">
-                                  {Number(item.aggregate.count)} itens recentes
-                                </em>
-                              ) : null}
-                            </button>
-                            <button
-                              type="button"
-                              className="header-notification-delete"
-                              aria-label={`Apagar notificação ${item.title || 'sem título'}`}
-                              title="Apagar notificação"
-                              onClick={(event) => handleDeleteNotification(item, event)}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-              <div className={`header-account-shell ${accountMenuOpen ? 'is-open' : ''}`}>
-                <button
-                  type="button"
-                  className="header-avatar-wrapper"
-                  onClick={handleToggleAccountMenu}
-                  aria-label={`Menu da conta${isPremium ? ' — Premium' : ''}`}
-                  aria-expanded={accountMenuOpen}
-                  title={usuario.displayName || 'Conta'}
-                >
-                  <img
-                    src={headerAvatarSrc}
-                    alt=""
-                    className="header-avatar-img"
-                    referrerPolicy="no-referrer"
-                    decoding="async"
-                    onError={(e) => { e.target.src = AVATAR_FALLBACK; }}
-                  />
-                </button>
-                {accountMenuOpen ? (
-                  <div className="header-account-menu">
-                    <button type="button" onClick={() => pushRoute('/perfil')}>
-                      Minha conta
-                    </button>
-                    <button type="button" onClick={() => pushRoute('/pedidos')}>
-                      Meus pedidos
-                    </button>
-                    {workspaceMenus.length ? (
-                      <>
-                        {renderWorkspaceAccountSections()}
-                        <div className="header-account-menu__divider" role="presentation" />
-                      </>
-                    ) : null}
-                    <div className="header-account-menu__divider" role="presentation" />
-                    <button type="button" className="header-account-menu__logout" onClick={handleLogout}>
-                      Sair
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <button
-          type="button"
-          className={`mobile-menu-icon ${menuAberto ? 'active' : ''}`}
-          onClick={() => setMenuAberto(!menuAberto)}
-          aria-label="Menu"
-          aria-expanded={menuAberto}
-        >
-          <span className="bar" />
-          <span className="bar" />
-          <span className="bar" />
-        </button>
-
-        {menuAberto && (
-          <button
-            type="button"
-            className="mobile-menu-overlay"
-            aria-label="Fechar menu"
-            onClick={() => setMenuAberto(false)}
-          />
-        )}
       </div>
+
       {selectedNotification ? (
         <div
           className="header-notification-modal"
@@ -756,17 +572,17 @@ export default function Header({ usuario, perfil, adminAccess }) {
             <div className="header-notification-modal__head">
               <div>
                 <small>{priorityLabel(selectedNotification)}</small>
-                <strong>{selectedNotification.title || 'Atualização'}</strong>
+                <strong>{selectedNotification.title || 'Atualizacao'}</strong>
               </div>
               <button type="button" onClick={() => setSelectedNotification(null)} aria-label="Fechar detalhes">
-                ×
+                x
               </button>
             </div>
             <div className="header-notification-modal__body">
               <p>{selectedNotification.message || 'Sem detalhes adicionais.'}</p>
               {Number(selectedNotification?.aggregate?.count || 1) > 1 ? (
                 <p className="header-notification-modal__meta">
-                  {Number(selectedNotification.aggregate.count)} eventos recentes agrupados nesta notificação.
+                  {Number(selectedNotification.aggregate.count)} eventos recentes agrupados nesta notificacao.
                 </p>
               ) : null}
             </div>
@@ -791,3 +607,5 @@ export default function Header({ usuario, perfil, adminAccess }) {
     </nav>
   );
 }
+
+

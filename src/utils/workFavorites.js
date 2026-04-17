@@ -4,7 +4,7 @@
  */
 
 import { ref, remove, set } from 'firebase/database';
-import { WORK_FAVORITES_CANON_KEY } from '../../shared/readerPublicProfile.js';
+import { WORK_FAVORITES_CANON_KEY } from '../../functions/shared/readerPublicProfile.js';
 import { alreadyFavorited, applyWorkFavoriteDelta } from './discoveryStats';
 
 export async function saveWorkFavoriteBoth(db, uid, workId, payload) {
@@ -28,4 +28,6 @@ export async function removeWorkFavoriteBoth(db, uid, workId) {
     await applyWorkFavoriteDelta(db, { workId, amount: -1 });
   }
 }
+
+
 

@@ -1,9 +1,10 @@
 import { formatLojaOrderStatusPt } from '../../config/store';
-import { normalizeStoreStatus, storeOrderTimelineMeta } from '../../utils/orderTrackingUi';
+import { storeOrderTimelineMeta } from '../../utils/orderTrackingUi';
+import { normalizeStoreOrderStatus } from '../../utils/storeOrderDomain';
 
 /** @returns {{ className: string, label: string }} */
 export function storeOrderBadgeProps(order) {
-  const s = normalizeStoreStatus(order?.status);
+  const s = normalizeStoreOrderStatus(order?.status, '');
   const meta = storeOrderTimelineMeta(order?.status, order?.paymentStatus);
   const label = formatLojaOrderStatusPt(order?.status);
   if (meta.cancelled) return { className: 'ot-badge ot-badge--cancel', label };

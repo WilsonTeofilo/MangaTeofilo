@@ -21,11 +21,11 @@ export default function ChapterHeader({
           disabled={chapterLikeBusy}
           title={
             isLoggedIn
-              ? (chapterLikedByUser ? 'Remover like do capitulo' : 'Curtir capitulo')
+              ? (chapterLikedByUser ? 'Remover curtida do capitulo' : 'Curtir capitulo')
               : 'Faca login para curtir o capitulo'
           }
         >
-          <span className="leitor-chapter-like-icon">{chapterLikedByUser ? '❤' : '♡'}</span>
+          <span className="leitor-chapter-like-icon">{chapterLikedByUser ? '♥' : '♡'}</span>
           <span className="leitor-chapter-like-text">
             {chapterLikeBusy ? 'Salvando...' : (chapterLikedByUser ? 'Descurtir capitulo' : 'Curtir capitulo')}
           </span>
@@ -35,7 +35,7 @@ export default function ChapterHeader({
       <button
         type="button"
         className="btn-config"
-        aria-label="Abrir configurações de leitura"
+        aria-label="Abrir configuracoes de leitura"
         aria-expanded={showConfig}
         onClick={onToggleConfig}
       >

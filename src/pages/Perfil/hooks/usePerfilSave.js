@@ -342,8 +342,11 @@ export function usePerfilSave({
       if (persistedHandle) privatePatch[`usuarios/${user.uid}/userHandle`] = persistedHandle;
       if (adminAccess.isMangaka) privatePatch[`usuarios/${user.uid}/signupIntent`] = 'creator';
       if (creatorCanonicalDoc) {
-        privatePatch[`usuarios/${user.uid}/creator/profile`] = creatorCanonicalDoc.profile;
-        privatePatch[`usuarios/${user.uid}/creator/social`] = creatorCanonicalDoc.social;
+        privatePatch[`usuarios/${user.uid}/creator/profile/displayName`] = creatorCanonicalDoc.profile.displayName || null;
+        privatePatch[`usuarios/${user.uid}/creator/profile/bio`] = creatorCanonicalDoc.profile.bio || null;
+        privatePatch[`usuarios/${user.uid}/creator/profile/birthDate`] = creatorCanonicalDoc.profile.birthDate || null;
+        privatePatch[`usuarios/${user.uid}/creator/social/instagram`] = creatorCanonicalDoc.social.instagram || null;
+        privatePatch[`usuarios/${user.uid}/creator/social/youtube`] = creatorCanonicalDoc.social.youtube || null;
       }
       await update(ref(db), privatePatch);
 
@@ -394,6 +397,9 @@ export function usePerfilSave({
       };
 
       const publicProfileRecord = buildUsuarioPublicProfileRecord(nextPerfilDb, user.uid);
+      const creatorProfilePublic = publicProfileRecord.isCreatorProfile === true
+        ? publicProfileRecord.creatorProfile || {}
+        : {};
       const publicProfilePatch = {
         [`usuarios/${user.uid}/publicProfile/uid`]: publicProfileRecord.uid || user.uid,
         [`usuarios/${user.uid}/publicProfile/userName`]: publicProfileRecord.userName || accountDisplayName,
@@ -415,8 +421,20 @@ export function usePerfilSave({
         [`usuarios/${user.uid}/publicProfile/readerSince`]: publicProfileRecord.readerSince || nowTs,
         [`usuarios/${user.uid}/publicProfile/creatorStatus`]: publicProfileRecord.creatorStatus || null,
         [`usuarios/${user.uid}/publicProfile/updatedAt`]: publicProfileRecord.updatedAt || nowTs,
-        [`usuarios/${user.uid}/publicProfile/creatorProfile`]:
-          publicProfileRecord.isCreatorProfile === true ? publicProfileRecord.creatorProfile || null : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/displayName`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.displayName || null : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/username`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.username || null : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/avatarUrl`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.avatarUrl || finalAvatar : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/bannerUrl`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.bannerUrl || null : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/bioFull`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.bioFull || null : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/instagramUrl`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.socialLinks?.instagramUrl || null : null,
+        [`usuarios/${user.uid}/publicProfile/creatorProfile/socialLinks/youtubeUrl`]:
+          publicProfileRecord.isCreatorProfile === true ? creatorProfilePublic.socialLinks?.youtubeUrl || null : null,
       };
       await update(ref(db), publicProfilePatch);
 

@@ -627,7 +627,11 @@ export default function Login() {
       await update(ref(db), {
         [`usernames/${handleNorm}`]: cred.user.uid,
         [`usuarios/${cred.user.uid}/userHandle`]: handleNorm,
+        [`usuarios/${cred.user.uid}/userAvatar`]: avatarSeguro,
+        [`usuarios/${cred.user.uid}/readerProfileAvatarUrl`]: avatarSeguro,
         [`usuarios/${cred.user.uid}/publicProfile/userHandle`]: handleNorm,
+        [`usuarios/${cred.user.uid}/publicProfile/userAvatar`]: avatarSeguro,
+        [`usuarios/${cred.user.uid}/publicProfile/readerProfileAvatarUrl`]: avatarSeguro,
         [`usuarios/${cred.user.uid}/signupIntent`]: signupIntent,
         [`usuarios/${cred.user.uid}/creatorApplicationStatus`]:
           signupIntent === 'creator' ? 'draft' : null,
@@ -641,7 +645,16 @@ export default function Login() {
           : 'Conta criada! Bem-vindo a Tempestade.'
       );
       if (signupIntent === 'creator') {
-        navigate('/creator/onboarding', { replace: true });
+        navigate('/creator/onboarding', {
+          replace: true,
+          state: {
+            signupDraft: {
+              displayName: displayName.trim(),
+              userHandle: handleNorm,
+              avatarUrl: avatarSeguro,
+            },
+          },
+        });
       } else {
         await irParaAposLogin(cred.user);
       }

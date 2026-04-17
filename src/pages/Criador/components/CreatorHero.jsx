@@ -45,7 +45,6 @@ export default function CreatorHero({
             src={avatar}
             alt={publicLine}
             referrerPolicy="no-referrer"
-            crossOrigin="anonymous"
             onError={(e) => applyImageFallback(e, AVATAR_FALLBACK)}
           />
         </div>
@@ -76,7 +75,7 @@ export default function CreatorHero({
               </button>
             )}
             <button type="button" className="is-secondary" onClick={onCatalog}>
-              Catálogo geral
+              Catalogo geral
             </button>
           </div>
           {followMessage ? <p className="criador-hero__support-copy">{followMessage}</p> : null}
@@ -91,23 +90,23 @@ export default function CreatorHero({
                 </article>
                 <article>
                   <strong>{obrasCount}</strong>
-                  <span>obras públicas</span>
+                  <span>obras publicas</span>
                 </article>
                 <article>
                   <strong>{creatorStats.totalViews}</strong>
                   <span>views (obras)</span>
                 </article>
                 <article>
-                  <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : '—'}</strong>
-                  <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponível'}</span>
+                  <strong>{membershipEnabled ? formatarPrecoBrl(membershipPrice) : '-'}</strong>
+                  <span>{membershipEnabled ? 'membership /30d' : 'apoio indisponivel'}</span>
                 </article>
               </div>
               <p className="criador-hero__support-copy">
-                Seguir este escritor ajuda a plataforma a destacar lançamentos e novidades quando estiverem ativas.
+                Seguir este escritor ajuda a plataforma a destacar lancamentos e novidades quando estiverem ativas.
               </p>
               {!supportEnabled ? (
                 <p className="criador-hero__support-copy">
-                  Este escritor está em modo "só publicar". Apoio e membership ainda não estão disponíveis.
+                  Este escritor esta em modo &quot;so publicar&quot;. Apoio e membership ainda nao estao disponiveis.
                 </p>
               ) : null}
             </>
@@ -124,18 +123,18 @@ export default function CreatorHero({
                 </article>
                 <article>
                   <strong>{readerPublic ? 'ativo' : 'fechado'}</strong>
-                  <span>perfil público</span>
+                  <span>perfil publico</span>
                 </article>
               </div>
               <p className="criador-hero__support-copy">
-                Este perfil público de leitor mostra apenas os dados básicos disponibilizados pelo usuário.
+                Este perfil publico de leitor mostra apenas os dados basicos disponibilizados pelo usuario.
               </p>
             </>
           )}
           {membershipEnabled ? (
             <p className="criador-hero__support-copy">
-              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias — acesso antecipado nas obras
-              deste escritor. Doação sugerida: {formatarPrecoBrl(donationSuggested)}.
+              <strong>Membership:</strong> {formatarPrecoBrl(membershipPrice)} a cada 30 dias - acesso antecipado nas obras
+              deste escritor. Doacao sugerida: {formatarPrecoBrl(donationSuggested)}.
             </p>
           ) : null}
           {redes.length ? (

@@ -6,7 +6,6 @@ import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 
 import { auth, db, functions, storage } from '../../services/firebase';
-import { resolveAdminAccess } from '../../auth/adminAccess';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
@@ -305,12 +304,33 @@ function normalizeCreatorLookupQuery(rawValue) {
   return String(rawValue || '').trim();
 }
 
+function findCreatorLookupMatches(rawValue, directory = []) {
+  const raw = normalizeCreatorLookupQuery(rawValue);
+  if (!raw) return [];
+  const normalized = raw.toLowerCase();
+  const compact = normalizeUsernameInput(raw);
+  return directory.filter((entry) => {
+    if (!entry) return false;
+    const uid = String(entry.uid || '').toLowerCase();
+    const handle = String(entry.handle || '').toLowerCase();
+    const displayName = String(entry.displayName || '').toLowerCase();
+    const option = formatCreatorLookupOption(entry).toLowerCase();
+    return (
+      uid === normalized ||
+      (compact && handle.startsWith(compact)) ||
+      (compact && handle.includes(compact)) ||
+      displayName.includes(normalized) ||
+      option.includes(normalized)
+    );
+  });
+}
+
 function resolveCreatorLookupValue(rawValue, directory = []) {
   const raw = normalizeCreatorLookupQuery(rawValue);
   if (!raw) return null;
   const normalized = raw.toLowerCase();
   const compact = normalizeUsernameInput(raw);
-  return (
+  const exact =
     directory.find((entry) => {
       if (!entry) return false;
       if (String(entry.uid || '').toLowerCase() === normalized) return true;
@@ -318,8 +338,23 @@ function resolveCreatorLookupValue(rawValue, directory = []) {
       if (entry.displayName && String(entry.displayName).toLowerCase() === normalized) return true;
       if (formatCreatorLookupOption(entry).toLowerCase() === normalized) return true;
       return false;
-    }) || null
-  );
+    }) || null;
+  if (exact) return exact;
+
+  const partialMatches = directory.filter((entry) => {
+    if (!entry) return false;
+    const handle = String(entry.handle || '').toLowerCase();
+    const displayName = String(entry.displayName || '').toLowerCase();
+    const option = formatCreatorLookupOption(entry).toLowerCase();
+    return (
+      (compact && handle.startsWith(compact)) ||
+      (compact && handle.includes(compact)) ||
+      displayName.includes(normalized) ||
+      option.includes(normalized)
+    );
+  });
+  if (partialMatches.length === 1) return partialMatches[0];
+  return partialMatches[0] || null;
 }
 
 export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
@@ -647,28 +682,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     return false;
   }, [editandoId, isMangaka, obraSelecionadaId, openSaveErrorModal, user?.uid, workspace]);
 
-  const ensureMangakaClaimForWrite = useCallback(async (actionLabel = 'gravar este conteúdo') => {
-    if (!isMangaka || !user) return true;
-    try {
-      const refreshedAccess = await resolveAdminAccess(user, { force: true });
-      await user.getIdToken(true);
-      if (refreshedAccess?.isMangaka) return true;
-      blockSave('mangaka-claim-not-synced', [
-        `Sua permissão de criador ainda não foi sincronizada para ${actionLabel}.`,
-        'Saia e entre novamente ou recarregue o painel para concluir a liberação.',
-      ]);
-      return false;
-    } catch (claimErr) {
-      blockSave('mangaka-claim-refresh-failed', [
-        `Não foi possível confirmar sua permissão de criador antes de ${actionLabel}.`,
-        'Atualize o painel e tente novamente.',
-      ], {
-        claimErr: String(claimErr?.message || claimErr || ''),
-      });
-      return false;
-    }
-  }, [blockSave, isMangaka, user]);
-
   const showSaveToast = useCallback((text) => {
     const t = String(text || '').trim();
     if (!t) return;
@@ -718,7 +731,11 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     return resolveCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory);
   }, [creatorDirectory, creatorLookupInput, form.adminCreatorId, isMangaka]);
   const creatorLookupQuery = useMemo(() => normalizeCreatorLookupQuery(creatorLookupInput), [creatorLookupInput]);
-  const creatorNeedsSelection = !isMangaka && !!creatorLookupQuery && !resolvedCreatorLookup;
+  const creatorLookupMatches = useMemo(
+    () => (isMangaka ? [] : findCreatorLookupMatches(creatorLookupInput || form.adminCreatorId, creatorDirectory).slice(0, 6)),
+    [creatorDirectory, creatorLookupInput, form.adminCreatorId, isMangaka]
+  );
+  const creatorNeedsSelection = !isMangaka && !!creatorLookupQuery && creatorLookupMatches.length === 0 && !resolvedCreatorLookup;
 
   const toggleGenre = (genreId) => {
     const id = String(genreId || '').trim().toLowerCase();
@@ -802,7 +819,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     editarObra(String(obraSelecionadaId));
   };
 
-  const salvarObra = async () => {
+  const salvarObra = async ({ asDraft = false } = {}) => {
     setSaveAttempted(true);
     if (saveInFlightRef.current) {
       blockSave('save-already-running', [
@@ -824,9 +841,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       blockSave('missing-auth-user', ['Faça login novamente antes de salvar a obra.']);
       return;
     }
-    if (!(await ensureMangakaClaimForWrite(editandoId ? 'salvar a obra' : 'criar a obra'))) {
-      return;
-    }
     if (loading) {
       blockSave('catalog-still-loading', ['Aguarde o carregamento do catálogo antes de salvar.']);
       return;
@@ -835,33 +849,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       blockSave('obras-snapshot-not-ready', ['Aguarde o carregamento completo das obras antes de salvar.']);
       return;
     }
-    const v = validateObraWorkForm({
-      titulo: form.titulo,
-      sinopse: form.sinopse,
-      genres: form.genres,
-      mainGenre: form.mainGenre,
-      tagsRaw: form.tagsRaw,
-      status: form.status,
-      tituloCurto: form.tituloCurto,
-      seoTitle: form.seoTitle,
-      hasCapaFile: Boolean(capaArquivo),
-      capaUrl: form.capaUrl,
-      hasBannerFile: Boolean(bannerArquivo),
-      bannerUrl: form.bannerUrl,
-      editandoId,
-      obrasTodas,
-      isMangaka,
-      currentUid: user?.uid,
-      adminCreatorId: form.adminCreatorId,
-    });
-    if (!v.ok) {
-      blockSave('obra-form-validation', v.errors.length ? v.errors : ['Corrija os campos destacados.'], {
-        validationErrors: v.errors,
-      });
-      return;
-    }
-    const slugNovo = v.slug;
-    const recordSlug = obraSlugFromTitle(form.titulo);
     if (isMangaka && user?.uid && editandoId && obraCreatorId(obrasMap.get(editandoId)) !== user.uid) {
       blockSave('creator-cannot-save-foreign-work', ['Sem permissão para alterar esta obra.']);
       return;
@@ -890,13 +877,62 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       });
       return;
     }
+    const tituloTrim = String(form.titulo || '').trim();
+    if (!tituloTrim) {
+      blockSave(
+        asDraft ? 'obra-draft-missing-title' : 'obra-title-required',
+        [asDraft ? 'Informe ao menos o título antes de salvar o rascunho.' : 'Informe o título da obra antes de salvar.']
+      );
+      return;
+    }
+    const recordSlug = obraSlugFromTitle(tituloTrim);
+    if (!recordSlug) {
+      blockSave('obra-invalid-slug', ['O título precisa gerar um identificador válido para a obra.']);
+      return;
+    }
+    const v = asDraft
+      ? {
+          ok: true,
+          errors: [],
+          genres: normalizeGenreList(form.genres),
+          tags: normalizeTagsFromInput(form.tagsRaw),
+          slug: recordSlug,
+          seoDescription: '',
+        }
+      : validateObraWorkForm({
+          titulo: form.titulo,
+          sinopse: form.sinopse,
+          genres: form.genres,
+          mainGenre: form.mainGenre,
+          tagsRaw: form.tagsRaw,
+          status: form.status,
+          tituloCurto: form.tituloCurto,
+          seoTitle: form.seoTitle,
+          hasCapaFile: Boolean(capaArquivo),
+          capaUrl: form.capaUrl,
+          hasBannerFile: Boolean(bannerArquivo),
+          bannerUrl: form.bannerUrl,
+          editandoId,
+          obrasTodas,
+          isMangaka,
+          currentUid: user?.uid,
+          adminCreatorId: form.adminCreatorId,
+        });
+    if (!v.ok) {
+      blockSave('obra-form-validation', v.errors.length ? v.errors : ['Corrija os campos destacados.'], {
+        validationErrors: v.errors,
+      });
+      return;
+    }
+    const slugNovo = v.slug;
     const ownerUidStorage = segmentoStorageOwnerUid(creatorIdResolved);
     const obraStorageSegment = sanitizarSegmentoStorage(editandoId || slugNovo, 'obra');
     const tagsFinal = v.tags;
-    const tituloTrim = String(form.titulo || '').trim();
     const tituloCurtoTrim = String(form.tituloCurto || '').trim();
     const seoTitleTrim = String(form.seoTitle || '').trim();
     const kwRaw = String(form.seoKeywords || '').trim() || tagsToSeoKeywords(tagsFinal);
+    const statusFinal = asDraft ? 'draft' : form.status;
+    const isPublishedFinal = asDraft ? false : Boolean(form.isPublished);
     const payload = {
       titulo: tituloTrim,
       tituloCurto: (tituloCurtoTrim || tituloTrim).slice(0, TITULO_CURTO_MAX),
@@ -913,10 +949,10 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         ? String(form.bannerUrl || '').trim()
         : '',
       seoTitle: (seoTitleTrim || tituloTrim).slice(0, SEO_TITLE_MAX),
-      seoDescription: v.seoDescription,
+      seoDescription: asDraft ? '' : v.seoDescription,
       seoKeywords: kwRaw.slice(0, SEO_KEYWORDS_MAX),
-      status: form.status,
-      isPublished: Boolean(form.isPublished),
+      status: statusFinal,
+      isPublished: isPublishedFinal,
       archivedAt: form.archived ? Date.now() : null,
       capaAjuste: normalizarAjusteObra(capaAjuste),
       bannerAjuste: normalizarAjusteObra(bannerAjuste),
@@ -969,8 +1005,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           ...payload,
           createdAt: nowMs(),
         });
-        setOk('Obra criada com sucesso.');
-        showSaveToast('Obra criada com sucesso.');
+        const okMsg = asDraft ? 'Rascunho salvo com sucesso.' : 'Obra criada com sucesso.';
+        setOk(okMsg);
+        showSaveToast(okMsg);
         setEditandoId(slugNovo);
         setObraSelecionadaId(slugNovo);
         return;
@@ -997,7 +1034,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       if (cleanupTasks.length) {
         await Promise.allSettled(cleanupTasks);
       }
-      const okMsg = 'Obra atualizada com sucesso.';
+      const okMsg = asDraft ? 'Rascunho salvo com sucesso.' : 'Obra atualizada com sucesso.';
       setOk(okMsg);
       showSaveToast(okMsg);
     } catch (e) {
@@ -1268,9 +1305,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       setErro('Sem permissão.');
       return;
     }
-    if (!(await ensureMangakaClaimForWrite('alterar a publicação da obra'))) {
-      return;
-    }
     try {
       await update(dbRef(db, `obras/${obra.id}`), {
         isPublished: !(obra.isPublished === true),
@@ -1285,9 +1319,6 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     clearMsgs();
     if (isMangaka && user?.uid && obraCreatorId(obra) !== user.uid) {
       setErro('Sem permissão para apagar esta obra.');
-      return;
-    }
-    if (!(await ensureMangakaClaimForWrite('apagar a obra'))) {
       return;
     }
     if (!window.confirm(`Apagar obra "${obra.titulo || obra.id}"?`)) {
@@ -1403,11 +1434,12 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           isMangaka={isMangaka}
           creatorLookupInput={creatorLookupInput}
           handleCreatorLookupChange={handleCreatorLookupChange}
-          creatorDirectory={creatorDirectory}
-          formatCreatorLookupOption={formatCreatorLookupOption}
-          resolvedCreatorLookup={resolvedCreatorLookup}
-          creatorNeedsSelection={creatorNeedsSelection}
-          creatorWorkspaceProfile={creatorWorkspaceProfile}
+        creatorDirectory={creatorDirectory}
+        formatCreatorLookupOption={formatCreatorLookupOption}
+        resolvedCreatorLookup={resolvedCreatorLookup}
+        creatorLookupMatches={creatorLookupMatches}
+        creatorNeedsSelection={creatorNeedsSelection}
+        creatorWorkspaceProfile={creatorWorkspaceProfile}
           onTituloChange={onTituloChange}
           slugPreview={slugPreview}
           toggleGenre={toggleGenre}

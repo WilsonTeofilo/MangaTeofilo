@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { formatarDataHoraBr } from '../utils/datasBr';
@@ -21,20 +21,20 @@ export default function PodOrdersList({ orders, newOrderPath = '/print-on-demand
 
   if (!list.length) {
     return (
-      <section className="meus-pedidos-empty" aria-label="Sem pedidos de mangÃ¡ fÃ­sico">
-        <p>VocÃª ainda nÃ£o tem pedidos de mangÃ¡ fÃ­sico registrados.</p>
+      <section className="meus-pedidos-empty" aria-label="Sem pedidos de manga fisico">
+        <p>Voce ainda nao tem pedidos de manga fisico registrados.</p>
         <p className="meus-pedidos-empty__hint">
-          Encomendas para vender pela plataforma, produÃ§Ã£o para vocÃª ou modo vitrine na loja entram por aqui.
+          Encomendas para vender pela plataforma, producao para voce ou modo vitrine na loja entram por aqui.
         </p>
         <Link className="meus-pedidos-cta" to={newOrderPath}>
-          Novo pedido de mangÃ¡ fÃ­sico
+          Novo pedido de manga fisico
         </Link>
       </section>
     );
   }
 
   return (
-    <section className="meus-pedidos-pod-list" aria-label="Pedidos de mangÃ¡ fÃ­sico">
+    <section className="meus-pedidos-pod-list" aria-label="Pedidos de manga fisico">
       <div className="meus-pedidos-pod-list__toolbar">
         <Link className="meus-pedidos-cta meus-pedidos-cta--ghost" to={newOrderPath}>
           + Novo pedido
@@ -53,13 +53,13 @@ export default function PodOrdersList({ orders, newOrderPath = '/print-on-demand
               <article className="meus-pedidos-pod-card">
                 <div className="meus-pedidos-pod-card__main">
                   <div>
-                    <h3>Pedido fÃ­sico #{shortPodOrderId(id)}</h3>
+                    <h3>Pedido fisico #{shortPodOrderId(id)}</h3>
                     <p className="meus-pedidos-pod-card__status">
                       <strong>Status:</strong> {formatPodOrderStatusPt(o.status)}
                     </p>
                     <p className="meus-pedidos-pod-card__meta">
-                      {formatPodSaleModelPt(snap.saleModel)} Â· {formatPodBookFormatPt(snap.format)} Â· Qtd.{' '}
-                      {snap.quantity != null ? String(snap.quantity) : 'â€”'}
+                      {formatPodSaleModelPt(snap.saleModel)} · {formatPodBookFormatPt(snap.format)} · Qtd.{' '}
+                      {snap.quantity != null ? String(snap.quantity) : '-'}
                     </p>
                     <p className="meus-pedidos-pod-card__date">{formatarDataHoraBr(Number(o.createdAt || 0))}</p>
                     {amount ? (
@@ -91,16 +91,16 @@ export default function PodOrdersList({ orders, newOrderPath = '/print-on-demand
                     {o.shippingAddress && typeof o.shippingAddress === 'object' ? (
                       <p className="loja-order-lines-meta">
                         <strong>Entrega:</strong>{' '}
-                        {String(o.shippingAddress.name || '').trim() || 'â€”'} â€”{' '}
+                        {String(o.shippingAddress.name || '').trim() || '-'} -{' '}
                         {String(o.shippingAddress.street || '').trim()}, {String(o.shippingAddress.city || '').trim()}/
-                        {String(o.shippingAddress.state || '').trim()} â€” CEP {String(o.shippingAddress.zip || '').trim()}
+                        {String(o.shippingAddress.state || '').trim()} - CEP {String(o.shippingAddress.zip || '').trim()}
                       </p>
                     ) : null}
                     {snap.shippingNote ? <p className="meus-pedidos-pod-card__note">{String(snap.shippingNote)}</p> : null}
                     {track && trackUrl ? (
                       <div className="loja-order-tracking-block">
                         <p>
-                          <strong>CÃ³digo de rastreio:</strong> <code>{track}</code>
+                          <strong>Codigo de rastreio:</strong> <code>{track}</code>
                         </p>
                         <a className="loja-btn-ghost loja-btn-small" href={trackUrl} target="_blank" rel="noopener noreferrer">
                           Abrir rastreio nos Correios
@@ -108,7 +108,7 @@ export default function PodOrdersList({ orders, newOrderPath = '/print-on-demand
                       </div>
                     ) : null}
                     <p className="meus-pedidos-pod-card__hint">
-                      AtualizaÃ§Ãµes tambÃ©m aparecem nas <Link to="/perfil">notificaÃ§Ãµes da conta</Link>.
+                      Atualizacoes tambem aparecem nas <Link to="/perfil">notificacoes da conta</Link>.
                     </p>
                   </div>
                 ) : null}
@@ -120,4 +120,3 @@ export default function PodOrdersList({ orders, newOrderPath = '/print-on-demand
     </section>
   );
 }
-

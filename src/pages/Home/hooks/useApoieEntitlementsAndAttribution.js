@@ -26,6 +26,7 @@ export default function useApoieEntitlementsAndAttribution({
   searchParams,
   ofertaPremium,
   setValorLivre,
+  ignoreCreatorAttribution = false,
 }) {
   const [creatorOffer, setCreatorOffer] = useState(null);
 
@@ -33,11 +34,12 @@ export default function useApoieEntitlementsAndAttribution({
   const premiumEntitlement = obterEntitlementPremiumGlobal(perfil);
   const attributionPersistida = useMemo(() => getAttribution(), []);
   const attributionCreatorIdParaCheckout = useMemo(() => {
+    if (ignoreCreatorAttribution) return null;
     const fromUrl = sanitizeCreatorId(searchParams.get('creatorId') || searchParams.get('criador'));
     if (fromUrl) return fromUrl;
     const fromCache = sanitizeCreatorId(attributionPersistida?.creatorId);
     return fromCache || null;
-  }, [attributionPersistida, searchParams]);
+  }, [attributionPersistida, ignoreCreatorAttribution, searchParams]);
   const creatorIdNaSessao = attributionCreatorIdParaCheckout || '';
   const membershipCriadorAtiva =
     creatorIdNaSessao && perfil

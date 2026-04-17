@@ -455,6 +455,12 @@
   align-items: flex-start;
 }
 
+.creator-app-photo-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
 .creator-app-photo-upload {
   display: inline-flex;
   align-items: center;
@@ -468,6 +474,26 @@
   font-size: 0.78rem;
   font-weight: 800;
   cursor: pointer;
+}
+
+.creator-app-photo-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 130px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.creator-app-photo-reset:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .creator-app-photo-meta {
@@ -560,6 +586,13 @@
   gap: 10px;
 }
 
+.creator-app-photo-controls__hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 .creator-app-photo-controls label {
   display: grid;
   gap: 5px;
@@ -578,16 +611,55 @@
   aspect-ratio: 16 / 9;
 }
 
-.creator-app-photo-preview--profile {
-  aspect-ratio: 3 / 4;
-  max-width: 240px;
+.creator-app-photo-preview--avatar {
+  min-height: 220px;
 }
 
-.creator-app-photo-preview--profile img {
+.creator-app-avatar-mock {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 16px;
+}
+
+.creator-app-avatar-mock__pill {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #bfdbfe;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.creator-app-avatar-mock__frame {
+  width: 108px;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+}
+
+.creator-app-avatar-mock__frame img {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
+}
+
+.creator-app-avatar-mock strong {
+  color: #f8fafc;
+  font-size: 0.96rem;
+}
+
+.creator-app-avatar-mock p {
+  margin: 0;
+  color: #b8c4d9;
+  font-size: 0.74rem;
+  line-height: 1.45;
 }
 
 .creator-app-hero-mock {
@@ -679,9 +751,14 @@
     width: 100%;
   }
 
-  .creator-app-photo-preview--profile {
-    max-width: none;
+  .creator-app-photo-actions {
+    justify-items: stretch;
   }
+
+  .creator-app-photo-reset {
+    width: 100%;
+  }
+
 }
 
 /* Aviso explícito: monetização bloqueada por idade (sobre o modal / página CREATORS) */

@@ -5,7 +5,6 @@ import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } 
 import { httpsCallable } from 'firebase/functions';
 
 import { db, storage, auth, functions } from '../../services/firebase';
-import { resolveAdminAccess } from '../../auth/adminAccess';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import {
   normalizarObraId,
@@ -528,6 +527,7 @@ function ModalPreviewPagina({ aberto, itens, indiceInicial = 0, aoFechar }) {
 export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const formRef = useRef(null);
   const notifyCreatorContentRemoval = useMemo(
     () => httpsCallable(functions, 'notifyCreatorContentRemoval'),
     []
@@ -776,29 +776,6 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     if (!uploadCompleto) return;
     irParaEtapa(2);
   }, [capaCapitulo, capituloEditando?.capaUrl, etapaAtiva, irParaEtapa, totalPaginasAtual]);
-
-  const ensureMangakaClaimForWrite = useCallback(async (actionLabel = 'gravar este capítulo') => {
-    if (!isMangaka || !user) return true;
-    try {
-      const refreshedAccess = await resolveAdminAccess(user, { force: true });
-      await user.getIdToken(true);
-      if (refreshedAccess?.isMangaka) return true;
-      setErroModal(
-        `Sua permissão de criador ainda não foi sincronizada para ${actionLabel}. Saia e entre novamente ou recarregue o painel para concluir a liberação.`
-      );
-      return false;
-    } catch (claimErr) {
-      setErroModal(
-        `Não foi possível confirmar sua permissão de criador antes de ${actionLabel}. Atualize o painel e tente novamente.`
-      );
-      console.warn('[AdminPanel] mangaka claim refresh failed', {
-        actionLabel,
-        err: String(claimErr?.message || claimErr || ''),
-        uid: user?.uid || '',
-      });
-      return false;
-    }
-  }, [isMangaka, user]);
 
   useEffect(() => {
     return () => {
@@ -1118,20 +1095,34 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setArquivosPaginas((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const resetEditorState = useCallback(() => {
+    const ajustePadrao = normalizarCapaAjuste();
+    setEditandoId(null);
+    setTitulo('');
+    setNumeroCapitulo('');
+    setPaginasExistentes([]);
+    setArquivosPaginas([]);
+    setCapaCapitulo(null);
+    setCapaAjuste(ajustePadrao);
+    setCapaAjusteInicial(ajustePadrao);
+    setEtapaAtiva(1);
+    setPublicReleaseAtInput('');
+    setAntecipadoMembros(true);
+    setCapaFileLabel('');
+    setPaginasFileLabel('');
+    formRef.current?.reset();
+  }, [setEtapaAtiva]);
+
+  const salvarCapitulo = async ({ asDraft = false } = {}) => {
     if (loading) return;
-    if (etapaAtiva !== 5) {
-      setErroModal('Finalize as etapas até "Publicar" para lançar o capítulo.');
+    if (!asDraft && etapaAtiva !== 5) {
+      setErroModal('Finalize as etapas até "Publicar" para lançar o capítulo. Se quiser parar agora, use "Salvar rascunho".');
       return;
     }
 
     setLoading(true);
-    setProgressoMsg('Sincronizando...');
+    setProgressoMsg(asDraft ? 'Salvando rascunho...' : 'Sincronizando...');
     try {
-      if (!(await ensureMangakaClaimForWrite(editandoId ? 'salvar o capítulo' : 'criar o capítulo'))) {
-        throw new Error('Permissão de criador não sincronizada.');
-      }
       const numeroNormalizado = parseInt(numeroCapitulo, 10);
       const tituloSanitizado = String(titulo || '').trim();
       if (!tituloSanitizado) {
@@ -1145,14 +1136,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
       const creatorIdObra = String(obraCreatorId(obraSelecionada) || '').trim();
       if (!creatorIdObra) {
-        throw new Error('A obra selecionada está sem criador vinculado. Corrija a obra antes de lançar capítulo.');
-      }
-      const totalPaginasPersistidas = paginasExistentes.length + arquivosPaginas.length;
-      if (!editandoId && totalPaginasPersistidas <= 0) {
-        throw new Error('Adicione pelo menos uma página antes de lançar o capítulo.');
-      }
-      if (!capaCapitulo && !capituloEditando?.capaUrl) {
-        throw new Error('Selecione a capa do capítulo antes de publicar.');
+        throw new Error('A obra selecionada está sem criador vinculado. Corrija a obra antes de salvar o capítulo.');
       }
       const jaExisteMesmoNumeroNaObra = capitulos.some((cap) => (
         cap.id !== editandoId &&
@@ -1201,23 +1185,25 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         obraTitulo: String(obraSelecionada?.tituloCurto || obraSelecionada?.titulo || obraIdSelecionada),
         dataUpload: new Date().toISOString(),
         creatorId: creatorIdObra,
+        status: asDraft ? 'draft' : 'published',
+        isPublished: !asDraft,
       };
 
       let publicMs = null;
-        if (publicReleaseAtInput?.trim()) {
-          const parsed = parseBrDateTimeToMs(publicReleaseAtInput);
-          if (parsed == null) {
-            throw new Error('Data de lançamento inválida. Use o formato dd/mm/aaaa hh:mm.');
-          }
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
-          const todayStartMs = todayStart.getTime();
-          if (parsed < todayStartMs) {
-            throw new Error('A data de lançamento deve ser hoje ou uma data futura.');
-          }
-          const now = Date.now();
-          publicMs = parsed < now ? now : parsed;
+      if (publicReleaseAtInput?.trim()) {
+        const parsed = parseBrDateTimeToMs(publicReleaseAtInput);
+        if (parsed == null) {
+          throw new Error('Data de lançamento inválida. Use o formato dd/mm/aaaa hh:mm.');
         }
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayStartMs = todayStart.getTime();
+        if (parsed < todayStartMs) {
+          throw new Error('A data de lançamento deve ser hoje ou uma data futura.');
+        }
+        const now = Date.now();
+        publicMs = parsed < now ? now : parsed;
+      }
       dados.publicReleaseAt = publicMs;
       dados.antecipadoMembros = Boolean(antecipadoMembros);
 
@@ -1225,23 +1211,28 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       if (capaStoragePath) dados.capaStoragePath = capaStoragePath;
       if (urlCapa || capaEditavel) dados.capaAjuste = ajusteNormalizado;
       if (paginasUpload.length > 0) {
-        dados.paginas = paginasUpload.map((item) => item.url);
-        dados.paginasStoragePaths = paginasUpload.map((item) => item.path);
+        const paginasExistentesUrls = editandoId ? (Array.isArray(paginasExistentes) ? paginasExistentes : []) : [];
+        const paginasExistentesPaths = editandoId
+          ? (Array.isArray(capituloEditando?.paginasStoragePaths) ? capituloEditando.paginasStoragePaths : [])
+          : [];
+        dados.paginas = [...paginasExistentesUrls, ...paginasUpload.map((item) => item.url)];
+        dados.paginasStoragePaths = [...paginasExistentesPaths, ...paginasUpload.map((item) => item.path)];
       }
 
+      let capituloSalvoId = editandoId;
       if (editandoId) {
         const temCapaFinal = Boolean(dados.capaUrl || capituloEditando?.capaUrl);
         const temPaginasFinal = Boolean(
           (Array.isArray(dados.paginas) && dados.paginas.length > 0) ||
           (Array.isArray(paginasExistentes) && paginasExistentes.length > 0)
         );
-        if (!temCapaFinal && !temPaginasFinal) {
+        if (!asDraft && !temCapaFinal && !temPaginasFinal) {
           throw new Error('Faltam a capa e as páginas do capítulo.');
         }
-        if (!temCapaFinal) {
+        if (!asDraft && !temCapaFinal) {
           throw new Error('Falta a capa do capítulo.');
         }
-        if (!temPaginasFinal) {
+        if (!asDraft && !temPaginasFinal) {
           throw new Error('Faltam as páginas do capítulo.');
         }
         await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
@@ -1251,40 +1242,47 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       } else {
         const temCapaFinal = Boolean(urlCapa);
         const temPaginasFinal = paginasUpload.length > 0;
-        if (!temCapaFinal && !temPaginasFinal) {
+        if (!asDraft && !temCapaFinal && !temPaginasFinal) {
           throw new Error('Faltam a capa e as páginas do capítulo.');
         }
-        if (!temCapaFinal) {
+        if (!asDraft && !temCapaFinal) {
           throw new Error('Falta a capa do capítulo.');
         }
-        if (!temPaginasFinal) {
+        if (!asDraft && !temPaginasFinal) {
           throw new Error('Faltam as páginas do capítulo.');
         }
-        await set(push(dbRef(db, 'capitulos')), dados);
+        const novoRef = push(dbRef(db, 'capitulos'));
+        capituloSalvoId = novoRef.key;
+        await set(novoRef, dados);
       }
 
-      setEditandoId(null);
-      setTitulo('');
-      setNumeroCapitulo('');
-      setPaginasExistentes([]);
-      setArquivosPaginas([]);
-      setCapaCapitulo(null);
-      const ajustePadrao = normalizarCapaAjuste();
-      setCapaAjuste(ajustePadrao);
-      setCapaAjusteInicial(ajustePadrao);
-      setEtapaAtiva(1);
-      setPublicReleaseAtInput('');
-      setAntecipadoMembros(true);
-      setCapaFileLabel('');
-      setPaginasFileLabel('');
-      e.target.reset();
-      setProgressoMsg('FORJADO COM SUCESSO!');
-    } catch (err) { 
-      setErroModal(err.message); 
-    } finally { 
-      setLoading(false); 
+      if (asDraft) {
+        setEditandoId(capituloSalvoId || null);
+        if (urlCapa) {
+          setCapaCapitulo(null);
+          setCapaFileLabel('Capa atual no servidor (selecione outra para substituir)');
+        }
+        if (paginasUpload.length > 0) {
+          setPaginasExistentes((prev) => [...prev, ...paginasUpload.map((item) => item.url)]);
+          setArquivosPaginas([]);
+          setPaginasFileLabel('');
+        }
+        setProgressoMsg('RASCUNHO SALVO!');
+      } else {
+        resetEditorState();
+        setProgressoMsg('FORJADO COM SUCESSO!');
+      }
+    } catch (err) {
+      setErroModal(err.message);
+    } finally {
+      setLoading(false);
       setTimeout(() => setProgressoMsg(''), 3000);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await salvarCapitulo({ asDraft: false });
   };
 
   const prepararEdicao = (cap) => {
@@ -1304,20 +1302,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   };
 
   const cancelarEdicao = () => {
-    const ajustePadrao = normalizarCapaAjuste();
-    setEditandoId(null);
-    setTitulo('');
-    setNumeroCapitulo('');
-    setPaginasExistentes([]);
-    setArquivosPaginas([]);
-    setCapaCapitulo(null);
-    setCapaAjuste(ajustePadrao);
-    setCapaAjusteInicial(ajustePadrao);
-    setEtapaAtiva(1);
-    setPublicReleaseAtInput('');
-    setAntecipadoMembros(true);
-    setCapaFileLabel('');
-    setPaginasFileLabel('');
+    resetEditorState();
     navigate(chaptersHubPath);
   };
 
@@ -1337,9 +1322,6 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setLoading(true);
     setProgressoMsg(`Apagando capítulo ${cap.numero}...`);
     try {
-      if (!(await ensureMangakaClaimForWrite('apagar o capítulo'))) {
-        throw new Error('Permissão de criador não sincronizada.');
-      }
       const arquivos = [
         cap.capaStoragePath,
         cap.capaUrl,
@@ -1443,7 +1425,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
               : `${isMangaka ? 'Criar capítulo' : 'Criar capítulo'} — ${obraSelecionada?.tituloCurto || obraSelecionada?.titulo}`}
           </h2>
           
-          <form onSubmit={handleSubmit} className="admin-form" noValidate>
+          <form ref={formRef} onSubmit={handleSubmit} className="admin-form" noValidate>
             <div className="input-row">
               <input type="number" placeholder="Nº" value={numeroCapitulo} onChange={(e) => setNumeroCapitulo(e.target.value)} />
               <input type="text" placeholder="Título" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
@@ -1564,6 +1546,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
             <div className="form-actions form-actions--sticky">
               <button type="submit" className="btn-save" disabled={loading}>
                 {loading ? 'PROCESSANDO...' : editandoId ? 'SALVAR ALTERAÇÕES' : 'LANÇAR CAPÍTULO'}
+              </button>
+              <button
+                type="button"
+                className="btn-cancel"
+                disabled={loading}
+                onClick={() => salvarCapitulo({ asDraft: true })}
+              >
+                {loading ? 'PROCESSANDO...' : 'SALVAR RASCUNHO'}
               </button>
               {editandoId && (
                 <button

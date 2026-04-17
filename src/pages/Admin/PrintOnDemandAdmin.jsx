@@ -51,27 +51,27 @@ function podAdminSelectableStatuses(current) {
   return m[c] || STATUS_TRANSITION_OPTIONS;
 }
 
-/** Mangaka monetizado vs nÃ£o (anÃ¡lise). */
+/** Mangaka monetizado vs nao (analise). */
 function podTipoDisplay(snap) {
   const sm = String(snap?.saleModel || '');
   const k = String(snap?.creatorProductKind || '');
   if (sm === 'store_promo' || k === 'non_monetized_promo') return 'Mangaka nao monetizado';
-  if (sm === 'personal' || k === 'personal_purchase') return 'â€”';
+  if (sm === 'personal' || k === 'personal_purchase') return '-';
   if (k === 'monetized' || sm === 'platform') return 'Mangaka monetizado';
-  return 'â€”';
+  return '-';
 }
 
-/** Canal: uma das trÃªs formas de pedido fÃ­sico. */
+/** Canal: uma das tres formas de pedido fisico. */
 function podOrigemDisplay(snap) {
   const sm = String(snap?.saleModel || '');
   if (sm === 'store_promo') return 'Modo vitrine (divulgacao)';
   if (sm === 'personal') return 'Produzir para mim';
   if (sm === 'platform') return 'Venda pela plataforma';
-  return 'â€”';
+  return '-';
 }
 
 function formatTs(ms) {
-  if (!ms) return 'â€”';
+  if (!ms) return '-';
   return new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -91,14 +91,14 @@ function endOfDayMs(isoDate) {
 
 function productionMeta(o) {
   if (o.status === 'cancelled') {
-    return { label: 'â€”', late: false, daysLeft: null, due: null, kind: '' };
+    return { label: '-', late: false, daysLeft: null, due: null, kind: '' };
   }
   const snap = o.snapshot || {};
   const kind = String(snap.estimateKind || '').trim().toLowerCase();
   const high = Number(snap.estimatedProductionDaysHigh || 0);
   const low = Number(snap.estimatedProductionDaysLow || 0);
   const created = Number(o.createdAt || 0);
-  if (!high || !created) return { label: 'â€”', late: false, daysLeft: null, due: null, kind };
+  if (!high || !created) return { label: '-', late: false, daysLeft: null, due: null, kind };
   const due = addBusinessDaysLocal(created, high);
   const msLeft = due - Date.now();
   const days = Math.ceil(msLeft / 86400000);
@@ -109,8 +109,8 @@ function productionMeta(o) {
       : o.status === 'in_production');
   const label =
     kind === 'approval'
-      ? `aprovaÃ§Ã£o ${low && high ? `${low}â€“${high} d Ãºteis` : `${high} d Ãºteis`}`
-      : low && high ? `${low}â€“${high} d Ãºteis` : `${high} d Ãºteis`;
+      ? `aprovacao ${low && high ? `${low}-${high} d uteis` : `${high} d uteis`}`
+      : low && high ? `${low}-${high} d uteis` : `${high} d uteis`;
   return { label, late, daysLeft: Math.max(0, days), due, msLeft, kind };
 }
 
@@ -183,7 +183,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
             const snap = await get(ref(db, `usuarios/${uid}/publicProfile`));
             const v = snap.exists() ? snap.val() : null;
             const name = formatUserDisplayWithHandle(v);
-            next[uid] = name || `${String(uid).slice(0, 8)}â€¦`;
+            next[uid] = name || `${String(uid).slice(0, 8)}...`;
           } catch {
             next[uid] = String(uid).slice(0, 8);
           }
@@ -323,7 +323,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
     const row = orders.find((o) => o.id === orderId);
     if (!row || row.status === nextStatus) return;
     if (row.status === 'cancelled') {
-      showToast('error', 'Pedido cancelado: use apenas a visualizaÃ§Ã£o deste painel.');
+      showToast('error', 'Pedido cancelado: use apenas a visualizacao deste painel.');
       return;
     }
     setConfirmModal({ type: 'status', orderId, from: row.status, to: nextStatus });
@@ -348,7 +348,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
     if (!selected || selected.status === 'cancelled') return;
     const reason = cancelReasonDraft.trim();
     if (reason.length < 3) {
-      showToast('error', 'Informe o motivo do cancelamento (mÃ­nimo 3 caracteres).');
+      showToast('error', 'Informe o motivo do cancelamento (minimo 3 caracteres).');
       return;
     }
     setConfirmModal({ type: 'cancel' });
@@ -395,9 +395,9 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
       ) : null}
 
       {!embedded ? (
-        <aside className="po-orders__sidebar" aria-label="NavegaÃ§Ã£o admin">
+        <aside className="po-orders__sidebar" aria-label="Navegacao admin">
           <Link to="/admin" className="po-orders__side-link">
-            â† Painel admin
+            Voltar ao painel admin
           </Link>
           <Link to="/admin/pedidos" className="po-orders__side-link">
             Pedidos da loja
@@ -411,12 +411,12 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
       <div className="po-orders__main">
         <header className="po-orders__header">
           <div className="po-orders__header-text">
-            <h1>Pedidos de produÃ§Ã£o</h1>
-            <p>Gerencie produÃ§Ã£o, envio e status dos mangÃ¡s fÃ­sicos</p>
+            <h1>Pedidos de producao</h1>
+            <p>Gerencie producao, envio e status dos mangas fisicos</p>
           </div>
           <div className="po-orders__header-actions">
             <button type="button" className="po-btn po-btn--primary" onClick={load} disabled={loading}>
-              {loading ? 'Atualizandoâ€¦' : 'Atualizar'}
+              {loading ? 'Atualizando...' : 'Atualizar'}
             </button>
             <button
               type="button"
@@ -434,7 +434,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
             <span className="po-visually-hidden">Buscar pedido</span>
             <input
               type="search"
-              placeholder="Buscar por ID ou nome do criadorâ€¦"
+              placeholder="Buscar por ID ou nome do criador..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoComplete="off"
@@ -487,8 +487,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               Modelo
               <select value={filterFormat} onChange={(e) => setFilterFormat(e.target.value)}>
                 <option value="">Todos</option>
-                <option value="tankobon">TankÅbon</option>
-                <option value="meio_tanko">Meio-TankÅ</option>
+                <option value="tankobon">Tankobon</option>
+                <option value="meio_tanko">Meio-Tanko</option>
               </select>
             </label>
             <label>
@@ -496,7 +496,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </label>
             <label>
-              AtÃ©
+              Ate
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </label>
           </div>
@@ -509,22 +509,22 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <th>ID</th>
                 <th>Criador</th>
                 <th>Modelo</th>
-                <th>MonetizaÃ§Ã£o (autor)</th>
+                <th>Monetizacao (autor)</th>
                 <th>Canal do pedido</th>
                 <th>Qtd</th>
                 <th>Valor</th>
                 <th>Status</th>
                 <th>Prazo</th>
-                <th className="po-table__col-actions">AÃ§Ãµes</th>
+                <th className="po-table__col-actions">Acoes</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((o) => {
                 const snap = o.snapshot || {};
-                const total = snap.amountDueBRL != null ? formatBRL(snap.amountDueBRL) : 'â€”';
+                const total = snap.amountDueBRL != null ? formatBRL(snap.amountDueBRL) : '-';
                 const pm = productionMeta(o);
                 const uid = o.creatorUid;
-                const creatorLabel = creatorNames[uid] || `${String(uid || '').slice(0, 8)}â€¦`;
+                const creatorLabel = creatorNames[uid] || `${String(uid || '').slice(0, 8)}...`;
                 return (
                   <tr
                     key={o.id}
@@ -540,7 +540,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   >
                     <td className="po-table__mono">#{shortId(o.id)}</td>
                     <td title={uid}>{creatorLabel}</td>
-                    <td>{snap.format === 'meio_tanko' ? 'Meio-TankÅ' : 'TankÅbon'}</td>
+                    <td>{snap.format === 'meio_tanko' ? 'Meio-Tanko' : 'Tankobon'}</td>
                     <td>{podTipoDisplay(snap)}</td>
                     <td>{podOrigemDisplay(snap)}</td>
                     <td>{snap.quantity}</td>
@@ -575,7 +575,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
             const snap = o.snapshot || {};
             const pm = productionMeta(o);
             const uid = o.creatorUid;
-            const creatorLabel = creatorNames[uid] || `${String(uid || '').slice(0, 8)}â€¦`;
+            const creatorLabel = creatorNames[uid] || `${String(uid || '').slice(0, 8)}...`;
             return (
               <button
                 key={o.id}
@@ -588,10 +588,10 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   <span className={`po-badge po-badge--${normalizePodStatus(o.status)}`}>{formatPodStatusLabel(o.status)}</span>
                 </div>
                 <div className="po-mobile-card__meta">
-                  {podTipoDisplay(snap)} Â· {podOrigemDisplay(snap)}
+                  {podTipoDisplay(snap)} ? {podOrigemDisplay(snap)}
                 </div>
                 <div className="po-mobile-card__meta po-mobile-card__meta--second">
-                  {creatorLabel} Â· {snap.quantity} un Â· {snap.amountDueBRL != null ? formatBRL(snap.amountDueBRL) : 'â€”'}
+                  {creatorLabel} ? {snap.quantity} un ? {snap.amountDueBRL != null ? formatBRL(snap.amountDueBRL) : '-'}
                 </div>
                 <div className="po-mobile-card__foot">Prazo: {pm.label}</div>
               </button>
@@ -625,13 +625,13 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
             <div className="po-drawer__head">
               <h2>Pedido #{shortId(selected.id)}</h2>
               <button type="button" className="po-drawer__close" onClick={closeDrawer} aria-label="Fechar">
-                Ã—
+                x
               </button>
             </div>
 
             <div className="po-drawer__scroll">
               <section className="po-drawer__section">
-                <h3>InformaÃ§Ãµes gerais</h3>
+                <h3>Informacoes gerais</h3>
                 <dl className="po-dl">
                   <dt>ID completo</dt>
                   <dd className="po-table__mono">{selected.id}</dd>
@@ -639,16 +639,16 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   <dd>{creatorNames[selected.creatorUid] || selected.creatorUid}</dd>
                   <dt>UID</dt>
                   <dd className="po-table__mono">{selected.creatorUid}</dd>
-                  <dt>MonetizaÃ§Ã£o do autor</dt>
+                  <dt>Monetizacao do autor</dt>
                   <dd>{podTipoDisplay(selected.snapshot)}</dd>
                   <dt>Canal do pedido</dt>
                   <dd>{podOrigemDisplay(selected.snapshot)}</dd>
                   <dt>saleModel (raw)</dt>
-                  <dd className="po-table__mono">{String(selected.snapshot?.saleModel || 'â€”')}</dd>
+                  <dd className='po-table__mono'>{String(selected.snapshot?.saleModel || '-')}</dd>
                   <dt>creatorProductKind</dt>
-                  <dd className="po-table__mono">{String(selected.snapshot?.creatorProductKind || 'â€”')}</dd>
+                  <dd className='po-table__mono'>{String(selected.snapshot?.creatorProductKind || '-')}</dd>
                   <dt>Modelo</dt>
-                  <dd>{selected.snapshot?.format === 'meio_tanko' ? 'Meio-TankÅ' : 'TankÅbon'}</dd>
+                  <dd>{selected.snapshot?.format === 'meio_tanko' ? 'Meio-Tanko' : 'Tankobon'}</dd>
                   <dt>Quantidade</dt>
                   <dd>{selected.snapshot?.quantity}</dd>
                   {selected.linkedWorkId || selected.snapshot?.linkedWorkId ? (
@@ -661,24 +661,24 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   ) : null}
                   {selected.snapshot?.storePromoMetrics ? (
                     <>
-                      <dt>MÃ©tricas (divulgaÃ§Ã£o)</dt>
+                      <dt>Metricas (divulgacao)</dt>
                       <dd>
                         Seguidores: {selected.snapshot.storePromoMetrics.followers} /{' '}
-                        {selected.snapshot.storePromoMetrics.thresholds?.followers ?? 'â€”'} Â· Views:{' '}
+                        {selected.snapshot.storePromoMetrics.thresholds?.followers ?? '-'} ? Views:{' '}
                         {selected.snapshot.storePromoMetrics.views} /{' '}
-                        {selected.snapshot.storePromoMetrics.thresholds?.views ?? 'â€”'} Â· Likes:{' '}
+                        {selected.snapshot.storePromoMetrics.thresholds?.views ?? '-'} ? Likes:{' '}
                         {selected.snapshot.storePromoMetrics.likes} /{' '}
-                        {selected.snapshot.storePromoMetrics.thresholds?.likes ?? 'â€”'}
+                        {selected.snapshot.storePromoMetrics.thresholds?.likes ?? '-'}
                       </dd>
                     </>
                   ) : null}
                   {selected.snapshot?.unitSalePriceBRL != null ? (
                     <>
-                      <dt>PreÃ§o unitÃ¡rio (loja)</dt>
+                      <dt>Preco unitario (loja)</dt>
                       <dd>{formatBRL(selected.snapshot.unitSalePriceBRL)}</dd>
                     </>
                   ) : null}
-                  <dt>Valor total / produÃ§Ã£o</dt>
+                  <dt>Valor total / producao</dt>
                   <dd>{formatBRL(selected.snapshot?.amountDueBRL)}</dd>
                   {selected.snapshot?.creatorProfitPerSoldUnitBRL != null ? (
                     <>
@@ -704,18 +704,18 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   </a>
                 </div>
                 <div className="po-drawer__preview">
-                  <p className="po-drawer__preview-label">PrÃ©-visualizaÃ§Ã£o da capa</p>
+                  <p className="po-drawer__preview-label">Pre-visualizacao da capa</p>
                   <img src={selected.coverUrl} alt="" className="po-drawer__cover-img" />
                 </div>
                 <div className="po-drawer__preview po-drawer__preview--pdf">
-                  <p className="po-drawer__preview-label">PrÃ©-visualizaÃ§Ã£o do miolo (se o navegador permitir)</p>
+                  <p className="po-drawer__preview-label">Pre-visualizacao do miolo (se o navegador permitir)</p>
                   <iframe title="PDF miolo" src={selected.pdfUrl} className="po-drawer__iframe" />
                 </div>
               </section>
 
               <section className="po-drawer__section">
-                <h3>ProduÃ§Ã£o</h3>
-                <p className="po-drawer__hint">AlteraÃ§Ãµes sÃ£o salvas automaticamente apÃ³s uma breve pausa.</p>
+                <h3>Producao</h3>
+                <p className="po-drawer__hint">Alteracoes sao salvas automaticamente apos uma breve pausa.</p>
                 <ul className="po-checklist">
                   {PRODUCTION_CHECKLIST_KEYS.map(({ key, label }) => (
                     <li key={key}>
@@ -738,7 +738,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <p>
                   Prazo estimado:{' '}
                   <strong>
-                    {selected.snapshot?.estimatedProductionDaysLow}â€“{selected.snapshot?.estimatedProductionDaysHigh} dias Ãºteis
+                    {selected.snapshot?.estimatedProductionDaysLow}-{selected.snapshot?.estimatedProductionDaysHigh} dias uteis
                   </strong>
                 </p>
                 {selected.snapshot?.estimatedProductionHours ? (
@@ -750,8 +750,8 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                   return (
                     <p className={pm.late ? 'po-prazo po-prazo--late' : ''}>
                       {pm.late
-                        ? `Atrasado: teto (dias Ãºteis) era ${new Date(pm.due).toLocaleDateString('pt-BR')}.`
-                        : `Tempo restante atÃ© o teto (~dias corridos): ~${pm.daysLeft} dia(s).`}
+                        ? `Atrasado: teto (dias uteis) era ${new Date(pm.due).toLocaleDateString('pt-BR')}.`
+                        : `Tempo restante ate o teto (~dias corridos): ~${pm.daysLeft} dia(s).`}
                     </p>
                   );
                 })()}
@@ -765,7 +765,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     <br />
                     {selected.shippingAddress.street}
                     <br />
-                    {selected.shippingAddress.city} / {selected.shippingAddress.state} â€” CEP {selected.shippingAddress.zip}
+                    {selected.shippingAddress.city} / {selected.shippingAddress.state} - CEP {selected.shippingAddress.zip}
                     {selected.shippingAddress.complement ? (
                       <>
                         <br />
@@ -774,10 +774,10 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     ) : null}
                   </address>
                 ) : (
-                  <p className="po-drawer__hint">Sem endereÃ§o obrigatÃ³rio neste pedido.</p>
+                  <p className="po-drawer__hint">Sem endereco obrigatorio neste pedido.</p>
                 )}
                 <label className="po-field">
-                  CÃ³digo de rastreio
+                  Codigo de rastreio
                   <input
                     value={trackingDraft}
                     onChange={(e) => setTrackingDraft(e.target.value)}
@@ -828,7 +828,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                         ))}
                       </select>
                     </label>
-                    <p className="po-drawer__hint">Cada mudanÃ§a pede confirmaÃ§Ã£o antes de gravar.</p>
+                    <p className="po-drawer__hint">Cada mudanca pede confirmacao antes de gravar.</p>
                   </>
                 )}
               </section>
@@ -837,17 +837,17 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                 <section className="po-drawer__section po-drawer__section--danger">
                   <h3>Cancelar pedido</h3>
                   <p className="po-drawer__hint">
-                    Use para pedidos antigos sem pagamento ou quando nÃ£o houver como concluir a produÃ§Ã£o. O motivo Ã©
-                    enviado ao criador na notificaÃ§Ã£o.
+                    Use para pedidos antigos sem pagamento ou quando nao houver como concluir a producao. O motivo e
+                    enviado ao criador na notificacao.
                   </p>
                   <label className="po-field">
-                    Motivo (obrigatÃ³rio)
+                    Motivo (obrigatorio)
                     <textarea
                       className="po-drawer__textarea"
                       rows={4}
                       value={cancelReasonDraft}
                       onChange={(e) => setCancelReasonDraft(e.target.value)}
-                      placeholder="Ex.: Pedido criado antes do checkout; sem pagamento registrado â€” encerrado administrativamente."
+                      placeholder="Ex.: Pedido criado antes do checkout; sem pagamento registrado - encerrado administrativamente."
                       disabled={saving}
                       maxLength={2000}
                     />
@@ -885,7 +885,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
             {confirmModal.type === 'status' ? (
               <>
                 <h2 id="po-modal-title" className="po-modal__title">
-                  Confirmar mudanÃ§a de status
+                  Confirmar mudanca de status
                 </h2>
                 <p className="po-modal__body">
                   Alterar de <strong>{STATUS_LABELS[confirmModal.from] || confirmModal.from}</strong> para{' '}
@@ -896,17 +896,17 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     Voltar
                   </button>
                   <button type="button" className="po-btn po-btn--primary" onClick={executeStatusChange} disabled={saving}>
-                    {saving ? 'Salvandoâ€¦' : 'Confirmar'}
+                    {saving ? 'Salvando...' : 'Confirmar'}
                   </button>
                 </div>
               </>
             ) : (
               <>
                 <h2 id="po-modal-title" className="po-modal__title">
-                  Cancelar pedido fÃ­sico
+                  Cancelar pedido fisico
                 </h2>
                 <p className="po-modal__body">
-                  O criador recebe uma notificaÃ§Ã£o com o motivo que vocÃª informou abaixo. Esta aÃ§Ã£o nÃ£o desfaz pagamentos
+                  O criador recebe uma notificacao com o motivo que voce informou abaixo. Esta acao nao desfaz pagamentos
                   no Mercado Pago automaticamente.
                 </p>
                 <p className="po-modal__preview">{cancelReasonDraft.trim()}</p>
@@ -915,7 +915,7 @@ export default function PrintOnDemandAdmin({ embedded = false }) {
                     Voltar
                   </button>
                   <button type="button" className="po-btn po-btn--danger" onClick={executeCancelOrder} disabled={saving}>
-                    {saving ? 'Cancelandoâ€¦' : 'Sim, cancelar pedido'}
+                    {saving ? 'Cancelando...' : 'Sim, cancelar pedido'}
                   </button>
                 </div>
               </>

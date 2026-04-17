@@ -798,22 +798,33 @@ export default function CreatorApplicationModal({
             <div>
               <p className="creator-app-modal__section-title">Identidade visual do creator</p>
               <p className="creator-app-modal__hint">
-                Escolha uma foto sua ou da marca do autor. Ela vira o retrato 3:4 e reaparece no topo 16:9 com blur leve.
+                Escolha uma foto sua ou da marca do autor. O mesmo recorte gera o avatar 3:4 e o hero publico com blur leve,
+                sem duplicar upload nem criar uma segunda imagem inutil.
               </p>
             </div>
-            <label className="creator-app-photo-upload">
-              <span>Escolher foto</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp,image/pjpeg,.jpg,.jpeg,.png,.webp"
-                hidden
-                disabled={loading}
-                onChange={(e) => {
-                  handleSelectCreatorPhoto(e.target.files?.[0] || null);
-                  e.target.value = '';
-                }}
-              />
-            </label>
+            <div className="creator-app-photo-actions">
+              <label className="creator-app-photo-upload">
+                <span>Escolher foto</span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp,image/pjpeg,.jpg,.jpeg,.png,.webp"
+                  hidden
+                  disabled={loading}
+                  onChange={(e) => {
+                    handleSelectCreatorPhoto(e.target.files?.[0] || null);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="creator-app-photo-reset"
+                disabled={!creatorProfileImageUrl || loading}
+                onClick={() => setCreatorProfileImageAdjustment(normalizeCreatorProfileAdjustment())}
+              >
+                Recentralizar
+              </button>
+            </div>
           </div>
 
           <div className="creator-app-photo-meta">
@@ -868,6 +879,9 @@ export default function CreatorApplicationModal({
               </div>
 
               <div className="creator-app-photo-controls">
+                <p className="creator-app-photo-controls__hint">
+                  Arraste a foto dentro da moldura e use os controles abaixo ate o avatar e o hero ficarem equilibrados.
+                </p>
                 <label>
                   Zoom ({creatorProfileImageAdjustment.zoom.toFixed(2)}x)
                   <input
@@ -929,6 +943,23 @@ export default function CreatorApplicationModal({
             </div>
 
             <div className="creator-app-photo-preview-shell">
+              <div className="creator-app-photo-preview creator-app-photo-preview--avatar">
+                {creatorProfilePreviewUrl ? (
+                  <div className="creator-app-avatar-mock">
+                    <span className="creator-app-avatar-mock__pill">avatar final</span>
+                    <div className="creator-app-avatar-mock__frame">
+                      <img src={creatorProfilePreviewUrl} alt="Previa final do avatar do creator" />
+                    </div>
+                    <strong>{displayName || 'Nome artistico'}</strong>
+                    <p>Esse retrato aparece no perfil, nos cards e em pontos onde o creator precisa ser reconhecido rapido.</p>
+                  </div>
+                ) : (
+                  <div className="creator-app-photo-placeholder">
+                    <strong>Avatar final</strong>
+                    <span>O retrato 3:4 aparece aqui assim que a foto estiver pronta.</span>
+                  </div>
+                )}
+              </div>
               <div className="creator-app-photo-preview creator-app-photo-preview--hero">
                 {creatorHeroPreviewUrl ? (
                   <div
@@ -941,22 +972,17 @@ export default function CreatorApplicationModal({
                         {creatorProfilePreviewUrl ? <img src={creatorProfilePreviewUrl} alt="Previa do avatar do creator" /> : null}
                       </div>
                       <div className="creator-app-hero-mock__text">
-                        <span className="creator-app-hero-mock__pill">creator preview</span>
+                        <span className="creator-app-hero-mock__pill">prévia do perfil</span>
                         <strong>{displayName || 'Nome artistico'}</strong>
                         <p>{bio || 'Sua bio curta aparece aqui para o leitor ter contexto imediato.'}</p>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="creator-app-photo-placeholder">A capa 16:9 aparece aqui em tempo real.</div>
-                )}
-              </div>
-
-              <div className="creator-app-photo-preview creator-app-photo-preview--profile">
-                {creatorProfilePreviewUrl ? (
-                  <img src={creatorProfilePreviewUrl} alt="Previa final do perfil do creator" />
-                ) : (
-                  <div className="creator-app-photo-placeholder">O retrato 3:4 aparece aqui.</div>
+                  <div className="creator-app-photo-placeholder">
+                    <strong>Hero do perfil</strong>
+                    <span>A faixa publica do creator aparece aqui em tempo real, usando a mesma foto com blur.</span>
+                  </div>
                 )}
               </div>
             </div>

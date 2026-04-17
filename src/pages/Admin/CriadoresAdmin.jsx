@@ -90,10 +90,22 @@ function creatorSocialOf(item) {
 }
 
 function creatorBannerUrlOf(item) {
-  return String(item?.creatorBannerUrl || '').trim();
+  const creatorProfile = creatorPublicProfileOf(item);
+  return String(creatorProfile?.bannerUrl || item?.creatorBannerUrl || '').trim();
 }
 
-/** Comparativo NÃ­vel 1 (vitrine) â€” dados vÃªm do callable ou recalculados se faltar campo. */
+function creatorAvatarUrlOf(item) {
+  const creatorProfile = creatorPublicProfileOf(item);
+  return String(
+    item?.creatorApplication?.profileImageUrl ||
+      item?.creatorPendingProfileImageUrl ||
+      creatorProfile?.avatarUrl ||
+      item?.userAvatar ||
+      ''
+  ).trim();
+}
+
+/** Comparativo Nivel 1 (vitrine) - dados vem do callable ou recalculados se faltar campo. */
 function creatorApprovalGateFromItem(item) {
   if (item?.creatorApprovalMetrics && item?.creatorApprovalThresholds) {
     return {
@@ -109,8 +121,8 @@ function creatorApprovalGateFromItem(item) {
 
 function pixTypeLabel(t) {
   const k = String(t || '').toLowerCase();
-  const m = { cpf: 'CPF', email: 'E-mail', phone: 'Telefone', random: 'Chave aleatÃ³ria' };
-  return m[k] || (k ? k : 'â€”');
+  const m = { cpf: 'CPF', email: 'E-mail', phone: 'Telefone', random: 'Chave aleatoria' };
+  return m[k] || (k ? k : '--');
 }
 
 function accountAgeInfo(item) {
@@ -134,7 +146,7 @@ function accountAgeInfo(item) {
       approx: true,
     };
   }
-  return { birthDisplay: 'â€”', age: null, isAdult: null, approx: false };
+  return { birthDisplay: '--', age: null, isAdult: null, approx: false };
 }
 
 function CreatorDetailDrawer({
@@ -164,8 +176,10 @@ function CreatorDetailDrawer({
   const uid = item.uid;
   const isPending = item.creatorApplicationStatus === 'requested';
   const displayNameRaw = formatUserDisplayFromMixed(item);
-  const displayName = displayNameRaw === 'UsuÃ¡rio' ? 'â€”' : displayNameRaw;
-  const bio = String(item.creatorBio || item.creatorBioShort || '').trim() || 'â€”';
+  const displayName = displayNameRaw === 'Usuario' ? '--' : displayNameRaw;
+  const username = String(item.userHandle || item.creatorUsername || '').trim();
+  const accountName = String(item.userName || item.displayName || '').trim();
+  const bio = String(item.creatorBio || item.creatorBioShort || '').trim() || '--';
   const ageI = accountAgeInfo(item);
   const mon = wantsMonetization(item);
   const monetizationApplicationStatus = String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase();
@@ -188,7 +202,7 @@ function CreatorDetailDrawer({
   const monetizationPending = monetizationApplicationStatusResolved === 'pending';
   const compliance = item.creatorComplianceAdmin;
   const pendingCreatorPhoto = String(item?.creatorApplication?.profileImageUrl || item?.creatorPendingProfileImageUrl || '').trim();
-  const avatarPreviewUrl = pendingCreatorPhoto || item.userAvatar || '';
+  const avatarPreviewUrl = creatorAvatarUrlOf(item);
   const taxDigits = compliance?.taxIdDigits ? String(compliance.taxIdDigits).replace(/\D/g, '') : '';
   const cpfOk = taxDigits.length === 11 && isValidBrazilianCpfDigits(taxDigits);
   const complianceGate = mon ? evaluateMonetizationComplianceAdmin(compliance) : { ok: true, reasons: [] };
@@ -222,11 +236,14 @@ function CreatorDetailDrawer({
           <div>
             <h2 id="criador-ficha-title">Ficha do criador</h2>
             <p>
-              {displayName} Â· <span className="criadores-admin-mono">{uid}</span>
+              {displayName}
+              {username ? ` | @${username}` : ''}
+              {' | '}
+              <span className="criadores-admin-mono">{uid}</span>
             </p>
           </div>
           <button type="button" className="criadores-admin-drawer__close" aria-label="Fechar" onClick={onClose}>
-            Ã—
+            x
           </button>
         </header>
 
@@ -237,18 +254,18 @@ function CreatorDetailDrawer({
             </p>
           ) : null}
           <section className="criadores-admin-section criadores-admin-section--metrics">
-            <h3 className="criadores-admin-section__title">Requisitos para aprovar candidatura (NÃ­vel 1)</h3>
+            <h3 className="criadores-admin-section__title">Requisitos para aprovar candidatura (Nivel 1)</h3>
             <p className="criadores-admin-compliance-hint" style={{ marginTop: 0 }}>
-              Mesmas metas da vitrine POD: seguidores, views e likes na plataforma. O servidor bloqueia aprovaÃ§Ã£o se
-              faltar qualquer uma. Quem jÃ¡ estÃ¡ aprovado permanece; a regra vale para novas decisÃµes.
+              Mesmas metas da vitrine POD: seguidores, views e likes na plataforma. O servidor bloqueia aprovacao se
+              faltar qualquer uma. Quem ja esta aprovado permanece; a regra vale para novas decisoes.
             </p>
             {!approvalGate.ok ? (
               <div className="criadores-admin-compliance-warn" role="alert">
-                <strong>Metas nÃ£o atingidas â€” nÃ£o Ã© possÃ­vel aprovar esta solicitaÃ§Ã£o atÃ© o criador cumprir tudo.</strong>
+                <strong>Metas nao atingidas - nao e possivel aprovar esta solicitacao ate o criador cumprir tudo.</strong>
               </div>
             ) : (
               <p className="criadores-admin-alert criadores-admin-alert--ok" role="status" style={{ marginBottom: 12 }}>
-                Todas as metas mÃ­nimas foram atingidas (ou superadas).
+                Todas as metas minimas foram atingidas (ou superadas).
               </p>
             )}
             <dl className="criadores-admin-dl criadores-admin-dl--metrics">
@@ -292,8 +309,16 @@ function CreatorDetailDrawer({
             <h3 className="criadores-admin-section__title">Perfil</h3>
             <dl className="criadores-admin-dl">
               <div>
-                <dt>Nome artÃ­stico</dt>
+                <dt>Nome artistico</dt>
                 <dd>{displayName}</dd>
+              </div>
+              <div>
+                <dt>Nome da conta</dt>
+                <dd>{accountName || '--'}</dd>
+              </div>
+              <div>
+                <dt>Username</dt>
+                <dd>{username ? `@${username}` : '--'}</dd>
               </div>
               <div>
                 <dt>Bio</dt>
@@ -305,11 +330,11 @@ function CreatorDetailDrawer({
                   {creatorSocialResolved.instagramUrl ? (
                     <div>Instagram: {creatorSocialResolved.instagramUrl}</div>
                   ) : null}
-                  {creatorSocialResolved.youtubeUrl ? <div>YouTube: {creatorSocialResolved.youtubeUrl}</div> : null}
-                  {!creatorSocialResolved.instagramUrl && !creatorSocialResolved.youtubeUrl ? '—' : null}
-                </dd>
-              </div>
-            </dl>
+                    {creatorSocialResolved.youtubeUrl ? <div>YouTube: {creatorSocialResolved.youtubeUrl}</div> : null}
+                    {!creatorSocialResolved.instagramUrl && !creatorSocialResolved.youtubeUrl ? '--' : null}
+                  </dd>
+                </div>
+              </dl>
             <div className="criadores-admin-media-row">
               {avatarPreviewUrl ? (
                 <div>
@@ -333,12 +358,12 @@ function CreatorDetailDrawer({
                 </div>
               ) : null}
             </div>
-            {!item.userAvatar && !creatorBannerUrlResolved ? (
+            {!avatarPreviewUrl && !creatorBannerUrlResolved ? (
               <p style={{ margin: '8px 0 0', fontSize: '0.82rem', color: 'rgba(255,255,255,0.5)' }}>
-                Sem avatar nem banner cadastrados (o site pode usar sÃ³ a foto de perfil no hero).
+                Sem avatar nem banner cadastrados (o site pode usar so a foto de perfil no hero).
               </p>
             ) : null}
-            {item.userAvatar && !creatorBannerUrlResolved ? (
+            {avatarPreviewUrl && !creatorBannerUrlResolved ? (
               <p style={{ margin: '8px 0 0', fontSize: '0.82rem', color: 'rgba(255,255,255,0.5)' }}>
                 Sem banner separado cadastrado.
               </p>
@@ -350,7 +375,7 @@ function CreatorDetailDrawer({
             <dl className="criadores-admin-dl">
               <div>
                 <dt>E-mail</dt>
-                <dd>{item.email || 'â€”'}</dd>
+                <dd>{item.email || '--'}</dd>
               </div>
               <div>
                 <dt>Data de nascimento</dt>
@@ -369,7 +394,7 @@ function CreatorDetailDrawer({
                       </span>
                     </>
                   ) : (
-                    'â€”'
+                    '--'
                   )}
                 </dd>
               </div>
@@ -377,17 +402,17 @@ function CreatorDetailDrawer({
           </section>
 
           <section className="criadores-admin-section criadores-admin-section--money">
-            <h3 className="criadores-admin-section__title">MonetizaÃ§Ã£o (resumo)</h3>
+            <h3 className="criadores-admin-section__title">Monetizacao (resumo)</h3>
             <dl className="criadores-admin-dl">
               <div>
-                <dt>Solicitou monetizaÃ§Ã£o</dt>
-                <dd>{mon ? 'Sim' : 'NÃ£o (apenas publicar)'}</dd>
+                <dt>Solicitou monetizacao</dt>
+                <dd>{mon ? 'Sim' : 'Nao (apenas publicar)'}</dd>
               </div>
               <div>
-                <dt>Status / preferÃªncia</dt>
+                <dt>Status / preferencia</dt>
                 <dd>
-                  {String(monetizationApplicationStatusResolved || monetizationStatusResolved || '—')} ·{' '}
-                  {String(creatorMonetizationPreferenceResolved || 'publish_only')} ·{' '}
+                    {String(monetizationApplicationStatusResolved || monetizationStatusResolved || '-')} ·{' '}
+                    {String(creatorMonetizationPreferenceResolved || 'publish_only')} ·{' '}
                   {String(monetizationFinancialStatusResolved || 'inactive')}
                 </dd>
               </div>
@@ -399,7 +424,7 @@ function CreatorDetailDrawer({
               <h3 className="criadores-admin-section__title">Compliance / pagamento</h3>
               {!complianceGate.ok ? (
                 <div className="criadores-admin-compliance-warn" role="alert">
-                  <strong>Dados de monetizaÃ§Ã£o incompletos ou invÃ¡lidos</strong>
+                  <strong>Dados de monetizacao incompletos ou invalidos</strong>
                   <ul>
                     {complianceGate.reasons.map((r) => (
                       <li key={r}>{r}</li>
@@ -408,24 +433,24 @@ function CreatorDetailDrawer({
                 </div>
               ) : (
                 <p className="criadores-admin-alert criadores-admin-alert--ok" role="status" style={{ marginBottom: 12 }}>
-                  Dados mÃ­nimos de identidade e PIX validados para liberaÃ§Ã£o.
+                  Dados minimos de identidade e PIX validados para liberacao.
                 </p>
               )}
               <dl className="criadores-admin-dl">
                 <div>
                   <dt>Nome completo (documento)</dt>
-                  <dd>{compliance?.legalFullName?.trim() || 'â€”'}</dd>
+                  <dd>{compliance?.legalFullName?.trim() || '--'}</dd>
                 </div>
                 <div>
                   <dt>CPF</dt>
                   <dd className="criadores-admin-mono">
-                    {taxDigits.length === 11 ? formatCpfForDisplay(taxDigits) : taxDigits || 'â€”'}
+                    {taxDigits.length === 11 ? formatCpfForDisplay(taxDigits) : taxDigits || '--'}
                     {taxDigits.length === 11 ? (
                       <span
                         className={`criadores-admin-pill ${cpfOk ? 'criadores-admin-pill--ok' : 'criadores-admin-pill--bad'}`}
                         style={{ marginLeft: 8 }}
                       >
-                        {cpfOk ? 'CPF vÃ¡lido' : 'CPF invÃ¡lido'}
+                        {cpfOk ? 'CPF valido' : 'CPF invalido'}
                       </span>
                     ) : (
                       <span className="criadores-admin-pill criadores-admin-pill--bad" style={{ marginLeft: 8 }}>
@@ -440,7 +465,7 @@ function CreatorDetailDrawer({
                 </div>
                 <div>
                   <dt>Chave PIX (armazenada)</dt>
-                  <dd className="criadores-admin-mono">{compliance?.payoutKey?.trim() || 'â€”'}</dd>
+                  <dd className="criadores-admin-mono">{compliance?.payoutKey?.trim() || '--'}</dd>
                 </div>
               </dl>
               <p className="criadores-admin-compliance-hint">
@@ -453,26 +478,26 @@ function CreatorDetailDrawer({
             <h3 className="criadores-admin-section__title">Comportamento / pipeline</h3>
             <dl className="criadores-admin-dl">
               <div>
-                <dt>Status da solicitaÃ§Ã£o</dt>
+                <dt>Status da solicitacao</dt>
                 <dd>{statusLabel(item.creatorApplicationStatus)}</dd>
               </div>
               <div>
                 <dt>Pipeline criador</dt>
-                <dd>{item.creatorStatus || 'â€”'}</dd>
+                <dd>{item.creatorStatus || '--'}</dd>
               </div>
               <div>
                 <dt>Intent / role</dt>
                 <dd>
-                  signup: {item.signupIntent || 'â€”'} Â· conta: {item.accountStatus || 'â€”'}
+                  entrada: {item.signupIntent || '--'} | conta: {item.accountStatus || '--'}
                 </dd>
               </div>
               <div>
                 <dt>Onboarding completo</dt>
-                <dd>{item.creatorOnboardingCompleted ? 'Sim' : 'NÃ£o'}</dd>
+                <dd>{item.creatorOnboardingCompleted ? 'Sim' : 'Nao'}</dd>
               </div>
               {item.creatorReviewReason ? (
                 <div>
-                  <dt>Motivo (Ãºltima decisÃ£o criador)</dt>
+                  <dt>Motivo (ultima decisao criador)</dt>
                   <dd>{item.creatorReviewReason}</dd>
                 </div>
               ) : null}
@@ -512,8 +537,8 @@ function CreatorDetailDrawer({
                     const selected = payoutRequestSelection === requestRow.requestId;
                     return (
                       <li key={requestRow.requestId}>
-                        <strong>{brl(requestRow.amount || 0)}</strong> Â· pedido em{' '}
-                        {requestRow.requestedAt ? formatarDataHoraBr(requestRow.requestedAt) : 'agora'} Â· saldo na hora:{' '}
+                        <strong>{brl(requestRow.amount || 0)}</strong> | pedido em{' '}
+                        {requestRow.requestedAt ? formatarDataHoraBr(requestRow.requestedAt) : 'agora'} | saldo na hora:{' '}
                         {brl(requestRow.availableSnapshotBRL || 0)}
                         {requestRow.notes ? <div style={{ marginTop: 4 }}>{requestRow.notes}</div> : null}
                         <div style={{ marginTop: 8 }}>
@@ -571,7 +596,7 @@ function CreatorDetailDrawer({
                 disabled={rowBusy || !canRegisterPayout}
                 onClick={() => onSubmitPayout(uid)}
               >
-                {rowBusy ? 'Salvandoâ€¦' : 'Marcar PIX manual como pago'}
+                {rowBusy ? 'Salvando...' : 'Marcar PIX manual como pago'}
               </button>
             </div>
             {!canRegisterPayout ? (
@@ -581,9 +606,9 @@ function CreatorDetailDrawer({
               <ul className="admin-staff-stack" style={{ marginTop: 12 }}>
                 {recentPayouts.map((payout) => (
                   <li key={payout.payoutId}>
-                    <strong>{brl(payout.amount || 0)}</strong> Â· {payout.status || 'pago'} Â·{' '}
+                    <strong>{brl(payout.amount || 0)}</strong> | {payout.status || 'pago'} |{' '}
                     {payout.paidAt ? formatarDataHoraBr(payout.paidAt) : 'sem data'}
-                    {payout.pixKeyMasked ? <> Â· PIX {payout.pixKeyMasked}</> : null}
+                    {payout.pixKeyMasked ? <> | PIX {payout.pixKeyMasked}</> : null}
                   </li>
                 ))}
               </ul>
@@ -596,8 +621,8 @@ function CreatorDetailDrawer({
             <>
               {!canApproveCreatorPending ? (
                 <p className="criadores-admin-foot-blocked" role="alert">
-                  <strong>Aprovar criador bloqueado:</strong> o candidato ainda nÃ£o atingiu seguidores, views e likes
-                  mÃ­nimos (NÃ­vel 1). O botÃ£o sÃ³ libera quando as trÃªs metas estiverem OK.
+                  <strong>Aprovar criador bloqueado:</strong> o candidato ainda nao atingiu seguidores, views e likes
+                  minimos (Nivel 1). O botao so libera quando as tres metas estiverem OK.
                 </p>
               ) : null}
               <div className="criadores-admin-actions-row">
@@ -606,12 +631,12 @@ function CreatorDetailDrawer({
                   disabled={rowBusy || !canApproveCreatorPending}
                   title={
                     !canApproveCreatorPending
-                      ? 'Metas NÃ­vel 1 incompletas â€” veja a seÃ§Ã£o de requisitos acima'
+                      ? 'Metas Nivel 1 incompletas - veja a secao de requisitos acima'
                       : 'Aprovar candidatura'
                   }
                   onClick={() => onApproveApplication(uid)}
                 >
-                  {rowBusy ? 'Salvandoâ€¦' : 'Aprovar criador'}
+                  {rowBusy ? 'Salvando...' : 'Aprovar criador'}
                 </button>
                 <button
                   type="button"
@@ -627,7 +652,7 @@ function CreatorDetailDrawer({
                 rows={3}
                 value={rejectReason}
                 onChange={(e) => onRejectReasonChange(e.target.value)}
-                placeholder="Motivo obrigatÃ³rio ao rejeitar (mÃ­n. 8 caracteres)"
+                placeholder="Motivo obrigatorio ao rejeitar (min. 8 caracteres)"
               />
               <label className="criadores-admin-check">
                 <input
@@ -640,19 +665,19 @@ function CreatorDetailDrawer({
             </>
           ) : (
             <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255,255,255,0.5)' }}>
-              SolicitaÃ§Ã£o de criador jÃ¡ decidida. Use a Ã¡rea abaixo se a monetizaÃ§Ã£o estiver pendente.
+              Solicitacao de criador ja decidida. Use a area abaixo se a monetizacao estiver pendente.
             </p>
           )}
 
           {monetizationPending ? (
             <>
               <h3 className="criadores-admin-section__title" style={{ margin: '4px 0 0' }}>
-                RevisÃ£o de monetizaÃ§Ã£o
+                Revisao de monetizacao
               </h3>
               {!canLiberarMonetizacao ? (
                 <p className="criadores-admin-foot-blocked" role="alert">
-                  <strong>Liberar monetizaÃ§Ã£o bloqueado:</strong> corrija ou peÃ§a ao criador para completar nome legal, CPF
-                  vÃ¡lido e chave PIX no perfil antes de aprovar. O servidor tambÃ©m rejeita aprovaÃ§Ã£o sem compliance
+                  <strong>Liberar monetizacao bloqueado:</strong> corrija ou peca ao criador para completar nome legal, CPF
+                  valido e chave PIX no perfil antes de aprovar. O servidor tambem rejeita aprovacao sem esses dados.
                   completo.
                 </p>
               ) : null}
@@ -662,12 +687,12 @@ function CreatorDetailDrawer({
                   disabled={rowBusy || !canLiberarMonetizacao}
                   title={
                     !canLiberarMonetizacao
-                      ? complianceGate.reasons.join(' Â· ')
-                      : 'Aprovar monetizaÃ§Ã£o (membership jÃ¡ configurada)'
+                      ? complianceGate.reasons.join(' | ')
+                      : 'Aprovar monetizacao (membership ja configurada)'
                   }
                   onClick={() => onApproveMonetization(uid)}
                 >
-                  {rowBusy ? 'Salvandoâ€¦' : 'Liberar monetizaÃ§Ã£o'}
+                  {rowBusy ? 'Salvando...' : 'Liberar monetizacao'}
                 </button>
                 <button
                   type="button"
@@ -675,7 +700,7 @@ function CreatorDetailDrawer({
                   disabled={rowBusy}
                   onClick={() => onRejectMonetization(uid)}
                 >
-                  Manter sÃ³ publicaÃ§Ã£o
+                  Manter so publicacao
                 </button>
               </div>
               <textarea
@@ -683,7 +708,7 @@ function CreatorDetailDrawer({
                 rows={3}
                 value={monetizationReason}
                 onChange={(e) => onMonetizationReasonChange(e.target.value)}
-                placeholder="Motivo se nÃ£o liberar monetizaÃ§Ã£o (mÃ­n. 8 caracteres)"
+                placeholder="Motivo se nao liberar monetizacao (min. 8 caracteres)"
               />
             </>
           ) : null}
@@ -882,7 +907,7 @@ export default function CriadoresAdmin({ adminAccess }) {
     const detail = applications.find((item) => item.uid === uid);
     const available = Number(detail?.creatorBalanceAdmin?.availableBRL || 0);
     if (!(available > 0)) {
-      setError('Este criador nÃ£o possui saldo disponÃ­vel para repasse.');
+      setError('Este criador nao possui saldo disponivel para repasse.');
       return;
     }
     const rawAmount = String(payoutAmounts[uid] || '').trim().replace(',', '.');
@@ -936,7 +961,7 @@ export default function CriadoresAdmin({ adminAccess }) {
           <div>
             <p className="admin-team-eyebrow">Criadores</p>
             <h1>Solicitacoes de criador</h1>
-            <p>Lista resumida e ficha completa para decisÃ£o segura (identidade, monetizaÃ§Ã£o, PIX).</p>
+            <p>Lista resumida e ficha completa para decisao segura (identidade, monetizacao, PIX).</p>
           </div>
         </header>
 
@@ -974,7 +999,7 @@ export default function CriadoresAdmin({ adminAccess }) {
           <div className="admin-team-panel-head">
             <div>
               <h2>Candidatos</h2>
-              <p>Clique em Ver ficha para dados completos e aÃ§Ãµes de aprovaÃ§Ã£o.</p>
+              <p>Clique em Ver ficha para dados completos e acoes de aprovacao.</p>
             </div>
           </div>
 
@@ -991,7 +1016,7 @@ export default function CriadoresAdmin({ adminAccess }) {
                     <th>Nome</th>
                     <th>E-mail</th>
                     <th>Status</th>
-                    <th>MonetizaÃ§Ã£o</th>
+                    <th>Monetizacao</th>
                     <th>Saldo</th>
                     <th>Solicitado</th>
                     <th />
@@ -1001,7 +1026,7 @@ export default function CriadoresAdmin({ adminAccess }) {
                   {applications.map((item) => {
                     const nameRaw = formatUserDisplayFromMixed(item);
                     const name =
-                      nameRaw === 'UsuÃ¡rio' ? item.creatorDisplayName || item.userName || item.email || item.uid : nameRaw;
+                      nameRaw === 'Usuario' ? item.creatorDisplayName || item.userName || item.email || item.uid : nameRaw;
                     const mon = wantsMonetization(item);
                     return (
                       <tr key={item.uid}>
@@ -1012,7 +1037,7 @@ export default function CriadoresAdmin({ adminAccess }) {
                         </td>
                         <td>
                           <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.82rem' }}>
-                            {item.email || 'â€”'}
+                            {item.email || '--'}
                           </span>
                         </td>
                         <td>
@@ -1020,12 +1045,12 @@ export default function CriadoresAdmin({ adminAccess }) {
                             {statusLabel(item.creatorApplicationStatus)}
                           </span>
                         </td>
-                        <td>{mon ? 'Sim' : 'NÃ£o'}</td>
+                        <td>{mon ? 'Sim' : 'Nao'}</td>
                         <td>{brl(item?.creatorBalanceAdmin?.availableBRL || 0)}</td>
                         <td>
                           {item.creatorRequestedAt
                             ? formatarDataHoraBr(item.creatorRequestedAt)
-                            : 'â€”'}
+                            : '--'}
                         </td>
                         <td>
                           <button
@@ -1075,5 +1100,4 @@ export default function CriadoresAdmin({ adminAccess }) {
     </main>
   );
 }
-
 

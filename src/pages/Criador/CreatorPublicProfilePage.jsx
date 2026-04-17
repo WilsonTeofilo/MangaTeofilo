@@ -19,6 +19,7 @@ export default function CreatorPublicProfilePage({ user }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const obrasSectionRef = useRef(null);
   const creatorLookup = String(creatorId || '').trim();
+
   const {
     perfilPublico,
     obras,
@@ -36,6 +37,7 @@ export default function CreatorPublicProfilePage({ user }) {
     creatorUid,
     creatorIdentityReady,
   } = useCreatorPublicProfileData({ db, storage, creatorLookup });
+
   const {
     sortObras,
     setSortObras,
@@ -105,7 +107,7 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Criador não encontrado</h1>
+          <h1>Criador nao encontrado</h1>
           <p>O link publico informado esta incompleto.</p>
         </section>
       </main>
@@ -119,10 +121,10 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Criador não encontrado</h1>
-          <p>Não encontramos este perfil público pelo link informado.</p>
+          <h1>Criador nao encontrado</h1>
+          <p>Nao encontramos este perfil publico pelo link informado.</p>
           <button type="button" onClick={() => navigate('/works')}>
-            Voltar ao catálogo
+            Voltar ao catalogo
           </button>
         </section>
       </main>
@@ -137,8 +139,8 @@ export default function CreatorPublicProfilePage({ user }) {
     return (
       <main className="criador-page">
         <section className="criador-empty">
-          <h1>Perfil indisponível</h1>
-          <p>Este perfil público não está acessível no momento.</p>
+          <h1>Perfil indisponivel</h1>
+          <p>Este perfil publico nao esta acessivel no momento.</p>
         </section>
       </main>
     );
@@ -149,7 +151,7 @@ export default function CreatorPublicProfilePage({ user }) {
       <main className="criador-page">
         <section className="criador-empty">
           <h1>Perfil privado</h1>
-          <p>Este usuário não deixou o perfil público disponível.</p>
+          <p>Este usuario nao deixou o perfil publico disponivel.</p>
         </section>
       </main>
     );
@@ -161,7 +163,7 @@ export default function CreatorPublicProfilePage({ user }) {
         open={followBrowserPushModalOpen}
         permission={followBrowserPushPermission}
         title="Avisos no navegador"
-        description="Você passou a seguir este criador. Quer receber notificação aqui no navegador quando sair capítulo novo?"
+        description="Voce passou a seguir este criador. Quer receber notificacao aqui no navegador quando sair capitulo novo?"
         onClose={() => setFollowBrowserPushModalOpen(false)}
       />
       <CreatorFollowersModal

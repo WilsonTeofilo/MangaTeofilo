@@ -157,7 +157,7 @@ export function buildUsuarioPublicProfileRecord(current = {}, uidOverride = null
     instagramUrl: isCreatorProfile ? instagramUrl : '',
     youtubeUrl: isCreatorProfile ? youtubeUrl : '',
     readerProfilePublic: source.readerProfilePublic === true,
-    readerProfileAvatarUrl: asNonEmptyString(source.readerProfileAvatarUrl, userAvatar),
+    readerProfileAvatarUrl: asNonEmptyString(source.userAvatar || source.readerProfileAvatarUrl, userAvatar),
     readerSince: Number(source.createdAt || source.readerSince || 0) || 0,
     creatorStatus: isCreatorProfile ? creatorStatus : '',
     creatorApplicationStatus: isCreatorProfile ? creatorApplicationStatus : '',

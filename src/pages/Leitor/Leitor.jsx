@@ -33,7 +33,7 @@ const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributio
 const upsertNotificationSubscription = httpsCallable(functions, 'upsertNotificationSubscription');
 const toggleChapterLikeCallable = httpsCallable(functions, 'toggleChapterLike');
 
-export default function Leitor({ user, perfil }) {
+export default function Leitor({ user, perfil, adminAccess }) {
   const { id }   = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -115,11 +115,16 @@ export default function Leitor({ user, perfil }) {
     handleEnviarComentario,
     handleEnviarResposta,
     handleLikeComment,
+    canDeleteComment,
+    handleDeleteComment,
+    deletingCommentId,
   } = useChapterComments({
     db,
     chapterId: id,
     capitulo,
     creatorUidApoio,
+    authorUid,
+    adminAccess,
     user,
     onRequireLogin: () =>
       navigate(buildLoginUrlWithRedirect(location.pathname, location.search)),
@@ -495,6 +500,9 @@ export default function Leitor({ user, perfil }) {
         perfisUsuarios={perfisUsuarios}
         onProfileOpen={handleCommentProfileOpen}
         onLikeComment={handleLikeComment}
+        canDeleteComment={canDeleteComment}
+        onDeleteComment={handleDeleteComment}
+        deletingCommentId={deletingCommentId}
         replyingTo={replyingTo}
         setReplyingTo={setReplyingTo}
         replyDraft={replyDraft}

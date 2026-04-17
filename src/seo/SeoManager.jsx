@@ -1,4 +1,4 @@
-import { Helmet } from 'react-helmet-async';
+﻿import { Helmet } from 'react-helmet-async';
 import { useLocation } from 'react-router-dom';
 import { SITE_DEFAULT_IMAGE, SITE_NAME, SITE_ORIGIN } from '../config/site';
 
@@ -16,9 +16,9 @@ function absUrl(pathOrUrl) {
 function buildSeo(pathname) {
   const clean = pathname || '/';
   const defs = {
-    title: `${SITE_NAME} | Mangás autorais em português`,
+    title: `${SITE_NAME} | MangÃ¡s autorais em portuguÃªs`,
     description:
-      'Leia mangás autorais em português: ler mangá online, capítulos gratuitos, obras autorais e atualizações.',
+      'Leia mangÃ¡s autorais em portuguÃªs: ler mangÃ¡ online, capÃ­tulos gratuitos, obras autorais e atualizaÃ§Ãµes.',
     image: absUrl(DEFAULT_IMAGE_PATH),
     robots: 'index,follow,max-image-preview:large',
     ogType: 'website',
@@ -28,9 +28,9 @@ function buildSeo(pathname) {
   if (clean === '/mangas' || clean === '/works') {
     return {
       ...defs,
-      title: `Lista de mangás | ${SITE_NAME}`,
+      title: `Lista de mangÃ¡s | ${SITE_NAME}`,
       description:
-        'Catálogo de mangás autorais para ler online: capas, status, favoritos e novos capítulos — mobile e desktop.',
+        'CatÃ¡logo de mangÃ¡s autorais para ler online: capas, status, favoritos e novos capÃ­tulos â€” mobile e desktop.',
     };
   }
 
@@ -40,7 +40,7 @@ function buildSeo(pathname) {
       ...defs,
       ogType: 'article',
       title: `${slugWork} | ${SITE_NAME}`,
-      description: `Leia ${slugWork} online — mangá autoral, capítulos e sinopse no ${SITE_NAME}.`,
+      description: `Leia ${slugWork} online â€” mangÃ¡ autoral, capÃ­tulos e sinopse no ${SITE_NAME}.`,
     };
   }
 
@@ -48,9 +48,9 @@ function buildSeo(pathname) {
     return {
       ...defs,
       ogType: 'article',
-      title: `Leitor de capítulo | ${SITE_NAME}`,
+      title: `Leitor de capÃ­tulo | ${SITE_NAME}`,
       description:
-        'Leia capítulos de mangá online no leitor oficial. Acesso antecipado quando o autor liberar para membros.',
+        'Leia capÃ­tulos de mangÃ¡ online no leitor oficial. Acesso antecipado quando o autor liberar para membros.',
     };
   }
 
@@ -59,7 +59,7 @@ function buildSeo(pathname) {
       ...defs,
       ogType: 'profile',
       title: `Perfil do criador | ${SITE_NAME}`,
-      description: `Conheça o criador, obras e links no ${SITE_NAME}.`,
+      description: `ConheÃ§a o criador, obras e links no ${SITE_NAME}.`,
     };
   }
 
@@ -67,7 +67,7 @@ function buildSeo(pathname) {
     return {
       ...defs,
       title: `Sobre o autor | ${SITE_NAME}`,
-      description: `Conheça o autor por trás das obras do ${SITE_NAME}.`,
+      description: `ConheÃ§a o autor por trÃ¡s das obras do ${SITE_NAME}.`,
     };
   }
 
@@ -75,7 +75,15 @@ function buildSeo(pathname) {
     return {
       ...defs,
       title: `Apoie a obra | ${SITE_NAME}`,
-      description: `Apoie criadores e tenha benefícios — assinatura e doações no ${SITE_NAME}.`,
+      description: `Apoie criadores e tenha benefÃ­cios â€” assinatura e doaÃ§Ãµes no ${SITE_NAME}.`,
+    };
+  }
+
+  if (clean === '/premium') {
+    return {
+      ...defs,
+      title: `Premium da plataforma | ${SITE_NAME}`,
+      description: `Assine o Premium oficial da plataforma e libere os beneficios globais da sua conta no ${SITE_NAME}.`,
     };
   }
 
@@ -84,7 +92,7 @@ function buildSeo(pathname) {
       ...defs,
       title: `Loja | ${SITE_NAME}`,
       description:
-        'Produtos oficiais e vitrine MangaTeofilo. Autores: mangá físico e programa CREATORS a partir da loja.',
+        'Produtos oficiais e vitrine MangaTeofilo. Autores: mangÃ¡ fÃ­sico e programa CREATORS a partir da loja.',
     };
   }
 

@@ -128,6 +128,7 @@ function computePodeAcessarApp(usuario, perfilUsuario, adminAccess) {
 
 function AppRoutes() {
   const location = useLocation();
+  const isKokuinImmersiveRoute = location.pathname === '/kokuin';
   const [usuario, setUsuario] = useState(null);
   const [carregando, setCarregando] = useState(true);
 
@@ -270,7 +271,7 @@ function AppRoutes() {
     };
   }, [usuario?.uid]);
 
-  if (carregando) {
+  if (carregando && !isKokuinImmersiveRoute) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
@@ -278,7 +279,7 @@ function AppRoutes() {
     Boolean(usuario?.uid) &&
     perfilLoadedUid !== usuario.uid &&
     perfilLoadTimedOut !== true;
-  if (usuario && perfilCarregando) {
+  if (usuario && perfilCarregando && !isKokuinImmersiveRoute) {
     return <div className="shito-app-splash" aria-hidden="true" />;
   }
 
@@ -291,7 +292,7 @@ function AppRoutes() {
     !perfilCarregando &&
     !podeAcessarApp;
 
-  if (sessaoInvalida && location.pathname !== '/login') {
+  if (sessaoInvalida && location.pathname !== '/login' && !isKokuinImmersiveRoute) {
     return <Navigate to={buildLoginUrlWithRedirect(location.pathname, location.search)} replace />;
   }
 
@@ -328,7 +329,7 @@ function AppRoutes() {
     trafficSource === 'promo_email' ||
     trafficSource === 'promo_admin' ||
     trafficSource === 'chapter_email';
-  const hideGlobalChrome = location.pathname === '/kokuin';
+  const hideGlobalChrome = isKokuinImmersiveRoute;
   const birthDateGuardBypass =
     location.pathname === '/login' ||
     location.pathname === '/perfil' ||
@@ -360,7 +361,7 @@ function AppRoutes() {
       )}
 
       <main className="shito-main-content">
-        <Suspense fallback={<div className="shito-app-splash" aria-hidden="true" />}>
+        <Suspense fallback={hideGlobalChrome ? null : <div className="shito-app-splash" aria-hidden="true" />}>
         <Routes>
           <Route
             path="/"
@@ -482,6 +483,7 @@ function AppRoutes() {
               <Leitor
                 user={podeAcessarApp ? usuario : null}
                 perfil={podeAcessarApp ? perfilUsuario : null}
+                adminAccess={adminAccess}
               />
             }
           />
@@ -503,6 +505,16 @@ function AppRoutes() {
             }
           />
           <Route path="/apoie/criador/:creatorId" element={<ApoieCreatorRedirect />} />
+          <Route
+            path="/premium"
+            element={
+              <Apoie
+                user={podeAcessarApp ? usuario : null}
+                perfil={podeAcessarApp ? perfilUsuario : null}
+                initialView="premium"
+              />
+            }
+          />
           <Route
             path="/apoie"
             element={
@@ -825,7 +837,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/obras') ? (
-                <CreatorWorksPage adminAccess={adminAccess} />
+                <CreatorWorksPage adminAccess={accessForCreatorRouting} />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -837,7 +849,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/capitulos') ? (
-                <CreatorChaptersPage adminAccess={adminAccess} />
+                <CreatorChaptersPage adminAccess={accessForCreatorRouting} />
               ) : (
                 <Navigate to="/" replace />
               )
@@ -849,7 +861,7 @@ function AppRoutes() {
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : creatorPathOk('/creator/editor') ? (
-                <CreatorChapterEditorPage adminAccess={adminAccess} />
+                <CreatorChapterEditorPage adminAccess={accessForCreatorRouting} />
               ) : (
                 <Navigate to="/" replace />
               )

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { onValue, ref } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
 
@@ -45,13 +45,17 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     if (!user?.uid) {
       return () => {};
     }
-    const u2 = onValue(ref(db, `usuarios/${user.uid}/favorites`), (snapshot) => {
-      setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
-      setFavoritosLoadedFor(user.uid);
-    }, () => {
-      setFavoritosCanon({});
-      setFavoritosLoadedFor(user.uid);
-    });
+    const u2 = onValue(
+      ref(db, `usuarios/${user.uid}/favorites`),
+      (snapshot) => {
+        setFavoritosCanon(snapshot.exists() ? snapshot.val() || {} : {});
+        setFavoritosLoadedFor(user.uid);
+      },
+      () => {
+        setFavoritosCanon({});
+        setFavoritosLoadedFor(user.uid);
+      }
+    );
     return () => {
       u2();
     };
@@ -60,32 +64,43 @@ export default function BibliotecaFavoritos({ user, perfil }) {
 
   useEffect(() => {
     const obrasRef = ref(db, 'obras');
-    const unsub = onValue(obrasRef, (snapshot) => {
-      if (!snapshot.exists()) {
+    const unsub = onValue(
+      obrasRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setObras([]);
+          setLoadingObras(false);
+          return;
+        }
+        const lista = toList(snapshot.val()).filter((obra) => {
+          if (obraVisivelNoCatalogoPublico(obra)) return true;
+          return Boolean(obra && typeof obra === 'object' && String(obra.id || '').trim());
+        });
+        setObras(lista);
+        setLoadingObras(false);
+      },
+      () => {
         setObras([]);
         setLoadingObras(false);
-        return;
       }
-      const lista = toList(snapshot.val()).filter((obra) => obraVisivelNoCatalogoPublico(obra));
-      setObras(lista);
-      setLoadingObras(false);
-    }, () => {
-      setObras([]);
-      setLoadingObras(false);
-    });
+    );
     return () => unsub();
   }, []);
 
   useEffect(() => {
     const capsRef = ref(db, 'capitulos');
-    const unsub = onValue(capsRef, (snapshot) => {
-      const lista = snapshot.exists() ? toList(snapshot.val()) : [];
-      setCapitulos(lista);
-      setLoadingCaps(false);
-    }, () => {
-      setCapitulos([]);
-      setLoadingCaps(false);
-    });
+    const unsub = onValue(
+      capsRef,
+      (snapshot) => {
+        const lista = snapshot.exists() ? toList(snapshot.val()) : [];
+        setCapitulos(lista);
+        setLoadingCaps(false);
+      },
+      () => {
+        setCapitulos([]);
+        setLoadingCaps(false);
+      }
+    );
     return () => unsub();
   }, []);
 
@@ -134,7 +149,7 @@ export default function BibliotecaFavoritos({ user, perfil }) {
     try {
       await removeWorkFavoriteBoth(db, user.uid, obraId);
     } catch {
-      // silencioso: o listener já sincroniza o estado
+      // silencioso: o listener ja sincroniza o estado
     }
   };
 
@@ -161,7 +176,13 @@ export default function BibliotecaFavoritos({ user, perfil }) {
                 src={
                   item.obraExcluida
                     ? '/assets/mascote/vaquinhaERR.webp'
-                    : (item.obra?.capaUrl || item.obra?.bannerUrl || '/assets/fotos/shito.jpg')
+                    : (
+                      item.obra?.capaUrl ||
+                      item.obra?.bannerUrl ||
+                      item.favMeta?.coverUrl ||
+                      item.favMeta?.capaUrl ||
+                      '/assets/fotos/shito.jpg'
+                    )
                 }
                 alt={item.obra?.titulo || item.obraId}
                 className={item.obraExcluida ? 'biblioteca-card-img biblioteca-card-img--deleted' : 'biblioteca-card-img'}

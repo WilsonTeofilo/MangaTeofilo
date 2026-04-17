@@ -572,7 +572,7 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
                         <div className="cap-stats-row">
                           <span className="stat-item">👁 {Number(cap.viewsCount || cap.visualizacoes || 0)}</span>
                           {Number(cap.likesCount || 0) > 0 ? (
-                            <span className="stat-item">♡ {Number(cap.likesCount || 0)}</span>
+                            <span className="stat-item">♥ {Number(cap.likesCount || 0)}</span>
                           ) : null}
                         </div>
                       </div>

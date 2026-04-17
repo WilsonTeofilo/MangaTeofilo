@@ -16,7 +16,7 @@ import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../store/cartStore'
 import { getPodCartDraft, POD_CART_CHANGED_EVENT } from '../store/podCartStore';
 import './HeaderV2.css';
 
-/** Menu hambÃºrguer sÃ³ em viewport tÃ­pica de telemÃ³vel / tablet estreito â€” nÃ£o em PC com janela estreita atÃ© ~laptop 13". */
+/** Menu hamburguer so em viewport tipica de telemovel / tablet estreito - nao em PC com janela estreita ate ~laptop 13". */
 const MOBILE_BREAKPOINT = 768;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
 
@@ -96,10 +96,11 @@ export default function Header({
     () => [
       { label: 'Obras', path: '/works' },
       ...(usuario ? [{ label: 'Minha biblioteca', path: '/biblioteca' }] : []),
+      { label: isPremium ? 'Premium ativo' : 'Seja premium', path: '/premium' },
       { label: 'Loja', path: '/loja' },
       { label: 'Sobre', path: '/sobre-autor' },
     ],
-    [usuario]
+    [isPremium, usuario]
   );
 
   const isLanceRouteActive =
@@ -121,7 +122,7 @@ export default function Header({
       }
       if (canAccessAdminPath('/admin/store/settings', adminAccess)) {
         if (!lojaMenuBits.length) lojaMenuBits.push({ type: 'heading', label: 'Loja' });
-        lojaMenuBits.push({ label: 'ConfiguraÃ§Ãµes', path: '/admin/store/settings' });
+        lojaMenuBits.push({ label: 'Configuracoes', path: '/admin/store/settings' });
       }
       if (
         adminWorkspaceCreatorStrip &&
@@ -174,13 +175,13 @@ export default function Header({
         subtitle: isMangakaPanel ? 'Meu conteudo' : 'Conteudo global',
         items: [
           canAccessCreatorPath('/perfil', creatorNavAccess)
-            ? { label: 'Identidade pÃºblica', path: '/perfil' }
+            ? { label: 'Identidade publica', path: '/perfil' }
             : null,
           canAccessCreatorPath('/creator/monetizacao', creatorNavAccess)
-            ? { label: 'MonetizaÃ§Ã£o', path: '/creator/monetizacao' }
+            ? { label: 'Monetizacao', path: '/creator/monetizacao' }
             : null,
           canAccessCreatorPath('/creator/missoes', creatorNavAccess)
-            ? { label: 'MissÃµes & XP', path: '/creator/missoes' }
+            ? { label: 'Missoes & XP', path: '/creator/missoes' }
             : null,
           canAccessCreatorPath('/creator/audience', creatorNavAccess) ? { label: 'Analytics', path: '/creator/audience' } : null,
           canAccessCreatorPath('/creator/obras', creatorNavAccess)
@@ -256,6 +257,9 @@ export default function Header({
     const syncMenuState = () => {
       if (window.innerWidth > MOBILE_BREAKPOINT) {
         setMenuAberto(false);
+        document.body.classList.remove('mobile-menu-open');
+        document.body.style.overflow = '';
+        document.body.style.touchAction = '';
       }
     };
     syncMenuState();
@@ -267,9 +271,9 @@ export default function Header({
     /**
      * Fechar dropdowns ao clicar fora. Regras:
      * - `click` em fase de bolha (sem capture): no Firefox, capture no document quebrava
-     *   interaÃ§Ã£o com botÃµes do menu (ex.: Sair).
-     * - NÃ£o usar `mousedown`: ao arrastar a scrollbar nativa o target costuma ser html/body
-     *   e o painel fechava; `click` nÃ£o dispara apÃ³s arrastar sÃ³ a barra.
+     *   interacao com botoes do menu (ex.: Sair).
+     * - Nao usar `mousedown`: ao arrastar a scrollbar nativa o target costuma ser html/body
+     *   e o painel fechava; `click` nao dispara apos arrastar so a barra.
      * - `touchstart` removido: gerava fechamento falso e conflito com rolagem/toque no menu.
      */
     const hitInside = (event, className) => {
@@ -303,7 +307,13 @@ export default function Header({
   useEffect(() => {
     const mobileOpen = menuAberto && window.innerWidth <= MOBILE_BREAKPOINT;
     document.body.classList.toggle('mobile-menu-open', mobileOpen);
-    return () => document.body.classList.remove('mobile-menu-open');
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    document.body.style.touchAction = mobileOpen ? 'none' : '';
+    return () => {
+      document.body.classList.remove('mobile-menu-open');
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
   }, [menuAberto]);
 
   useEffect(() => {
@@ -486,7 +496,7 @@ export default function Header({
       return (
         <div key={workspace.id} className="header-account-menu__cluster">
           <div className="header-account-menu__heading">
-            {workspace.clusterTitle || (workspace.id === 'admin' ? 'AdministraÃ§Ã£o' : 'Criador')}
+                    {workspace.clusterTitle || (workspace.id === 'admin' ? 'Administracao' : 'Criador')}
           </div>
           {canOpenWorkspaceHome ? (
             <button

@@ -1,4 +1,4 @@
-﻿import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
+import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
 import { normalizeUsernameInput, validateUsernameHandle } from './usernameValidation';
 import { resolvePublicProfileAvatarUrl, resolvePublicProfileDisplayName } from './publicUserProfile';
 import { resolvePublicProfilePath } from './publicProfilePaths';
@@ -8,7 +8,7 @@ import {
   resolveEffectiveWorkCreatorId,
 } from './workCreatorResolution';
 
-/** Nomes de teste / legado tipo "Criador1", "criador 10", "user3" â€” nÃ£o usar como nome pÃºblico. */
+/** Nomes de teste / legado tipo "Criador1", "criador 10", "user3" �?" não usar como nome público. */
 export function isPlaceholderCreatorLabel(raw) {
   const s = String(raw || '').trim();
   if (s.length < 2) return true;
@@ -83,7 +83,7 @@ export function normalizePublicHandle(profile) {
 }
 
 /**
- * Uma linha: Â«Nome (@handle)Â». Se sÃ³ existe handle, mostra `@handle`.
+ * Uma linha: «Nome (@handle)». Se só existe handle, mostra `@handle`.
  * Objetos de admin / callable costumam ter userName, creatorDisplayName, userHandle, creatorProfile.
  */
 export function formatUserDisplayWithHandle(creatorPublicProfile, fallback = 'Leitor') {
@@ -106,8 +106,8 @@ export function formatUserDisplayFromMixed(row) {
 }
 
 /**
- * Nome do autor para catÃ¡logo / home pÃºblica.
- * Com handle pÃºblico, o identificador canÃ´nico Ã© o @username (nome legado sÃ³ como fallback).
+ * Nome do autor para catálogo / home pública.
+ * Com handle público, o identificador canônico é o @username (nome legado só como fallback).
  */
 export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = null, fallback = 'Autor' } = {}) {
   const p = creatorPublicProfile;
@@ -180,7 +180,7 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
 }
 
 /**
- * Texto curto para listagens (home, catÃ¡logo): prioriza @username do perfil pÃºblico.
+ * Texto curto para listagens (home, catálogo): prioriza @username do perfil público.
  */
 export function resolveCreatorFeedLabel(obra, creatorsMap, allCapitulos = null) {
   const obraId = String(obra?.id || '').toLowerCase();

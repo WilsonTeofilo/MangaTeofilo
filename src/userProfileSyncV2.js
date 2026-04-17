@@ -27,11 +27,23 @@ async function syncPublicProfileIdentity(uid, source = {}) {
     [`usuarios/${uid}/publicProfile/instagramUrl`]: publicProfile.instagramUrl || null,
     [`usuarios/${uid}/publicProfile/youtubeUrl`]: publicProfile.youtubeUrl || null,
     [`usuarios/${uid}/publicProfile/readerProfilePublic`]: publicProfile.readerProfilePublic === true,
-    [`usuarios/${uid}/publicProfile/readerProfileAvatarUrl`]: publicProfile.readerProfileAvatarUrl || AVATAR_FALLBACK,
+    [`usuarios/${uid}/publicProfile/readerProfileAvatarUrl`]: publicProfile.readerProfileAvatarUrl || publicProfile.userAvatar || AVATAR_FALLBACK,
     [`usuarios/${uid}/publicProfile/readerSince`]: publicProfile.readerSince || Date.now(),
     [`usuarios/${uid}/publicProfile/creatorStatus`]: publicProfile.creatorStatus || null,
-    [`usuarios/${uid}/publicProfile/creatorProfile`]:
-      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/displayName`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.displayName || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/username`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.username || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/avatarUrl`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.avatarUrl || publicProfile.userAvatar || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/bannerUrl`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.bannerUrl || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/bioFull`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.bioFull || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/socialLinks/instagramUrl`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.socialLinks?.instagramUrl || null : null,
+    [`usuarios/${uid}/publicProfile/creatorProfile/socialLinks/youtubeUrl`]:
+      publicProfile.isCreatorProfile === true ? publicProfile.creatorProfile?.socialLinks?.youtubeUrl || null : null,
     [`usuarios/${uid}/publicProfile/updatedAt`]: Date.now(),
   });
 }

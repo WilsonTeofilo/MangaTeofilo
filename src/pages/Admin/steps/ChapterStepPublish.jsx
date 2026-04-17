@@ -6,8 +6,8 @@ export default function ChapterStepPublish({ isMangaka }) {
       <h3>{isMangaka ? 'Publicar capitulo' : 'Publicar capitulo'}</h3>
       <p className="editor-empty">
         {isMangaka
-          ? 'Confira tudo e publique sem depender do admin.'
-          : 'Confira os dados e clique em publicar. O botao ficara fixo ao final para facilitar.'}
+          ? 'Confira tudo e publique sem depender do admin. Se ainda nao terminou, salve como rascunho.'
+          : 'Confira os dados e clique em publicar. Se ainda nao terminou, use salvar rascunho para continuar depois.'}
       </p>
     </div>
   );

@@ -879,10 +879,10 @@
 
 .header-account-menu {
   min-width: min(280px, calc(100vw - 32px));
-  max-height: min(calc(100dvh - 96px), 520px);
+  max-height: min(calc(100dvh - 96px), 72dvh);
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 8px;
@@ -1049,6 +1049,13 @@ body.mobile-menu-open {
   touch-action: none;
 }
 
+@media (min-width: 769px) {
+  body.mobile-menu-open {
+    overflow: auto;
+    touch-action: auto;
+  }
+}
+
 /* Alinhado com MOBILE_BREAKPOINT em Header.jsx — hambúrguer abaixo de ~tablet em pé / telemóvel. */
 @media (max-width: 768px) {
   .reader-header {
@@ -1146,6 +1153,11 @@ body.mobile-menu-open {
     width: min(300px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
     min-width: 0;
     max-width: calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    max-height: calc(100dvh - 92px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
   }
 
   .nav-menu--primary {
@@ -1229,7 +1241,7 @@ body.mobile-menu-open {
   }
 
   .header-account-menu {
-    max-height: min(calc(100dvh - 88px), 460px);
+    max-height: calc(100dvh - 84px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   }
 
   .header-store-cart-btn {

@@ -124,11 +124,11 @@ export default function DashboardAdmin() {
     setErro('');
     setOpsMsg('');
     if (!startDate || !endDate) {
-      setErro('Preencha inÃ­cio e fim no formato dd/mm/aaaa.');
+      setErro('Preencha inicio e fim no formato dd/mm/aaaa.');
       return;
     }
     if ((compareStartBr && !compareStart) || (compareEndBr && !compareEnd)) {
-      setErro('Complete as datas de comparaÃ§Ã£o no formato dd/mm/aaaa ou deixe em branco.');
+      setErro('Complete as datas de comparacao no formato dd/mm/aaaa ou deixe em branco.');
       return;
     }
     setLoading(true);
@@ -196,7 +196,7 @@ export default function DashboardAdmin() {
       const { data } = await adminDashboardIntegridade();
       const r = data?.integrity || {};
       setOpsMsg(
-        `VerificaÃ§Ã£o concluÃ­da: ${r.totalEvents || 0} lanÃ§amentos analisados. PossÃ­veis problemas: ${r.duplicatePaymentIdsCount || 0} duplicados, ${r.withoutUid || 0} sem usuÃ¡rio, ${r.withoutAmount || 0} sem valor.`
+        `Verificacao concluida: ${r.totalEvents || 0} lancamentos analisados. Possiveis problemas: ${r.duplicatePaymentIdsCount || 0} duplicados, ${r.withoutUid || 0} sem usuario, ${r.withoutAmount || 0} sem valor.`
       );
     } catch (e) {
       setOpsMsg(mensagemErroCallable(e));
@@ -207,7 +207,7 @@ export default function DashboardAdmin() {
     setOpsMsg('');
     try {
       const { data } = await adminDashboardRebuildRollup();
-      setOpsMsg(`MÃ©tricas mensais recalculadas (${data?.months || 0} meses). O grÃ¡fico e o resumo por mÃªs devem refletir isso apÃ³s atualizar a pÃ¡gina.`);
+      setOpsMsg(`Metricas mensais recalculadas (${data?.months || 0} meses). O grafico e o resumo por mes devem refletir isso apos atualizar a pagina.`);
     } catch (e) {
       setOpsMsg(mensagemErroCallable(e));
     }
@@ -218,7 +218,7 @@ export default function DashboardAdmin() {
     try {
       const { data } = await adminBackfillEventosLegados();
       setOpsMsg(
-        `HistÃ³rico corrigido: ${data?.created || 0} lanÃ§amento(s) recuperados (${data?.createdPremium || 0} Premium, ${data?.createdApoio || 0} Apoie).`
+        `Historico corrigido: ${data?.created || 0} lancamento(s) recuperados (${data?.createdPremium || 0} Premium, ${data?.createdApoio || 0} Apoie).`
       );
       await carregar();
     } catch (e) {
@@ -238,11 +238,11 @@ export default function DashboardAdmin() {
       <section className="admin-empty-card admin-dashboard-card">
         <header className="dashboard-hero">
           <div>
-            <h1>Dashboard de MonetizaÃ§Ã£o</h1>
+            <h1>Dashboard de Monetizacao</h1>
             <p>
               Controle total das assinaturas, receita e crescimento de Kokuin.
               {dados?.period?.startAt && dados?.period?.endAt
-                ? ` PerÃ­odo: ${formatarDataHoraBr(dados.period.startAt, { seVazio: '--' })} atÃ© ${formatarDataHoraBr(dados.period.endAt, { seVazio: '--' })}.`
+                ? ` Periodo: ${formatarDataHoraBr(dados.period.startAt, { seVazio: '--' })} ate ${formatarDataHoraBr(dados.period.endAt, { seVazio: '--' })}.`
                 : ''}
             </p>
           </div>
@@ -260,21 +260,21 @@ export default function DashboardAdmin() {
           <div className="dashboard-filtro-item">
             <label>Preset</label>
             <select value={preset} onChange={(e) => setPreset(e.target.value)}>
-              <option value="30d">Ãšltimos 30 dias</option>
-              <option value="mesAtual">MÃªs atual</option>
-              <option value="mesAnterior">MÃªs anterior</option>
+              <option value="30d">Ultimos 30 dias</option>
+              <option value="mesAtual">Mes atual</option>
+              <option value="mesAnterior">Mes anterior</option>
               <option value="custom">Customizado</option>
             </select>
           </div>
           <div className="dashboard-filtro-item">
-            <label htmlFor="dash-date-ini">InÃ­cio</label>
+            <label htmlFor="dash-date-ini">Inicio</label>
             <DashboardDateInput
               id="dash-date-ini"
               brValue={startDateBr}
               isoValue={startDate}
               onBrInputChange={(e) => handleDateInput(e.target.value, setStartDateBr, setStartDate)}
               onIsoPicked={(iso) => handleCalendarPick(iso, setStartDateBr, setStartDate)}
-              ariaLabelCalendar="Data inÃ­cio â€” abrir calendÃ¡rio"
+              ariaLabelCalendar="Data inicio - abrir calendario"
             />
           </div>
           <div className="dashboard-filtro-item">
@@ -285,18 +285,18 @@ export default function DashboardAdmin() {
               isoValue={endDate}
               onBrInputChange={(e) => handleDateInput(e.target.value, setEndDateBr, setEndDate)}
               onIsoPicked={(iso) => handleCalendarPick(iso, setEndDateBr, setEndDate)}
-              ariaLabelCalendar="Data fim â€” abrir calendÃ¡rio"
+              ariaLabelCalendar="Data fim - abrir calendario"
             />
           </div>
           <div className="dashboard-filtro-item">
-            <label htmlFor="dash-date-cmp-ini">Comparar inÃ­cio (opcional)</label>
+            <label htmlFor="dash-date-cmp-ini">Comparar inicio (opcional)</label>
             <DashboardDateInput
               id="dash-date-cmp-ini"
               brValue={compareStartBr}
               isoValue={compareStart}
               onBrInputChange={(e) => handleDateInput(e.target.value, setCompareStartBr, setCompareStart)}
               onIsoPicked={(iso) => handleCalendarPick(iso, setCompareStartBr, setCompareStart)}
-              ariaLabelCalendar="Comparar inÃ­cio â€” abrir calendÃ¡rio"
+              ariaLabelCalendar="Comparar inicio - abrir calendario"
             />
           </div>
           <div className="dashboard-filtro-item">
@@ -307,7 +307,7 @@ export default function DashboardAdmin() {
               isoValue={compareEnd}
               onBrInputChange={(e) => handleDateInput(e.target.value, setCompareEndBr, setCompareEnd)}
               onIsoPicked={(iso) => handleCalendarPick(iso, setCompareEndBr, setCompareEnd)}
-              ariaLabelCalendar="Comparar fim â€” abrir calendÃ¡rio"
+              ariaLabelCalendar="Comparar fim - abrir calendario"
             />
           </div>
           <button type="button" className="dashboard-btn dashboard-btn-primary" onClick={carregar} disabled={loading}>
@@ -319,7 +319,7 @@ export default function DashboardAdmin() {
 
         <div className="dashboard-content-tabs">
           <button type="button" className={activeTab === 'visao-geral' ? 'active' : ''} onClick={() => handleTabChange('visao-geral')}>
-            VisÃ£o Geral
+            Visao Geral
           </button>
           <button type="button" className={activeTab === 'rankings' ? 'active' : ''} onClick={() => handleTabChange('rankings')}>
             Rankings
@@ -328,10 +328,10 @@ export default function DashboardAdmin() {
             Assinaturas
           </button>
           <button type="button" className={activeTab === 'doacoes' ? 'active' : ''} onClick={() => handleTabChange('doacoes')}>
-            DoaÃ§Ãµes
+            Doacoes
           </button>
           <button type="button" className={activeTab === 'aquisicao' ? 'active' : ''} onClick={() => handleTabChange('aquisicao')}>
-            AquisiÃ§Ã£o
+            Aquisicao
           </button>
         </div>
 
@@ -339,22 +339,22 @@ export default function DashboardAdmin() {
           <>
             <div className="dashboard-kpis dashboard-kpis--hero">
               <article className="kpi-card kpi-card--revenue">
-                <h3>ðŸ’° Receita total</h3>
+                <h3>Receita total</h3>
                 <strong>{brl(dados?.current?.totals?.totalAmount || 0)}</strong>
-                <small>{`vs perÃ­odo comparado: ${pct(dados?.comparativo?.deltaPercent)}`}</small>
+                <small>{`vs periodo comparado: ${pct(dados?.comparativo?.deltaPercent)}`}</small>
               </article>
               <article className="kpi-card kpi-card--vip">
-                <h3>ðŸ”¥ VIPs no perÃ­odo</h3>
+                <h3>VIPs no periodo</h3>
                 <strong>{dados?.current?.totals?.premiumCount || 0}</strong>
                 <small>{brl(dados?.current?.totals?.premiumAmount || 0)}</small>
               </article>
               <article className="kpi-card kpi-card--growth">
-                <h3>ðŸ“ˆ Crescimento</h3>
+                <h3>Crescimento</h3>
                 <strong>{pct(dados?.comparativo?.deltaPercent)}</strong>
-                <small>{`DiferenÃ§a absoluta: ${brl(dados?.comparativo?.deltaAmount || 0)}`}</small>
+                <small>{`Diferenca absoluta: ${brl(dados?.comparativo?.deltaAmount || 0)}`}</small>
               </article>
               <article className="kpi-card kpi-card--donation">
-                <h3>ðŸ’¸ DoaÃ§Ãµes</h3>
+                <h3>Doacoes</h3>
                 <strong>{dados?.current?.totals?.apoioCount || 0}</strong>
                 <small>{brl(dados?.current?.totals?.apoioAmount || 0)}</small>
               </article>
@@ -367,48 +367,48 @@ export default function DashboardAdmin() {
               </div>
               {lineChart.months.length ? (
                 <div className="line-chart-wrap">
-                  <svg viewBox="0 0 920 280" role="img" aria-label="GrÃ¡fico de receita mensal">
+                  <svg viewBox="0 0 920 280" role="img" aria-label="Grafico de receita mensal">
                     <path d={lineChart.comparePath} className="line-compare" />
                     <path d={lineChart.currentPath} className="line-main" />
                   </svg>
                   <div className="line-legend">
-                    <span><i className="dot-main" /> PerÃ­odo atual</span>
-                    <span><i className="dot-compare" /> PerÃ­odo comparado</span>
+                    <span><i className="dot-main" /> Periodo atual</span>
+                    <span><i className="dot-compare" /> Periodo comparado</span>
                   </div>
                 </div>
               ) : (
-                <p className="dashboard-empty">Sem dados suficientes para o grÃ¡fico principal.</p>
+                <p className="dashboard-empty">Sem dados suficientes para o grafico principal.</p>
               )}
             </section>
 
             <section className="dashboard-sec dashboard-sec--insights">
               <div className="dashboard-sec-head">
-                <h2>Insights automÃ¡ticos</h2>
-                <small>Traduz nÃºmeros em decisÃ£o â€” o que estÃ¡ puxando receita e onde agir.</small>
+                <h2>Insights automaticos</h2>
+                <small>Traduz numeros em decisao: o que esta puxando receita e onde agir primeiro.</small>
               </div>
               <ul className="dashboard-insights-list">
                 {dashboardInsights.map((line, i) => (
                   <li key={i}>{line}</li>
                 ))}
                 {!dashboardInsights.length && (
-                  <li className="dashboard-insights-muted">Aplique os filtros e carregue o perÃ­odo para gerar insights.</li>
+                  <li className="dashboard-insights-muted">Aplique os filtros e carregue o periodo para gerar os insights.</li>
                 )}
               </ul>
             </section>
 
             <section className="dashboard-sec dashboard-sec--teaser">
               <div className="dashboard-sec-head">
-                <h2>Impacto rÃ¡pido Â· aquisiÃ§Ã£o por e-mail</h2>
-                <small>Pagamentos ligados a promo e a aviso de capÃ­tulo (perÃ­odo filtrado)</small>
+                <h2>Impacto rapido ? aquisicao por e-mail</h2>
+                <small>Pagamentos ligados a promo e a aviso de capitulo (periodo filtrado)</small>
               </div>
               <div className="dashboard-teaser-kpis">
                 <article>
-                  <h3>PromoÃ§Ã£o</h3>
+                  <h3>Promocao</h3>
                   <strong>{acquisition.promo?.premiumPaymentsFromPromoEmail || 0}</strong>
                   <small>{brl(acquisition.promo?.premiumRevenueFromPromoEmail || 0)}</small>
                 </article>
                 <article>
-                  <h3>CapÃ­tulo</h3>
+                  <h3>Capitulo</h3>
                   <strong>{acquisition.chapter?.premiumPaymentsFromChapterEmail || 0}</strong>
                   <small>{brl(acquisition.chapter?.premiumRevenueFromChapterEmail || 0)}</small>
                 </article>
@@ -420,19 +420,19 @@ export default function DashboardAdmin() {
 
             <div className="dashboard-sessoes-grid dashboard-sessoes-grid--insights">
               <article className="dashboard-sec dashboard-sec--demografia">
-                <h2>Receita Premium por sexo (distribuiÃ§Ã£o)</h2>
-                <p className="dash-demografia-hint">% sobre o valor de assinaturas aprovadas no perÃ­odo â€” perfil com sexo preenchido.</p>
+                <h2>Receita Premium por sexo (distribuicao)</h2>
+                <p className="dash-demografia-hint">% sobre o valor de assinaturas aprovadas no periodo com sexo preenchido.</p>
                 {!distAssinaSexo.length ? (
                   <p className="dashboard-empty">Sem dados de sexo para assinaturas neste recorte.</p>
                 ) : (
                   <>
-                    <div className="dash-sexo-stack" role="img" aria-label="DistribuiÃ§Ã£o por sexo nas assinaturas">
+                    <div className="dash-sexo-stack" role="img" aria-label="Distribuicao por sexo nas assinaturas">
                       {distAssinaSexo.map((r) => (
                         <div
                           key={r.key}
                           className={`dash-sexo-seg ${sexoBarClass(r.key)}`}
                           style={{ flex: `0 0 ${Math.max(3, r.pct)}%` }}
-                          title={`${r.label}: ${r.pct.toFixed(1)}% Â· ${brl(r.amount)}`}
+                    title={`${r.label}: ${r.pct.toFixed(1)}% · ${brl(r.amount)}`}
                         />
                       ))}
                     </div>
@@ -451,19 +451,19 @@ export default function DashboardAdmin() {
               </article>
 
               <article className="dashboard-sec dashboard-sec--demografia">
-                <h2>DoaÃ§Ãµes por sexo (distribuiÃ§Ã£o)</h2>
-                <p className="dash-demografia-hint">% sobre o valor doado no perÃ­odo.</p>
+                <h2>Doacoes por sexo (distribuicao)</h2>
+                <p className="dash-demografia-hint">% sobre o valor doado no periodo.</p>
                 {!distDoaSexo.length ? (
-                  <p className="dashboard-empty">Nenhuma doaÃ§Ã£o com sexo rastreado â€” ou ainda nÃ£o houve doaÃ§Ãµes.</p>
+                  <p className="dashboard-empty">Nenhuma doacao com sexo rastreado - ou ainda nao houve doacoes.</p>
                 ) : (
                   <>
-                    <div className="dash-sexo-stack" role="img" aria-label="DistribuiÃ§Ã£o por sexo nas doaÃ§Ãµes">
+                    <div className="dash-sexo-stack" role="img" aria-label="Distribuicao por sexo nas doacoes">
                       {distDoaSexo.map((r) => (
                         <div
                           key={r.key}
                           className={`dash-sexo-seg ${sexoBarClass(r.key)}`}
                           style={{ flex: `0 0 ${Math.max(3, r.pct)}%` }}
-                          title={`${r.label}: ${r.pct.toFixed(1)}% Â· ${brl(r.amount)}`}
+                    title={`${r.label}: ${r.pct.toFixed(1)}% · ${brl(r.amount)}`}
                         />
                       ))}
                     </div>
@@ -482,19 +482,19 @@ export default function DashboardAdmin() {
               </article>
 
               <article className="kpi-card kpi-card--idade">
-                <h3>MÃ©dia de idade</h3>
+                <h3>Media de idade</h3>
                 <strong>
-                  {dados?.current?.demografia?.mediaIdadeAssinantes ?? 'â€”'} <span className="dash-idade-sep">/</span>{' '}
-                  {dados?.current?.demografia?.mediaIdadeDoadores ?? 'â€”'}
+                  {dados?.current?.demografia?.mediaIdadeAssinantes ?? '--'} <span className="dash-idade-sep">/</span>{' '}
+                  {dados?.current?.demografia?.mediaIdadeDoadores ?? '--'}
                 </strong>
-                <small>Assinantes Â· Doadores (quando hÃ¡ ano de nascimento no perfil)</small>
+                <small>Assinantes ? Doadores (quando ha ano de nascimento no perfil)</small>
               </article>
 
               <section className="dashboard-sec dashboard-sec--pizza">
                 <h2>Quem domina a receita</h2>
-                <p className="dash-demografia-hint">Assinatura recorrente vs doaÃ§Ãµes avulsas no perÃ­odo.</p>
+                <p className="dash-demografia-hint">Assinatura recorrente vs doacoes avulsas no periodo.</p>
                 {pieShare.total <= 0 ? (
-                  <p className="dashboard-empty">Sem receita classificada neste perÃ­odo.</p>
+                  <p className="dashboard-empty">Sem receita classificada neste periodo.</p>
                 ) : (
                   <div className="pie-wrap pie-wrap--lg">
                     <div
@@ -502,7 +502,7 @@ export default function DashboardAdmin() {
                       style={{
                         background: `conic-gradient(#ffcc00 0% ${pieShare.assPct}%, #5aa7ff ${pieShare.assPct}% 100%)`,
                       }}
-                      aria-label="DistribuiÃ§Ã£o assinatura versus doaÃ§Ã£o"
+                    aria-label="Distribuicao assinatura versus doacao"
                     />
                     <div className="pie-legend pie-legend--lg">
                       <p>
@@ -515,7 +515,7 @@ export default function DashboardAdmin() {
                       <p>
                         <span className="legend-box legend-doa" />
                         <span>
-                          DoaÃ§Ã£o: <strong>{brl(pieShare.doa)}</strong>
+                          Doacao: <strong>{brl(pieShare.doa)}</strong>
                           <em>({pieShare.doaPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%)</em>
                         </span>
                       </p>
@@ -528,10 +528,10 @@ export default function DashboardAdmin() {
                 <h2>Novos assinantes (primeira compra)</h2>
                 <p className="dash-crescimento-lead">
                   <strong className="dash-crescimento-num">+{novosVipStats.atual}</strong>
-                  <span> novos no perÃ­odo</span>
+                  <span> novos no periodo</span>
                   {novosVipStats.vsPct != null && Number.isFinite(novosVipStats.vsPct) && (
                     <span className={`dash-crescimento-vs ${novosVipStats.vsPct >= 0 ? 'dash-delta--up' : 'dash-delta--down'}`}>
-                      {' '}Â· {pct(novosVipStats.vsPct)} vs perÃ­odo de comparaÃ§Ã£o automÃ¡tico
+                    {' '}· {pct(novosVipStats.vsPct)} vs periodo de comparacao automatico
                     </span>
                   )}
                 </p>
@@ -549,14 +549,14 @@ export default function DashboardAdmin() {
                       </li>
                     );
                   })}
-                  {!dados?.crescimentoPremium?.length && <li className="dashboard-empty">Sem novos assinantes rastreados mÃªs a mÃªs neste recorte.</li>}
+                  {!dados?.crescimentoPremium?.length && <li className="dashboard-empty">Sem novos assinantes rastreados mes a mes neste recorte.</li>}
                 </ul>
               </section>
 
               <section className="dashboard-sec dashboard-sec--mensal-destaque">
                 <div className="dashboard-sec-head">
-                  <h2>ArrecadaÃ§Ã£o mensal</h2>
-                  <small>Total, Premium e doaÃ§Ãµes â€” Ãºltimos meses do perÃ­odo</small>
+                  <h2>Arrecadacao mensal</h2>
+                  <small>Total, Premium e doacoes - ultimos meses do periodo</small>
                 </div>
                 <div className="dash-mensal-cards">
                   {ultimosMesesReceita.map((m) => (
@@ -567,19 +567,19 @@ export default function DashboardAdmin() {
                         Premium <strong>{brl(m.premiumAmount || 0)}</strong>
                       </p>
                       <p className="dash-mensal-line">
-                        DoaÃ§Ãµes <strong>{brl(m.apoioAmount || 0)}</strong>
+                        Doacoes <strong>{brl(m.apoioAmount || 0)}</strong>
                       </p>
                     </article>
                   ))}
                 </div>
-                {!ultimosMesesReceita.length && <p className="dashboard-empty">Nenhum mÃªs com movimento no perÃ­odo selecionado.</p>}
+                {!ultimosMesesReceita.length && <p className="dashboard-empty">Nenhum mes com movimento no periodo selecionado.</p>}
               </section>
             </div>
 
             <section className="dashboard-sec dashboard-sec--top-doadores">
               <div className="dashboard-sec-head">
                 <h2>Top doadores</h2>
-                <small>Quem mais contribuiu com doaÃ§Ãµes (Apoie) no perÃ­odo</small>
+                <small>Quem mais contribuiu com doacoes (Apoie) no periodo</small>
               </div>
               <div className="top-table">
                 <div className="top-row top-row--head">
@@ -590,7 +590,7 @@ export default function DashboardAdmin() {
                 </div>
                 {(dados?.current?.topDoadores || []).map((u, idx) => (
                   <div key={u.uid} className={`top-row ${idx === 0 ? 'top-row--winner' : ''}`}>
-                    <span>{idx === 0 ? 'ðŸ¥‡' : `${idx + 1}.`}</span>
+                    <span>{idx === 0 ? '#1' : `${idx + 1}.`}</span>
                     <span>{formatUserDisplayFromMixed(u)}</span>
                     <span>{formatGender(u.gender || 'nao_informado')}</span>
                     <strong>{brl(u.amount || 0)}</strong>
@@ -599,10 +599,10 @@ export default function DashboardAdmin() {
               </div>
               {!dados?.current?.topDoadores?.length && (
                 <div className="dashboard-empty-state">
-                  <p className="dashboard-empty-title">Nenhum doador ainda neste perÃ­odo</p>
+                  <p className="dashboard-empty-title">Nenhum doador ainda neste periodo</p>
                   <p className="dashboard-empty-text">
-                    Isso Ã© normal em recortes curtos ou quando o pÃºblico ainda nÃ£o usa a Apoie. Experimente metas visÃ­veis, recompensas exclusivas
-                    ou menÃ§Ã£o aos apoiadores no final dos capÃ­tulos.
+                    Isso e normal em recortes curtos ou quando o publico ainda nao usa a Apoie. Experimente metas visiveis, recompensas exclusivas
+                    ou mencao aos apoiadores no final dos capitulos.
                   </p>
                 </div>
               )}
@@ -610,20 +610,20 @@ export default function DashboardAdmin() {
 
             <details className="dashboard-sec dashboard-sec--sistema">
               <summary className="dashboard-sistema-summary">
-                Sistema e manutenÃ§Ã£o <span className="dashboard-sistema-tag">avanÃ§ado</span>
+                Sistema e manutencao <span className="dashboard-sistema-tag">avancado</span>
               </summary>
               <p className="dashboard-sistema-lead">
-                Ferramentas para conferir consistÃªncia dos dados e recalcular agregados. Use sÃ³ se souber o efeito em cada botÃ£o.
+                Ferramentas para conferir consistencia dos dados e recalcular agregados. Use so se precisar corrigir base historica.
               </p>
               <div className="dashboard-actions-inline">
                 <button type="button" className="dashboard-btn" onClick={runIntegridade}>
                   Verificar dados
                 </button>
                 <button type="button" className="dashboard-btn" onClick={runRollup}>
-                  Recalcular mÃ©tricas
+                  Recalcular metricas
                 </button>
                 <button type="button" className="dashboard-btn" onClick={runBackfillLegado}>
-                  Corrigir histÃ³rico antigo
+                  Corrigir historico antigo
                 </button>
                 <button type="button" className="dashboard-btn" onClick={() => navigate('/admin/financeiro')}>
                   Ir para Financeiro
@@ -634,8 +634,8 @@ export default function DashboardAdmin() {
               </div>
               {opsMsg && <p className="dashboard-ops-msg">{opsMsg}</p>}
               <p className="dashboard-integrity-resumo">
-                Ãšltima leitura: {dados?.integrity?.totalEvents || 0} eventos no banco Â· {dados?.integrity?.duplicatePaymentIdsCount || 0} IDs
-                duplicados Â· {dados?.integrity?.withoutUid || 0} sem usuÃ¡rio Â· {dados?.integrity?.withoutAmount || 0} sem valor.
+                  Ultima leitura: {dados?.integrity?.totalEvents || 0} eventos no banco · {dados?.integrity?.duplicatePaymentIdsCount || 0} IDs
+                  duplicados · {dados?.integrity?.withoutUid || 0} sem usuario · {dados?.integrity?.withoutAmount || 0} sem valor.
               </p>
             </details>
           </>
@@ -645,7 +645,7 @@ export default function DashboardAdmin() {
           <section className="dashboard-sec">
             <div className="dashboard-sec-head">
               <h2>Ranking de Receita</h2>
-              <small>Top usuÃ¡rios por valor no perÃ­odo selecionado</small>
+              <small>Top usuarios por valor no periodo selecionado</small>
             </div>
             <div className="analytics-toolbar">
               <div className="analytics-toggle">
@@ -653,12 +653,12 @@ export default function DashboardAdmin() {
                   Assinaturas
                 </button>
                 <button type="button" className={rankingMode === 'doacoes' ? 'active' : ''} onClick={() => setRankingMode('doacoes')}>
-                  DoaÃ§Ãµes
+                  Doacoes
                 </button>
               </div>
               <input
                 type="text"
-                placeholder="Buscar usuÃ¡rio..."
+                placeholder="Buscar usuario..."
                 value={rankingSearch}
                 onChange={(e) => setRankingSearch(e.target.value)}
               />
@@ -666,13 +666,13 @@ export default function DashboardAdmin() {
             <div className="analytics-table">
               <div className="analytics-row analytics-row--head analytics-row--rankings">
                 <span>Rank</span>
-                <span>UsuÃ¡rio</span>
+                <span>Usuario</span>
                 <span>Total gasto</span>
                 <span>Qtd.</span>
                 <span title={rankingMode === 'assinaturas' ? TITLE_COL_ESTIMATIVA : undefined}>
-                  {rankingMode === 'assinaturas' ? 'Est. no filtro' : 'â€”'}
+                  {rankingMode === 'assinaturas' ? 'Est. no filtro' : '--'}
                 </span>
-                <span>Ãšltima atividade</span>
+                <span>Ultima atividade</span>
               </div>
               {rankingPaginated.rows.map((row) => {
                 const subRef = subsByUid[row.uid] || null;
@@ -688,21 +688,21 @@ export default function DashboardAdmin() {
                     <span>{brl(row.totalSpent || 0)}</span>
                     <span>{row.count || 0}</span>
                     <span title={rankingMode === 'assinaturas' ? TITLE_COL_ESTIMATIVA : undefined}>
-                      {rankingMode === 'assinaturas' ? textoEstimativaPagamentosNoFiltro(subRef) : 'â€”'}
+                      {rankingMode === 'assinaturas' ? textoEstimativaPagamentosNoFiltro(subRef) : '--'}
                     </span>
                     <span>{formatarDataHoraBr(row.lastAt, { seVazio: '--' })}</span>
                   </button>
                 );
               })}
-              {!rankingPaginated.rows.length && <p className="dashboard-empty">Sem usuÃ¡rios no ranking para este filtro.</p>}
+              {!rankingPaginated.rows.length && <p className="dashboard-empty">Sem usuarios no ranking para este filtro.</p>}
             </div>
             <div className="analytics-pagination">
               <button type="button" disabled={rankingPaginated.page <= 1} onClick={() => setRankingPage((p) => Math.max(1, p - 1))}>
                 Anterior
               </button>
-              <span>PÃ¡gina {rankingPaginated.page} de {rankingPaginated.totalPages}</span>
+              <span>Pagina {rankingPaginated.page} de {rankingPaginated.totalPages}</span>
               <button type="button" disabled={rankingPaginated.page >= rankingPaginated.totalPages} onClick={() => setRankingPage((p) => p + 1)}>
-                PrÃ³xima
+                Proxima
               </button>
             </div>
           </section>
@@ -711,34 +711,34 @@ export default function DashboardAdmin() {
         {activeTab === 'assinaturas' && (
           <section className="dashboard-sec">
             <div className="dashboard-sec-head">
-              <h2>Assinaturas por usuÃ¡rio</h2>
+              <h2>Assinaturas por usuario</h2>
               <small>
-                Â«Restante agoraÂ» e a data de expiraÃ§Ã£o vÃªm do cadastro (renovaÃ§Ãµes somam 30 em 30 dias). A coluna de estimativa sÃ³ conta pagamentos
-                dentro do perÃ­odo filtrado â€” nÃ£o Ã© o saldo de tempo.
+                "Restante agora" e a data de expiracao vem do cadastro (renovacoes somam 30 em 30 dias). A coluna de estimativa so conta pagamentos
+                dentro do periodo filtrado - nao e o saldo de tempo.
               </small>
             </div>
             <div className="analytics-toolbar">
               <input
                 type="text"
-                placeholder="Buscar usuÃ¡rio..."
+                placeholder="Buscar usuario..."
                 value={subsSearch}
                 onChange={(e) => setSubsSearch(e.target.value)}
               />
             </div>
             <div className="analytics-table">
               <div className="analytics-row analytics-row--head analytics-row--subs">
-                <span>UsuÃ¡rio</span>
-                <span>NÂº assinaturas</span>
+                <span>Usuario</span>
+                <span>No. assinaturas</span>
                 <span>Total gasto</span>
-                <span>PreÃ§o mÃ©dio</span>
-                <span title={TITLE_COL_ESTIMATIVA}>No perÃ­odo (~30d/pg)</span>
+                <span>Preco medio</span>
+                <span title={TITLE_COL_ESTIMATIVA}>No periodo (~30d/pg)</span>
                 <span>Restante agora</span>
                 <span>Status</span>
-                <span>Ãšltima compra</span>
+                <span>Ultima compra</span>
               </div>
               {subsPaginated.rows.map((row) => {
                 const rest = formatarTempoRestanteAssinatura(row.memberUntil, Date.now());
-                const restTxt = row.status === 'ativo' && rest.ativo ? rest.texto : 'â€”';
+                const restTxt = row.status === 'ativo' && rest.ativo ? rest.texto : '--';
                 return (
                 <button type="button" key={row.uid} className="analytics-row analytics-row--subs analytics-row--click" onClick={() => setSelectedUid(row.uid)}>
                   <span>{formatUserDisplayFromMixed(row)}</span>
@@ -750,7 +750,7 @@ export default function DashboardAdmin() {
                     <span>{restTxt}</span>
                     {row.status === 'ativo' && row.memberUntil && rest.ativo && (
                       <small className="analytics-expira">
-                        atÃ© {formatarDataHoraBr(row.memberUntil, { seVazio: '' })}
+                        ate {formatarDataHoraBr(row.memberUntil, { seVazio: '' })}
                       </small>
                     )}
                   </span>
@@ -767,9 +767,9 @@ export default function DashboardAdmin() {
               <button type="button" disabled={subsPaginated.page <= 1} onClick={() => setSubsPage((p) => Math.max(1, p - 1))}>
                 Anterior
               </button>
-              <span>PÃ¡gina {subsPaginated.page} de {subsPaginated.totalPages}</span>
+              <span>Pagina {subsPaginated.page} de {subsPaginated.totalPages}</span>
               <button type="button" disabled={subsPaginated.page >= subsPaginated.totalPages} onClick={() => setSubsPage((p) => p + 1)}>
-                PrÃ³xima
+                Proxima
               </button>
             </div>
           </section>
@@ -778,24 +778,24 @@ export default function DashboardAdmin() {
         {activeTab === 'doacoes' && (
           <section className="dashboard-sec">
             <div className="dashboard-sec-head">
-              <h2>DoaÃ§Ãµes por usuÃ¡rio</h2>
-              <small>FrequÃªncia, ticket mÃ©dio e data da Ãºltima contribuiÃ§Ã£o</small>
+              <h2>Doacoes por usuario</h2>
+              <small>Frequencia, ticket medio e data da ultima contribuicao</small>
             </div>
             <div className="analytics-toolbar">
               <input
                 type="text"
-                placeholder="Buscar usuÃ¡rio..."
+                placeholder="Buscar usuario..."
                 value={doaSearch}
                 onChange={(e) => setDoaSearch(e.target.value)}
               />
             </div>
             <div className="analytics-table">
               <div className="analytics-row analytics-row--head analytics-row--don">
-                <span>UsuÃ¡rio</span>
-                <span>NÂº doaÃ§Ãµes</span>
+                <span>Usuario</span>
+                <span>No. doacoes</span>
                 <span>Total doado</span>
-                <span>MÃ©dia por doaÃ§Ã£o</span>
-                <span>Ãšltima doaÃ§Ã£o</span>
+                <span>Media por doacao</span>
+                <span>Ultima doacao</span>
               </div>
               {doaPaginated.rows.map((row) => (
                 <button type="button" key={row.uid} className="analytics-row analytics-row--don analytics-row--click" onClick={() => setSelectedUid(row.uid)}>
@@ -806,15 +806,15 @@ export default function DashboardAdmin() {
                   <span>{formatarDataHoraBr(row.lastAt, { seVazio: '--' })}</span>
                 </button>
               ))}
-              {!doaPaginated.rows.length && <p className="dashboard-empty">Sem doaÃ§Ãµes para este recorte.</p>}
+              {!doaPaginated.rows.length && <p className="dashboard-empty">Sem doacoes para este recorte.</p>}
             </div>
             <div className="analytics-pagination">
               <button type="button" disabled={doaPaginated.page <= 1} onClick={() => setDoaPage((p) => Math.max(1, p - 1))}>
                 Anterior
               </button>
-              <span>PÃ¡gina {doaPaginated.page} de {doaPaginated.totalPages}</span>
+              <span>Pagina {doaPaginated.page} de {doaPaginated.totalPages}</span>
               <button type="button" disabled={doaPaginated.page >= doaPaginated.totalPages} onClick={() => setDoaPage((p) => p + 1)}>
-                PrÃ³xima
+                Proxima
               </button>
             </div>
           </section>
@@ -824,19 +824,19 @@ export default function DashboardAdmin() {
           <>
             <section className="dashboard-sec">
               <div className="dashboard-sec-head">
-                <h2>AquisiÃ§Ã£o por PromoÃ§Ã£o</h2>
-                <small>Da notificaÃ§Ã£o por e-mail atÃ© pagamento aprovado</small>
+                <h2>Aquisicao por Promocao</h2>
+                <small>Da notificacao por e-mail ate pagamento aprovado</small>
               </div>
               <div className="dashboard-kpis">
                 <article className="kpi-card">
                   <h3>Emails enviados</h3>
                   <strong>{acquisition.promo?.sentEmails || 0}</strong>
-                  <small>Campanhas promocionais no perÃ­odo</small>
+                  <small>Campanhas promocionais no periodo</small>
                 </article>
                 <article className="kpi-card">
                   <h3>Cliques no link</h3>
                   <strong>{acquisition.promo?.promoLandingClicks || 0}</strong>
-                  <small>Ãšnicos: {acquisition.promo?.promoLandingUniqueClicks || 0}</small>
+                  <small>Unicos: {acquisition.promo?.promoLandingUniqueClicks || 0}</small>
                 </article>
                 <article className="kpi-card">
                   <h3>Checkouts iniciados</h3>
@@ -853,14 +853,14 @@ export default function DashboardAdmin() {
 
             <section className="dashboard-sec">
               <div className="dashboard-sec-head">
-                <h2>AquisiÃ§Ã£o por NotificaÃ§Ã£o de CapÃ­tulo</h2>
+                <h2>Aquisicao por Notificacao de Capitulo</h2>
                 <small>Comparativo notificados x leitura normal</small>
               </div>
               <div className="dashboard-kpis">
                 <article className="kpi-card">
-                  <h3>Emails de capÃ­tulo</h3>
+                  <h3>Emails de capitulo</h3>
                   <strong>{acquisition.chapter?.sentEmails || 0}</strong>
-                  <small>NotificaÃ§Ãµes enviadas</small>
+                  <small>Notificacoes enviadas</small>
                 </article>
                 <article className="kpi-card">
                   <h3>Leituras via e-mail</h3>
@@ -873,7 +873,7 @@ export default function DashboardAdmin() {
                   <small>Total rastreado: {acquisition.chapter?.chapterReadsTotal || 0}</small>
                 </article>
                 <article className="kpi-card">
-                  <h3>Premium vindo de capÃ­tulo</h3>
+                  <h3>Premium vindo de capitulo</h3>
                   <strong>{acquisition.chapter?.premiumPaymentsFromChapterEmail || 0}</strong>
                   <small>{brl(acquisition.chapter?.premiumRevenueFromChapterEmail || 0)}</small>
                 </article>
@@ -882,8 +882,8 @@ export default function DashboardAdmin() {
 
             <section className="dashboard-sec">
               <div className="dashboard-sec-head">
-                <h2>Performance por Campanha</h2>
-                <small>Receita por promoÃ§Ã£o e pagamentos atribuÃ­dos</small>
+                <h2>Receita por promocao</h2>
+                <small>Receita por promocao e pagamentos atribuidos</small>
               </div>
               <div className="analytics-table">
                 <div className="analytics-row analytics-row--head analytics-row--campaign">
@@ -910,39 +910,39 @@ export default function DashboardAdmin() {
                   </div>
                 ))}
                 {!acquisition.promo?.campaigns?.length && (
-                  <p className="dashboard-empty">Sem campanhas com dados neste perÃ­odo.</p>
+                <p className="dashboard-empty">Sem campanhas com dados neste periodo.</p>
                 )}
               </div>
             </section>
 
             <section className="dashboard-sec">
               <div className="dashboard-sec-head">
-                <h2>Funil de ConversÃ£o</h2>
-                <small>Leitura rÃ¡pida de eficiÃªncia por canal</small>
+                <h2>Funil de Conversao</h2>
+                <small>Leitura rapida de eficiencia por canal</small>
               </div>
               <div className="conversion-score-grid">
                 <article className={`conversion-score-card tone-${promoScore.tone}`}>
                   <p>Score da Campanha Promo</p>
                   <strong>{promoScore.grade}</strong>
                   <span>
-                    {promoFunnel.paidFromSent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% pago por e-mail enviado Â· {promoScore.label}
+                    {promoFunnel.paidFromSent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% pago por e-mail enviado ? {promoScore.label}
                   </span>
                 </article>
                 <article className={`conversion-score-card tone-${chapterScore.tone}`}>
-                  <p>Score da NotificaÃ§Ã£o de CapÃ­tulo</p>
+                  <p>Score da Notificacao de Capitulo</p>
                   <strong>{chapterScore.grade}</strong>
                   <span>
-                    {chapterFunnel.readShare.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% de leitura via e-mail Â· {chapterScore.label}
+                    {chapterFunnel.readShare.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% de leitura via e-mail ? {chapterScore.label}
                   </span>
                 </article>
               </div>
               <div className="conversion-funnel-grid">
                 <article className="conversion-card">
-                  <h3>PromoÃ§Ã£o (e-mail)</h3>
+                  <h3>Promocao (e-mail)</h3>
                   <div className="conversion-kpis">
                     <p>CTR: <strong>{promoFunnel.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
-                    <p>Clique â†’ Checkout: <strong>{promoFunnel.clickToCheckout.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
-                    <p>Checkout â†’ Pago: <strong>{promoFunnel.checkoutToPaid.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Clique para checkout: <strong>{promoFunnel.clickToCheckout.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Checkout para pago: <strong>{promoFunnel.checkoutToPaid.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
                     <p>Pago / Enviado: <strong>{promoFunnel.paidFromSent.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
                   </div>
                   <ul className="conversion-steps">
@@ -961,10 +961,10 @@ export default function DashboardAdmin() {
                 </article>
 
                 <article className="conversion-card">
-                  <h3>CapÃ­tulo (notificaÃ§Ã£o)</h3>
+                  <h3>Capitulo (notificacao)</h3>
                   <div className="conversion-kpis">
                     <p>CTR: <strong>{chapterFunnel.ctr.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
-                    <p>Clique â†’ Leitura: <strong>{chapterFunnel.clickToRead.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
+                    <p>Clique para leitura: <strong>{chapterFunnel.clickToRead.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
                     <p>Leitura via e-mail / Total: <strong>{chapterFunnel.readShare.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</strong></p>
                     <p>Leituras normais: <strong>{chapterFunnel.readsNormal}</strong></p>
                   </div>
@@ -992,34 +992,34 @@ export default function DashboardAdmin() {
         <div className="analytics-modal-backdrop" onClick={() => setSelectedUid('')} role="presentation">
           <section className="analytics-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <header>
-              <h3>{formatUserDisplayFromMixed(selectedUser)} â€” HistÃ³rico financeiro</h3>
+                <h3>{formatUserDisplayFromMixed(selectedUser)} - Historico financeiro</h3>
               <button type="button" onClick={() => setSelectedUid('')}>Fechar</button>
             </header>
             <div className="analytics-modal-body">
               <article>
-                <h4>HistÃ³rico de assinaturas</h4>
+                  <h4>Historico de assinaturas</h4>
                 <ul>
                   {(selectedHistory?.subscriptions || []).map((item) => (
                     <li key={`sub-${item.at}-${item.amount}`}>
                       <span>{formatarDataHoraBr(item.at, { seVazio: '--' })}</span>
                       <strong>{brl(item.amount)}</strong>
-                      <em>{item.isPromotion ? `PromoÃ§Ã£o${item.promoName ? `: ${item.promoName}` : ''}` : 'PreÃ§o base'}</em>
+                        <em>{item.isPromotion ? `Promocao${item.promoName ? `: ${item.promoName}` : ''}` : 'Preco base'}</em>
                     </li>
                   ))}
-                  {!selectedHistory?.subscriptions?.length && <li>Sem assinaturas nesse perÃ­odo.</li>}
+                  {!selectedHistory?.subscriptions?.length && <li>Sem assinaturas nesse periodo.</li>}
                 </ul>
               </article>
               <article>
-                <h4>HistÃ³rico de doaÃ§Ãµes</h4>
+                  <h4>Historico de doacoes</h4>
                 <ul>
                   {(selectedHistory?.donations || []).map((item) => (
                     <li key={`doa-${item.at}-${item.amount}`}>
                       <span>{formatarDataHoraBr(item.at, { seVazio: '--' })}</span>
                       <strong>{brl(item.amount)}</strong>
-                      <em>{item.origem || 'DoaÃ§Ã£o'}</em>
+                        <em>{item.origem || 'Doacao'}</em>
                     </li>
                   ))}
-                  {!selectedHistory?.donations?.length && <li>Sem doaÃ§Ãµes nesse perÃ­odo.</li>}
+                  {!selectedHistory?.donations?.length && <li>Sem doacoes nesse periodo.</li>}
                 </ul>
               </article>
             </div>

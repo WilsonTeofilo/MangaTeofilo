@@ -33,7 +33,7 @@
       ".write": false,
       ".indexOn": ["creatorId", "obraId", "workId"],
       "$capId": {
-        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessCapitulos').val() === true) || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
+        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessCapitulos').val() === true) || (((root.child('usuarios').child(auth.uid).child('creatorApplicationStatus').val() === 'approved') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'active') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'onboarding')) && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
         "obraId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
         },
@@ -89,7 +89,7 @@
       ".indexOn": ["creatorId"],
       "$obraId": {
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
-        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessObras').val() === true) || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessObras').val() === true) || (((root.child('usuarios').child(auth.uid).child('creatorApplicationStatus').val() === 'approved') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'active') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'onboarding')) && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
         "titulo": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
         },
@@ -176,7 +176,7 @@
         },
         "promotions": {
           "$promoId": {
-            ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessFinanceiro').val() === true) || (auth.uid === $creatorUid && auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists()) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))"
+            ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessFinanceiro').val() === true) || (auth.uid === $creatorUid && root.child('usuarios').child(auth.uid).child('creatorMonetizationStatus').val() === 'active' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists()) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))"
           }
         }
       }
@@ -197,7 +197,7 @@
         ".write": false,
         ".indexOn": ["creatorId"],
         "$productId": {
-          ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessLojaAdmin').val() === true) || (auth.token.panelRole === 'mangaka' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+          ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessLojaAdmin').val() === true) || (root.child('usuarios').child(auth.uid).child('creatorMonetizationStatus').val() === 'active' && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
           "title": {
             ".validate": "!newData.exists() || (newData.isString() && newData.val().length >= 2 && newData.val().length <= 120)"
           },
@@ -423,7 +423,7 @@
         "readerProfilePublic": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || newData.isBoolean()" },
         "readerProfileAvatarUrl": { ".write": "auth != null && auth.uid === $uid", ".validate": "!newData.exists() || (newData.isString() && (newData.val().length === 0 || (newData.val().length <= 2048 && (newData.val().matches(/^\\/assets\\//) || newData.val().matches(/^https:\\/\\/(firebasestorage\\.googleapis\\.com|storage\\.googleapis\\.com)\\//) || newData.val().matches(/^http:\\/\\/(127\\.0\\.0\\.1|localhost):9199\\//)))))" },
         "publicProfile": {
-          ".read": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin') || (data.child('isCreatorProfile').val() === true && root.child('usuarios').child($uid).child('role').val() === 'mangaka') || root.child('usuarios').child($uid).child('readerProfilePublic').val() === true",
+          ".read": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin') || data.child('isCreatorProfile').val() === true || root.child('usuarios').child($uid).child('readerProfilePublic').val() === true",
           ".write": false,
           "uid": {
             ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
@@ -446,7 +446,7 @@
             ".validate": "!newData.exists() || newData.isBoolean()"
           },
           "signupIntent": {
-            ".write": "auth != null && (auth.uid === $uid || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
+            ".write": false,
             ".validate": "!newData.exists() || (newData.val() === 'reader' || newData.val() === 'creator')"
           },
           "status": {

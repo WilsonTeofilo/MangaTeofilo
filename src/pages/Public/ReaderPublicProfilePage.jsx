@@ -9,8 +9,8 @@ import { buildPublicProfileFromUsuarioRow, isCreatorPublicProfile } from '../../
 import './ReaderPublicProfile.css';
 
 /**
- * Rota legada `/leitor/:uid` — redireciona para o perfil unificado `/criador/:uid?tab=likes`
- * quando o perfil de leitor está público (mesma página com abas Obras / Curtidas / Comentários).
+ * Rota legada `/leitor/:uid` redireciona para o perfil unificado `/criador/:uid?tab=likes`
+ * quando o perfil de leitor esta publico.
  */
 export default function ReaderPublicProfilePage() {
   const { readerUid } = useParams();
@@ -35,6 +35,7 @@ export default function ReaderPublicProfilePage() {
     );
     return () => unsub();
   }, [uid]);
+
   const pub = profileState.uid === uid ? profileState.pub : null;
   const ready = uid ? profileState.uid === uid && profileState.ready === true : true;
 
@@ -42,8 +43,8 @@ export default function ReaderPublicProfilePage() {
     return (
       <main className="reader-public-page">
         <section className="reader-public-empty">
-          <h1>Perfil não encontrado</h1>
-          <p>Link inválido.</p>
+          <h1>Perfil nao encontrado</h1>
+          <p>Link invalido.</p>
         </section>
       </main>
     );
@@ -59,9 +60,9 @@ export default function ReaderPublicProfilePage() {
       <main className="reader-public-page">
         <section className="reader-public-empty">
           <h1>Perfil privado</h1>
-          <p>Este leitor optou por não exibir o perfil publicamente.</p>
+          <p>Este leitor optou por nao exibir o perfil publicamente.</p>
           <button type="button" className="reader-public-back" onClick={() => navigate('/works')}>
-            Voltar ao catálogo
+            Voltar ao catalogo
           </button>
         </section>
       </main>

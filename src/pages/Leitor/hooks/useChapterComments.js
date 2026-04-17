@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, push, ref, runTransaction, serverTimestamp, set } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
 
 import { AVATAR_FALLBACK } from '../../../constants';
 import { applyChapterCommentDelta } from '../../../utils/discoveryStats';
@@ -7,12 +8,17 @@ import { toRecordList } from '../../../utils/firebaseRecordList';
 import { buildPublicProfileFromUsuarioRow } from '../../../utils/publicUserProfile';
 import { obterObraIdCapitulo, obraCreatorId } from '../../../config/obras';
 import { buildCommentThreads, commentSortTs } from '../leitorUtils';
+import { functions } from '../../../services/firebase';
+
+const deleteChapterCommentCallable = httpsCallable(functions, 'deleteChapterComment');
 
 export function useChapterComments({
   db,
   chapterId,
   capitulo,
   creatorUidApoio,
+  authorUid,
+  adminAccess,
   user,
   onRequireLogin,
 }) {
@@ -25,6 +31,7 @@ export function useChapterComments({
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
   const [replyEnviando, setReplyEnviando] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState('');
   const unsubPerfis = useRef({});
 
   useEffect(() => {
@@ -37,6 +44,7 @@ export function useChapterComments({
     setComentarioTexto('');
     setReplyingTo(null);
     setReplyDraft('');
+    setDeletingCommentId('');
   }, [chapterId]);
 
   useEffect(() => {
@@ -202,6 +210,39 @@ export function useChapterComments({
     }
   };
 
+  const canDeleteComment = (comment) => {
+    const commentOwnerUid = String(comment?.userId || '').trim();
+    if (!user?.uid || !commentOwnerUid) return false;
+    if (commentOwnerUid === user.uid) return true;
+    if (String(authorUid || '').trim() === user.uid) return true;
+    return adminAccess?.canAccessAdmin === true;
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    const normalizedCommentId = String(commentId || '').trim();
+    if (!normalizedCommentId) return;
+    if (!user) {
+      onRequireLogin?.();
+      return;
+    }
+    if (deletingCommentId) return;
+    setDeletingCommentId(normalizedCommentId);
+    try {
+      await deleteChapterCommentCallable({
+        chapterId,
+        commentId: normalizedCommentId,
+      });
+      if (replyingTo?.id === normalizedCommentId) {
+        setReplyingTo(null);
+        setReplyDraft('');
+      }
+    } catch (err) {
+      console.error('Erro ao excluir comentario:', err);
+    } finally {
+      setDeletingCommentId('');
+    }
+  };
+
   return {
     comentarioTexto,
     setComentarioTexto,
@@ -222,5 +263,8 @@ export function useChapterComments({
     handleEnviarComentario,
     handleEnviarResposta,
     handleLikeComment,
+    canDeleteComment,
+    handleDeleteComment,
+    deletingCommentId,
   };
 }

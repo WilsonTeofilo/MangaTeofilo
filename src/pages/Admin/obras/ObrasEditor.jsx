@@ -29,6 +29,7 @@ export default function ObrasEditor({
   creatorDirectory,
   formatCreatorLookupOption,
   resolvedCreatorLookup,
+  creatorLookupMatches,
   creatorNeedsSelection,
   creatorWorkspaceProfile,
   onTituloChange,
@@ -140,8 +141,8 @@ export default function ObrasEditor({
             </datalist>
             <small className="field-help">
               {!editandoId
-                ? 'Busque o autor por @username. A interface resolve o usuario e salva o uid internamente.'
-                : 'Voce pode reatribuir a obra buscando pelo @username do autor.'}
+                ? 'Busque por @username ou UID. O painel resolve o autor e salva o UID internamente.'
+                : 'Voce pode reatribuir a obra buscando por @username ou UID do autor.'}
             </small>
             {resolvedCreatorLookup ? (
               <div className="obra-author-preview" role="status" aria-live="polite">
@@ -156,9 +157,22 @@ export default function ObrasEditor({
                   <small>{resolvedCreatorLookup.isCreator ? 'Perfil de creator ativo' : 'Conta encontrada no diretorio'}</small>
                 </div>
               </div>
-            ) : creatorNeedsSelection ? (
+            ) : creatorLookupInput.trim() && creatorLookupMatches.length > 1 ? (
+              <small className="field-help">
+                Encontramos {creatorLookupMatches.length} autores parecidos. Continue digitando ou escolha um resultado da lista
+                para vincular a obra no autor certo.
+              </small>
+            ) : creatorLookupInput.trim() && creatorLookupInput.trim().length < 3 ? (
+              <small className="field-help">
+                Digite pelo menos 3 caracteres do @username, ou cole o UID completo do autor.
+              </small>
+            ) : creatorNeedsSelection && saveAttempted ? (
               <small className="field-help" style={{ color: '#ffb3b3' }}>
-                Autor nao encontrado. Escolha um resultado valido pelo @username antes de salvar.
+                Nenhum autor correspondente foi encontrado. Revise o @username ou UID antes de salvar.
+              </small>
+            ) : creatorNeedsSelection ? (
+              <small className="field-help">
+                Ainda nao encontramos um autor com esse texto. Continue digitando ou escolha um resultado valido antes de salvar.
               </small>
             ) : form.adminCreatorId ? (
               <small className="field-help" style={{ color: '#ffb3b3' }}>
@@ -390,9 +404,17 @@ export default function ObrasEditor({
           type="button"
           className="btn-pri"
           disabled={saving}
-          onClick={salvarObra}
+          onClick={() => salvarObra()}
         >
           {saving ? 'Salvando...' : editandoId ? 'Salvar alteracoes' : 'Criar obra'}
+        </button>
+        <button
+          type="button"
+          className="btn-sec"
+          disabled={saving}
+          onClick={() => salvarObra({ asDraft: true })}
+        >
+          {saving ? 'Salvando...' : 'Salvar rascunho'}
         </button>
         <button type="button" className="btn-sec" onClick={iniciarNovo}>Limpar</button>
         {editandoId ? (

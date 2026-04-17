@@ -13,7 +13,7 @@ import {
 import { normalizeUsernameInput } from '../../utils/usernameValidation';
 
 /**
- * /@username → perfil público em /criador/:uid
+ * /@username -> perfil publico em /criador/:uid
  */
 export default function UsernamePublicRoute() {
   const { userHandle: raw } = useParams();

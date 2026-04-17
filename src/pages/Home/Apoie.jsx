@@ -30,10 +30,13 @@ const criarCheckoutPremium = httpsCallable(functions, 'criarCheckoutPremium');
 const obterOfertaPremiumPublica = httpsCallable(functions, 'obterOfertaPremiumPublica');
 const registrarAttributionEvento = httpsCallable(functions, 'registrarAttributionEvento');
 
-export default function Apoie({ user, perfil }) {
+export default function Apoie({ user, perfil, initialView = 'support' }) {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const viewParam = String(searchParams.get('view') || '').trim().toLowerCase();
+  const premiumOnlyView =
+    initialView === 'premium' || location.pathname === '/premium' || viewParam === 'premium';
   const irLoginComRetorno = () =>
     navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
   const mpRetorno = searchParams.get('mp');
@@ -185,9 +188,9 @@ export default function Apoie({ user, perfil }) {
 
   const fecharModalELimparUrl = useCallback(() => {
     setModalAgradecimento((m) => ({ ...m, aberto: false }));
-    navigate('/apoie', { replace: true });
+    navigate(premiumOnlyView ? '/premium' : '/apoie', { replace: true });
     jaMostrouAgradecimento.current = false;
-  }, [navigate]);
+  }, [navigate, premiumOnlyView]);
 
   useEffect(() => {
     if (!modalAgradecimento.aberto) return undefined;
@@ -309,18 +312,18 @@ export default function Apoie({ user, perfil }) {
     setErroCheckoutPlanos('');
     setCarregandoId(plano.id);
     try {
-      if (attributionCreatorIdParaCheckout) {
+      if (creatorAttributionId) {
         registrarAttributionEvento({
           eventType: 'creator_support_checkout_started',
           source: 'normal',
           campaignId: `apoio_${plano.id}`,
-          clickId: attributionCreatorIdParaCheckout,
+          clickId: creatorAttributionId,
         }).catch(() => {});
       }
       const { data } = await criarCheckoutApoio({
         planId: plano.id,
-        ...(attributionCreatorIdParaCheckout
-          ? { attributionCreatorId: attributionCreatorIdParaCheckout }
+        ...(creatorAttributionId
+          ? { attributionCreatorId: creatorAttributionId }
           : {}),
       });
       if (data?.url) {
@@ -355,18 +358,18 @@ export default function Apoie({ user, perfil }) {
 
     setCarregandoId('livre');
     try {
-      if (attributionCreatorIdParaCheckout) {
+      if (creatorAttributionId) {
         registrarAttributionEvento({
           eventType: 'creator_support_checkout_started',
           source: 'normal',
           campaignId: 'apoio_custom',
-          clickId: attributionCreatorIdParaCheckout,
+          clickId: creatorAttributionId,
         }).catch(() => {});
       }
       const { data } = await criarCheckoutApoio({
         customAmount: n,
-        ...(attributionCreatorIdParaCheckout
-          ? { attributionCreatorId: attributionCreatorIdParaCheckout }
+        ...(creatorAttributionId
+          ? { attributionCreatorId: creatorAttributionId }
           : {}),
       });
       if (data?.url) {
@@ -386,11 +389,11 @@ export default function Apoie({ user, perfil }) {
       irLoginComRetorno();
       return;
     }
-    if (!attributionCreatorIdParaCheckout || creatorOffer?.creatorSupportOffer?.membershipEnabled !== true) {
+    if (!creatorAttributionId || creatorOffer?.creatorSupportOffer?.membershipEnabled !== true) {
       setErroMembershipCriador('Este criador ainda não ativou a membership pública.');
       return;
     }
-    if (attributionCreatorIdParaCheckout === user.uid) {
+    if (creatorAttributionId === user.uid) {
       setErroMembershipCriador('Você não pode assinar a própria membership de criador.');
       return;
     }
@@ -401,12 +404,12 @@ export default function Apoie({ user, perfil }) {
         eventType: 'creator_support_checkout_started',
         source: 'normal',
         campaignId: 'creator_membership',
-        clickId: attributionCreatorIdParaCheckout,
+        clickId: creatorAttributionId,
       }).catch(() => {});
       const { data } = await criarCheckoutApoio({
         creatorMembership: true,
-        creatorMembershipCreatorId: attributionCreatorIdParaCheckout,
-        attributionCreatorId: attributionCreatorIdParaCheckout,
+        creatorMembershipCreatorId: creatorAttributionId,
+        attributionCreatorId: creatorAttributionId,
       });
       if (data?.url) {
         window.open(data.url, '_blank', 'noopener,noreferrer');
@@ -439,7 +442,10 @@ export default function Apoie({ user, perfil }) {
     searchParams,
     ofertaPremium,
     setValorLivre,
+    ignoreCreatorAttribution: premiumOnlyView,
   });
+  const creatorAttributionId = premiumOnlyView ? null : attributionCreatorIdParaCheckout;
+  const creatorOfferVisible = !premiumOnlyView && creatorOffer;
 
   const capIdFromEmail = searchParams.get('capId');
   const fromChapterEmail =
@@ -458,12 +464,12 @@ export default function Apoie({ user, perfil }) {
     const attribution = getAttribution();
     setCarregandoId('premium');
     try {
-      if (attributionCreatorIdParaCheckout) {
+      if (creatorAttributionId) {
         registrarAttributionEvento({
           eventType: 'creator_support_checkout_started',
           source: attribution?.source || 'normal',
           campaignId: 'premium_creator_attribution',
-          clickId: attributionCreatorIdParaCheckout,
+          clickId: creatorAttributionId,
         }).catch(() => {});
       }
       const { data } = await criarCheckoutPremium({
@@ -474,8 +480,8 @@ export default function Apoie({ user, perfil }) {
               clickId: attribution.clickId || null,
             }
           : null,
-        ...(attributionCreatorIdParaCheckout
-          ? { attributionCreatorId: attributionCreatorIdParaCheckout }
+        ...(creatorAttributionId
+          ? { attributionCreatorId: creatorAttributionId }
           : {}),
       });
       if (data?.url) {
@@ -502,14 +508,16 @@ export default function Apoie({ user, perfil }) {
     <div className="apoie-page">
       <main className="apoie-main">
         <section className="apoie-section">
-          <h1 className="apoie-title-discord">Apoie Kokuin: Heranca do Abismo</h1>
+          <h1 className="apoie-title-discord">
+            {premiumOnlyView ? 'Premium da plataforma' : 'Apoie Kokuin: Heranca do Abismo'}
+          </h1>
 
-          {attributionCreatorIdParaCheckout ? (
+          {!premiumOnlyView && creatorAttributionId ? (
             <p className="apoie-attrib-hint" role="status">
               Voce entrou por um link de criador: os apoios desta sessao podem ser atribuidos a esse perfil.
             </p>
           ) : null}
-          {attributionCreatorIdParaCheckout ? (
+          {!premiumOnlyView && creatorAttributionId ? (
             <p className="apoie-attrib-hint" role="note">
               A atribuicao vale para metrica interna e repasse futuro, quando a regra estiver ativa. O valor cobrado nao muda por causa disso.
             </p>
@@ -581,13 +589,22 @@ export default function Apoie({ user, perfil }) {
           )}
 
           <p className="apoie-texto">
-            Cada apoio faz diferenca real: ajuda com servidor, energia, ferramentas de IA, cafe e meu
-            tempo para desenhar mais capitulos.
-            <br />
-            <strong>Obrigado por acreditar na historia e na tempestade!</strong>
+            {premiumOnlyView ? (
+              <>
+                Esta pagina e dedicada ao <strong>Premium da plataforma</strong>. Aqui voce assina a membership oficial do site,
+                sem misturar doacao de autor nem apoio individual.
+              </>
+            ) : (
+              <>
+                Cada apoio faz diferenca real: ajuda com servidor, energia, ferramentas de IA, cafe e meu
+                tempo para desenhar mais capitulos.
+                <br />
+                <strong>Obrigado por acreditar na historia e na tempestade!</strong>
+              </>
+            )}
           </p>
 
-          {attributionCreatorIdParaCheckout && creatorOffer && (
+          {creatorAttributionId && creatorOfferVisible && (
             <div className="apoie-premium-card">
               <div className="apoie-premium-badge">MEMBERSHIP DO CRIADOR</div>
               <h2 className="apoie-premium-titulo">
@@ -641,7 +658,7 @@ export default function Apoie({ user, perfil }) {
             </div>
           )}
 
-          {fromChapterEmail && (
+          {!premiumOnlyView && fromChapterEmail && (
             <div className="apoie-cap-email-banner" role="region" aria-label="Novo capitulo por e-mail">
               <p>
                 Voce abriu o link do aviso de capitulo novo. Esta pagina e o <strong>checkout</strong> para
@@ -817,12 +834,13 @@ export default function Apoie({ user, perfil }) {
             </button>
           </div>
 
-          {user && membershipsAtivas.length > 0 && !attributionCreatorIdParaCheckout ? (
+          {!premiumOnlyView && user && membershipsAtivas.length > 0 && !creatorAttributionId ? (
             <p className="apoie-attrib-hint" role="status">
               Voce tem {membershipsAtivas.length} membership{membershipsAtivas.length > 1 ? 's' : ''} ativa{membershipsAtivas.length > 1 ? 's' : ''} de criador no seu perfil.
             </p>
           ) : null}
 
+          {!premiumOnlyView ? (
           <div className="apoie-doacao-livre">
             <h2 className="apoie-doacao-livre-titulo">
               {creatorOffer
@@ -868,13 +886,15 @@ export default function Apoie({ user, perfil }) {
               </p>
             )}
           </div>
+          ) : null}
 
-          {erroCheckoutPlanos && (
+          {!premiumOnlyView && erroCheckoutPlanos && (
             <p className="apoie-checkout-erro" role="alert">
               <strong>API:</strong> {erroCheckoutPlanos}
             </p>
           )}
 
+          {!premiumOnlyView ? (
           <div className="apoie-opcoes">
             {APOIO_PLANOS_UI.map((plano) => (
               <div key={plano.id} className="apoie-card">
@@ -893,14 +913,18 @@ export default function Apoie({ user, perfil }) {
               </div>
             ))}
           </div>
+          ) : null}
 
+          {!premiumOnlyView ? (
           <p className="apoie-nota">
             <i className="fa-solid fa-shield-check" /> Checkout oficial do Mercado Pago.{' '}
             <strong>Premium:</strong> após o pagamento aprovado você recebe e-mail de confirmação e, perto do
             fim dos 30 dias, um lembrete para renovar. <strong>Doações:</strong> agradecimento no site (modal),
             sem e-mail automatico. <strong>Membership do criador:</strong> ativa acesso antecipado somente para o autor assinado.
           </p>
+          ) : null}
 
+          {!premiumOnlyView ? (
           <div className="apoie-recompensa">
             <h3>RECOMPENSAS</h3>
             <ul>
@@ -921,6 +945,7 @@ export default function Apoie({ user, perfil }) {
               </p>
             </div>
           </div>
+          ) : null}
         </section>
       </main>
     </div>

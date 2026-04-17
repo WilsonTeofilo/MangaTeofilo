@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Link } from 'react-router-dom';
 
 import { AVATAR_FALLBACK } from '../../../constants';
@@ -21,6 +21,9 @@ export default function ChapterComments({
   perfisUsuarios,
   onProfileOpen,
   onLikeComment,
+  canDeleteComment,
+  onDeleteComment,
+  deletingCommentId,
   replyingTo,
   setReplyingTo,
   replyDraft,
@@ -39,6 +42,8 @@ export default function ChapterComments({
     const unifiedPublicPath = publicCriadorProfilePath(perfilPublico, c.userId);
     const isLiked = c.usuariosQueCurtiram?.[user?.uid];
     const isPremium = isContaPremium(c.userId, user, perfil);
+    const canDelete = canDeleteComment?.(c) === true;
+    const isDeleting = deletingCommentId === c.id;
     const maxDepth = 8;
     const authorProfileButtonLabel = autorLabel || 'Abrir perfil do comentarista';
 
@@ -84,7 +89,7 @@ export default function ChapterComments({
                   </button>
                 )}
               </strong>
-              {isPremium ? <span className="premium-crown" title="Membro premium">👑</span> : null}
+              {isPremium ? <span className="premium-crown" title="Membro premium">PREMIUM</span> : null}
             </div>
             <p className="comentario-texto">{c.texto}</p>
             <div className="comentario-acoes">
@@ -94,7 +99,7 @@ export default function ChapterComments({
                 onClick={() => onLikeComment(c.id)}
                 title={user ? (isLiked ? 'Remover curtida' : 'Curtir') : 'Faça login para curtir'}
               >
-                {isLiked ? '❤' : '♡'} {c.likes || 0}
+                {isLiked ? '♥' : '♡'} {c.likes || 0}
               </button>
               {user ? (
                 <button
@@ -115,6 +120,16 @@ export default function ChapterComments({
                   }}
                 >
                   {replyingTo?.id === c.id ? 'Fechar' : 'Responder'}
+                </button>
+              ) : null}
+              {canDelete ? (
+                <button
+                  type="button"
+                  className="btn-comentario-responder"
+                  disabled={isDeleting}
+                  onClick={() => onDeleteComment?.(c.id)}
+                >
+                  {isDeleting ? 'Excluindo...' : 'Excluir'}
                 </button>
               ) : null}
             </div>
@@ -246,7 +261,7 @@ export default function ChapterComments({
             onClick={(e) => e.stopPropagation()}
           >
             <button type="button" className="leitor-modal-fechar" onClick={onCloseLoginModal} aria-label="Fechar">
-              ×
+              x
             </button>
             <h2 id="leitor-modal-login-titulo" className="leitor-modal-titulo">
               Comentar na obra
@@ -289,7 +304,7 @@ export default function ChapterComments({
               onClick={onClosePrivateProfileModal}
               aria-label="Fechar"
             >
-              ×
+              x
             </button>
             <h2 id="leitor-modal-private-profile-title" className="leitor-modal-titulo">
               Perfil privado

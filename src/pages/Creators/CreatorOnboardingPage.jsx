@@ -1,5 +1,5 @@
 ﻿import React, { useMemo, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 
 import CreatorApplicationModal from '../../components/CreatorApplicationModal';
@@ -26,6 +26,7 @@ export default function CreatorOnboardingPage({
   shellRole = null,
   isMangakaEffective = null,
 }) {
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -39,13 +40,23 @@ export default function CreatorOnboardingPage({
   const isStaffAdmin = resolvedShellRole === APP_ROLE.ADMIN;
 
   const initial = useMemo(() => {
+    const signupDraft =
+      location?.state?.signupDraft && typeof location.state.signupDraft === 'object'
+        ? location.state.signupDraft
+        : {};
     const creatorProfile =
       perfil?.creator?.profile && typeof perfil.creator.profile === 'object' ? perfil.creator.profile : {};
     const creatorSocial =
       perfil?.creator?.social && typeof perfil.creator.social === 'object' ? perfil.creator.social : {};
 
     return {
-      displayName: String(creatorProfile.displayName || perfil?.userName || user?.displayName || '').trim(),
+      displayName: String(
+        creatorProfile.displayName ||
+          signupDraft.displayName ||
+          perfil?.userName ||
+          user?.displayName ||
+          ''
+      ).trim(),
       bio: String(creatorProfile.bio || '').trim().slice(0, CREATOR_BIO_MAX_LENGTH),
       instagramUrl: String(creatorSocial.instagram || '').trim(),
       youtubeUrl: String(creatorSocial.youtube || '').trim(),
@@ -60,7 +71,13 @@ export default function CreatorOnboardingPage({
       payoutPixType: String(perfil?.creatorCompliance?.payoutPixType || '').trim().toLowerCase(),
       profileImageCrop: perfil?.creatorApplication?.profileImageCrop || null,
       existingProfileImageUrl: (() => {
-        const candidates = [perfil?.creatorApplication?.profileImageUrl, perfil?.userAvatar, user?.photoURL];
+        const candidates = [
+          perfil?.creatorApplication?.profileImageUrl,
+          signupDraft.avatarUrl,
+          perfil?.readerProfileAvatarUrl,
+          perfil?.userAvatar,
+          user?.photoURL,
+        ];
         for (const raw of candidates) {
           const url = String(raw || '').trim();
           if (!url) continue;
@@ -72,7 +89,7 @@ export default function CreatorOnboardingPage({
         return '';
       })(),
     };
-  }, [perfil, user, isMangakaMonetizeIntent]);
+  }, [perfil, user, isMangakaMonetizeIntent, location.state]);
 
   const missingBasics = useMemo(() => {
     const missing = [];

@@ -229,7 +229,7 @@ export default function CreatorStoreOperations({ user }) {
             <li><span>Sem estoque</span><strong>{metrics.noStock}</strong></li>
           </ul>
           {!lowStockProducts.length ? (
-            <p className="creator-empty-copy">Seu catÃ¡logo nÃ£o tem alerta imediato de estoque.</p>
+            <p className="creator-empty-copy">Seu catalogo nao tem alerta imediato de estoque.</p>
           ) : (
             <ul className="creator-activity-list">
               {lowStockProducts.map((product) => (
@@ -257,7 +257,7 @@ export default function CreatorStoreOperations({ user }) {
           </div>
           {!products.length ? (
             <p className="creator-empty-copy">
-              Nenhum produto vinculado ao seu creatorId ainda. Abra o catÃ¡logo completo e crie seu primeiro item.
+              Nenhum produto vinculado ao seu creatorId ainda. Abra o catalogo completo e crie seu primeiro item.
             </p>
           ) : (
             <ul className="creator-activity-list">
@@ -266,7 +266,7 @@ export default function CreatorStoreOperations({ user }) {
                   <div>
                     <strong>{product.title || product.id}</strong>
                     <span>
-                      {formatCurrency(product.isOnSale ? product.promoPrice || product.price : product.price)} Â· estoque{' '}
+                      {formatCurrency(product.isOnSale ? product.promoPrice || product.price : product.price)} · estoque{' '}
                       {Number(product.stock || 0)}
                     </span>
                   </div>
@@ -303,7 +303,7 @@ export default function CreatorStoreOperations({ user }) {
                   <div>
                     <strong>Pedido {String(order.id || '').slice(-8)}</strong>
                     <span>
-                      {statusLabel(order.status)} Â· {formatarDataHoraBr(order.createdAt, { seVazio: 'agora' })}
+                      {statusLabel(order.status)} · {formatarDataHoraBr(order.createdAt, { seVazio: 'agora' })}
                     </span>
                   </div>
                   <div>

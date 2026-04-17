@@ -194,7 +194,7 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
     instagramUrl: isCreatorProfile ? instagramUrl : '',
     youtubeUrl: isCreatorProfile ? youtubeUrl : '',
     readerProfilePublic: source.readerProfilePublic === true,
-    readerProfileAvatarUrl: asString(source.readerProfileAvatarUrl, userAvatar),
+    readerProfileAvatarUrl: asString(source.userAvatar || source.readerProfileAvatarUrl, userAvatar),
     readerSince: asNumber(source.readerSince || root.createdAt || root.readerSince || source.createdAt, 0),
     creatorStatus: isCreatorProfile ? creatorStatus : '',
     updatedAt:
@@ -256,7 +256,7 @@ export function resolvePublicProfileAvatarUrl(profile, { mode = 'auto', fallback
   const normalized = buildPublicProfileFromUsuarioRow(profile);
   const isCreator = isCreatorPublicProfile(normalized);
   if (mode === 'reader') {
-    return asString(normalized.readerProfileAvatarUrl || normalized.userAvatar, fallback);
+    return asString(normalized.userAvatar || normalized.readerProfileAvatarUrl, fallback);
   }
   if (mode === 'creator') {
     return asString(
@@ -267,11 +267,10 @@ export function resolvePublicProfileAvatarUrl(profile, { mode = 'auto', fallback
   return isCreator
     ? asString(
         normalized.creatorProfile?.avatarUrl ||
-          normalized.readerProfileAvatarUrl ||
           normalized.userAvatar,
         fallback
       )
-    : asString(normalized.readerProfileAvatarUrl || normalized.userAvatar, fallback);
+    : asString(normalized.userAvatar || normalized.readerProfileAvatarUrl, fallback);
 }
 
 export function resolvePublicProfileSocialLinks(profile) {

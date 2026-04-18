@@ -600,7 +600,7 @@ export default function Login() {
       }
       const handleSnap = await get(ref(db, `usernames/${handleNorm}`));
       if (handleSnap.exists()) {
-        setError('Este @username jÃ¡ estÃ¡ em uso. Escolha outro.');
+        setError('Este @username já está em uso. Escolha outro.');
         registerAttemptResult('registerPassword', false);
         setLoading(false);
         return;

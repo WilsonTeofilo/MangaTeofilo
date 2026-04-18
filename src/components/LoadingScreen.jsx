@@ -5,7 +5,9 @@ export default function LoadingScreen() {
   return (
     <div className="shito-loading-overlay">
       <div className="loading-content">
-        <h1 className="loading-logo shito-glitch">MangaTeofilo</h1>
+        <h1 className="loading-logo shito-glitch" data-text="MangaTeofilo">
+          MangaTeofilo
+        </h1>
         <div className="loading-bar-container">
           <div className="loading-bar-fill"></div>
         </div>

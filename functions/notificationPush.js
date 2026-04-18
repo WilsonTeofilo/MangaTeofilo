@@ -13,6 +13,7 @@ function notificationPriorityFromType(type) {
     case 'system':
     case 'comment_reply':
     case 'comment_like_milestone':
+    case 'work_comment':
       return 2;
     case 'promotion':
     case 'new_work':

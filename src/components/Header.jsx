@@ -14,6 +14,7 @@ import {
 } from '../utils/creatorMonetizationUi';
 import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../store/cartStore';
 import { getPodCartDraft, POD_CART_CHANGED_EVENT } from '../store/podCartStore';
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock';
 import './HeaderV2.css';
 
 /** Menu hamburguer so em viewport tipica de telemovel / tablet estreito - nao em PC com janela estreita ate ~laptop 13". */
@@ -39,6 +40,7 @@ export default function Header({
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [storeCartItems, setStoreCartItems] = useState(() => getCartItems());
   const [podCartActive, setPodCartActive] = useState(() => Boolean(getPodCartDraft()));
+  const mobileMenuLockRef = useRef(false);
   const notificationIdsSeenRef = useRef(new Set());
   const notificationsInitializedRef = useRef(false);
   const markUserNotificationRead = useMemo(
@@ -257,9 +259,10 @@ export default function Header({
     const syncMenuState = () => {
       if (window.innerWidth > MOBILE_BREAKPOINT) {
         setMenuAberto(false);
-        document.body.classList.remove('mobile-menu-open');
-        document.body.style.overflow = '';
-        document.body.style.touchAction = '';
+        if (mobileMenuLockRef.current) {
+          unlockBodyScroll('header-mobile-menu', { className: 'mobile-menu-open' });
+          mobileMenuLockRef.current = false;
+        }
       }
     };
     syncMenuState();
@@ -306,13 +309,19 @@ export default function Header({
 
   useEffect(() => {
     const mobileOpen = menuAberto && window.innerWidth <= MOBILE_BREAKPOINT;
-    document.body.classList.toggle('mobile-menu-open', mobileOpen);
-    document.body.style.overflow = mobileOpen ? 'hidden' : '';
-    document.body.style.touchAction = mobileOpen ? 'none' : '';
+    if (mobileOpen && !mobileMenuLockRef.current) {
+      lockBodyScroll('header-mobile-menu', { className: 'mobile-menu-open' });
+      mobileMenuLockRef.current = true;
+    }
+    if (!mobileOpen && mobileMenuLockRef.current) {
+      unlockBodyScroll('header-mobile-menu', { className: 'mobile-menu-open' });
+      mobileMenuLockRef.current = false;
+    }
     return () => {
-      document.body.classList.remove('mobile-menu-open');
-      document.body.style.overflow = '';
-      document.body.style.touchAction = '';
+      if (mobileMenuLockRef.current) {
+        unlockBodyScroll('header-mobile-menu', { className: 'mobile-menu-open' });
+        mobileMenuLockRef.current = false;
+      }
     };
   }, [menuAberto]);
 

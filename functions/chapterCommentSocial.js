@@ -77,6 +77,11 @@ function chapterTitle(cap) {
   return String(c.titulo || c.title || '').trim().slice(0, 100);
 }
 
+function workTitle(obra) {
+  const row = obra && typeof obra === 'object' ? obra : {};
+  return String(row.titulo || row.tituloCurto || row.title || '').trim().slice(0, 120);
+}
+
 function chapterCreatorUid(cap) {
   const c = cap && typeof cap === 'object' ? cap : {};
   return String(c.creatorId || '').trim();
@@ -136,6 +141,9 @@ export const onChapterCommentSocialWritten = onValueWritten(
     const workId = obraIdFromChapter(cap);
     const capTitulo = chapterTitle(cap);
     const targetPath = `/ler/${encodeURIComponent(capId)}?comment=${encodeURIComponent(commentId)}`;
+    const obraSnap = workId ? await db.ref(`obras/${workId}`).get() : null;
+    const obra = obraSnap?.exists() ? obraSnap.val() || {} : {};
+    const obraTitulo = workTitle(obra);
 
     const isCreate = !event.data.before.exists();
 
@@ -156,6 +164,40 @@ export const onChapterCommentSocialWritten = onValueWritten(
           await bumpCreatorReplyEngagement(db, actorUid);
         } catch (err) {
           logger.warn('creator repliesInCycle bump failed', { capId, commentId, err: err?.message });
+        }
+      }
+
+      if (capCreator && actorUid !== capCreator) {
+        const actorLabel = await actorLabelFromUid(db, actorUid);
+        const creatorTitle = parentId ? 'Nova resposta na sua obra' : 'Novo comentário na sua obra';
+        const contextTitle = obraTitulo || capTitulo || 'sua obra';
+        const creatorMessage = parentId
+          ? `${actorLabel} respondeu em "${contextTitle}".`
+          : `${actorLabel} comentou em "${contextTitle}".`;
+        try {
+          await maybePushCommentSocial(db, capCreator, {
+            type: 'work_comment',
+            title: creatorTitle,
+            message: creatorMessage,
+            targetPath,
+            chapterId: capId,
+            workId: workId || null,
+            creatorId: actorUid,
+            dedupeKey: `work_comment:${capId}:${commentId}`,
+            data: {
+              commentId,
+              parentCommentId: parentId || null,
+              chapterId: capId,
+              workId: workId || null,
+              actorUid,
+              workTitle: obraTitulo || null,
+              chapterTitle: capTitulo || null,
+              readPath: targetPath,
+            },
+            allowGrouping: false,
+          });
+        } catch (err) {
+          logger.error('work_comment notification failed', { capId, commentId, err: err?.message });
         }
       }
 

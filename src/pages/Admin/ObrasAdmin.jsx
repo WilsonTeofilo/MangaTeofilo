@@ -39,6 +39,7 @@ import {
   safeDeleteStorageFolder,
   safeDeleteStorageObjects,
 } from '../../utils/storageCleanup';
+import { lockBodyScroll, unlockBodyScroll } from '../../utils/bodyScrollLock';
 import {
   applyResponsiveDragDelta,
   buildResponsiveCropStyle,
@@ -364,9 +365,9 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     []
   );
   const user = auth.currentUser;
-  const isMangaka = Boolean(adminAccess?.isMangaka);
-  const chaptersPath = workspace === 'creator' ? '/creator/capitulos' : '/admin/capitulos';
   const isCreatorWorkspace = workspace === 'creator';
+  const isMangaka = isCreatorWorkspace && Boolean(adminAccess?.isMangaka);
+  const chaptersPath = isCreatorWorkspace ? '/creator/capitulos' : '/admin/capitulos';
   const canAccessWorkspace = isCreatorWorkspace
     ? isMangaka
     : canAccessAdminPath('/admin/obras', adminAccess);
@@ -701,14 +702,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
 
   useEffect(() => {
     if (!saveErrorModal.open) return undefined;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll('admin-work-save-error');
     const onKey = (e) => {
       if (e.key === 'Escape') closeSaveErrorModal();
     };
     window.addEventListener('keydown', onKey);
     return () => {
-      document.body.style.overflow = prevOverflow;
+      unlockBodyScroll('admin-work-save-error');
       window.removeEventListener('keydown', onKey);
     };
   }, [saveErrorModal.open, closeSaveErrorModal]);
@@ -856,10 +856,10 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     const creatorLookupResolved = !isMangaka
       ? resolveCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory)
       : null;
-    if (!isMangaka && !creatorLookupResolved) {
+    if (!isMangaka && creatorLookupInput.trim() && !creatorLookupResolved) {
       blockSave('missing-author-resolution', [
-        'Selecione um autor válido pelo @username antes de salvar.',
-        'A obra só pode ser vinculada quando o autor for encontrado no diretório de usernames.',
+        'Nenhum autor válido foi resolvido para esse texto.',
+        'Revise o @username ou o UID, ou limpe o campo para publicar a obra sem autor vinculado.',
       ], {
         creatorLookupInput,
       });
@@ -871,7 +871,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     } else {
       creatorIdResolved = String(creatorLookupResolved?.uid || '').trim();
     }
-    if (!isValidCreatorUid(creatorIdResolved)) {
+    if (creatorIdResolved && !isValidCreatorUid(creatorIdResolved)) {
       blockSave('invalid-resolved-author', ['Autor da obra inválido. Resolva um @username válido antes de salvar.'], {
         creatorIdResolved,
       });
@@ -925,7 +925,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       return;
     }
     const slugNovo = v.slug;
-    const ownerUidStorage = segmentoStorageOwnerUid(creatorIdResolved);
+    const ownerUidStorage = segmentoStorageOwnerUid(creatorIdResolved || user?.uid);
     const obraStorageSegment = sanitizarSegmentoStorage(editandoId || slugNovo, 'obra');
     const tagsFinal = v.tags;
     const tituloCurtoTrim = String(form.tituloCurto || '').trim();
@@ -957,7 +957,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       capaAjuste: normalizarAjusteObra(capaAjuste),
       bannerAjuste: normalizarAjusteObra(bannerAjuste),
       updatedAt: nowMs(),
-      creatorId: creatorIdResolved,
+      creatorId: creatorIdResolved || null,
     };
 
     saveInFlightRef.current = true;

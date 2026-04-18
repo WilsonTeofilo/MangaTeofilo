@@ -5,7 +5,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { db, functions } from '../../services/firebase';
 import { descontoVipLojaAtivo } from '../../utils/capituloLancamento';
 import { CART_CHANGED_EVENT, cartCount, getCartItems } from '../../store/cartStore';
-import {  getStoreProductBadges,
+import {
+  getStoreProductBadges,
   groupStoreProductsByCollection,
   normalizeProductCategory,
   normalizeStoreConfig,
@@ -64,19 +65,27 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
   );
 
   useEffect(() => {
-    const unsubCfg = onValue(ref(db, 'loja/config'), (snap) => {
-      setConfig(normalizeStoreConfig(snap.exists() ? snap.val() : STORE_DEFAULT_CONFIG));
-    }, () => {
-      setConfig(STORE_DEFAULT_CONFIG);
-    });
-    const unsubProd = onValue(ref(db, 'loja/produtos'), (snap) => {
-      const list = snap.exists() ? toList(snap.val()) : [];
-      setProducts(list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
-      setLoading(false);
-    }, () => {
-      setProducts([]);
-      setLoading(false);
-    });
+    const unsubCfg = onValue(
+      ref(db, 'loja/config'),
+      (snap) => {
+        setConfig(normalizeStoreConfig(snap.exists() ? snap.val() : STORE_DEFAULT_CONFIG));
+      },
+      () => {
+        setConfig(STORE_DEFAULT_CONFIG);
+      }
+    );
+    const unsubProd = onValue(
+      ref(db, 'loja/produtos'),
+      (snap) => {
+        const list = snap.exists() ? toList(snap.val()) : [];
+        setProducts(list.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)));
+        setLoading(false);
+      },
+      () => {
+        setProducts([]);
+        setLoading(false);
+      }
+    );
     return () => {
       unsubCfg();
       unsubProd();
@@ -206,8 +215,8 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
             <span className="loja-author-strip__eyebrow">Autores</span>
             <p className="loja-author-strip__p">
               Leve sua obra para o papel: <strong>tankōbon</strong> ou <strong>meio-tankō</strong> com produção pela
-              MangaTeofilo. Você pode vender na loja, encomendar para você ou, como creator ainda sem ganhos liberados, pedir vaga na
-              vitrine com preço fixo e metas.
+              MangaTeofilo. Você pode vender na loja, encomendar para você ou, como creator ainda sem ganhos liberados,
+              pedir vaga na vitrine com preço fixo e metas.
             </p>
           </div>
           <div className="loja-author-strip__actions">
@@ -252,7 +261,9 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
             <span className="loja-vip-strip__icon" aria-hidden="true">
               ?
             </span>
-            <p className="loja-vip-strip__text">Membros VIP veem os produtos marcados aqui, mas o desconto final é confirmado no checkout.</p>
+            <p className="loja-vip-strip__text">
+              Membros VIP veem os produtos marcados aqui, mas o desconto final é confirmado no checkout.
+            </p>
           </div>
         ) : null}
 
@@ -284,7 +295,12 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
                       className={`loja-pcard ${p.isActive === false ? 'loja-pcard--inactive' : ''}`}
                     >
                       <div className="loja-pcard__visual">
-                        <button type="button" className="loja-pcard__imgBtn" onClick={openProd} aria-label={`Ver ${p.title || p.id}`}>
+                        <button
+                          type="button"
+                          className="loja-pcard__imgBtn"
+                          onClick={openProd}
+                          aria-label={`Ver ${p.title || p.id}`}
+                        >
                           <img
                             className="loja-pcard__img"
                             src={img}
@@ -359,4 +375,3 @@ export default function LojaCatalogo({ user, perfil, adminAccess }) {
     </main>
   );
 }
-

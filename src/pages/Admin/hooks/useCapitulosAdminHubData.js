@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { equalTo, onValue, orderByChild, query, ref as dbRef } from 'firebase/database';
+import { equalTo, get, onValue, orderByChild, query, ref as dbRef } from 'firebase/database';
 
 import { obraCreatorId } from '../../../config/obras';
+import { buildPublicProfileFromUsuarioRow } from '../../../utils/publicUserProfile';
+import { normalizeUsernameInput } from '../../../utils/usernameValidation';
 
 function toSortedObras(raw) {
   return Object.entries(raw || {})
@@ -41,7 +43,69 @@ export function useCapitulosAdminHubData({
   const [obras, setObras] = useState([]);
   const [allCapitulos, setAllCapitulos] = useState([]);
   const [obraId, setObraId] = useState('');
+  const [obraQuery, setObraQuery] = useState('');
+  const [creatorLookupByUid, setCreatorLookupByUid] = useState({});
   const loading = canAccessWorkspace && !obrasLoaded;
+
+  useEffect(() => {
+    if (!canAccessWorkspace || isCreatorWorkspace) return () => {};
+
+    let cancelled = false;
+    Promise.all([
+      get(dbRef(db, 'usernames')),
+      get(dbRef(db, 'usuarios')),
+    ])
+      .then(([usernamesSnap, usuariosSnap]) => {
+        if (cancelled) return;
+        const usernames = usernamesSnap.exists() ? usernamesSnap.val() || {} : {};
+        const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
+        const byUid = {};
+
+        Object.entries(usernames || {}).forEach(([handleKey, uidValue]) => {
+          const uid = String(uidValue || '').trim();
+          if (!uid) return;
+          const perfil = buildPublicProfileFromUsuarioRow(usuarios?.[uid] || {}, uid);
+          const handle = normalizeUsernameInput(handleKey || perfil?.userHandle || '');
+          const displayName = String(
+            perfil?.creatorDisplayName ||
+              perfil?.userName ||
+              (handle ? '@' + handle : uid)
+          ).trim();
+          byUid[uid] = {
+            uid,
+            handle,
+            displayName,
+          };
+        });
+
+        Object.keys(usuarios || {}).forEach((uid) => {
+          const normalizedUid = String(uid || '').trim();
+          if (!normalizedUid || byUid[normalizedUid]) return;
+          const perfil = buildPublicProfileFromUsuarioRow(usuarios?.[normalizedUid] || {}, normalizedUid);
+          const handle = normalizeUsernameInput(perfil?.userHandle || '');
+          const displayName = String(
+            perfil?.creatorDisplayName ||
+              perfil?.userName ||
+              (handle ? '@' + handle : normalizedUid)
+          ).trim();
+          byUid[normalizedUid] = {
+            uid: normalizedUid,
+            handle,
+            displayName,
+          };
+        });
+
+        setCreatorLookupByUid(byUid);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCreatorLookupByUid({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccessWorkspace, db, isCreatorWorkspace]);
 
   useEffect(() => {
     if (!canAccessWorkspace) return () => {};
@@ -130,16 +194,58 @@ export function useCapitulosAdminHubData({
     };
   }, [canAccessWorkspace, db, isCreatorWorkspace, obraId, userUid]);
 
+  const obrasComLookup = useMemo(
+    () =>
+      obras.map((obra) => {
+        const creatorId = String(obraCreatorId(obra) || '').trim();
+        const creatorEntry = creatorLookupByUid[creatorId] || null;
+        return {
+          ...obra,
+          creatorId,
+          creatorHandle: creatorEntry?.handle || '',
+          creatorDisplayName: creatorEntry?.displayName || '',
+        };
+      }),
+    [creatorLookupByUid, obras]
+  );
+
+  const filteredObras = useMemo(() => {
+    if (!obraQuery.trim() || isCreatorWorkspace) return obrasComLookup;
+    const raw = String(obraQuery || '').trim().toLowerCase();
+    const compact = normalizeUsernameInput(obraQuery);
+    return obrasComLookup.filter((obra) => {
+      const titulo = String(obra.titulo || '').toLowerCase();
+      const tituloCurto = String(obra.tituloCurto || '').toLowerCase();
+      const slug = String(obra.slug || obra.id || '').toLowerCase();
+      const creatorId = String(obra.creatorId || '').toLowerCase();
+      const creatorHandle = String(obra.creatorHandle || '').toLowerCase();
+      const creatorDisplayName = String(obra.creatorDisplayName || '').toLowerCase();
+      return (
+        titulo.includes(raw) ||
+        tituloCurto.includes(raw) ||
+        slug.includes(raw) ||
+        creatorId === raw ||
+        (compact && creatorHandle.includes(compact)) ||
+        creatorDisplayName.includes(raw)
+      );
+    });
+  }, [isCreatorWorkspace, obraQuery, obrasComLookup]);
+
+  const resolvedObraId = useMemo(() => {
+    if (filteredObras.some((obra) => obra.id === obraId)) return obraId;
+    return filteredObras[0]?.id || '';
+  }, [filteredObras, obraId]);
+
   const obraAtual = useMemo(
-    () => obras.find((obra) => obra.id === obraId) || null,
-    [obras, obraId]
+    () => filteredObras.find((obra) => obra.id === resolvedObraId) || obrasComLookup.find((obra) => obra.id === resolvedObraId) || null,
+    [filteredObras, resolvedObraId, obrasComLookup]
   );
 
   const capitulosObra = useMemo(() => {
-    if (!canAccessWorkspace || !obraId) return [];
-    const filtrados = allCapitulos.filter((cap) => capituloDaObra(cap, obraId));
+    if (!canAccessWorkspace || !resolvedObraId) return [];
+    const filtrados = allCapitulos.filter((cap) => capituloDaObra(cap, resolvedObraId));
     return [...filtrados].sort((a, b) => Number(b.numero || 0) - Number(a.numero || 0));
-  }, [allCapitulos, canAccessWorkspace, obraId]);
+  }, [allCapitulos, canAccessWorkspace, resolvedObraId]);
 
   const capsSemWorkId = useMemo(
     () => capitulosObra.filter((cap) => !String(cap.workId || '').trim()).length,
@@ -148,9 +254,12 @@ export function useCapitulosAdminHubData({
 
   return {
     loading,
-    obras,
-    obraId,
+    obras: filteredObras,
+    obrasTotal: obrasComLookup.length,
+    obraId: resolvedObraId,
     setObraId,
+    obraQuery,
+    setObraQuery,
     obraAtual,
     capitulosObra,
     capsSemWorkId,

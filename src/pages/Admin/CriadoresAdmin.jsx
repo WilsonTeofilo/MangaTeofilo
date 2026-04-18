@@ -6,6 +6,7 @@ import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { functions } from '../../services/firebase';
 import { mensagemErroCallable } from '../../utils/firebaseCallableError';
 import { formatarDataHoraBr } from '../../utils/datasBr';
+import { lockBodyScroll, unlockBodyScroll } from '../../utils/bodyScrollLock';
 import {
   ageFromBirthDateLocal,
   formatBirthDateIsoToBr,
@@ -765,11 +766,10 @@ export default function CriadoresAdmin({ adminAccess }) {
       if (e.key === 'Escape') setDetailUid('');
     };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll('admin-creators-drawer');
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      unlockBodyScroll('admin-creators-drawer');
     };
   }, [detailUid]);
 

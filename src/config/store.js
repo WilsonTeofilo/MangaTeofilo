@@ -20,9 +20,9 @@ export const STORE_CATEGORY_LABELS = {
 /** Rótulos da vitrine (ícones discretos). Admin continua usando STORE_CATEGORY_LABELS. */
 export const STORE_CATEGORY_TAB_LABELS = {
   all: 'Todos',
-  [STORE_CATEGORY_KEYS.MANGA]: 'ðŸ“š Mangás',
-  [STORE_CATEGORY_KEYS.VESTUARIO]: 'ðŸ‘• Vestuário',
-  [STORE_CATEGORY_KEYS.EXTRAS]: 'ðŸŽ Extras',
+  [STORE_CATEGORY_KEYS.MANGA]: 'Mangás',
+  [STORE_CATEGORY_KEYS.VESTUARIO]: 'Vestuário',
+  [STORE_CATEGORY_KEYS.EXTRAS]: 'Extras',
 };
 
 export const STORE_TYPE_KEYS = {
@@ -43,7 +43,7 @@ export const STORE_DEFAULT_CONFIG = {
   /** Texto opcional exibido após compra (ex.: benefício no site). */
   postPurchaseThanks: '',
   /** Hero da loja (vitrine marca). */
-  heroEyebrow: 'MangaTeofilo ? Loja do universo',
+  heroEyebrow: 'MangaTeofilo • Loja do universo',
   heroTitle: 'KOKUIN COLLECTION',
   heroSubtitle: 'Peças e edições do universo — streetwear, minimal e identidade de marca.',
   shippingRegions: normalizeShippingRegions({}),

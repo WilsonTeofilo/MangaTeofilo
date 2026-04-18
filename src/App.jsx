@@ -66,6 +66,7 @@ const CreatorWorksPage = lazy(() => import('./pages/Criador/CreatorWorksPage.jsx
 const CreatorChaptersPage = lazy(() => import('./pages/Criador/CreatorChaptersPage.jsx'));
 const CreatorChapterEditorPage = lazy(() => import('./pages/Criador/CreatorChapterEditorPage.jsx'));
 const CapitulosAdminHub = lazy(() => import('./pages/Admin/CapitulosAdminHub.jsx'));
+const AdminPanel = lazy(() => import('./pages/Admin/AdminPanel.jsx'));
 const ObrasAdmin = lazy(() => import('./pages/Admin/ObrasAdmin.jsx'));
 const AvatarAdmin = lazy(() => import('./pages/Admin/AvatarAdmin.jsx'));
 const DashboardAdmin = lazy(() => import('./pages/Admin/DashboardAdmin.jsx'));
@@ -626,12 +627,24 @@ function AppRoutes() {
             }
           />
           <Route
+            path="/admin/capitulos/editor"
+            element={
+              !routeShellReady ? (
+                <div className="shito-app-splash" aria-hidden="true" />
+              ) : adminPathOk('/admin/capitulos') ? (
+                <AdminPanel adminAccess={adminAccess} workspace="admin" />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
             path="/admin/manga"
             element={
               !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/manga') ? (
-                <Navigate to="/admin/capitulos" replace />
+                <AdminPanel adminAccess={adminAccess} workspace="admin" />
               ) : (
                 <Navigate to="/" replace />
               )

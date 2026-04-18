@@ -305,10 +305,21 @@ perspective:1200px;
 
 max-width:1000px;
 width:100%;
+height:100%;
 
 display:flex;
 justify-content:center;
 align-items:center;
+}
+
+.pagina-unica__end-card{
+width:100%;
+height:100%;
+display:flex;
+align-items:center;
+justify-content:center;
+padding:24px;
+box-sizing:border-box;
 }
 
 .pagina-unica img{
@@ -411,6 +422,167 @@ font-size:13px;
 color:#ccc;
 
 backdrop-filter:blur(6px);
+}
+
+.chapter-end-card{
+  width:min(920px, calc(100% - 24px));
+  margin:24px auto 0;
+  padding:22px;
+  border-radius:22px;
+  border:1px solid rgba(255,204,0,0.22);
+  background:
+    linear-gradient(160deg, rgba(22,24,34,0.96) 0%, rgba(12,14,22,0.98) 100%);
+  box-shadow:0 20px 46px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.04);
+  color:#f5f7fb;
+}
+
+.chapter-end-card--horizontal{
+  position:relative;
+  left:auto;
+  bottom:auto;
+  transform:none;
+  z-index:auto;
+  width:min(760px, 100%);
+  margin:0 auto;
+  backdrop-filter:blur(12px);
+}
+
+.chapter-end-card__eyebrow{
+  display:inline-flex;
+  align-items:center;
+  margin-bottom:10px;
+  padding:6px 10px;
+  border-radius:999px;
+  background:rgba(255,204,0,0.14);
+  border:1px solid rgba(255,204,0,0.28);
+  color:#ffd965;
+  font-size:0.74rem;
+  font-weight:800;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+}
+
+.chapter-end-card__title{
+  margin:0 0 10px;
+  font-size:clamp(1.2rem, 2vw, 1.7rem);
+  line-height:1.1;
+  font-weight:800;
+}
+
+.chapter-end-card__text{
+  margin:0;
+  color:#c6cedf;
+  line-height:1.6;
+  font-size:0.96rem;
+}
+
+.chapter-end-card__actions{
+  display:grid;
+  grid-template-columns:minmax(220px, 280px) minmax(0, 1fr);
+  gap:14px;
+  margin-top:18px;
+}
+
+.chapter-end-card__like,
+.chapter-end-card__next{
+  border:none;
+  border-radius:18px;
+  cursor:pointer;
+  transition:transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.chapter-end-card__like{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  min-height:62px;
+  padding:14px 16px;
+  border:1px solid rgba(255,204,0,0.24);
+  background:rgba(255,204,0,0.08);
+  color:#ffe9a6;
+  font-weight:800;
+}
+
+.chapter-end-card__like:hover,
+.chapter-end-card__next:hover{
+  transform:translateY(-1px);
+}
+
+.chapter-end-card__like.is-liked{
+  background:rgba(255,204,0,0.16);
+  border-color:rgba(255,204,0,0.5);
+  color:#ffcc00;
+  box-shadow:0 12px 28px rgba(255,204,0,0.14);
+}
+
+.chapter-end-card__like-icon{
+  font-size:1.15rem;
+  line-height:1;
+}
+
+.chapter-end-card__like-label,
+.chapter-end-card__like-count{
+  font-size:0.92rem;
+}
+
+.chapter-end-card__next{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:4px;
+  min-height:62px;
+  padding:14px 18px;
+  background:linear-gradient(135deg,#c9a000 0%,#ffcc00 100%);
+  color:#141414;
+  box-shadow:0 14px 28px rgba(255,204,0,0.16);
+}
+
+.chapter-end-card__next-kicker{
+  font-size:0.78rem;
+  font-weight:800;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  opacity:0.8;
+}
+
+.chapter-end-card__next strong{
+  font-size:1rem;
+  line-height:1.35;
+  text-align:left;
+}
+
+.chapter-end-card__selector{
+  margin-top:16px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.chapter-end-card__selector-label{
+  color:#dbe4f5;
+  font-size:0.86rem;
+  font-weight:700;
+}
+
+.chapter-end-card__select{
+  width:100%;
+  min-height:48px;
+  padding:10px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,204,0,0.28);
+  background:#131822;
+  color:#fff;
+  font-weight:700;
+}
+
+.chapter-end-card__select:focus-visible,
+.chapter-end-card__next:focus-visible,
+.chapter-end-card__like:focus-visible{
+  outline:2px solid #ffe08a;
+  outline-offset:2px;
+  box-shadow:0 0 0 4px rgba(255,204,0,0.18);
 }
 
 
@@ -893,6 +1065,34 @@ box-shadow:0 12px 26px rgba(0,0,0,0.35);
   image-rendering: auto;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
+}
+
+@media (max-width: 900px){
+  .chapter-end-card__actions{
+    grid-template-columns:1fr;
+  }
+}
+
+@media (max-width: 768px){
+  .chapter-end-card{
+    width:min(100%, calc(100% - 20px));
+    padding:18px;
+    border-radius:18px;
+  }
+
+  .chapter-end-card--horizontal{
+    width:100%;
+  }
+}
+
+@media (max-width: 640px){
+  .chapter-end-card__like{
+    flex-wrap:wrap;
+  }
+
+  .chapter-end-card__next strong{
+    font-size:0.94rem;
+  }
 }
 
 .comentario-avatar-btn{

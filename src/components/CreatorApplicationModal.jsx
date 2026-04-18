@@ -45,6 +45,7 @@ import {
   serializeCreatorProfileCrop,
   validateCreatorProfileImageFile,
 } from '../utils/creatorProfileImage';
+import { lockBodyScroll, unlockBodyScroll } from '../utils/bodyScrollLock';
 import { SITE_ORIGIN } from '../config/site';
 import './CreatorApplicationModal.css';
 
@@ -338,8 +339,7 @@ export default function CreatorApplicationModal({
   useEffect(() => {
     if (variant === 'modal' && !open) return undefined;
     if (variant === 'modal') {
-      const prev = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
+      lockBodyScroll('creator-application-modal');
       const onKey = (e) => {
         if (e.key !== 'Escape' || loading) return;
         if (feedbackDialog) {
@@ -352,7 +352,7 @@ export default function CreatorApplicationModal({
       };
       window.addEventListener('keydown', onKey);
       return () => {
-        document.body.style.overflow = prev;
+        unlockBodyScroll('creator-application-modal');
         window.removeEventListener('keydown', onKey);
       };
     }

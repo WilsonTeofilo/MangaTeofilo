@@ -141,8 +141,8 @@ export default function ObrasEditor({
             </datalist>
             <small className="field-help">
               {!editandoId
-                ? 'Busque por @username ou UID. O painel resolve o autor e salva o UID internamente.'
-                : 'Voce pode reatribuir a obra buscando por @username ou UID do autor.'}
+                ? 'Busque por @username ou UID. Se quiser publicar como admin sem autor vinculado, deixe o campo vazio.'
+                : 'Voce pode reatribuir a obra buscando por @username ou UID do autor, ou limpar o campo para deixar sem autor vinculado.'}
             </small>
             {resolvedCreatorLookup ? (
               <div className="obra-author-preview" role="status" aria-live="polite">

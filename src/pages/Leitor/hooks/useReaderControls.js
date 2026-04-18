@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export function useReaderControls({ totalPaginas }) {
+export function useReaderControls({ totalPaginas, totalHorizontalSlides = totalPaginas }) {
   const [modoLeitura, setModoLeitura] = useState(
     () => localStorage.getItem('modoLeitura') || 'vertical'
   );
@@ -23,8 +23,8 @@ export function useReaderControls({ totalPaginas }) {
   }, [zoom]);
 
   const irProxima = useCallback(
-    () => setPaginaAtual((p) => Math.min(p + 1, totalPaginas - 1)),
-    [totalPaginas]
+    () => setPaginaAtual((p) => Math.min(p + 1, Math.max(totalHorizontalSlides - 1, 0))),
+    [totalHorizontalSlides]
   );
   const irAnterior = useCallback(
     () => setPaginaAtual((p) => Math.max(p - 1, 0)),

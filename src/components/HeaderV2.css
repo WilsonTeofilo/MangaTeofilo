@@ -1142,18 +1142,24 @@ body.mobile-menu-open {
   }
 
   .header-notification-panel {
-    width: min(360px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    position: fixed;
+    top: calc(var(--header-height-mobile) + 8px + env(safe-area-inset-top, 0px));
     right: max(8px, env(safe-area-inset-right, 0px));
-    max-height: min(70dvh, 520px);
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    width: min(360px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+    max-height: none;
   }
 
   .header-account-menu {
+    position: fixed;
+    top: calc(var(--header-height-mobile) + 8px + env(safe-area-inset-top, 0px));
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
     right: max(8px, env(safe-area-inset-right, 0px));
     left: auto;
     width: min(300px, calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
     min-width: 0;
     max-width: calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
-    max-height: calc(100dvh - 92px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    max-height: none;
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -1238,10 +1244,6 @@ body.mobile-menu-open {
   .header-notification-btn {
     width: var(--header-ctrl-size, 44px);
     height: var(--header-ctrl-size, 44px);
-  }
-
-  .header-account-menu {
-    max-height: calc(100dvh - 84px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   }
 
   .header-store-cart-btn {

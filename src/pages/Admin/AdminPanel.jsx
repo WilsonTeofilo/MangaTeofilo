@@ -534,7 +534,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
   const user = auth.currentUser;
   const isCreatorWorkspace = workspace === 'creator';
-  const isMangaka = Boolean(adminAccess?.isMangaka);
+  const isMangaka = isCreatorWorkspace && Boolean(adminAccess?.isMangaka);
   const workspaceConfig = useMemo(() => {
     if (isCreatorWorkspace) {
       return {
@@ -686,7 +686,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
 
   useEffect(() => {
-    if (!adminAccess?.isMangaka || !user?.uid || !obrasSnapshotReady) return;
+    if (!isMangaka || !user?.uid || !obrasSnapshotReady) return;
     if (!obraIdSelecionada) {
       navigate(chaptersHubPath);
       return;
@@ -700,7 +700,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       navigate(chaptersHubPath);
     }
   }, [
-    adminAccess?.isMangaka,
+    isMangaka,
     user?.uid,
     obrasSnapshotReady,
     obras,
@@ -1136,7 +1136,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         throw new Error('Selecione uma obra válida antes de salvar o capítulo.');
       }
       const creatorIdObra = String(obraCreatorId(obraSelecionada) || '').trim();
-      if (!creatorIdObra) {
+      if (isCreatorWorkspace && !creatorIdObra) {
         throw new Error('A obra selecionada está sem criador vinculado. Corrija a obra antes de salvar o capítulo.');
       }
       const jaExisteMesmoNumeroNaObra = capitulos.some((cap) => (
@@ -1185,10 +1185,14 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         workId: obraIdSelecionada,
         obraTitulo: String(obraSelecionada?.tituloCurto || obraSelecionada?.titulo || obraIdSelecionada),
         dataUpload: new Date().toISOString(),
-        creatorId: creatorIdObra,
         status: asDraft ? 'draft' : 'published',
         isPublished: !asDraft,
       };
+      if (creatorIdObra) {
+        dados.creatorId = creatorIdObra;
+      } else if (editandoId && capituloEditando?.creatorId) {
+        dados.creatorId = String(capituloEditando.creatorId || '').trim();
+      }
 
       let publicMs = null;
       if (publicReleaseAtInput?.trim()) {

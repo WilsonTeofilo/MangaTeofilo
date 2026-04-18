@@ -23,6 +23,7 @@ import ChapterPages from './components/ChapterPages.jsx';
 import ChapterFooterNav from './components/ChapterFooterNav.jsx';
 import ChapterFollowCallout from './components/ChapterFollowCallout.jsx';
 import ChapterComments from './components/ChapterComments.jsx';
+import ChapterEndCard from './components/ChapterEndCard.jsx';
 import { useChapterComments } from './hooks/useChapterComments';
 import { useReaderControls } from './hooks/useReaderControls';
 import { publicCriadorProfilePath } from './leitorUtils';
@@ -50,6 +51,7 @@ export default function Leitor({ user, perfil, adminAccess }) {
   const profileToastTimerRef = useRef(null);
   const [capNavError, setCapNavError] = useState(false);
   const [profileToast, setProfileToast] = useState('');
+  const notificationCommentHandledRef = useRef('');
   const chapterPageInitRef = useRef('');
   const {
     capitulo,
@@ -77,6 +79,7 @@ export default function Leitor({ user, perfil, adminAccess }) {
     perfil,
   });
   const totalPaginas = capitulo?.paginas?.length || 0;
+  const totalHorizontalSlides = totalPaginas + 1;
   const {
     modoLeitura,
     setModoLeitura,
@@ -92,13 +95,14 @@ export default function Leitor({ user, perfil, adminAccess }) {
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,
-  } = useReaderControls({ totalPaginas });
+  } = useReaderControls({ totalPaginas, totalHorizontalSlides });
   const chapterLikesCount = Number(capitulo?.likesCount || 0);
   const chapterLikedByUser = Boolean(user?.uid && capitulo?.usuariosQueCurtiram?.[user.uid]);
   const {
     comentarioTexto,
     setComentarioTexto,
     listaComentarios,
+    commentsLoaded,
     perfisUsuarios,
     filtro,
     setFiltro,
@@ -162,6 +166,10 @@ export default function Leitor({ user, perfil, adminAccess }) {
     };
   }, []);
 
+  useEffect(() => {
+    notificationCommentHandledRef.current = '';
+  }, [id]);
+
   const capituloParaAcesso = useMemo(() => capitulo, [capitulo]);
 
   const triggerCapNavError = useCallback(() => {
@@ -183,6 +191,41 @@ export default function Leitor({ user, perfil, adminAccess }) {
     },
     [navigate]
   );
+
+  useEffect(() => {
+    const targetCommentId = String(searchParams.get('comment') || '').trim();
+    if (!targetCommentId || !commentsLoaded) return;
+    const handledKey = `${id}:${targetCommentId}`;
+    if (notificationCommentHandledRef.current === handledKey) return;
+
+    const commentExists = listaComentarios.some((item) => String(item?.id || '').trim() === targetCommentId);
+    notificationCommentHandledRef.current = handledKey;
+
+    if (!commentExists) {
+      setProfileToast('Comentário não encontrado (removido).');
+      if (profileToastTimerRef.current) clearTimeout(profileToastTimerRef.current);
+      profileToastTimerRef.current = setTimeout(() => setProfileToast(''), 2600);
+      const nextParams = new URLSearchParams(location.search);
+      nextParams.delete('comment');
+      navigate(
+        {
+          pathname: location.pathname,
+          search: nextParams.toString() ? `?${nextParams.toString()}` : '',
+        },
+        { replace: true }
+      );
+      return;
+    }
+
+    const el = document.getElementById(`comentario-${targetCommentId}`);
+    if (!el) return;
+    el.classList.add('comentario--highlight');
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const timeoutId = window.setTimeout(() => {
+      el.classList.remove('comentario--highlight');
+    }, 2200);
+    return () => window.clearTimeout(timeoutId);
+  }, [commentsLoaded, id, listaComentarios, location.pathname, location.search, navigate, searchParams]);
 
 
   useEffect(() => {
@@ -351,6 +394,33 @@ export default function Leitor({ user, perfil, adminAccess }) {
     }
   };
 
+  const currentChapterFromList = useMemo(
+    () => capsLiberadosLista.find((item) => item.id === id) || capitulo,
+    [capsLiberadosLista, capitulo, id]
+  );
+
+  const nextChapterFromList = useMemo(
+    () => capsLiberadosLista.find((item) => item.id === proximoCapituloId) || null,
+    [capsLiberadosLista, proximoCapituloId]
+  );
+
+  const chapterEndCard = (
+    <ChapterEndCard
+      modoLeitura={modoLeitura}
+      currentChapter={currentChapterFromList}
+      nextChapter={nextChapterFromList}
+      capsLiberadosLista={capsLiberadosLista}
+      currentId={id}
+      onSelectChapter={handleSelectChapter}
+      onNavigateNext={resetAndNavigate}
+      isLoggedIn={Boolean(user)}
+      chapterLikedByUser={chapterLikedByUser}
+      chapterLikeBusy={chapterLikeBusy}
+      chapterLikesCount={chapterLikesCount}
+      onToggleLike={handleChapterLike}
+    />
+  );
+
   if (carregando) return <LoadingScreen />;
   if (!capitulo) {
     return (
@@ -426,6 +496,7 @@ export default function Leitor({ user, perfil, adminAccess }) {
         paginaAtual={paginaAtual}
         totalPaginas={totalPaginas}
         imgAltPrefix={chapterSeo?.imgAltPrefix}
+        endCard={chapterEndCard}
         onPrev={irAnterior}
         onNext={irProxima}
         onTouchStart={handleTouchStart}

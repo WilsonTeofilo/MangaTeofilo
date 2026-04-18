@@ -253,7 +253,9 @@ export function validateObraWorkForm(p) {
 
   if (!p.isMangaka && !p.editandoId) {
     const cid = String(p.adminCreatorId || '').trim();
-    if (!isValidCreatorUid(cid)) errors.push('Selecione ou informe o UID do autor (criador) da obra.');
+    if (cid && !isValidCreatorUid(cid)) {
+      errors.push('Selecione um @username valido, informe um UID valido ou deixe o campo vazio para publicar sem autor vinculado.');
+    }
   }
 
   if (!p.isMangaka && p.editandoId) {

@@ -89,12 +89,19 @@
   font-weight: 700;
 }
 
+.capitulos-admin-hub__selector input,
 .capitulos-admin-hub__selector select {
   border: 1px solid #303030;
   border-radius: 10px;
   background: #0f0f0f;
   color: #f1f1f1;
   padding: 10px 11px;
+}
+
+.capitulos-admin-hub__search-help {
+  margin: -2px 0 0;
+  font-size: 0.79rem;
+  color: #a9a9a9;
 }
 
 .capitulos-admin-hub__hint-create {

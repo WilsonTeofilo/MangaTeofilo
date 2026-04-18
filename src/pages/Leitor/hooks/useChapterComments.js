@@ -27,6 +27,7 @@ export function useChapterComments({
   const [perfisUsuarios, setPerfis] = useState({});
   const [filtro, setFiltro] = useState('relevantes');
   const [enviando, setEnviando] = useState(false);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [modalLoginComentario, setModalLoginComentario] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyDraft, setReplyDraft] = useState('');
@@ -42,6 +43,7 @@ export function useChapterComments({
     setComentarios([]);
     setPerfis({});
     setComentarioTexto('');
+    setCommentsLoaded(false);
     setReplyingTo(null);
     setReplyDraft('');
     setDeletingCommentId('');
@@ -55,9 +57,11 @@ export function useChapterComments({
         const list = toRecordList(snapshot.exists() ? snapshot.val() : {})
           .sort((a, b) => commentSortTs(b) - commentSortTs(a));
         setComentarios(list);
+        setCommentsLoaded(true);
       },
       () => {
         setComentarios([]);
+        setCommentsLoaded(true);
       }
     );
     return () => unsub();
@@ -247,6 +251,7 @@ export function useChapterComments({
     comentarioTexto,
     setComentarioTexto,
     listaComentarios,
+    commentsLoaded,
     perfisUsuarios,
     filtro,
     setFiltro,

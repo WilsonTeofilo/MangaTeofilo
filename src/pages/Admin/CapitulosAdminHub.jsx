@@ -10,7 +10,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   const navigate = useNavigate();
   const user = auth.currentUser;
   const isMangaka = Boolean(adminAccess?.isMangaka);
-  const editorPathBase = workspace === 'creator' ? '/creator/editor' : '/admin/manga';
+  const editorPathBase = workspace === 'creator' ? '/creator/editor' : '/admin/capitulos/editor';
   const obrasPath = workspace === 'creator' ? '/creator/obras' : '/admin/obras';
   const isCreatorWorkspace = workspace === 'creator';
   const canAccessWorkspace = isCreatorWorkspace
@@ -19,8 +19,11 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
   const {
     loading,
     obras,
+    obrasTotal,
     obraId,
     setObraId,
+    obraQuery,
+    setObraQuery,
     obraAtual,
     capitulosObra,
     capsSemWorkId,
@@ -58,6 +61,17 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
 
       <section className="capitulos-admin-hub__selector">
         <div className="capitulos-admin-hub__selector-main">
+          {!isCreatorWorkspace ? (
+            <label>
+              Buscar por obra, @username ou UID
+              <input
+                type="text"
+                value={obraQuery}
+                onChange={(e) => setObraQuery(String(e.target.value || ''))}
+                placeholder="Ex.: @sagaudim, uid do autor ou título da obra"
+              />
+            </label>
+          ) : null}
           <label>
             Selecionar obra
             <select value={obraId} onChange={(e) => setObraId(String(e.target.value || ''))}>
@@ -65,10 +79,22 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
               {obras.map((obra) => (
                 <option key={obra.id} value={obra.id}>
                   {obra.tituloCurto || obra.titulo || obra.id}
+                  {!isCreatorWorkspace
+                    ? ` · ${obra.creatorHandle ? '@' + obra.creatorHandle : (obra.creatorId ? obra.creatorId : 'sem autor')}`
+                    : ''}
                 </option>
               ))}
             </select>
           </label>
+          {!isCreatorWorkspace ? (
+            <p className="capitulos-admin-hub__search-help">
+              {obraQuery.trim()
+                ? (obras.length
+                    ? `${obras.length} obra(s) encontrada(s) de ${obrasTotal} no catálogo.`
+                    : 'Nada encontrado para essa busca. Revise @username, UID ou título.')
+                : 'Digite @username, UID ou título para filtrar o catálogo e achar a obra certa.'}
+            </p>
+          ) : null}
           <div className="capitulos-admin-hub__selector-actions">
             <button
               type="button"
@@ -88,6 +114,17 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
         </div>
         <div className="capitulos-admin-hub__selected">
           <strong>{obraAtual?.titulo || obraAtual?.id || 'Nenhuma obra selecionada'}</strong>
+          {!isCreatorWorkspace ? (
+            <span>
+              {obraAtual
+                ? (obraAtual.creatorHandle
+                    ? '@' + obraAtual.creatorHandle
+                    : obraAtual.creatorId
+                      ? obraAtual.creatorId
+                      : 'Obra da plataforma sem autor vinculado')
+                : 'Sem catálogo ativo'}
+            </span>
+          ) : null}
           <span>{obraAtual ? (obraAtual.status === 'draft' ? 'Rascunho' : (obraAtual.isPublished ? 'Publicada' : 'Oculta')) : 'Sem catálogo ativo'}</span>
         </div>
       </section>

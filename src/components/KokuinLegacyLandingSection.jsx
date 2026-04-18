@@ -75,7 +75,9 @@ export default function KokuinLegacyLandingSection({
     <div className={`shito-page ${fullViewport ? 'shito-page--immersive' : ''}`}>
       <header ref={heroRef} className={`main-banner ${fullViewport ? 'main-banner--full-viewport' : ''}`}>
         <div className="banner-content">
-          <h1 className="game-logo shito-glitch">KOKUIN</h1>
+          <h1 className="game-logo shito-glitch" data-text="KOKUIN">
+            KOKUIN
+          </h1>
           <h2 className="game-sublogo">HERANCA DO ABISMO</h2>
         </div>
         <button

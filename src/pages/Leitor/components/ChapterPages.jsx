@@ -7,12 +7,16 @@ export default function ChapterPages({
   paginaAtual,
   totalPaginas,
   imgAltPrefix,
+  endCard,
   onPrev,
   onNext,
   onTouchStart,
   onTouchMove,
   onTouchEnd,
 }) {
+  const totalHorizontalSlides = totalPaginas + (endCard ? 1 : 0);
+  const showingEndCard = Boolean(endCard) && paginaAtual >= totalPaginas;
+
   if (modoLeitura === 'vertical') {
     return (
       <main className="paginas-lista">
@@ -20,13 +24,14 @@ export default function ChapterPages({
           <img
             key={index}
             src={url}
-            alt={`${imgAltPrefix || 'Mangá'} ${index + 1}`}
+            alt={`${imgAltPrefix || 'Manga'} ${index + 1}`}
             referrerPolicy="no-referrer"
             loading="lazy"
             decoding="async"
             style={{ width: `${zoom}%`, display: 'block', margin: '0 auto' }}
           />
         ))}
+        {endCard}
       </main>
     );
   }
@@ -41,26 +46,33 @@ export default function ChapterPages({
       <button type="button" className="seta esquerda" onClick={onPrev} disabled={paginaAtual === 0}>
         ‹
       </button>
+
       <div className="pagina-unica">
-        <img
-          src={paginas?.[paginaAtual]}
-          alt={`${imgAltPrefix || 'Mangá'} ${paginaAtual + 1}`}
-          referrerPolicy="no-referrer"
-          loading="lazy"
-          decoding="async"
-          style={{ width: `${zoom}%`, margin: '0 auto', display: 'block' }}
-        />
+        {showingEndCard ? (
+          <div className="pagina-unica__end-card">{endCard}</div>
+        ) : (
+          <img
+            src={paginas?.[paginaAtual]}
+            alt={`${imgAltPrefix || 'Manga'} ${paginaAtual + 1}`}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            decoding="async"
+            style={{ width: `${zoom}%`, margin: '0 auto', display: 'block' }}
+          />
+        )}
       </div>
+
       <button
         type="button"
         className="seta direita"
         onClick={onNext}
-        disabled={paginaAtual >= totalPaginas - 1}
+        disabled={paginaAtual >= totalHorizontalSlides - 1}
       >
         ›
       </button>
+
       <div className="contador">
-        {paginaAtual + 1} / {totalPaginas}
+        {Math.min(paginaAtual + 1, totalHorizontalSlides)} / {totalHorizontalSlides}
       </div>
     </div>
   );

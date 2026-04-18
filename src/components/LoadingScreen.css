@@ -30,7 +30,7 @@
 
 .shito-glitch::before,
 .shito-glitch::after {
-  content: "MangaTeofilo";
+  content: attr(data-text);
   position: absolute;
   top: 0;
   left: 0;

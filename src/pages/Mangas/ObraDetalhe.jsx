@@ -370,12 +370,16 @@ export default function ObraDetalhe({ user, perfil, adminAccess = emptyAdminAcce
     );
   }
 
-  const creatorUidObra = String(creatorIdentity?.creatorId || obraCreatorId(obraParaExibir) || '').trim();
+  const creatorUidObra = String(
+    creatorIdentity?.authorState === 'linked'
+      ? creatorIdentity?.creatorId || obraCreatorId(obraParaExibir)
+      : ''
+  ).trim();
   const creatorHandle = creatorIdentity?.handle || '';
   const creatorPorLabel = creatorIdentity?.label || 'Autor';
   const creatorDisplayOnly = resolvePublicProfileDisplayName(creatorIdentity?.profile, creatorPorLabel);
   const creatorAvatar = creatorIdentity?.avatarUrl || '/assets/fotos/shito.jpg';
-  const creatorPath = creatorIdentity?.path || (creatorUidObra ? `/criador/${encodeURIComponent(creatorUidObra)}` : '');
+  const creatorPath = creatorIdentity?.path || '';
   const obraViews = Number(obraParaExibir.viewsCount || obraParaExibir.visualizacoes || 0);
   const obraLikes = Number(obraParaExibir.likesCount || obraParaExibir.curtidas || 0);
 

@@ -1,7 +1,7 @@
 import { isCreatorPublicProfile } from '../../utils/publicUserProfile';
 import { resolvePublicProfilePath } from '../../utils/publicProfilePaths';
 import { isReaderPublicProfileEffective } from '../../utils/readerPublicProfile';
-import { obterEntitlementPremiumGlobal } from '../../auth/userEntitlements';
+import { obterEntitlementPremiumGlobal } from '../../utils/capituloLancamento';
 
 export function commentSortTs(c) {
   if (typeof c?.data === 'number' && Number.isFinite(c.data)) return c.data;

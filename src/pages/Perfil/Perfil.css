@@ -630,6 +630,64 @@
   background: rgba(60, 130, 95, 0.55);
 }
 
+.perfil-ban-card {
+  text-align: left;
+  margin: -12px 0 28px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 120, 120, 0.4);
+  background: linear-gradient(180deg, rgba(65, 18, 18, 0.72), rgba(28, 10, 10, 0.9));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.perfil-ban-card__eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffb0a8;
+}
+
+.perfil-ban-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+  color: #fff3f0;
+}
+
+.perfil-ban-card__reason,
+.perfil-ban-card__meta {
+  margin: 0 0 10px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #ffd9d4;
+}
+
+.perfil-ban-card__countdown {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 210, 130, 0.34);
+  background: rgba(255, 183, 77, 0.1);
+}
+
+.perfil-ban-card__countdown span {
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffcf93;
+}
+
+.perfil-ban-card__countdown strong {
+  font-size: clamp(1.3rem, 4vw, 2rem);
+  font-weight: 900;
+  color: #fff6da;
+  letter-spacing: 0.06em;
+}
+
 .perfil-creator-application-half {
   flex: 1 1 220px;
   margin-bottom: 0;

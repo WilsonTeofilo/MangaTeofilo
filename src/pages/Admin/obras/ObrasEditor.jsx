@@ -26,12 +26,12 @@ export default function ObrasEditor({
   isMangaka,
   creatorLookupInput,
   handleCreatorLookupChange,
-  creatorDirectory,
-  formatCreatorLookupOption,
   resolvedCreatorLookup,
   creatorLookupMatches,
   creatorNeedsSelection,
+  currentAuthorState,
   creatorWorkspaceProfile,
+  selecionarAutorPorLookup,
   onTituloChange,
   slugPreview,
   toggleGenre,
@@ -128,22 +128,38 @@ export default function ObrasEditor({
             Autor da obra{!editandoId ? ' *' : ''}
             <input
               type="text"
-              list="obra-creator-options"
               autoComplete="off"
               value={creatorLookupInput}
               onChange={(e) => handleCreatorLookupChange(e.target.value)}
               placeholder="Digite o @username do autor"
             />
-            <datalist id="obra-creator-options">
-              {creatorDirectory.map((entry) => (
-                <option key={entry.uid} value={formatCreatorLookupOption(entry)} />
-              ))}
-            </datalist>
             <small className="field-help">
               {!editandoId
-                ? 'Busque por @username ou UID. Se quiser publicar como admin sem autor vinculado, deixe o campo vazio.'
-                : 'Voce pode reatribuir a obra buscando por @username ou UID do autor, ou limpar o campo para deixar sem autor vinculado.'}
+                ? 'Busque pelo @username. Se quiser publicar como admin sem autor vinculado, deixe o campo vazio.'
+                : 'Voce pode reatribuir a obra buscando pelo @username do autor, ou limpar o campo para deixar sem autor vinculado.'}
             </small>
+            {creatorLookupInput.trim().length >= 2 && creatorLookupMatches.length > 0 ? (
+              <div className="obra-author-search-results" role="listbox" aria-label="Resultados da busca por autor">
+                {creatorLookupMatches.map((entry) => (
+                  <button
+                    key={entry.uid}
+                    type="button"
+                    className="obra-author-search-result"
+                    onClick={() => selecionarAutorPorLookup(entry)}
+                  >
+                    <img
+                      className="obra-author-search-result__avatar"
+                      src={entry.avatarUrl || '/assets/fotos/shito.jpg'}
+                      alt={entry.displayName || entry.handle || 'Autor'}
+                    />
+                    <span className="obra-author-search-result__meta">
+                      <strong>{entry.displayName || 'Autor encontrado'}</strong>
+                      <span>{entry.handle ? `@${entry.handle}` : 'Sem @username publico'}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {resolvedCreatorLookup ? (
               <div className="obra-author-preview" role="status" aria-live="polite">
                 <img
@@ -164,11 +180,15 @@ export default function ObrasEditor({
               </small>
             ) : creatorLookupInput.trim() && creatorLookupInput.trim().length < 3 ? (
               <small className="field-help">
-                Digite pelo menos 3 caracteres do @username, ou cole o UID completo do autor.
+                Digite pelo menos 2 caracteres do @username para buscar autores.
+              </small>
+            ) : currentAuthorState?.authorState === 'removed' ? (
+              <small className="field-help" style={{ color: '#ffb3b3' }}>
+                O autor antigo desta obra foi removido. Pesquise um creator ativo para reatribuir, ou limpe o campo para deixar a obra sem autor.
               </small>
             ) : creatorNeedsSelection && saveAttempted ? (
               <small className="field-help" style={{ color: '#ffb3b3' }}>
-                Nenhum autor correspondente foi encontrado. Revise o @username ou UID antes de salvar.
+                Nenhum autor correspondente foi encontrado. Revise o @username antes de salvar.
               </small>
             ) : creatorNeedsSelection ? (
               <small className="field-help">
@@ -176,7 +196,7 @@ export default function ObrasEditor({
               </small>
             ) : form.adminCreatorId ? (
               <small className="field-help" style={{ color: '#ffb3b3' }}>
-                O autor atual desta obra nao foi resolvido no diretorio. Reselecione um autor antes de salvar.
+                O autor atual desta obra nao foi resolvido como creator ativo. Reselecione um autor valido antes de salvar.
               </small>
             ) : null}
           </label>

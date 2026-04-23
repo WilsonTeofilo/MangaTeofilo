@@ -1,11 +1,9 @@
-import { obraCreatorId, obterObraIdCapitulo } from '../config/obras';
+import { obterObraIdCapitulo, resolveObraAuthorState } from '../config/obras';
 import { normalizeUsernameInput, validateUsernameHandle } from './usernameValidation';
 import { resolvePublicProfileAvatarUrl, resolvePublicProfileDisplayName } from './publicUserProfile';
 import { resolvePublicProfilePath } from './publicProfilePaths';
 import {
-  resolveCanonicalWorkCreator,
   resolveCreatorPublicProfileById,
-  resolveEffectiveWorkCreatorId,
 } from './workCreatorResolution';
 
 /** Nomes de teste / legado tipo "Criador1", "criador 10", "user3" �?" não usar como nome público. */
@@ -27,30 +25,6 @@ function firstNonPlaceholder(candidates) {
   return '';
 }
 
-function extractCreatorNameCandidatesFromChapters(chapters) {
-  if (!Array.isArray(chapters) || !chapters.length) return [];
-  const values = [];
-  chapters.forEach((cap) => {
-    values.push(
-      cap?.creatorProfile?.displayName,
-      cap?.creatorProfile?.username,
-      cap?.creatorDisplayName,
-      cap?.creatorUsername,
-      cap?.creatorName,
-      cap?.creatorHandle,
-      cap?.userHandle,
-      cap?.authorName,
-      cap?.authorDisplayName,
-      cap?.autor,
-      cap?.autorNome,
-      cap?.writerName,
-      cap?.userName,
-      cap?.displayName
-    );
-  });
-  return values;
-}
-
 function looksLikeUid(raw) {
   const s = String(raw || '').trim();
   return /^[A-Za-z0-9]{20,40}$/.test(s);
@@ -66,6 +40,50 @@ function publicRowShape(profile) {
     return profile.publicProfile;
   }
   return profile && typeof profile === 'object' ? profile : {};
+}
+
+function buildPublicCreatorLookupByUid(creatorsMap = {}) {
+  const entries = Object.entries(creatorsMap || {});
+  if (!entries.length) return {};
+  const out = {};
+  entries.forEach(([uid, profile]) => {
+    const p = publicRowShape(profile);
+    const normalizedUid = String(uid || p?.uid || '').trim();
+    if (!normalizedUid) return;
+    const handle = normalizePublicHandle(p);
+    const displayName = firstNonPlaceholder([
+      resolvePublicProfileDisplayName(p, ''),
+      handle ? `@${handle}` : '',
+    ]);
+    out[normalizedUid] = {
+      uid: normalizedUid,
+      handle,
+      displayName: displayName || '',
+      avatarUrl: resolvePublicProfileAvatarUrl(p, {
+        mode: 'creator',
+        fallback: '/assets/avatares/ava1.webp',
+      }),
+      profile: p,
+    };
+  });
+  return out;
+}
+
+function resolvePublicWorkAuthorState(obra, creatorsMap, allCapitulos = null) {
+  const obraId = String(obra?.id || '').toLowerCase();
+  const matchingCaps =
+    allCapitulos && Array.isArray(allCapitulos)
+      ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
+      : [];
+  const creatorLookupByUid = buildPublicCreatorLookupByUid(creatorsMap);
+  return {
+    matchingCaps,
+    creatorLookupByUid,
+    ...resolveObraAuthorState(obra, {
+      creatorLookupByUid,
+      chapterRows: matchingCaps,
+    }),
+  };
 }
 /** Handle publico (@usuario) a partir do `publicProfile` canonico ou objeto equivalente. */
 export function normalizePublicHandle(profile) {
@@ -142,40 +160,13 @@ export function resolvePublicCreatorName({ creatorPublicProfile = null, obra = n
  * `creatorsMap` deve ser derivado do perfil publico canonico em `usuarios`.
  */
 export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = null) {
-  const obraId = String(obra?.id || '').toLowerCase();
-  const matchingCaps =
-    allCapitulos && Array.isArray(allCapitulos)
-      ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
-      : [];
-  const { profile } = matchingCaps.length
-    ? resolveCanonicalWorkCreator(obra, matchingCaps, creatorsMap)
-    : {
-        creatorId: String(obra?.creatorId || '').trim() || obraCreatorId(obra),
-        profile: resolveCreatorPublicProfileById(
-          creatorsMap,
-          String(obra?.creatorId || '').trim() || obraCreatorId(obra)
-        ),
-      };
-  const name = resolvePublicCreatorName({ creatorPublicProfile: profile, obra, fallback: '' });
-  if (name) return name;
-  const chapterName = firstNonPlaceholder(extractCreatorNameCandidatesFromChapters(matchingCaps));
-  if (chapterName) return chapterName;
-  const obraName = firstNonPlaceholder([
-    obra?.creatorProfile?.displayName,
-    obra?.creatorProfile?.username,
-    obra?.creatorDisplayName,
-    obra?.creatorUsername,
-    obra?.creatorHandle,
-    obra?.userHandle,
-    obra?.creatorName,
-    obra?.authorName,
-    obra?.authorDisplayName,
-    obra?.autor,
-    obra?.autorNome,
-    obra?.writerName,
-    obra?.userName,
-  ]);
-  if (obraName) return obraName;
+  const author = resolvePublicWorkAuthorState(obra, creatorsMap, allCapitulos);
+  if (author.authorState === 'linked') {
+    if (author.creatorHandle) return `@${author.creatorHandle}`;
+    if (author.creatorDisplayName) return author.creatorDisplayName;
+  }
+  if (author.authorState === 'removed') return 'Autor removido';
+  if (author.authorState === 'unassigned') return 'Sem autor vinculado';
   return 'Autor';
 }
 
@@ -183,57 +174,49 @@ export function resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos = nul
  * Texto curto para listagens (home, catálogo): prioriza @username do perfil público.
  */
 export function resolveCreatorFeedLabel(obra, creatorsMap, allCapitulos = null) {
-  const obraId = String(obra?.id || '').toLowerCase();
-  const matchingCaps =
-    allCapitulos && Array.isArray(allCapitulos)
-      ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
-      : [];
-  const creatorId =
-    matchingCaps.length
-      ? resolveEffectiveWorkCreatorId(obra, matchingCaps, creatorsMap)
-      : String(obra?.creatorId || '').trim() || obraCreatorId(obra);
-  const profile = resolveCreatorPublicProfileById(creatorsMap, creatorId);
-  if (profile) {
-    const line = formatUserDisplayWithHandle(profile);
-    if (line && line !== 'Leitor') return line;
+  const author = resolvePublicWorkAuthorState(obra, creatorsMap, allCapitulos);
+  if (author.authorState === 'linked') {
+    if (author.creatorHandle) return `@${author.creatorHandle}`;
+    if (author.creatorDisplayName) return author.creatorDisplayName;
   }
-  return resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos);
+  if (author.authorState === 'removed') return 'Autor removido';
+  if (author.authorState === 'unassigned') return 'Sem autor vinculado';
+  return 'Autor';
 }
 
 export function resolvePublicCreatorIdentity(obra, creatorsMap, allCapitulos = null) {
-  const obraId = String(obra?.id || '').toLowerCase();
-  const matchingCaps =
-    allCapitulos && Array.isArray(allCapitulos)
-      ? allCapitulos.filter((cap) => obterObraIdCapitulo(cap) === obraId)
-      : [];
-  const { creatorId, profile } = matchingCaps.length
-    ? resolveCanonicalWorkCreator(obra, matchingCaps, creatorsMap)
-    : {
-        creatorId: String(obra?.creatorId || '').trim() || obraCreatorId(obra),
-        profile: resolveCreatorPublicProfileById(
-          creatorsMap,
-          String(obra?.creatorId || '').trim() || obraCreatorId(obra)
-        ),
-      };
-
-  let label = resolvePublicCreatorName({ creatorPublicProfile: profile, obra, fallback: 'Autor' });
-  if (!label || label === 'Leitor') {
-    label = resolveCreatorNameFromObra(obra, creatorsMap, allCapitulos);
-  }
-  if (!label || label === 'Leitor') {
-    label = 'Autor';
-  }
-
+  const author = resolvePublicWorkAuthorState(obra, creatorsMap, allCapitulos);
+  const linkedProfile =
+    author.authorState === 'linked'
+      ? resolveCreatorPublicProfileById(creatorsMap, author.creatorId) ||
+        author.creatorLookupByUid?.[author.creatorId]?.profile ||
+        null
+      : null;
+  const handle = author.authorState === 'linked' ? String(author.creatorHandle || '').trim() : '';
+  const label =
+    author.authorState === 'linked'
+      ? (handle ? `@${handle}` : author.creatorDisplayName || 'Autor')
+      : author.authorState === 'removed'
+        ? 'Autor removido'
+        : 'Sem autor vinculado';
+  const creatorId = author.authorState === 'linked' ? String(author.creatorId || '').trim() : '';
   return {
+    authorState: author.authorState,
     creatorId,
-    profile,
+    profile: linkedProfile,
     label,
-    handle: normalizePublicHandle(profile),
-    avatarUrl: resolvePublicProfileAvatarUrl(profile, {
-      mode: 'creator',
-      fallback: '/assets/avatares/ava1.webp',
-    }),
-    path: resolvePublicProfilePath(profile, creatorId, { tab: 'works' }),
+    handle,
+    avatarUrl:
+      author.authorState === 'linked'
+        ? resolvePublicProfileAvatarUrl(linkedProfile, {
+            mode: 'creator',
+            fallback: '/assets/avatares/ava1.webp',
+          })
+        : '/assets/avatares/ava1.webp',
+    path:
+      author.authorState === 'linked' && linkedProfile
+        ? resolvePublicProfilePath(linkedProfile, creatorId, { tab: 'works' })
+        : '',
   };
 }
 

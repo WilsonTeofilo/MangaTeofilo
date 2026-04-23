@@ -6,6 +6,7 @@
  */
 
 import { hasAnyAdminWorkspaceAccess } from './adminPermissions';
+import { resolveCanonicalPublicHandle } from '../utils/canonicalIdentity';
 
 
 export const APP_ROLE = {
@@ -25,17 +26,72 @@ export function rtdbRoleIsCreator(perfilRow) {
   return String(perfilRow?.role || '').trim().toLowerCase() === 'mangaka';
 }
 
-export function perfilHasCreatorAccess(perfilRow) {
-  const creatorApplicationStatus = String(perfilRow?.creatorApplicationStatus || '').trim().toLowerCase();
-  const creatorStatus = String(perfilRow?.creatorStatus || '').trim().toLowerCase();
-  const creatorRoot = perfilRow?.creator && typeof perfilRow.creator === 'object' ? perfilRow.creator : {};
+function asObject(value) {
+  return value && typeof value === 'object' ? value : {};
+}
 
-  if (creatorApplicationStatus === 'approved') return true;
+function normalizeRoleLike(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function hasWriterIdentityFields(perfilRow) {
+  const row = asObject(perfilRow);
+  const publicProfile = asObject(row.publicProfile);
+  const creator = asObject(row.creator);
+  const creatorProfile = asObject(publicProfile.creatorProfile);
+  const privateCreatorProfile = asObject(creator.profile);
+
+  const handle = resolveCanonicalPublicHandle({
+    ...row,
+    publicProfile,
+    creator: {
+      ...creator,
+      profile: {
+        ...privateCreatorProfile,
+      },
+    },
+  });
+
+  const displayName = String(
+    privateCreatorProfile.displayName ||
+      creatorProfile.displayName ||
+      row.creatorDisplayName ||
+      publicProfile.creatorDisplayName ||
+      row.userName ||
+      publicProfile.userName ||
+      ''
+  ).trim();
+
+  return Boolean(handle || displayName);
+}
+
+export function perfilCanOwnWorks(perfilRow, { creatorsRow = null } = {}) {
+  const row = asObject(perfilRow);
+  const publicProfile = asObject(row.publicProfile);
+  const creator = asObject(row.creator);
+  const creatorProfile = asObject(publicProfile.creatorProfile);
+  const creatorNode = asObject(creatorsRow);
+
+  const signupIntent = normalizeRoleLike(row.signupIntent || publicProfile.signupIntent);
+  const accountType = normalizeRoleLike(row.accountType || publicProfile.accountType);
+  const panelRole = normalizeRoleLike(row.panelRole || publicProfile.panelRole);
+  const creatorStatus = normalizeRoleLike(row.creatorStatus || publicProfile.creatorStatus);
+
+  if (rtdbRoleIsCreator(row)) return true;
+  if (panelRole === 'mangaka') return true;
+  if (row.isCreatorProfile === true || publicProfile.isCreatorProfile === true) return true;
+  if (creator.isCreator === true || creatorProfile.isCreator === true) return true;
+  if (creator.onboardingCompleted === true || row.creatorOnboardingCompleted === true) return true;
   if (creatorStatus === 'active' || creatorStatus === 'onboarding') return true;
-  if (creatorRoot.onboardingCompleted === true) return true;
-  if (creatorRoot.isCreator === true) return true;
+  if (signupIntent === 'creator' || accountType === 'writer' || accountType === 'creator') {
+    return hasWriterIdentityFields(row) || Object.keys(creatorNode).length > 0;
+  }
+  if (Object.keys(creatorNode).length > 0) return true;
+  return hasWriterIdentityFields(row) && (Boolean(creator.profile) || Boolean(publicProfile.creatorProfile));
+}
 
-  return false;
+export function perfilHasCreatorAccess(perfilRow) {
+  return perfilCanOwnWorks(perfilRow);
 }
 
 export function resolveCreatorRoleBootstrap(perfilRow, adminAccess) {

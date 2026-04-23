@@ -1,15 +1,17 @@
 ﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ref as dbRef, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
+import { ref as dbRef, get, onValue, update as dbUpdate, set, push, remove } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadBytesResumable } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions';
 
 import { db, storage, auth, functions } from '../../services/firebase';
 import { canAccessAdminPath } from '../../auth/adminPermissions';
 import {
+  buildCanonicalAuthorBinding,
   normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
+  resolveObraAuthorState,
 } from '../../config/obras';
 import { formatarDataHora24Br, formatarDataBrPartirIsoOuMs } from '../../utils/datasBr';
 import {
@@ -25,6 +27,7 @@ import {
   safeDeleteStorageObject,
   safeDeleteStorageObjects,
 } from '../../utils/storageCleanup';
+import { buildAdminCreatorDirectory } from '../../utils/adminCreatorDirectory';
 import { useChapterWizard } from './hooks/useChapterWizard';
 import ChapterWizardSteps from './steps/ChapterWizardSteps.jsx';
 import ChapterStepUpload from './steps/ChapterStepUpload.jsx';
@@ -85,6 +88,34 @@ function nomeArquivoComExtensao(name, novaExt) {
 
 function assinaturaArquivo(file) {
   return `${file?.name || ''}|${file?.size || 0}|${file?.lastModified || 0}`;
+}
+
+function criarPaginaExistenteAdminEdicao(url, storagePath, index) {
+  return {
+    kind: 'existing',
+    key: `existing-${index}-${url}`,
+    url,
+    storagePath: storagePath || url || '',
+    replacementFile: null,
+    replacementPreviewUrl: '',
+  };
+}
+
+function criarPaginaNovaAdminEdicao(file, index = 0) {
+  return {
+    kind: 'new',
+    key: `new-${assinaturaArquivo(file)}-${index}`,
+    file,
+    previewUrl: URL.createObjectURL(file),
+  };
+}
+
+function liberarPaginaAdminEdicao(item) {
+  if (!item) return;
+  if (item.kind === 'new' && item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+  if (item.kind === 'existing' && item.replacementPreviewUrl) {
+    URL.revokeObjectURL(item.replacementPreviewUrl);
+  }
 }
 
 function sanitizarSegmentoStorage(valor, fallback = 'item') {
@@ -301,7 +332,7 @@ function ModalErro({ mensagem, aoFechar }) {
 }
 
 // --- COMPONENTE: CARD DA PÁGINA ---
-function PaginaCard({ index, url, onTrocar, onReordenar, total, onErro, onVer }) {
+function PaginaCard({ index, url, onTrocar, onReordenar, total, onErro, onVer, badgeLabel = '' }) {
   const [valorInput, setValorInput] = useState(index + 1);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -364,7 +395,7 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, onErro, onVer })
         />
       </div>
 
-      <span className="badge-pg">Pág {index + 1}</span>
+      <span className="badge-pg">{badgeLabel || `Pág ${index + 1}`}</span>
 
       <div className="preview-placeholder">
         <img src={url} alt={`página ${index + 1}`} draggable="false" />
@@ -388,7 +419,17 @@ function PaginaCard({ index, url, onTrocar, onReordenar, total, onErro, onVer })
   );
 }
 
-function PaginaSelecionadaCard({ index, url, nome, total, onReordenar, onRemover, onErro, onVer }) {
+function PaginaSelecionadaCard({
+  index,
+  url,
+  nome,
+  total,
+  onReordenar,
+  onRemover,
+  onErro,
+  onVer,
+  badgeLabel = '',
+}) {
   const [valorInput, setValorInput] = useState(index + 1);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -451,7 +492,7 @@ function PaginaSelecionadaCard({ index, url, nome, total, onReordenar, onRemover
         />
       </div>
 
-      <span className="badge-pg">Nova {index + 1}</span>
+      <span className="badge-pg">{badgeLabel || `Nova ${index + 1}`}</span>
 
       <div className="preview-placeholder">
         <img src={url} alt={`selecionada ${index + 1}`} draggable="false" />
@@ -534,6 +575,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
   const user = auth.currentUser;
   const isCreatorWorkspace = workspace === 'creator';
+  const isAdminWorkspace = workspace === 'admin';
   const isMangaka = isCreatorWorkspace && Boolean(adminAccess?.isMangaka);
   const workspaceConfig = useMemo(() => {
     if (isCreatorWorkspace) {
@@ -573,12 +615,15 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   const [capaPreviewFinalUrl, setCapaPreviewFinalUrl] = useState('');
   const capaEditorRef = useRef(null);
   const dragCapaRef = useRef(null);
+  const adminEditPageSequenceRef = useRef([]);
   const [arquivosPaginas, setArquivosPaginas] = useState([]);
   const [paginasExistentes, setPaginasExistentes] = useState([]);
+  const [adminEditPageSequence, setAdminEditPageSequence] = useState([]);
   const [paginasFileLabel, setPaginasFileLabel] = useState('');
 
   const [capitulos, setCapitulos] = useState([]);
   const [obras, setObras] = useState([]);
+  const [creatorLookupByUid, setCreatorLookupByUid] = useState({});
   /** Evita redirect falso: antes do 1o snapshot, o fallback da obra copiava creatorId legado (Shito). */
   const [obrasSnapshotReady, setObrasSnapshotReady] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
@@ -634,6 +679,34 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     };
   }, [canAccessWorkspace, user, navigate]);
 
+  useEffect(() => {
+    if (!canAccessWorkspace || isCreatorWorkspace) return () => {};
+    let cancelled = false;
+    Promise.all([
+      get(dbRef(db, 'usernames')),
+      get(dbRef(db, 'usuarios')),
+      get(dbRef(db, 'usuarios_publicos')),
+      get(dbRef(db, 'creators')),
+    ])
+      .then(([usernamesSnap, usuariosSnap, usuariosPublicosSnap, creatorsSnap]) => {
+        if (cancelled) return;
+        const usernames = usernamesSnap.exists() ? usernamesSnap.val() || {} : {};
+        const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
+        const usuariosPublicos = usuariosPublicosSnap.exists() ? usuariosPublicosSnap.val() || {} : {};
+        const creators = creatorsSnap.exists() ? creatorsSnap.val() || {} : {};
+        setCreatorLookupByUid(
+          buildAdminCreatorDirectory({ usernames, usuarios, usuariosPublicos, creators }).byUid
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCreatorLookupByUid({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccessWorkspace, isCreatorWorkspace]);
+
   const previewsPaginasSelecionadas = useMemo(
     () =>
       arquivosPaginas.map((file, idx) => ({
@@ -652,7 +725,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     () => capitulos.find((c) => c.id === editandoId) || null,
     [capitulos, editandoId]
   );
-  const obraSelecionada = useMemo(() => {
+  const isAdminEditMode = Boolean(editandoId);
+  const obraSelecionadaRaw = useMemo(() => {
     if (!obraIdSelecionada) return null;
     const obra = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
     if (obra) return obra;
@@ -673,6 +747,23 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       creatorId: '',
     };
   }, [obras, obraIdSelecionada, isMangaka, obrasSnapshotReady, user?.uid]);
+  const capitulosDaObra = useMemo(
+    () =>
+      capitulos
+        .filter((cap) => obterObraIdCapitulo(cap) === obraIdSelecionada)
+        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0)),
+    [capitulos, obraIdSelecionada]
+  );
+  const obraSelecionada = useMemo(() => {
+    if (!obraSelecionadaRaw) return null;
+    return {
+      ...obraSelecionadaRaw,
+      ...resolveObraAuthorState(obraSelecionadaRaw, {
+        creatorLookupByUid,
+        chapterRows: capitulosDaObra,
+      }),
+    };
+  }, [capitulosDaObra, creatorLookupByUid, obraSelecionadaRaw]);
   const ownerUidStorage = useMemo(
     () => segmentoStorageOwnerUid(obraCreatorId(obraSelecionada) || user?.uid),
     [obraSelecionada, user?.uid]
@@ -691,19 +782,18 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       navigate(chaptersHubPath);
       return;
     }
-    const match = obras.find((o) => normalizarObraId(o.id) === obraIdSelecionada);
-    if (!match) {
+    if (!obraSelecionada) {
       navigate(chaptersHubPath);
       return;
     }
-    if (obraCreatorId(match) !== user.uid) {
+    if (String(obraSelecionada.creatorId || '').trim() !== user.uid) {
       navigate(chaptersHubPath);
     }
   }, [
     isMangaka,
     user?.uid,
     obrasSnapshotReady,
-    obras,
+    obraSelecionada,
     obraIdSelecionada,
     navigate,
     chaptersHubPath,
@@ -717,13 +807,6 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     obrasSnapshotReady &&
     !obras.some((obra) => normalizarObraId(obra.id) === obraIdSelecionada);
 
-  const capitulosDaObra = useMemo(
-    () =>
-      capitulos
-        .filter((cap) => obterObraIdCapitulo(cap) === obraIdSelecionada)
-        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0)),
-    [capitulos, obraIdSelecionada]
-  );
   const capaVisualSrc = capaPreviewUrl || capituloEditando?.capaUrl || '/assets/fotos/shito.jpg';
   const capaFonteEditavel = capaPreviewUrl || capituloEditando?.capaUrl || '';
   const capaEditavel = Boolean(capaPreviewUrl || capituloEditando?.capaUrl);
@@ -740,12 +823,41 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     () => previewsPaginasSelecionadas.map((p, idx) => ({ url: p.url, nome: `Nova página ${idx + 1}` })),
     [previewsPaginasSelecionadas]
   );
+  const paginasAdminEditaveis = useMemo(
+    () =>
+      adminEditPageSequence.map((item, index) => ({
+        ...item,
+        index,
+        urlVisual: item.kind === 'existing' ? (item.replacementPreviewUrl || item.url) : item.previewUrl,
+        nomeVisual:
+          item.kind === 'existing'
+            ? `Página ${index + 1}`
+            : (item.file?.name || `Nova página ${index + 1}`),
+      })),
+    [adminEditPageSequence]
+  );
+  const itensPreviewAdminEdicao = useMemo(
+    () =>
+      paginasAdminEditaveis.map((item, index) => ({
+        url: item.urlVisual,
+        nome: item.kind === 'existing'
+          ? `Página ${index + 1}`
+          : (item.file?.name || `Nova página ${index + 1}`),
+      })),
+    [paginasAdminEditaveis]
+  );
   const itensPreviewAtuais = useMemo(
     () => paginasExistentes.map((url, idx) => ({ url, nome: `Página ${idx + 1}` })),
     [paginasExistentes]
   );
-  const itensModalPreview = modalPreview.origem === 'atuais' ? itensPreviewAtuais : itensPreviewNovas;
-  const totalPaginasAtual = paginasExistentes.length + arquivosPaginas.length;
+  const itensModalPreview = modalPreview.origem === 'atuais'
+    ? itensPreviewAtuais
+    : modalPreview.origem === 'admin-edicao'
+      ? itensPreviewAdminEdicao
+      : itensPreviewNovas;
+  const totalPaginasAtual = isAdminEditMode
+    ? adminEditPageSequence.length
+    : paginasExistentes.length + arquivosPaginas.length;
   const statusRevisao = publicReleaseAtInput?.trim()
     ? 'Agendado'
     : (totalPaginasAtual > 0 ? 'Publicado ao salvar' : 'Rascunho');
@@ -754,7 +866,6 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setEtapaAtiva,
     checklistPublicacao,
     etapaLiberadaMax,
-    irParaEtapa,
     tentarIrParaEtapa,
   } = useChapterWizard({
     capaCapitulo,
@@ -771,18 +882,18 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   );
 
   useEffect(() => {
-    if (editandoId) return;
-    if (etapaAtiva !== 1) return;
-    const uploadCompleto = Boolean((capaCapitulo || capituloEditando?.capaUrl) && totalPaginasAtual > 0);
-    if (!uploadCompleto) return;
-    irParaEtapa(2);
-  }, [capaCapitulo, capituloEditando?.capaUrl, editandoId, etapaAtiva, irParaEtapa, totalPaginasAtual]);
-
-  useEffect(() => {
     return () => {
       previewsPaginasSelecionadas.forEach((p) => URL.revokeObjectURL(p.url));
     };
   }, [previewsPaginasSelecionadas]);
+
+  useEffect(() => {
+    adminEditPageSequenceRef.current = adminEditPageSequence;
+  }, [adminEditPageSequence]);
+
+  useEffect(() => () => {
+    adminEditPageSequenceRef.current.forEach(liberarPaginaAdminEdicao);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -864,23 +975,35 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     };
   }, [capaFonteEditavel, capaAjuste]);
 
+  const preencherEdicao = useCallback((cap) => {
+    adminEditPageSequenceRef.current.forEach(liberarPaginaAdminEdicao);
+    const paginas = Array.isArray(cap.paginas) ? cap.paginas : [];
+    const storagePaths = Array.isArray(cap.paginasStoragePaths) ? cap.paginasStoragePaths : [];
+    setEditandoId(cap.id);
+    setTitulo(cap.titulo || '');
+    setNumeroCapitulo(cap.numero || '');
+    setPaginasExistentes(paginas);
+    setArquivosPaginas([]);
+    setAdminEditPageSequence(
+      paginas.map((url, index) => criarPaginaExistenteAdminEdicao(url, storagePaths[index], index))
+    );
+    setCapaCapitulo(null);
+    const ajusteExistente = normalizarCapaAjuste(cap.capaAjuste);
+    setCapaFileLabel(cap.capaUrl ? 'Capa atual no servidor (selecione outra para substituir)' : '');
+    setCapaAjuste(ajusteExistente);
+    setCapaAjusteInicial(ajusteExistente);
+    setEtapaAtiva(1);
+    setPublicReleaseAtInput(formatarDataHora24Br(cap.publicReleaseAt));
+    setAntecipadoMembros(Boolean(cap.antecipadoMembros));
+  }, [setEtapaAtiva]);
+
   useEffect(() => {
     if (!capituloEditQueryId) return;
     const cap = capitulosDaObra.find((item) => item.id === capituloEditQueryId);
     if (!cap) return;
     if (editandoId === cap.id) return;
-    setEditandoId(cap.id);
-    setTitulo(cap.titulo || '');
-    setNumeroCapitulo(cap.numero || '');
-    setPaginasExistentes(cap.paginas || []);
-    setCapaCapitulo(null);
-    const ajusteExistente = normalizarCapaAjuste(cap.capaAjuste);
-    setCapaAjuste(ajusteExistente);
-    setCapaAjusteInicial(ajusteExistente);
-    setEtapaAtiva(2);
-    setPublicReleaseAtInput(formatarDataHora24Br(cap.publicReleaseAt));
-    setAntecipadoMembros(Boolean(cap.antecipadoMembros));
-  }, [capituloEditQueryId, capitulosDaObra, editandoId, setEtapaAtiva]);
+    preencherEdicao(cap);
+  }, [capituloEditQueryId, capitulosDaObra, editandoId, preencherEdicao]);
 
   const handleReordenarPagina = async (indexAntigo, indexNovo) => {
     if (indexNovo < 0 || indexNovo >= paginasExistentes.length) return;
@@ -944,8 +1067,28 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     }
   };
 
+  const handleTrocarPaginaAdminEdicao = (index, arquivoNovo) => {
+    if (!arquivoNovo) return;
+    const erroArquivo = validarImagemUpload(arquivoNovo, 'Pagina');
+    if (erroArquivo) {
+      setErroModal(erroArquivo);
+      return;
+    }
+    const previewUrl = URL.createObjectURL(arquivoNovo);
+    setAdminEditPageSequence((prev) => prev.map((item, itemIndex) => {
+      if (itemIndex !== index || item.kind !== 'existing') return item;
+      if (item.replacementPreviewUrl) URL.revokeObjectURL(item.replacementPreviewUrl);
+      return {
+        ...item,
+        replacementFile: arquivoNovo,
+        replacementPreviewUrl: previewUrl,
+      };
+    }));
+  };
+
   const handleUploadManga = async (arquivos) => {
     const uploads = [];
+    const batchStamp = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     for (let i = 0; i < arquivos.length; i++) {
       const erroArquivo = validarImagemUpload(arquivos[i], `Pagina ${i + 1}`);
       if (erroArquivo) {
@@ -953,7 +1096,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       }
       setProgressoMsg(`Otimizando página ${i + 1}/${arquivos.length}...`);
       const arquivoOtimizado = await comprimirImagemParaUpload(arquivos[i]);
-      const pathStorage = `manga/${ownerUidStorage}/${obraStorageSegment}/p_${i}_${Date.now()}${extensaoImagemNoPath(arquivoOtimizado)}`;
+      const pathStorage = `manga/${ownerUidStorage}/${obraStorageSegment}/p_${batchStamp}_${i}${extensaoImagemNoPath(arquivoOtimizado)}`;
       const fileRef = storageRef(storage, pathStorage);
       const uploadTask = uploadBytesResumable(fileRef, arquivoOtimizado);
       
@@ -985,6 +1128,23 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       return;
     }
     setErroModal('');
+    if (isAdminEditMode) {
+      setAdminEditPageSequence((prev) => {
+        const existentes = new Set(
+          prev.filter((item) => item.kind === 'new').map((item) => assinaturaArquivo(item.file))
+        );
+        const unicos = novos.filter((file) => !existentes.has(assinaturaArquivo(file)));
+        if (!unicos.length) {
+          setErroModal('Essas páginas já foram selecionadas. Remova ou troque para enviar outra.');
+          return prev;
+        }
+        return [
+          ...prev,
+          ...unicos.map((file, index) => criarPaginaNovaAdminEdicao(file, prev.length + index)),
+        ];
+      });
+      return;
+    }
     setArquivosPaginas((prev) => {
       const existentes = new Set(prev.map(assinaturaArquivo));
       const unicos = novos.filter((file) => !existentes.has(assinaturaArquivo(file)));
@@ -1011,18 +1171,30 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     const ajustePadrao = normalizarCapaAjuste();
     setCapaAjuste(ajustePadrao);
     setCapaAjusteInicial(ajustePadrao);
-    if (totalPaginasAtual > 0) {
-      irParaEtapa(2);
-    }
+  };
+
+  const handleReordenarAdminEdicao = (indexAntigo, indexNovo) => {
+    if (indexNovo < 0 || indexNovo >= adminEditPageSequence.length) return;
+    setAdminEditPageSequence((prev) => {
+      const next = [...prev];
+      const [movida] = next.splice(indexAntigo, 1);
+      next.splice(indexNovo, 0, movida);
+      return next;
+    });
   };
 
   useEffect(() => {
+    if (isAdminEditMode) {
+      const totalNovas = adminEditPageSequence.filter((item) => item.kind === 'new').length;
+      setPaginasFileLabel(totalNovas > 0 ? `${totalNovas} página(s) nova(s) selecionada(s)` : '');
+      return;
+    }
     if (arquivosPaginas.length === 0) {
       setPaginasFileLabel('');
       return;
     }
     setPaginasFileLabel(`${arquivosPaginas.length} página(s) selecionada(s)`);
-  }, [arquivosPaginas]);
+  }, [adminEditPageSequence, arquivosPaginas, isAdminEditMode]);
 
   const iniciarArrasteCapa = (event) => {
     if (!capaEditavel || !capaEditorRef.current || !capaDimensoes) return;
@@ -1096,13 +1268,23 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
     setArquivosPaginas((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleRemoverAdminEdicao = (index) => {
+    setAdminEditPageSequence((prev) => prev.filter((item, itemIndex) => {
+      if (itemIndex !== index) return true;
+      liberarPaginaAdminEdicao(item);
+      return false;
+    }));
+  };
+
   const resetEditorState = useCallback(() => {
     const ajustePadrao = normalizarCapaAjuste();
+    adminEditPageSequenceRef.current.forEach(liberarPaginaAdminEdicao);
     setEditandoId(null);
     setTitulo('');
     setNumeroCapitulo('');
     setPaginasExistentes([]);
     setArquivosPaginas([]);
+    setAdminEditPageSequence([]);
     setCapaCapitulo(null);
     setCapaAjuste(ajustePadrao);
     setCapaAjusteInicial(ajustePadrao);
@@ -1135,7 +1317,18 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       if (!obraIdSelecionada || !obraSelecionada?.id || !obraSelecionada?.titulo) {
         throw new Error('Selecione uma obra válida antes de salvar o capítulo.');
       }
-      const creatorIdObra = String(obraCreatorId(obraSelecionada) || '').trim();
+      const creatorIdObra = String(obraSelecionada?.creatorId || obraCreatorId(obraSelecionada) || '').trim();
+      const creatorHandleObra = String(obraSelecionada?.creatorHandle || obraSelecionada?.creatorUsername || '').trim();
+      const creatorDisplayNameObra = String(
+        obraSelecionada?.creatorDisplayName ||
+          obraSelecionada?.creatorProfile?.displayName ||
+          ''
+      ).trim();
+      const creatorAvatarUrlObra = String(
+        obraSelecionada?.creatorAvatarUrl ||
+          obraSelecionada?.creatorProfile?.avatarUrl ||
+          ''
+      ).trim();
       if (isCreatorWorkspace && !creatorIdObra) {
         throw new Error('A obra selecionada está sem criador vinculado. Corrija a obra antes de salvar o capítulo.');
       }
@@ -1184,18 +1377,21 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         obraId: obraIdSelecionada,
         workId: obraIdSelecionada,
         obraTitulo: String(obraSelecionada?.tituloCurto || obraSelecionada?.titulo || obraIdSelecionada),
-        dataUpload: new Date().toISOString(),
+        dataUpload: editandoId ? (capituloEditando?.dataUpload || new Date().toISOString()) : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         status: asDraft ? 'draft' : 'published',
         isPublished: !asDraft,
       };
-      if (creatorIdObra) {
-        dados.creatorId = creatorIdObra;
-      } else if (editandoId && capituloEditando?.creatorId) {
-        dados.creatorId = String(capituloEditando.creatorId || '').trim();
-      }
+      const resolvedChapterAuthor = buildCanonicalAuthorBinding({
+        creatorId: creatorIdObra || (editandoId ? String(capituloEditando?.creatorId || '').trim() : ''),
+        creatorHandle: creatorHandleObra,
+        creatorDisplayName: creatorDisplayNameObra,
+        creatorAvatarUrl: creatorAvatarUrlObra,
+      });
+      Object.assign(dados, resolvedChapterAuthor);
 
-      let publicMs = null;
-      if (publicReleaseAtInput?.trim()) {
+      let publicMs = isAdminEditMode ? (capituloEditando?.publicReleaseAt ?? null) : null;
+      if (!isAdminEditMode && publicReleaseAtInput?.trim()) {
         const parsed = parseBrDateTimeToMs(publicReleaseAtInput);
         if (parsed == null) {
           throw new Error('Data de lançamento inválida. Use o formato dd/mm/aaaa hh:mm.');
@@ -1215,13 +1411,87 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
       if (urlCapa) dados.capaUrl = urlCapa;
       if (capaStoragePath) dados.capaStoragePath = capaStoragePath;
       if (urlCapa || capaEditavel) dados.capaAjuste = ajusteNormalizado;
-      if (paginasUpload.length > 0) {
+      let paginasFinais = editandoId ? (Array.isArray(paginasExistentes) ? [...paginasExistentes] : []) : [];
+      let paginasStoragePathsFinais = editandoId
+        ? (Array.isArray(capituloEditando?.paginasStoragePaths) ? [...capituloEditando.paginasStoragePaths] : [])
+        : [];
+      const paginasAntigasSubstituidas = [];
+      if (isAdminEditMode) {
+        const substituicoes = adminEditPageSequence.filter((item) => item.kind === 'existing' && item.replacementFile);
+        const novasPaginasAdmin = adminEditPageSequence.filter((item) => item.kind === 'new');
+        const uploadsSubstituicoes = substituicoes.length > 0
+          ? await handleUploadManga(substituicoes.map((item) => item.replacementFile))
+          : [];
+        const uploadsNovas = novasPaginasAdmin.length > 0
+          ? await handleUploadManga(novasPaginasAdmin.map((item) => item.file))
+          : [];
+        let replaceIdx = 0;
+        let newIdx = 0;
+        paginasFinais = [];
+        paginasStoragePathsFinais = [];
+        adminEditPageSequence.forEach((item) => {
+          if (item.kind === 'existing' && item.replacementFile) {
+            const upload = uploadsSubstituicoes[replaceIdx];
+            replaceIdx += 1;
+            paginasFinais.push(upload.url);
+            paginasStoragePathsFinais.push(upload.path);
+            if (item.storagePath) paginasAntigasSubstituidas.push(item.storagePath);
+            return;
+          }
+          if (item.kind === 'existing') {
+            paginasFinais.push(item.url);
+            paginasStoragePathsFinais.push(item.storagePath || item.url || '');
+            return;
+          }
+          const upload = uploadsNovas[newIdx];
+          newIdx += 1;
+          paginasFinais.push(upload.url);
+          paginasStoragePathsFinais.push(upload.path);
+        });
+      } else if (paginasUpload.length > 0) {
         const paginasExistentesUrls = editandoId ? (Array.isArray(paginasExistentes) ? paginasExistentes : []) : [];
         const paginasExistentesPaths = editandoId
           ? (Array.isArray(capituloEditando?.paginasStoragePaths) ? capituloEditando.paginasStoragePaths : [])
           : [];
-        dados.paginas = [...paginasExistentesUrls, ...paginasUpload.map((item) => item.url)];
-        dados.paginasStoragePaths = [...paginasExistentesPaths, ...paginasUpload.map((item) => item.path)];
+        paginasFinais = [...paginasExistentesUrls, ...paginasUpload.map((item) => item.url)];
+        paginasStoragePathsFinais = [...paginasExistentesPaths, ...paginasUpload.map((item) => item.path)];
+      }
+      if (isAdminEditMode || paginasUpload.length > 0) {
+        dados.paginas = paginasFinais;
+        dados.paginasStoragePaths = paginasStoragePathsFinais;
+      }
+
+      const obraCriadorPersistido = String(obraCreatorId(obraSelecionada) || '').trim();
+      const obraHandlePersistido = String(
+        obraSelecionada?.creatorHandle ||
+          obraSelecionada?.creatorUsername ||
+          obraSelecionada?.creatorProfile?.username ||
+          ''
+      ).trim();
+      const obraDisplayPersistido = String(
+        obraSelecionada?.creatorDisplayName ||
+          obraSelecionada?.creatorProfile?.displayName ||
+          ''
+      ).trim();
+      if (
+        isAdminWorkspace &&
+        creatorIdObra &&
+        obraSelecionada?.id &&
+        (
+          obraCriadorPersistido !== creatorIdObra ||
+          obraHandlePersistido !== creatorHandleObra ||
+          obraDisplayPersistido !== creatorDisplayNameObra
+        )
+      ) {
+        await dbUpdate(dbRef(db, `obras/${obraSelecionada.id}`), {
+          ...buildCanonicalAuthorBinding({
+            creatorId: creatorIdObra,
+            creatorHandle: creatorHandleObra,
+            creatorDisplayName: creatorDisplayNameObra,
+            creatorAvatarUrl: creatorAvatarUrlObra,
+          }),
+          updatedAt: Date.now(),
+        });
       }
 
       let capituloSalvoId = editandoId;
@@ -1243,6 +1513,9 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
         await dbUpdate(dbRef(db, `capitulos/${editandoId}`), dados);
         if (capaStoragePath) {
           await safeDeleteStorageObject(storage, capaAnterior);
+        }
+        if (paginasAntigasSubstituidas.length > 0) {
+          await safeDeleteStorageObjects(storage, paginasAntigasSubstituidas);
         }
       } else {
         const temCapaFinal = Boolean(urlCapa);
@@ -1267,15 +1540,28 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
           setCapaCapitulo(null);
           setCapaFileLabel('Capa atual no servidor (selecione outra para substituir)');
         }
-        if (paginasUpload.length > 0) {
+        if (isAdminEditMode) {
+          adminEditPageSequenceRef.current.forEach(liberarPaginaAdminEdicao);
+          setPaginasExistentes(paginasFinais);
+          setAdminEditPageSequence(
+            paginasFinais.map((url, index) =>
+              criarPaginaExistenteAdminEdicao(url, paginasStoragePathsFinais[index], index)
+            )
+          );
+          setPaginasFileLabel('');
+        } else if (paginasUpload.length > 0) {
           setPaginasExistentes((prev) => [...prev, ...paginasUpload.map((item) => item.url)]);
           setArquivosPaginas([]);
           setPaginasFileLabel('');
         }
         setProgressoMsg('RASCUNHO SALVO!');
       } else {
+        const wasEditing = Boolean(editandoId);
         resetEditorState();
         setProgressoMsg('FORJADO COM SUCESSO!');
+        if (wasEditing) {
+          navigate(chaptersHubPath);
+        }
       }
     } catch (err) {
       setErroModal(err.message);
@@ -1291,18 +1577,7 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
   };
 
   const prepararEdicao = (cap) => {
-    setEditandoId(cap.id);
-    setTitulo(cap.titulo);
-    setNumeroCapitulo(cap.numero);
-    setPaginasExistentes(cap.paginas || []);
-    setCapaCapitulo(null);
-    setCapaFileLabel(cap.capaUrl ? 'Capa atual no servidor (selecione outra para substituir)' : '');
-    const ajusteExistente = normalizarCapaAjuste(cap.capaAjuste);
-    setCapaAjuste(ajusteExistente);
-    setCapaAjusteInicial(ajusteExistente);
-    setEtapaAtiva(2);
-    setPublicReleaseAtInput(formatarDataHora24Br(cap.publicReleaseAt));
-    setAntecipadoMembros(Boolean(cap.antecipadoMembros));
+    preencherEdicao(cap);
     window.scrollTo(0, 0);
   };
 
@@ -1422,6 +1697,16 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
           <p>Obra selecionada</p>
           <strong>{obraSelecionada?.titulo || obraIdSelecionada}</strong>
           <span>Slug: {obraSelecionada?.slug || obraIdSelecionada}</span>
+          {!isCreatorWorkspace ? (
+            <span>
+              Autor:{' '}
+              {obraSelecionada?.authorState === 'linked'
+                ? obraSelecionada.authorLabel
+                : obraSelecionada?.authorState === 'removed'
+                  ? 'Autor removido'
+                  : 'Sem autor vinculado'}
+            </span>
+          ) : null}
         </section>
         <section className="form-section">
           <h2>
@@ -1443,13 +1728,16 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                   type="text"
                   inputMode="numeric"
                   className="lancamento-datetime"
-                  placeholder="dd/mm/aaaa hh:mm"
+                  placeholder={isAdminEditMode ? 'Preservado na edição' : 'dd/mm/aaaa hh:mm'}
                   value={publicReleaseAtInput}
+                  disabled={isAdminEditMode}
                   onChange={(e) => setPublicReleaseAtInput(maskBrDateTime(e.target.value))}
                 />
               </label>
               <p className="lancamento-help">
-               {isMangaka
+               {isAdminEditMode
+                 ? 'Na edição, a data original de lançamento é preservada para não relançar o capítulo no feed.'
+                 : isMangaka
                  ? 'Deixe vazio para publicar agora. Com data futura, o capítulo fica em breve até a abertura pública.'
                  : 'Data vazia = já público. Com data futura, o capítulo fica em breve até o horário. Se a opção abaixo estiver marcada, membros ativos do criador podem ler antes da abertura pública.'}
               </p>
@@ -1483,6 +1771,8 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
 
             {etapaAtiva === 2 && (
               <ChapterStepOrganize
+                adminEditMode={isAdminEditMode}
+                paginasAdminEditaveis={paginasAdminEditaveis}
                 editandoId={editandoId}
                 paginasExistentes={paginasExistentes}
                 isMangaka={isMangaka}
@@ -1492,8 +1782,11 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 previewsPaginasSelecionadas={previewsPaginasSelecionadas}
                 handleTrocarPaginaUnica={handleTrocarPaginaUnica}
                 handleReordenarPagina={handleReordenarPagina}
+                handleTrocarPaginaAdminEdicao={handleTrocarPaginaAdminEdicao}
+                handleReordenarAdminEdicao={handleReordenarAdminEdicao}
                 handleReordenarSelecionada={handleReordenarSelecionada}
                 handleRemoverSelecionada={handleRemoverSelecionada}
+                handleRemoverAdminEdicao={handleRemoverAdminEdicao}
                 setErroModal={setErroModal}
                 setModalPreview={setModalPreview}
               />
@@ -1523,7 +1816,9 @@ export default function AdminPanel({ adminAccess, workspace = 'admin' }) {
                 checklistPublicacao={checklistPublicacao}
                 statusRevisao={statusRevisao}
                 totalPaginasAtual={totalPaginasAtual}
-                novasPaginasCount={arquivosPaginas.length}
+                novasPaginasCount={isAdminEditMode
+                  ? adminEditPageSequence.filter((item) => item.kind === 'new').length
+                  : arquivosPaginas.length}
                 publicReleaseAtInput={publicReleaseAtInput}
                 capaPreviewFinalUrl={capaPreviewFinalUrl}
                 capaVisualSrc={capaVisualSrc}

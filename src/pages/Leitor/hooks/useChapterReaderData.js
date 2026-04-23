@@ -13,7 +13,6 @@ import { apoiePathParaCriador } from '../../../utils/creatorSupportPaths';
 import { resolveEffectiveCreatorMonetizationStatusFromDb } from '../../../utils/creatorMonetizationUi';
 import { buildPublicProfileFromUsuarioRow } from '../../../utils/publicUserProfile';
 import { toRecordList } from '../../../utils/firebaseRecordList';
-import { resolvePublicProfilePath } from '../../../utils/publicProfilePaths';
 import { collectCreatorIdsFromWorksAndChapters, subscribePublicProfilesMap } from '../../../utils/publicProfilesRealtime';
 import { SITE_DEFAULT_IMAGE, SITE_ORIGIN } from '../../../config/site';
 import { mergeCapitulosLists } from '../leitorUtils';
@@ -218,11 +217,12 @@ export function useChapterReaderData({ db, id, searchParams, user, perfil }) {
   );
 
   const authorUid = String(
-    creatorIdentity?.creatorId || creatorUidApoio || obraCreatorId(obraMetaLeitor || capitulo || {})
+    creatorIdentity?.authorState === 'linked'
+      ? creatorIdentity?.creatorId || creatorUidApoio || obraCreatorId(obraMetaLeitor || capitulo || {})
+      : ''
   ).trim();
 
-  const authorPublicPath =
-    creatorIdentity?.path || (authorUid ? resolvePublicProfilePath({ uid: authorUid }, authorUid) : '');
+  const authorPublicPath = creatorIdentity?.path || '';
 
   const capsLiberadosLista = useMemo(
     () =>

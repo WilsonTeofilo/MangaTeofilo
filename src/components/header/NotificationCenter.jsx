@@ -3,6 +3,7 @@ import { AVATAR_FALLBACK } from '../../constants';
 
 export default function NotificationCenter({
   usuario,
+  isAdminShell,
   showCreatorsNav,
   pushRoute,
   combinedCartCount,
@@ -184,7 +185,7 @@ export default function NotificationCenter({
                   <button type="button" onClick={() => pushRoute('/pedidos')}>
                     Meus pedidos
                   </button>
-                  {workspaceMenus.length ? (
+                  {!isAdminShell && workspaceMenus.length ? (
                     <>
                       {renderWorkspaceAccountSections()}
                       <div className="header-account-menu__divider" role="presentation" />

@@ -94,6 +94,7 @@ export function buildCreatorPayoutRequestsAdmin(rows) {
 export function buildPublicCreatorProfileDoc({
   uid,
   currentPublicProfile = null,
+  canonicalHandle = '',
   displayName,
   bioShort,
   bioFull = '',
@@ -122,7 +123,7 @@ export function buildPublicCreatorProfileDoc({
     creatorId: uid,
     userId: uid,
     displayName,
-    username: current.username || '',
+    username: String(canonicalHandle || current.username || '').trim().toLowerCase(),
     bioShort,
     bioFull: String(bioFull || '').trim(),
     avatarUrl: avatarUrl || '',

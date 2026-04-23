@@ -4,7 +4,6 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import {
   ADMIN_REGISTRY_PATH,
   isCreatorAccountAuth,
-  isTargetSuperAdmin,
   requireSuperAdmin,
 } from '../adminRbac.js';
 import { evaluateCreatorApplicationApprovalGate } from '../creatorApplicationGate.js';
@@ -27,7 +26,6 @@ import {
   normalizeReviewReason,
   resolveCreatorMonetizationPreference,
   resolveCreatorRequestedAtMs,
-  slugifyCreatorUsername,
 } from './adminShared.js';
 import {
   assembleCreatorRecordForRtdb,
@@ -38,6 +36,7 @@ import {
   resolveCreatorMonetizationApplicationStatusFromDb,
   resolveCreatorMonetizationStatusFromDb,
 } from '../creatorRecord.js';
+import { resolveCanonicalPublicHandle } from '../shared/canonicalIdentity.js';
 
 async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creatorStatsRow = null) {
   let email = null;
@@ -142,8 +141,12 @@ async function buildCreatorApplicationRow(uid, row, creatorDataRow = null, creat
       supportOffer: creatorSupportOffer,
     },
     signupIntent: String(row?.signupIntent || ''),
-    creatorApplicationStatus: String(row?.creatorApplicationStatus || ''),
+    creatorApplicationStatus: creatorAccessIsApprovedFromDb(row)
+      ? 'approved'
+      : String(row?.creatorApplicationStatus || ''),
     creatorRequestedAt: resolveCreatorRequestedAtMs(row, app),
+    creatorMonetizationReviewRequestedAt:
+      Number(row?.creatorMonetizationReviewRequestedAt || row?.creator?.monetization?.application?.requestedAt || 0) || null,
     creatorApprovalMetrics: approvalGate.metrics,
     creatorApprovalThresholds: approvalGate.thresholds,
     creatorApprovalMetricsOk: approvalGate.ok,
@@ -209,7 +212,6 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
   const monetizationPreference = 'publish_only';
   const age = resolveCreatorAgeYears(row);
   const monetizationStatus = 'disabled';
-  const creatorUsername = slugifyCreatorUsername(displayName, uid);
   const creatorStatusNext = row?.creatorOnboardingCompleted === true ? 'active' : 'onboarding';
   const [currentPublicProfileSnap, creatorStatsSnap] = await Promise.all([
     db.ref(`usuarios/${uid}/publicProfile`).get(),
@@ -223,12 +225,18 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     row,
     creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {}
   );
+  const canonicalHandle = resolveCanonicalPublicHandle({
+    ...row,
+    publicProfile: currentPublicProfileRow,
+    creator: row?.creator,
+  });
   const publicCreatorProfile = buildPublicCreatorProfileDoc({
     uid,
     currentPublicProfile:
       currentPublicProfileRow?.creatorProfile && typeof currentPublicProfileRow.creatorProfile === 'object'
-        ? currentPublicProfileRow.creatorProfile
+      ? currentPublicProfileRow.creatorProfile
         : null,
+    canonicalHandle,
     displayName,
     bioShort,
     bioFull: String(creatorProfileRow.bio || '').trim(),
@@ -245,8 +253,22 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     createdAt: Number(row?.creator?.meta?.createdAt || now),
     now,
   });
-  publicCreatorProfile.username = creatorUsername;
   publicCreatorProfile.ageVerified = age != null;
+
+  const publicMirrorDoc = {
+    uid,
+    status: String(row?.status || 'ativo').trim().toLowerCase() || 'ativo',
+    signupIntent: 'creator',
+    accountType: 'writer',
+    userName: displayName,
+    userHandle: canonicalHandle || null,
+    userAvatar: approvedCreatorAvatar || currentUserAvatar || null,
+    updatedAt: now,
+    isCreatorProfile: true,
+    creatorDisplayName: displayName,
+    creatorStatus: creatorStatusNext,
+    creatorProfile: publicCreatorProfile,
+  };
 
   await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).remove();
 
@@ -295,11 +317,13 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     [`usuarios/${uid}/creatorBannerUrl`]: creatorBannerUrl || null,
     [`usuarios/${uid}/creatorStatus`]: creatorStatusNext,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
+    [`usuarios/${uid}/creatorUsername`]: null,
     [`usuarios/${uid}/publicProfile/isCreatorProfile`]: true,
     [`usuarios/${uid}/publicProfile/creatorApplicationStatus`]: 'approved',
     [`usuarios/${uid}/publicProfile/userAvatar`]: approvedCreatorAvatar || currentUserAvatar || null,
+    [`usuarios/${uid}/publicProfile/userHandle`]: canonicalHandle || null,
     [`usuarios/${uid}/publicProfile/creatorDisplayName`]: displayName,
-    [`usuarios/${uid}/publicProfile/creatorUsername`]: creatorUsername,
+    [`usuarios/${uid}/publicProfile/creatorUsername`]: null,
     [`usuarios/${uid}/publicProfile/creatorBio`]: bioShort,
     [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: creatorBannerUrl || null,
     [`usuarios/${uid}/publicProfile/instagramUrl`]: instagramUrl || null,
@@ -308,6 +332,10 @@ export async function finalizeCreatorApplicationApproval(db, uid, row, reviewedB
     [`usuarios/${uid}/publicProfile/creatorProfile`]: publicCreatorProfile,
     [`usuarios/${uid}/publicProfile/userName`]: displayName,
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
+    [`usuarios/${uid}/publicProfile/creatorProfile/username`]: canonicalHandle || null,
+    [`usuarios/${uid}/creator/profile/username`]: canonicalHandle || null,
+    [`creators/${uid}/profile/username`]: canonicalHandle || null,
+    [`usuarios_publicos/${uid}`]: publicMirrorDoc,
     [`creators/${uid}/stats/followersCount`]: creatorStats.followersCount,
     [`creators/${uid}/stats/likesTotal`]: creatorStats.likesTotal,
     [`creators/${uid}/stats/totalViews`]: creatorStats.totalViews,
@@ -368,11 +396,12 @@ export const adminListCreatorApplications = onCall({ region: 'us-central1' }, as
   const rows = await Promise.all(
     Object.entries(users)
       .filter(([, row]) => {
-        const creatorApplicationStatus = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
         if (creatorAccessIsApprovedFromDb(row)) return true;
-        if (creatorApplicationStatus === 'draft') return true;
-        if (creatorApplicationStatus === 'requested') return true;
-        if (creatorApplicationStatus === 'rejected') return true;
+        if (String(row?.creatorMonetizationReviewRequestedAt || '').trim()) return true;
+        const monetizationApplicationStatus = String(
+          row?.creator?.monetization?.application?.status || ''
+        ).trim().toLowerCase();
+        if (monetizationApplicationStatus === 'pending') return true;
         return String(row?.signupIntent || '').trim().toLowerCase() === 'creator';
       })
       .map(([uid, row]) =>
@@ -386,9 +415,8 @@ export const adminListCreatorApplications = onCall({ region: 'us-central1' }, as
   );
   rows.sort((a, b) => {
     const queueScore = (r) => {
-      const s = String(r?.creatorApplicationStatus || '').trim().toLowerCase();
-      if (s === 'requested') return 2;
-      if (String(r?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending') return 1;
+      if (String(r?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending') return 2;
+      if (String(r?.creatorStatus || '').trim().toLowerCase() === 'onboarding') return 1;
       return 0;
     };
     const diff = queueScore(b) - queueScore(a);
@@ -403,60 +431,10 @@ export const adminApproveCreatorApplication = onCall({ region: 'us-central1' }, 
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
   await requireSuperAdmin(request.auth);
-  const uid = String(request.data?.uid || '').trim();
-  if (!uid) {
-    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
-  }
-  const db = getDatabase();
-  const userRef = db.ref(`usuarios/${uid}`);
-  const snap = await userRef.get();
-  if (!snap.exists()) {
-    throw new HttpsError('not-found', 'Usuario nao encontrado.');
-  }
-  const row = snap.val() || {};
-  const appStatus = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
-  const creatorApproved = creatorAccessIsApprovedFromDb(row);
-
-  let targetEmail = '';
-  try {
-    const tu = await getAuth().getUser(uid);
-    targetEmail = tu.email || '';
-  } catch {
-    throw new HttpsError('not-found', 'Usuario alvo nao encontrado no Auth.');
-  }
-  if (await isTargetSuperAdmin({ uid, email: targetEmail })) {
-    throw new HttpsError('failed-precondition', 'Nao e possivel aprovar administradores chefes como creator.');
-  }
-  const regSnap = await db.ref(`${ADMIN_REGISTRY_PATH}/${uid}`).get();
-  const regRow = regSnap.val();
-  if (regRow && regRow.role === 'admin') {
-    throw new HttpsError(
-      'failed-precondition',
-      'Este usuario ja e da equipe (admin). Remova o acesso administrativo antes de aprovar como creator.'
-    );
-  }
-
-  if (appStatus === 'approved' && creatorApproved) {
-    return { ok: true, uid, status: 'approved', alreadyApproved: true };
-  }
-  if (appStatus === 'requested') {
-    const creatorStatsSnap = await db.ref(`creators/${uid}/stats`).get();
-    const gate = evaluateCreatorApplicationApprovalGate({
-      ...row,
-      creatorStats: readCreatorStatsFromDb(
-        row,
-        creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {}
-      ),
-    });
-    if (!gate.ok) {
-      throw new HttpsError(
-        'failed-precondition',
-        `Aprovacao bloqueada: metas do Nivel 1 nao atingidas (seguidores ${gate.metrics.followers}/${gate.thresholds.followers}, views ${gate.metrics.views}/${gate.thresholds.views}, likes ${gate.metrics.likes}/${gate.thresholds.likes}).`
-      );
-    }
-  }
-  await finalizeCreatorApplicationApproval(db, uid, row, request.auth.uid, { isAutoPublishOnly: false });
-  return { ok: true, uid, status: 'approved' };
+  throw new HttpsError(
+    'failed-precondition',
+    'Aprovacao manual de escritor foi removida. Quem completa o perfil de escritor ja entra com acesso para publicar; o admin revisa apenas monetizacao.'
+  );
 });
 
 export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, async (request) => {
@@ -464,84 +442,10 @@ export const adminRejectCreatorApplication = onCall({ region: 'us-central1' }, a
     throw new HttpsError('unauthenticated', 'Faca login.');
   }
   await requireSuperAdmin(request.auth);
-  const uid = String(request.data?.uid || '').trim();
-  if (!uid) {
-    throw new HttpsError('invalid-argument', 'uid obrigatorio.');
-  }
-  const reason = normalizeReviewReason(request.data?.reason);
-  if (reason.length < 8) {
-    throw new HttpsError('invalid-argument', 'Informe um motivo de reprovacao com pelo menos 8 caracteres.');
-  }
-  const banUser = request.data?.banUser === true;
-  const db = getDatabase();
-  const userSnap = await db.ref(`usuarios/${uid}`).get();
-  const row = userSnap.exists() ? userSnap.val() || {} : {};
-  const now = Date.now();
-  const creatorDocRejected = assembleCreatorRecordForRtdb({
-    row,
-    birthDateIso: String(row?.birthDate || '').trim(),
-    displayName: String(row?.creator?.profile?.displayName || row?.userName || '').trim(),
-    bio: String(row?.creator?.profile?.bio || '').trim(),
-    instagramUrl: row?.creator?.social?.instagram,
-    youtubeUrl: row?.creator?.social?.youtube,
-    monetizationPreference: resolveCreatorMonetizationPreference(row, row?.creatorApplication),
-    creatorMonetizationStatus: 'disabled',
-    compliance: row?.creatorCompliance && typeof row.creatorCompliance === 'object' ? row.creatorCompliance : null,
-    now,
-  });
-  await db.ref().update({
-    [`usuarios/${uid}/creator`]: creatorDocRejected,
-    [`usuarios/${uid}/creatorApplicationStatus`]: 'rejected',
-    [`usuarios/${uid}/creatorApplication/status`]: 'rejected',
-    [`usuarios/${uid}/creatorApplication/updatedAt`]: now,
-    [`usuarios/${uid}/creatorApplication/reviewReason`]: reason,
-    [`usuarios/${uid}/creatorRejectedAt`]: now,
-    [`usuarios/${uid}/creatorReviewedBy`]: request.auth.uid,
-    [`usuarios/${uid}/role`]: 'user',
-    [`usuarios/${uid}/creatorStatus`]: banUser ? 'banned' : 'rejected',
-    [`usuarios/${uid}/creatorReviewReason`]: reason,
-    [`usuarios/${uid}/creatorModerationAction`]: banUser ? 'banned' : 'rejected',
-    [`usuarios/${uid}/creatorModerationBy`]: request.auth.uid,
-    [`usuarios/${uid}/creatorModeratedAt`]: now,
-    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-    [`usuarios/${uid}/creatorPendingProfileImageUrl`]: null,
-    [`usuarios/${uid}/creatorPendingProfileImageCrop`]: null,
-    [`usuarios/${uid}/status`]: banUser ? 'banido' : null,
-    [`usuarios/${uid}/banReason`]: banUser ? reason : null,
-    [`usuarios/${uid}/publicProfile/isCreatorProfile`]: false,
-    [`usuarios/${uid}/publicProfile/creatorApplicationStatus`]: 'rejected',
-    [`usuarios/${uid}/publicProfile/creatorDisplayName`]: null,
-    [`usuarios/${uid}/publicProfile/creatorUsername`]: null,
-    [`usuarios/${uid}/publicProfile/creatorBio`]: null,
-    [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: null,
-    [`usuarios/${uid}/publicProfile/instagramUrl`]: null,
-    [`usuarios/${uid}/publicProfile/youtubeUrl`]: null,
-    [`usuarios/${uid}/publicProfile/creatorProfile`]: null,
-    [`usuarios/${uid}/publicProfile/creatorStatus`]: banUser ? 'banned' : 'rejected',
-    [`usuarios/${uid}/publicProfile/status`]: banUser ? 'banido' : null,
-    [`usuarios/${uid}/publicProfile/updatedAt`]: now,
-  });
-  const rejectMessage = banUser
-    ? `Sua conta foi bloqueada pela equipe. Motivo: ${reason}`
-    : `Sua solicitacao de criador nao foi aprovada agora. Motivo: ${reason}`;
-  await notifyUserByPreference(db, uid, row || {}, {
-    kind: 'creator_lifecycle',
-    notification: {
-      type: banUser ? 'account_moderation' : 'creator_application',
-      title: banUser ? 'Conta bloqueada' : 'Solicitacao rejeitada',
-      message: rejectMessage,
-      dedupeKey: `creator_lifecycle:application_rejected:${uid}:${now}`,
-      dedupeWindowMs: 0,
-      allowGrouping: false,
-      data: { status: 'rejected', reason, banUser, readPath: '/perfil' },
-    },
-    email: buildCreatorLifecycleEmail(APP_BASE_URL.value().replace(/\/$/, ''), {
-      title: banUser ? 'Conta bloqueada' : 'Solicitacao rejeitada',
-      subject: banUser ? 'Sua conta foi bloqueada' : 'Sua solicitacao de criador foi rejeitada',
-      message: rejectMessage,
-    }),
-  });
-  return { ok: true, uid, status: 'rejected', banUser };
+  throw new HttpsError(
+    'failed-precondition',
+    'Rejeicao manual de escritor foi removida. O fluxo de criador agora e automatico; use moderacao de usuarios para punir conta e a revisao de monetizacao para manter o criador em apenas publicar.'
+  );
 });
 
 export const adminApproveCreatorMonetization = onCall({ region: 'us-central1' }, async (request) => {

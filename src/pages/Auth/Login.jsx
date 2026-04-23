@@ -10,7 +10,6 @@ import {
   updateProfile,
   signInWithPopup,
   sendPasswordResetEmail,
-  signOut,
 } from 'firebase/auth';
 import { ref, get, onValue, update } from 'firebase/database';
 import { auth, db, googleProvider } from '../../services/firebase';
@@ -126,8 +125,15 @@ async function postAuthJson(url, payload) {
 }
 
 async function carregarStatusConta(uid) {
-  const snap = await get(ref(db, `usuarios/${uid}/status`));
-  return snap.exists() ? snap.val() : null;
+  const snap = await get(ref(db, `usuarios/${uid}/moderation`));
+  const moderation = snap.exists() ? snap.val() || {} : {};
+  const isBanned = moderation?.isBanned === true;
+  const banExpiresAt = Number(moderation?.currentBanExpiresAt || 0) || null;
+  return {
+    status: isBanned ? 'banido' : 'ativo',
+    isBanned,
+    banExpiresAt,
+  };
 }
 
 // --- Componente ─────────────────────────────────────────────────────────────
@@ -322,11 +328,6 @@ export default function Login() {
       const googleUser = result.user;
 
       const statusAtual = await carregarStatusConta(googleUser.uid);
-      if (statusAtual === 'banido') {
-        await signOut(auth);
-        setError('Sua conta foi bloqueada. Entre em contato com o suporte.');
-        return;
-      }
 
       const av = listaAvatares[0] || AVATAR_FALLBACK;
       const authPhoto = String(googleUser.photoURL || '').trim();
@@ -348,6 +349,22 @@ export default function Login() {
         'ativo'
       );
       await ativarContaUsuario(googleUser.uid);
+
+      if (statusAtual?.isBanned) {
+        const ate = statusAtual?.banExpiresAt
+          ? new Date(statusAtual.banExpiresAt).toLocaleString('pt-BR')
+          : null;
+        setInfo(
+          ate
+            ? `Sua conta está suspensa até ${ate}. Você pode entrar, mas ficará impedido de usar áreas bloqueadas durante o ban.`
+            : 'Sua conta está suspensa temporariamente. Você pode entrar, mas ficará impedido de usar áreas bloqueadas durante o ban.'
+        );
+      }
+
+      if (statusAtual?.isBanned) {
+        navigate('/perfil?ban=1', { replace: true });
+        return;
+      }
 
       if (!String(perfil?.userHandle || '').trim()) {
         navigate('/perfil?required=username', { replace: true });
@@ -708,11 +725,6 @@ export default function Login() {
       await refreshAuthUser(cred.user);
 
       const statusConta = await carregarStatusConta(cred.user.uid);
-      if (statusConta === 'banido') {
-        await signOut(auth);
-        setError('Sua conta foi bloqueada. Entre em contato com o suporte.');
-        return;
-      }
 
       const av = listaAvatares[0] || AVATAR_FALLBACK;
       const safeAvatar = resolveSafeAuthAvatar(cred.user.photoURL, av);
@@ -724,11 +736,25 @@ export default function Login() {
         'ativo'
       );
 
-      if (!statusConta || statusConta === 'pendente' || perfil.status !== 'ativo') {
+      if (!statusConta?.status || statusConta.status === 'pendente' || perfil.status !== 'ativo') {
         await ativarContaUsuario(cred.user.uid);
       }
 
       registerAttemptResult('loginPassword', true);
+      if (statusConta?.isBanned) {
+        const ate = statusConta?.banExpiresAt
+          ? new Date(statusConta.banExpiresAt).toLocaleString('pt-BR')
+          : null;
+        setInfo(
+          ate
+            ? `Sua conta está suspensa até ${ate}. Você pode entrar, mas ficará impedido de usar áreas bloqueadas durante o ban.`
+            : 'Sua conta está suspensa temporariamente. Você pode entrar, mas ficará impedido de usar áreas bloqueadas durante o ban.'
+        );
+      }
+      if (statusConta?.isBanned) {
+        navigate('/perfil?ban=1', { replace: true });
+        return;
+      }
       if (!String(perfil?.userHandle || '').trim()) {
         navigate('/perfil?required=username', { replace: true });
         return;

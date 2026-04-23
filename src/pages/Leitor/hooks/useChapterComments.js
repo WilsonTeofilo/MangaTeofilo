@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onValue, push, ref, runTransaction, serverTimestamp, set } from 'firebase/database';
 import { httpsCallable } from 'firebase/functions';
 
@@ -20,6 +20,7 @@ export function useChapterComments({
   authorUid,
   adminAccess,
   user,
+  perfil,
   onRequireLogin,
 }) {
   const [comentarioTexto, setComentarioTexto] = useState('');
@@ -33,7 +34,42 @@ export function useChapterComments({
   const [replyDraft, setReplyDraft] = useState('');
   const [replyEnviando, setReplyEnviando] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState('');
+  const [banModal, setBanModal] = useState(null);
   const unsubPerfis = useRef({});
+
+  const activeBanInfo = useMemo(() => {
+    const moderation = perfil?.moderation || {};
+    const expiresAt = Number(moderation?.currentBanExpiresAt || 0) || 0;
+    const active = moderation?.isBanned === true && (!expiresAt || expiresAt > Date.now());
+    return {
+      active,
+      reason: String(moderation?.lastBanReason || perfil?.banReason || '').trim(),
+      expiresAt: expiresAt || null,
+      totalBanCount: Number(moderation?.totalBanCount || 0) || 0,
+      bansRemaining: Math.max(0, 4 - (Number(moderation?.totalBanCount || 0) || 0)),
+    };
+  }, [perfil]);
+
+  const openBanModal = useCallback(() => {
+    if (!activeBanInfo.active) return false;
+    const expiresAt = activeBanInfo.expiresAt;
+    const diff = expiresAt ? Math.max(0, expiresAt - Date.now()) : 0;
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+    const remainingLabel = !expiresAt
+      ? 'sem prazo definido'
+      : hours > 0
+        ? `${hours}h ${minutes}min`
+        : `${Math.max(1, minutes)}min`;
+    setBanModal({
+      reason: activeBanInfo.reason,
+      expiresAt,
+      remainingLabel,
+      totalBanCount: activeBanInfo.totalBanCount,
+      bansRemaining: activeBanInfo.bansRemaining,
+    });
+    return true;
+  }, [activeBanInfo]);
 
   useEffect(() => {
     if (user) setModalLoginComentario(false);
@@ -137,6 +173,7 @@ export function useChapterComments({
       setModalLoginComentario(true);
       return;
     }
+    if (openBanModal()) return;
     if (!comentarioTexto.trim()) return;
     if (enviando) return;
 
@@ -168,6 +205,7 @@ export function useChapterComments({
       onRequireLogin?.();
       return;
     }
+    if (openBanModal()) return;
     const tx = await runTransaction(ref(db, `capitulos/${chapterId}/comentarios/${comentId}`), (post) => {
       if (!post) return post;
       if (!post.usuariosQueCurtiram) post.usuariosQueCurtiram = {};
@@ -188,6 +226,7 @@ export function useChapterComments({
       onRequireLogin?.();
       return;
     }
+    if (openBanModal()) return;
     const texto = replyDraft.trim();
     if (!texto || replyEnviando || !parentId) return;
     setReplyEnviando(true);
@@ -229,6 +268,7 @@ export function useChapterComments({
       onRequireLogin?.();
       return;
     }
+    if (openBanModal()) return;
     if (deletingCommentId) return;
     setDeletingCommentId(normalizedCommentId);
     try {
@@ -271,5 +311,7 @@ export function useChapterComments({
     canDeleteComment,
     handleDeleteComment,
     deletingCommentId,
+    banModal,
+    setBanModal,
   };
 }

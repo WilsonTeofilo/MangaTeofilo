@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { AVATAR_FALLBACK, DISPLAY_NAME_MAX_LENGTH } from '../../../constants';
 import { normalizarAcessoAvatar } from '../../../utils/avatarAccess';
@@ -20,6 +20,32 @@ function formatarTempoRestanteAssinatura(memberUntil) {
   }
   const horas = Math.max(1, totalHours);
   return { ativo: true, texto: `${horas} hora${horas === 1 ? '' : 's'} restante${horas === 1 ? '' : 's'}` };
+}
+
+function formatarBanCountdown(expiresAt, nowTs) {
+  const end = Number(expiresAt || 0);
+  if (!Number.isFinite(end) || end <= 0) {
+    return { ativo: true, curto: 'sem prazo definido', detalhado: 'Sem prazo definido pela equipe.' };
+  }
+  const diff = Math.max(0, end - Number(nowTs || Date.now()));
+  const totalSeconds = Math.floor(diff / 1000);
+  const dias = Math.floor(totalSeconds / 86400);
+  const horas = Math.floor((totalSeconds % 86400) / 3600);
+  const minutos = Math.floor((totalSeconds % 3600) / 60);
+  const segundos = totalSeconds % 60;
+  const curto = [
+    dias > 0 ? `${dias}d` : null,
+    horas > 0 || dias > 0 ? `${horas}h` : null,
+    minutos > 0 || horas > 0 || dias > 0 ? `${minutos}m` : null,
+    `${segundos}s`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    ativo: diff > 0,
+    curto,
+    detalhado: `Ban ativo ate ${new Date(end).toLocaleString('pt-BR')}.`,
+  };
 }
 
 export default function PerfilReaderView(props) {
@@ -72,13 +98,54 @@ export default function PerfilReaderView(props) {
     creatorModerationAction,
     isCreatorDraft,
     isCreatorCandidate,
+    banInfo,
   } = props;
+
+  const [banNow, setBanNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!banInfo?.isBanned) return undefined;
+    const intervalId = window.setInterval(() => {
+      setBanNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [banInfo?.isBanned]);
+
+  const banCountdown = useMemo(
+    () => formatarBanCountdown(banInfo?.expiresAt, banNow),
+    [banInfo?.expiresAt, banNow]
+  );
 
   return (
     <main className="perfil-page">
       <div className="perfil-card">
         <h1 className="perfil-title">Meu perfil</h1>
         <p className="perfil-subtitle">Atualize seus dados e preferencias da conta.</p>
+
+        {banInfo?.isBanned ? (
+          <div className="perfil-ban-card" role="status" aria-live="polite">
+            <p className="perfil-ban-card__eyebrow">Conta com ban ativo</p>
+            <h2>Seu acesso esta temporariamente limitado</h2>
+            <p className="perfil-ban-card__reason">
+              <strong>Motivo:</strong> {banInfo.reason || 'Nao informado pela equipe.'}
+            </p>
+            <div className="perfil-ban-card__countdown">
+              <span>Tempo restante</span>
+              <strong>{banCountdown.curto}</strong>
+            </div>
+            <p className="perfil-ban-card__meta">{banCountdown.detalhado}</p>
+            <p className="perfil-ban-card__meta">
+              <strong>Bans acumulados:</strong> {banInfo.totalBanCount} de 4.{' '}
+              {banInfo.bansRemaining > 0
+                ? `Faltam ${banInfo.bansRemaining} para exclusao permanente da conta.`
+                : 'A conta chegou ao limite de exclusao.'}
+            </p>
+            <p className="perfil-ban-card__meta">
+              Durante o ban voce pode entrar na conta para acompanhar notificacoes e o prazo, mas nao pode ler obras,
+              comentar nem publicar.
+            </p>
+          </div>
+        ) : null}
 
         {!adminAccess.isMangaka && !adminAccess.canAccessAdmin ? (
           <div className="perfil-mangaka-apoio">

@@ -10,11 +10,19 @@ import { canAccessAdminPath } from '../../auth/adminPermissions';
 import { formatarDataHoraBr } from '../../utils/datasBr';
 import { buildPublicProfileFromUsuarioRow } from '../../utils/publicUserProfile';
 import { normalizeUsernameInput } from '../../utils/usernameValidation';
+import {
+  buildAdminCreatorDirectory,
+  findAdminCreatorLookupMatches,
+  formatAdminCreatorLookupOption,
+  resolveAdminCreatorLookupValue,
+} from '../../utils/adminCreatorDirectory';
 import { isTrustedPlatformAssetUrl } from '../../utils/trustedAssetUrls';
 import {
+  buildCanonicalAuthorBinding,
   normalizarObraId,
   obterObraIdCapitulo,
   obraCreatorId,
+  resolveObraAuthorState,
 } from '../../config/obras';
 import {
   MAX_COVER_UPLOAD_BYTES,
@@ -275,87 +283,8 @@ function buildEmptyForm(defaultCreatorId = '') {
   };
 }
 
-function buildCreatorDirectory(rows = {}) {
-  const map = new Map();
-  Object.entries(rows || {}).forEach(([uid, data]) => {
-    const handle = normalizeUsernameInput(uid);
-    const ownerUid = String(data || '').trim();
-    const entry = {
-      uid: ownerUid,
-      handle,
-      displayName: handle ? '@' + handle : '',
-      avatarUrl: '',
-      isCreator: false,
-    };
-    if (entry.uid) map.set(entry.uid, entry);
-  });
-  return [...map.values()].sort((a, b) =>
-    String(a.displayName || a.uid).localeCompare(String(b.displayName || b.uid), 'pt-BR', { sensitivity: 'base' })
-  );
-}
-
-function formatCreatorLookupOption(entry) {
-  if (!entry) return '';
-  const handlePart = entry.handle ? '@' + entry.handle : entry.uid;
-  const namePart = entry.displayName && entry.displayName !== handlePart ? ' - ' + entry.displayName : '';
-  return handlePart + namePart;
-}
-
 function normalizeCreatorLookupQuery(rawValue) {
   return String(rawValue || '').trim();
-}
-
-function findCreatorLookupMatches(rawValue, directory = []) {
-  const raw = normalizeCreatorLookupQuery(rawValue);
-  if (!raw) return [];
-  const normalized = raw.toLowerCase();
-  const compact = normalizeUsernameInput(raw);
-  return directory.filter((entry) => {
-    if (!entry) return false;
-    const uid = String(entry.uid || '').toLowerCase();
-    const handle = String(entry.handle || '').toLowerCase();
-    const displayName = String(entry.displayName || '').toLowerCase();
-    const option = formatCreatorLookupOption(entry).toLowerCase();
-    return (
-      uid === normalized ||
-      (compact && handle.startsWith(compact)) ||
-      (compact && handle.includes(compact)) ||
-      displayName.includes(normalized) ||
-      option.includes(normalized)
-    );
-  });
-}
-
-function resolveCreatorLookupValue(rawValue, directory = []) {
-  const raw = normalizeCreatorLookupQuery(rawValue);
-  if (!raw) return null;
-  const normalized = raw.toLowerCase();
-  const compact = normalizeUsernameInput(raw);
-  const exact =
-    directory.find((entry) => {
-      if (!entry) return false;
-      if (String(entry.uid || '').toLowerCase() === normalized) return true;
-      if (entry.handle && String(entry.handle).toLowerCase() === compact) return true;
-      if (entry.displayName && String(entry.displayName).toLowerCase() === normalized) return true;
-      if (formatCreatorLookupOption(entry).toLowerCase() === normalized) return true;
-      return false;
-    }) || null;
-  if (exact) return exact;
-
-  const partialMatches = directory.filter((entry) => {
-    if (!entry) return false;
-    const handle = String(entry.handle || '').toLowerCase();
-    const displayName = String(entry.displayName || '').toLowerCase();
-    const option = formatCreatorLookupOption(entry).toLowerCase();
-    return (
-      (compact && handle.startsWith(compact)) ||
-      (compact && handle.includes(compact)) ||
-      displayName.includes(normalized) ||
-      option.includes(normalized)
-    );
-  });
-  if (partialMatches.length === 1) return partialMatches[0];
-  return partialMatches[0] || null;
 }
 
 export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
@@ -447,10 +376,35 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       return undefined;
     }
     let cancelled = false;
-    get(dbRef(db, 'usernames'))
-      .then((snapshot) => {
+    Promise.allSettled([
+      get(dbRef(db, 'usernames')),
+      get(dbRef(db, 'usuarios')),
+      get(dbRef(db, 'usuarios_publicos')),
+      get(dbRef(db, 'creators')),
+    ])
+      .then(([usernamesResult, usuariosResult, usuariosPublicosResult, creatorsResult]) => {
         if (cancelled) return;
-        setCreatorDirectory(buildCreatorDirectory(snapshot.val() || {}));
+        const usernamesSnap =
+          usernamesResult.status === 'fulfilled' ? usernamesResult.value : null;
+        const usuariosSnap =
+          usuariosResult.status === 'fulfilled' ? usuariosResult.value : null;
+        const usuariosPublicosSnap =
+          usuariosPublicosResult.status === 'fulfilled' ? usuariosPublicosResult.value : null;
+        const creatorsSnap =
+          creatorsResult.status === 'fulfilled' ? creatorsResult.value : null;
+
+        const usernames = usernamesSnap?.exists() ? usernamesSnap.val() || {} : {};
+        const usuarios = usuariosSnap?.exists() ? usuariosSnap.val() || {} : {};
+        const usuariosPublicos = usuariosPublicosSnap?.exists() ? usuariosPublicosSnap.val() || {} : {};
+        const creators = creatorsSnap?.exists() ? creatorsSnap.val() || {} : {};
+        setCreatorDirectory(
+          buildAdminCreatorDirectory({
+            usernames,
+            usuarios,
+            usuariosPublicos,
+            creators,
+          }).list
+        );
       })
       .catch(() => {
         if (cancelled) return;
@@ -509,10 +463,21 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
   useEffect(() => {
     if (isMangaka || !form.adminCreatorId) return () => {};
     let cancelled = false;
-    get(dbRef(db, `usuarios/${form.adminCreatorId}`))
-      .then((snapshot) => {
-        if (cancelled || !snapshot.exists()) return;
-        const perfilPublico = buildPublicProfileFromUsuarioRow(snapshot.val() || {}, form.adminCreatorId);
+    Promise.all([
+      get(dbRef(db, `usuarios/${form.adminCreatorId}`)),
+      get(dbRef(db, `usuarios_publicos/${form.adminCreatorId}`)),
+    ])
+      .then(([usuarioSnap, usuarioPublicoSnap]) => {
+        if (cancelled || (!usuarioSnap.exists() && !usuarioPublicoSnap.exists())) return;
+        const mergedRow = {
+          ...(usuarioPublicoSnap.exists() ? usuarioPublicoSnap.val() || {} : {}),
+          ...(usuarioSnap.exists() ? usuarioSnap.val() || {} : {}),
+          publicProfile: {
+            ...(usuarioPublicoSnap.exists() ? usuarioPublicoSnap.val() || {} : {}),
+            ...((usuarioSnap.exists() ? usuarioSnap.val() || {} : {}).publicProfile || {}),
+          },
+        };
+        const perfilPublico = buildPublicProfileFromUsuarioRow(mergedRow, form.adminCreatorId);
         setCreatorDirectory((prev) => {
           const map = new Map(prev.map((entry) => [entry.uid, entry]));
           const current = map.get(form.adminCreatorId) || {
@@ -551,6 +516,23 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     obras.forEach((obra) => map.set(String(obra.id || ''), obra));
     return map;
   }, [obras]);
+  const creatorLookupByUid = useMemo(
+    () => Object.fromEntries((creatorDirectory || []).map((entry) => [String(entry.uid || '').trim(), entry])),
+    [creatorDirectory]
+  );
+  const obrasComAutor = useMemo(
+    () =>
+      obras.map((obra) => ({
+        ...obra,
+        ...resolveObraAuthorState(obra, { creatorLookupByUid }),
+      })),
+    [creatorLookupByUid, obras]
+  );
+  const obrasMapComAutor = useMemo(() => {
+    const map = new Map();
+    obrasComAutor.forEach((obra) => map.set(String(obra.id || ''), obra));
+    return map;
+  }, [obrasComAutor]);
 
   const capaPreviewUrl = useMemo(() => (capaArquivo ? URL.createObjectURL(capaArquivo) : ''), [capaArquivo]);
   const bannerPreviewUrl = useMemo(() => (bannerArquivo ? URL.createObjectURL(bannerArquivo) : ''), [bannerArquivo]);
@@ -615,6 +597,23 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     archived: Boolean(form.archived),
     genres: normalizeGenreList(form.genres),
   }), [form, capaLiveUrl, bannerLiveUrl]);
+  const currentAuthorState = useMemo(
+    () => (
+      isMangaka
+        ? {
+            creatorId: String(user?.uid || '').trim(),
+            creatorHandle: String(creatorWorkspaceProfile?.handle || '').trim(),
+            creatorDisplayName: String(creatorWorkspaceProfile?.displayName || 'Autor vinculado').trim(),
+            creatorAvatarUrl: String(creatorWorkspaceProfile?.avatarUrl || '').trim(),
+            authorState: 'linked',
+            authorLabel: creatorWorkspaceProfile?.handle
+              ? `@${creatorWorkspaceProfile.handle}`
+              : String(creatorWorkspaceProfile?.displayName || 'Autor vinculado').trim(),
+          }
+        : resolveObraAuthorState({ creatorId: form.adminCreatorId }, { creatorLookupByUid })
+    ),
+    [creatorLookupByUid, creatorWorkspaceProfile?.avatarUrl, creatorWorkspaceProfile?.displayName, creatorWorkspaceProfile?.handle, form.adminCreatorId, isMangaka, user?.uid]
+  );
   const capaEditorImageStyle = useMemo(
     () => estiloEditorImagem(capaDimensoes, capaAjuste, COVER_EDITOR_CONFIG),
     [capaDimensoes, capaAjuste]
@@ -728,11 +727,11 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
 
   const resolvedCreatorLookup = useMemo(() => {
     if (isMangaka) return null;
-    return resolveCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory);
+    return resolveAdminCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory);
   }, [creatorDirectory, creatorLookupInput, form.adminCreatorId, isMangaka]);
   const creatorLookupQuery = useMemo(() => normalizeCreatorLookupQuery(creatorLookupInput), [creatorLookupInput]);
   const creatorLookupMatches = useMemo(
-    () => (isMangaka ? [] : findCreatorLookupMatches(creatorLookupInput || form.adminCreatorId, creatorDirectory).slice(0, 6)),
+    () => (isMangaka ? [] : findAdminCreatorLookupMatches(creatorLookupInput || form.adminCreatorId, creatorDirectory, 6)),
     [creatorDirectory, creatorLookupInput, form.adminCreatorId, isMangaka]
   );
   const creatorNeedsSelection = !isMangaka && !!creatorLookupQuery && creatorLookupMatches.length === 0 && !resolvedCreatorLookup;
@@ -752,7 +751,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
 
   const editarObra = (obraId) => {
     clearMsgs();
-    const obra = obrasMap.get(obraId);
+    const obra = obrasMapComAutor.get(obraId);
     if (!obra) {
       blockSave('missing-work-for-edit', ['A obra selecionada não foi encontrada no catálogo atual. Atualize a lista e tente novamente.'], {
         obraId,
@@ -772,8 +771,16 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     const tagsSanitized = normalizeTagsFromInput(tagsArr.join(', '));
     const mainGRaw = String(obra.mainGenre || '').trim().toLowerCase();
       const mainG = OBRAS_WORK_GENRE_IDS.includes(mainGRaw) ? mainGRaw : '';
-      const creatorUid = !isMangaka ? obraCreatorId(obra) : '';
-      const creatorEntry = !isMangaka ? resolveCreatorLookupValue(creatorUid, creatorDirectory) : null;
+      const creatorUid = !isMangaka ? String(obra.creatorId || obraCreatorId(obra) || '').trim() : '';
+      const creatorResolvedState = !isMangaka
+        ? resolveObraAuthorState(obra, { creatorLookupByUid })
+        : null;
+      const creatorEntry = !isMangaka
+        ? resolveAdminCreatorLookupValue(
+            creatorResolvedState?.creatorId || creatorUid || creatorResolvedState?.creatorHandle || '',
+            creatorDirectory
+          )
+        : null;
     setForm({
       id: obraId,
       titulo: obra.titulo || '',
@@ -789,24 +796,39 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       status: normalizeStatusForForm(obra.status),
       isPublished: obra.isPublished === true,
       archived: obraEstaArquivada(obra),
-      adminCreatorId: creatorUid,
+      adminCreatorId: creatorEntry?.uid || creatorResolvedState?.creatorId || creatorUid,
       });
       if (!isMangaka) {
-        setCreatorLookupInput(creatorEntry ? formatCreatorLookupOption(creatorEntry) : '');
+        setCreatorLookupInput(
+          creatorEntry?.handle
+            ? `@${creatorEntry.handle}`
+            : creatorResolvedState?.creatorHandle
+              ? `@${creatorResolvedState.creatorHandle}`
+              : ''
+        );
       }
     setCapaArquivo(null);
     setBannerArquivo(null);
-    setCapaAjuste(normalizarAjusteObra(obra.capaAjuste));
-    setBannerAjuste(normalizarAjusteObra(obra.bannerAjuste));
+    setCapaAjuste(normalizarAjusteObra());
+    setBannerAjuste(normalizarAjusteObra());
   };
 
   const handleCreatorLookupChange = (rawValue) => {
     const raw = String(rawValue || '');
-    const resolved = resolveCreatorLookupValue(raw, creatorDirectory);
+    const resolved = resolveAdminCreatorLookupValue(raw, creatorDirectory);
     setCreatorLookupInput(raw);
     setForm((prev) => ({
       ...prev,
       adminCreatorId: resolved?.uid || '',
+    }));
+  };
+
+  const selecionarAutorPorLookup = (entry) => {
+    if (!entry) return;
+    setCreatorLookupInput(entry.handle ? `@${entry.handle}` : entry.displayName || '');
+    setForm((prev) => ({
+      ...prev,
+      adminCreatorId: String(entry.uid || '').trim(),
     }));
   };
   const carregarObraSelecionada = () => {
@@ -854,12 +876,12 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       return;
     }
     const creatorLookupResolved = !isMangaka
-      ? resolveCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory)
+      ? resolveAdminCreatorLookupValue(creatorLookupInput || form.adminCreatorId, creatorDirectory)
       : null;
     if (!isMangaka && creatorLookupInput.trim() && !creatorLookupResolved) {
       blockSave('missing-author-resolution', [
         'Nenhum autor válido foi resolvido para esse texto.',
-        'Revise o @username ou o UID, ou limpe o campo para publicar a obra sem autor vinculado.',
+        'Revise o @username, ou limpe o campo para publicar a obra sem autor vinculado.',
       ], {
         creatorLookupInput,
       });
@@ -871,6 +893,19 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
     } else {
       creatorIdResolved = String(creatorLookupResolved?.uid || '').trim();
     }
+    const selectedAuthorEntry = isMangaka
+      ? {
+          uid: String(user?.uid || '').trim(),
+          handle: String(creatorWorkspaceProfile?.handle || '').trim(),
+          displayName: String(
+            creatorWorkspaceProfile?.displayName ||
+              creatorWorkspaceProfile?.handle ||
+              user?.displayName ||
+              ''
+          ).trim(),
+          avatarUrl: String(creatorWorkspaceProfile?.avatarUrl || user?.photoURL || '').trim(),
+        }
+      : creatorLookupResolved;
     if (creatorIdResolved && !isValidCreatorUid(creatorIdResolved)) {
       blockSave('invalid-resolved-author', ['Autor da obra inválido. Resolva um @username válido antes de salvar.'], {
         creatorIdResolved,
@@ -957,7 +992,12 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
       capaAjuste: normalizarAjusteObra(capaAjuste),
       bannerAjuste: normalizarAjusteObra(bannerAjuste),
       updatedAt: nowMs(),
-      creatorId: creatorIdResolved || null,
+      ...buildCanonicalAuthorBinding({
+        creatorId: creatorIdResolved,
+        creatorHandle: String(selectedAuthorEntry?.handle || '').trim(),
+        creatorDisplayName: String(selectedAuthorEntry?.displayName || '').trim(),
+        creatorAvatarUrl: String(selectedAuthorEntry?.avatarUrl || '').trim(),
+      }),
     };
 
     saveInFlightRef.current = true;
@@ -1421,7 +1461,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
 
       <section className="obras-admin-layout">
         <ObrasEditor
-          obras={obras}
+          obras={obrasComAutor}
           obraSelecionadaId={obraSelecionadaId}
           setObraSelecionadaId={setObraSelecionadaId}
           carregarObraSelecionada={carregarObraSelecionada}
@@ -1435,11 +1475,13 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
           creatorLookupInput={creatorLookupInput}
           handleCreatorLookupChange={handleCreatorLookupChange}
         creatorDirectory={creatorDirectory}
-        formatCreatorLookupOption={formatCreatorLookupOption}
+        formatCreatorLookupOption={formatAdminCreatorLookupOption}
         resolvedCreatorLookup={resolvedCreatorLookup}
-        creatorLookupMatches={creatorLookupMatches}
-        creatorNeedsSelection={creatorNeedsSelection}
-        creatorWorkspaceProfile={creatorWorkspaceProfile}
+          creatorLookupMatches={creatorLookupMatches}
+          creatorNeedsSelection={creatorNeedsSelection}
+          currentAuthorState={currentAuthorState}
+          creatorWorkspaceProfile={creatorWorkspaceProfile}
+          selecionarAutorPorLookup={selecionarAutorPorLookup}
           onTituloChange={onTituloChange}
           slugPreview={slugPreview}
           toggleGenre={toggleGenre}
@@ -1476,7 +1518,7 @@ export default function ObrasAdmin({ adminAccess, workspace = 'admin' }) {
         />
 
         <ObrasList
-          obras={obras}
+          obras={obrasComAutor}
           isMangaka={isMangaka}
           statusLabelById={STATUS_LABEL_BY_ID}
           obraEstaArquivada={obraEstaArquivada}

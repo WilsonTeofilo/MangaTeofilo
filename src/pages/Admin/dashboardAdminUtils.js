@@ -70,9 +70,9 @@ export function formatGender(g) {
     masculino: 'Masculino',
     feminino: 'Feminino',
     outro: 'Outro',
-    nao_informado: 'Não informado',
+    nao_informado: 'Nao informado',
   };
-  return map[g] || 'Não informado';
+  return map[g] || 'Nao informado';
 }
 
 export function linePath(values, width, height, pad) {
@@ -88,12 +88,12 @@ export function linePath(values, width, height, pad) {
     .join(' ');
 }
 
-export const DASHBOARD_TABS = ['visao-geral', 'rankings', 'assinaturas', 'doacoes', 'aquisicao'];
+export const DASHBOARD_TABS = ['creators', 'conteudo', 'growth'];
 export const PAGE_SIZE = 10;
 
 export function parseTab(value) {
   const t = String(value || '').trim();
-  return DASHBOARD_TABS.includes(t) ? t : 'visao-geral';
+  return DASHBOARD_TABS.includes(t) ? t : 'creators';
 }
 
 export function paginate(rows, page, size = PAGE_SIZE) {
@@ -110,17 +110,17 @@ export function paginate(rows, page, size = PAGE_SIZE) {
 export function textoEstimativaPagamentosNoFiltro(row) {
   const n = Number(row?.count || 0);
   const d = Number(row?.totalDays || 0);
-  if (!n) return '—';
+  if (!n) return '--';
   return `${n} pg · ~${d}d`;
 }
 
 export const TITLE_COL_ESTIMATIVA =
-  'Soma 30 dias por cada pagamento Premium entre as datas do filtro. Não é o tempo restante da assinatura — use «Restante agora» e a data de expiração.';
+  'Soma 30 dias por cada pagamento Premium entre as datas do filtro. Nao e o tempo restante da assinatura; use "Restante agora" e a data de expiracao.';
 
 export function rankBadge(rank) {
-  if (rank === 1) return '🥇';
-  if (rank === 2) return '🥈';
-  if (rank === 3) return '🥉';
+  if (rank === 1) return '1º';
+  if (rank === 2) return '2º';
+  if (rank === 3) return '3º';
   return `${rank}.`;
 }
 
@@ -159,7 +159,7 @@ export function sexoBarClass(key) {
 }
 
 export function formatPct0(n) {
-  if (n == null || Number.isNaN(n)) return '—';
+  if (n == null || Number.isNaN(n)) return '--';
   return `${Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`;
 }
 

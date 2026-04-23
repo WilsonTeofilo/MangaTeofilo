@@ -17,6 +17,7 @@ export const ADMIN_ROUTE_PREFIXES = [
   '/admin/pedidos',
   '/admin/producao-fisica',
   '/admin/orders',
+  '/admin/usuarios',
   '/admin/sessoes',
   '/admin/equipe',
   '/admin/criadores',
@@ -93,6 +94,9 @@ export function canAccessAdminPath(pathname, access) {
   if (pathname.startsWith('/admin/sessoes')) {
     return access.isChiefAdmin === true || access.permissions?.canRevokeUserSessions === true;
   }
+  if (pathname.startsWith('/admin/usuarios')) {
+    return access.isChiefAdmin === true;
+  }
   if (pathname.startsWith('/admin/capitulos')) {
     return perm.canAccessCapitulos === true;
   }
@@ -158,6 +162,7 @@ const ADMIN_HOME_CANDIDATES = [
   '/admin/financeiro',
   '/admin/products',
   '/admin/pedidos',
+  '/admin/usuarios',
   '/admin/sessoes',
   '/admin/equipe',
   '/admin/criadores',

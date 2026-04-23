@@ -140,8 +140,13 @@ export async function syncAuthenticatedUserProfile(usuario, listaAvatares = []) 
 
 export async function ativarContaUsuario(uid) {
   const statusRef = ref(db, `usuarios/${uid}/status`);
+  const moderationRef = ref(db, `usuarios/${uid}/moderation`);
   const snap = await get(statusRef);
+  const moderationSnap = await get(moderationRef);
   const now = Date.now();
+  const moderation = moderationSnap.exists() ? moderationSnap.val() || {} : {};
+  const banExpiresAt = Number(moderation?.currentBanExpiresAt || 0) || 0;
+  const banStillActive = moderation?.isBanned === true && (!banExpiresAt || banExpiresAt > now);
 
   if (!snap.exists()) {
     await update(ref(db), {
@@ -161,7 +166,20 @@ export async function ativarContaUsuario(uid) {
     return;
   }
   if (status === 'banido') {
-    throw new Error('Conta bloqueada.');
+    if (banStillActive) {
+      await update(ref(db), { [`usuarios/${uid}/lastLogin`]: now });
+      return;
+    }
+    await update(ref(db), {
+      [`usuarios/${uid}/status`]: 'ativo',
+      [`usuarios/${uid}/lastLogin`]: now,
+      [`usuarios/${uid}/banReason`]: null,
+      [`usuarios/${uid}/moderation/isBanned`]: false,
+      [`usuarios/${uid}/moderation/currentBanExpiresAt`]: null,
+      [`usuarios/${uid}/moderation/activeBanCount`]: 0,
+      [`usuarios/${uid}/moderation/updatedAt`]: now,
+    });
+    return;
   }
   if (status === 'pendente') {
     await update(ref(db), {

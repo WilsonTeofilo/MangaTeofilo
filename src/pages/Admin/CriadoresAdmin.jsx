@@ -24,8 +24,6 @@ import './CriadoresAdmin.css';
 import { formatUserDisplayFromMixed } from '../../utils/publicCreatorName';
 
 const adminListCreatorApplications = httpsCallable(functions, 'adminListCreatorApplications');
-const adminApproveCreatorApplication = httpsCallable(functions, 'adminApproveCreatorApplication');
-const adminRejectCreatorApplication = httpsCallable(functions, 'adminRejectCreatorApplication');
 const adminApproveCreatorMonetization = httpsCallable(functions, 'adminApproveCreatorMonetization');
 const adminRejectCreatorMonetization = httpsCallable(functions, 'adminRejectCreatorMonetization');
 const adminRecordCreatorPixPayout = httpsCallable(functions, 'adminRecordCreatorPixPayout');
@@ -34,20 +32,20 @@ function brl(v) {
   return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-function statusLabel(status) {
+function creatorOperationalStatusLabel(status) {
   const norm = String(status || '').trim().toLowerCase();
-  if (norm === 'requested') return 'Pendente';
-  if (norm === 'approved') return 'Aprovado';
-  if (norm === 'rejected') return 'Rejeitado';
-  if (norm === 'draft') return 'Rascunho';
-  return norm || 'Indefinido';
+  if (norm === 'active') return 'Publicando';
+  if (norm === 'onboarding') return 'Onboarding';
+  if (norm === 'rejected') return 'Desativado';
+  if (norm === 'banned') return 'Bloqueado';
+  return 'Indefinido';
 }
 
-function statusBadgeClass(status) {
+function creatorOperationalStatusBadgeClass(status) {
   const norm = String(status || '').trim().toLowerCase();
-  if (norm === 'requested') return 'criadores-admin-badge criadores-admin-badge--pending';
-  if (norm === 'approved') return 'criadores-admin-badge criadores-admin-badge--approved';
-  if (norm === 'rejected') return 'criadores-admin-badge criadores-admin-badge--rejected';
+  if (norm === 'active') return 'criadores-admin-badge criadores-admin-badge--approved';
+  if (norm === 'onboarding') return 'criadores-admin-badge criadores-admin-badge--pending';
+  if (norm === 'rejected' || norm === 'banned') return 'criadores-admin-badge criadores-admin-badge--rejected';
   return 'criadores-admin-badge criadores-admin-badge--muted';
 }
 
@@ -154,14 +152,8 @@ function CreatorDetailDrawer({
   item,
   onClose,
   rowBusy,
-  rejectReason,
-  onRejectReasonChange,
-  rejectBan,
-  onRejectBanChange,
   monetizationReason,
   onMonetizationReasonChange,
-  onApproveApplication,
-  onRejectApplication,
   onApproveMonetization,
   onRejectMonetization,
   payoutAmountDraft,
@@ -175,7 +167,6 @@ function CreatorDetailDrawer({
   onSubmitPayout,
 }) {
   const uid = item.uid;
-  const isPending = item.creatorApplicationStatus === 'requested';
   const displayNameRaw = formatUserDisplayFromMixed(item);
   const displayName = displayNameRaw === 'Usuario' ? '--' : displayNameRaw;
   const username = String(item.userHandle || item.creatorUsername || '').trim();
@@ -210,7 +201,6 @@ function CreatorDetailDrawer({
   const minorMonetizeWarn = mon && ageI.isAdult === false;
   const canLiberarMonetizacao = complianceGate.ok;
   const approvalGate = creatorApprovalGateFromItem(item);
-  const canApproveCreatorPending = isPending && approvalGate.ok;
   const balance = item.creatorBalanceAdmin || null;
   const recentPayouts = Array.isArray(item.creatorRecentPayoutsAdmin) ? item.creatorRecentPayoutsAdmin : [];
   const pendingPayoutRequests = Array.isArray(item.creatorPendingPayoutRequestsAdmin)
@@ -255,18 +245,18 @@ function CreatorDetailDrawer({
             </p>
           ) : null}
           <section className="criadores-admin-section criadores-admin-section--metrics">
-            <h3 className="criadores-admin-section__title">Requisitos para aprovar candidatura (Nivel 1)</h3>
+            <h3 className="criadores-admin-section__title">Requisitos para solicitar monetizacao (Nivel 1)</h3>
             <p className="criadores-admin-compliance-hint" style={{ marginTop: 0 }}>
-              Mesmas metas da vitrine POD: seguidores, views e likes na plataforma. O servidor bloqueia aprovacao se
-              faltar qualquer uma. Quem ja esta aprovado permanece; a regra vale para novas decisoes.
+              Escritor ja entra automatico quando completa o perfil. Estas metas valem so para liberar a solicitacao
+              de monetizacao: seguidores, views e likes na plataforma.
             </p>
             {!approvalGate.ok ? (
               <div className="criadores-admin-compliance-warn" role="alert">
-                <strong>Metas nao atingidas - nao e possivel aprovar esta solicitacao ate o criador cumprir tudo.</strong>
+                <strong>Metas nao atingidas - a monetizacao continua bloqueada ate o criador cumprir tudo.</strong>
               </div>
             ) : (
               <p className="criadores-admin-alert criadores-admin-alert--ok" role="status" style={{ marginBottom: 12 }}>
-                Todas as metas minimas foram atingidas (ou superadas).
+                Todas as metas minimas para solicitar monetizacao foram atingidas.
               </p>
             )}
             <dl className="criadores-admin-dl criadores-admin-dl--metrics">
@@ -479,8 +469,8 @@ function CreatorDetailDrawer({
             <h3 className="criadores-admin-section__title">Comportamento / pipeline</h3>
             <dl className="criadores-admin-dl">
               <div>
-                <dt>Status da solicitacao</dt>
-                <dd>{statusLabel(item.creatorApplicationStatus)}</dd>
+                <dt>Status operacional</dt>
+                <dd>{creatorOperationalStatusLabel(item.creatorStatus)}</dd>
               </div>
               <div>
                 <dt>Pipeline criador</dt>
@@ -618,57 +608,10 @@ function CreatorDetailDrawer({
         </div>
 
         <footer className="criadores-admin-drawer__foot">
-          {isPending ? (
-            <>
-              {!canApproveCreatorPending ? (
-                <p className="criadores-admin-foot-blocked" role="alert">
-                  <strong>Aprovar criador bloqueado:</strong> o candidato ainda nao atingiu seguidores, views e likes
-                  minimos (Nivel 1). O botao so libera quando as tres metas estiverem OK.
-                </p>
-              ) : null}
-              <div className="criadores-admin-actions-row">
-                <button
-                  type="button"
-                  disabled={rowBusy || !canApproveCreatorPending}
-                  title={
-                    !canApproveCreatorPending
-                      ? 'Metas Nivel 1 incompletas - veja a secao de requisitos acima'
-                      : 'Aprovar candidatura'
-                  }
-                  onClick={() => onApproveApplication(uid)}
-                >
-                  {rowBusy ? 'Salvando...' : 'Aprovar criador'}
-                </button>
-                <button
-                  type="button"
-                  className="is-danger"
-                  disabled={rowBusy}
-                  onClick={() => onRejectApplication(uid)}
-                >
-                  Rejeitar
-                </button>
-              </div>
-              <textarea
-                className="criadores-admin-textarea"
-                rows={3}
-                value={rejectReason}
-                onChange={(e) => onRejectReasonChange(e.target.value)}
-                placeholder="Motivo obrigatorio ao rejeitar (min. 8 caracteres)"
-              />
-              <label className="criadores-admin-check">
-                <input
-                  type="checkbox"
-                  checked={rejectBan}
-                  onChange={(e) => onRejectBanChange(e.target.checked)}
-                />
-                <span>Bloquear conta (fraude / troll / abuso)</span>
-              </label>
-            </>
-          ) : (
-            <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255,255,255,0.5)' }}>
-              Solicitacao de criador ja decidida. Use a area abaixo se a monetizacao estiver pendente.
-            </p>
-          )}
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255,255,255,0.5)' }}>
+            O acesso de escritor nao depende mais de aprovacao manual. Use esta ficha para acompanhar onboarding,
+            monetizacao e repasses.
+          </p>
 
           {monetizationPending ? (
             <>
@@ -726,8 +669,6 @@ export default function CriadoresAdmin({ adminAccess }) {
   const [busyUid, setBusyUid] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [rejectReasons, setRejectReasons] = useState({});
-  const [rejectAsBan, setRejectAsBan] = useState({});
     const [monetizationReasons, setMonetizationReasons] = useState({});
     const [payoutAmounts, setPayoutAmounts] = useState({});
     const [payoutTransferIds, setPayoutTransferIds] = useState({});
@@ -774,9 +715,13 @@ export default function CriadoresAdmin({ adminAccess }) {
   }, [detailUid]);
 
   const summary = useMemo(() => {
-    const pending = applications.filter((item) => item.creatorApplicationStatus === 'requested').length;
-    const approved = applications.filter((item) => item.creatorApplicationStatus === 'approved').length;
+    const publishing = applications.filter(
+      (item) => String(item.creatorStatus || '').trim().toLowerCase() === 'active'
+    ).length;
     const onboarding = applications.filter((item) => item.creatorStatus === 'onboarding').length;
+    const publishOnly = applications.filter(
+      (item) => String(item?.creatorMonetizationPreference || '').trim().toLowerCase() !== 'monetize'
+    ).length;
     const monetizationReview = applications.filter(
       (item) => String(item?.creatorMonetizationApplicationStatus || '').trim().toLowerCase() === 'pending'
     ).length;
@@ -788,7 +733,7 @@ export default function CriadoresAdmin({ adminAccess }) {
         (acc, item) => acc + (Array.isArray(item?.creatorPendingPayoutRequestsAdmin) ? item.creatorPendingPayoutRequestsAdmin.length : 0),
         0
       );
-      return { pending, approved, onboarding, monetizationReview, availablePayout, payoutRequestsPending };
+      return { publishing, onboarding, publishOnly, monetizationReview, availablePayout, payoutRequestsPending };
     }, [applications]);
 
   const detailItem = useMemo(
@@ -803,7 +748,7 @@ export default function CriadoresAdmin({ adminAccess }) {
           <header className="financeiro-header admin-team-header">
             <div>
               <p className="admin-team-eyebrow">Criadores</p>
-              <h1>Solicitacoes de criador</h1>
+              <h1>Criadores</h1>
               <p>Esta area fica restrita para admins chefes da plataforma.</p>
             </div>
           </header>
@@ -814,48 +759,6 @@ export default function CriadoresAdmin({ adminAccess }) {
 
   const clearDetailIfUid = (uid) => {
     if (detailUid === uid) setDetailUid('');
-  };
-
-  const handleApprove = async (uid) => {
-    if (!uid) return;
-    setBusyUid(uid);
-    setMessage('');
-    setError('');
-    try {
-      await adminApproveCreatorApplication({ uid });
-      setMessage('Criador aprovado. O perfil entrou em onboarding guiado.');
-      await load();
-      clearDetailIfUid(uid);
-    } catch (err) {
-      setError(mensagemErroCallable(err));
-    } finally {
-      setBusyUid('');
-    }
-  };
-
-  const handleReject = async (uid) => {
-    if (!uid) return;
-    const reason = String(rejectReasons[uid] || '').trim();
-    const banUser = rejectAsBan[uid] === true;
-    if (reason.length < 8) {
-      setError('Informe um motivo com pelo menos 8 caracteres para reprovar o criador.');
-      return;
-    }
-    setBusyUid(uid);
-    setMessage('');
-    setError('');
-    try {
-      await adminRejectCreatorApplication({ uid, reason, banUser });
-      setMessage(banUser ? 'Conta bloqueada e solicitacao encerrada.' : 'Solicitacao rejeitada.');
-      setRejectReasons((prev) => ({ ...prev, [uid]: '' }));
-      setRejectAsBan((prev) => ({ ...prev, [uid]: false }));
-      await load();
-      clearDetailIfUid(uid);
-    } catch (err) {
-      setError(mensagemErroCallable(err));
-    } finally {
-      setBusyUid('');
-    }
   };
 
   const handleApproveMonetization = async (uid) => {
@@ -960,8 +863,8 @@ export default function CriadoresAdmin({ adminAccess }) {
         <header className="financeiro-header admin-team-header">
           <div>
             <p className="admin-team-eyebrow">Criadores</p>
-            <h1>Solicitacoes de criador</h1>
-            <p>Lista resumida e ficha completa para decisao segura (identidade, monetizacao, PIX).</p>
+            <h1>Criadores e monetizacao</h1>
+            <p>Escritor entra automatico ao completar o perfil. Aqui a equipe acompanha onboarding, monetizacao e repasses.</p>
           </div>
         </header>
 
@@ -970,12 +873,12 @@ export default function CriadoresAdmin({ adminAccess }) {
 
         <section className="admin-team-overview">
           <article className="admin-team-stat-card">
-            <span>Pendentes</span>
-            <strong>{summary.pending}</strong>
+            <span>Publicando</span>
+            <strong>{summary.publishing}</strong>
           </article>
           <article className="admin-team-stat-card">
-            <span>Aprovados</span>
-            <strong>{summary.approved}</strong>
+            <span>So publicar</span>
+            <strong>{summary.publishOnly}</strong>
           </article>
           <article className="admin-team-stat-card">
             <span>Em onboarding</span>
@@ -998,14 +901,14 @@ export default function CriadoresAdmin({ adminAccess }) {
         <section className="admin-team-panel">
           <div className="admin-team-panel-head">
             <div>
-              <h2>Candidatos</h2>
-              <p>Clique em Ver ficha para dados completos e acoes de aprovacao.</p>
+              <h2>Criadores cadastrados</h2>
+              <p>Clique em Ver ficha para acompanhar status do escritor, monetizacao e repasses.</p>
             </div>
           </div>
 
           {loading ? <p className="admin-staff-loading">Carregando solicitacoes...</p> : null}
           {!loading && applications.length === 0 ? (
-            <p className="admin-staff-empty">Nenhuma solicitacao de criador encontrada.</p>
+            <p className="admin-staff-empty">Nenhum criador encontrado.</p>
           ) : null}
 
           {!loading && applications.length > 0 ? (
@@ -1015,10 +918,10 @@ export default function CriadoresAdmin({ adminAccess }) {
                   <tr>
                     <th>Nome</th>
                     <th>E-mail</th>
-                    <th>Status</th>
+                    <th>Status escritor</th>
                     <th>Monetizacao</th>
                     <th>Saldo</th>
-                    <th>Solicitado</th>
+                    <th>Atualizado</th>
                     <th />
                   </tr>
                 </thead>
@@ -1041,15 +944,15 @@ export default function CriadoresAdmin({ adminAccess }) {
                           </span>
                         </td>
                         <td>
-                          <span className={statusBadgeClass(item.creatorApplicationStatus)}>
-                            {statusLabel(item.creatorApplicationStatus)}
+                          <span className={creatorOperationalStatusBadgeClass(item.creatorStatus)}>
+                            {creatorOperationalStatusLabel(item.creatorStatus)}
                           </span>
                         </td>
                         <td>{mon ? 'Sim' : 'Nao'}</td>
                         <td>{brl(item?.creatorBalanceAdmin?.availableBRL || 0)}</td>
                         <td>
-                          {item.creatorRequestedAt
-                            ? formatarDataHoraBr(item.creatorRequestedAt)
+                          {(item.creatorMonetizationReviewRequestedAt || item.creatorRequestedAt)
+                            ? formatarDataHoraBr(item.creatorMonetizationReviewRequestedAt || item.creatorRequestedAt)
                             : '--'}
                         </td>
                         <td>
@@ -1076,14 +979,8 @@ export default function CriadoresAdmin({ adminAccess }) {
           item={detailItem}
           onClose={() => setDetailUid('')}
           rowBusy={busyUid === detailItem.uid}
-          rejectReason={rejectReasons[detailItem.uid] || ''}
-          onRejectReasonChange={(v) => setRejectReasons((p) => ({ ...p, [detailItem.uid]: v }))}
-          rejectBan={rejectAsBan[detailItem.uid] === true}
-          onRejectBanChange={(v) => setRejectAsBan((p) => ({ ...p, [detailItem.uid]: v }))}
           monetizationReason={monetizationReasons[detailItem.uid] || ''}
           onMonetizationReasonChange={(v) => setMonetizationReasons((p) => ({ ...p, [detailItem.uid]: v }))}
-          onApproveApplication={handleApprove}
-          onRejectApplication={handleReject}
           onApproveMonetization={handleApproveMonetization}
           onRejectMonetization={handleRejectMonetization}
           payoutAmountDraft={payoutAmounts[detailItem.uid] || ''}

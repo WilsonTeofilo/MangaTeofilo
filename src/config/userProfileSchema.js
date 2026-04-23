@@ -13,16 +13,28 @@ function hasCanonicalCreatorState(source = {}) {
   const creator = source?.creator && typeof source.creator === 'object' ? source.creator : {};
   const creatorProfilePublic =
     source?.creatorProfile && typeof source.creatorProfile === 'object' ? source.creatorProfile : {};
-  const creatorApplicationStatus = asNonEmptyString(source.creatorApplicationStatus, '').toLowerCase();
   const creatorStatus = asNonEmptyString(source.creatorStatus, '').toLowerCase();
+  const signupIntent = asNonEmptyString(source.signupIntent, '').toLowerCase();
+  const accountType = asNonEmptyString(source.accountType, '').toLowerCase();
+  const userHandle = asNonEmptyString(
+    source.userHandle || source.creatorUsername || creator.profile?.username || creatorProfilePublic.username,
+    ''
+  ).toLowerCase();
+  const creatorDisplayName = asNonEmptyString(
+    creator.profile?.displayName || creatorProfilePublic.displayName || source.creatorDisplayName || source.userName,
+    ''
+  );
+  const hasWriterIdentity = Boolean(userHandle || creatorDisplayName);
   return (
     source.isCreatorProfile === true ||
-    creatorApplicationStatus === 'approved' ||
     creatorStatus === 'active' ||
     creatorStatus === 'onboarding' ||
     creatorProfilePublic.isCreator === true ||
     creator.isCreator === true ||
-    creator.onboardingCompleted === true
+    creator.onboardingCompleted === true ||
+    source.creatorOnboardingCompleted === true ||
+    ((signupIntent === 'creator' || accountType === 'writer' || accountType === 'creator') &&
+      hasWriterIdentity)
   );
 }
 
@@ -88,6 +100,15 @@ export function buildUsuarioBaseRecord({
     currentPlanId: null,
     lastPaymentAt: null,
     premium5dNotifiedForUntil: null,
+    userEntitlements: {
+      global: {
+        isPremium: false,
+        status: 'inativo',
+        memberUntil: null,
+      },
+      creators: {},
+      updatedAt: now,
+    },
     sourceAcquisition: 'organico',
     signupIntent: 'reader',
     creatorApplicationStatus: null,
@@ -226,6 +247,30 @@ export function buildUsuarioMissingFieldsPatch(current = {}, options = {}) {
   if (typeof current.lastPaymentAt !== 'number' && current.lastPaymentAt !== null) patch.lastPaymentAt = desired.lastPaymentAt;
   if (typeof current.premium5dNotifiedForUntil !== 'number' && current.premium5dNotifiedForUntil !== null) {
     patch.premium5dNotifiedForUntil = desired.premium5dNotifiedForUntil;
+  }
+  if (!current.userEntitlements || typeof current.userEntitlements !== 'object') {
+    patch.userEntitlements = desired.userEntitlements;
+  } else {
+    const currentGlobal = current.userEntitlements.global;
+    if (!currentGlobal || typeof currentGlobal !== 'object') {
+      patch.userEntitlements = {
+        ...(patch.userEntitlements && typeof patch.userEntitlements === 'object' ? patch.userEntitlements : current.userEntitlements),
+        global: desired.userEntitlements.global,
+      };
+    }
+    const currentCreators = current.userEntitlements.creators;
+    if (!currentCreators || typeof currentCreators !== 'object') {
+      patch.userEntitlements = {
+        ...(patch.userEntitlements && typeof patch.userEntitlements === 'object' ? patch.userEntitlements : current.userEntitlements),
+        creators: {},
+      };
+    }
+    if (typeof current.userEntitlements.updatedAt !== 'number') {
+      patch.userEntitlements = {
+        ...(patch.userEntitlements && typeof patch.userEntitlements === 'object' ? patch.userEntitlements : current.userEntitlements),
+        updatedAt: now,
+      };
+    }
   }
   if (typeof current.createdAt !== 'number') patch.createdAt = desired.createdAt;
 

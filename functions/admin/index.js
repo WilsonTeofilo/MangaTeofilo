@@ -24,3 +24,9 @@ export {
   adminRevokeUserSessions,
   adminRevokeAllSessions,
 } from './sessions.js';
+export {
+  adminListUsers,
+  adminModerateUser,
+  adminDeleteUserByEmail,
+  adminDeleteUserByUid,
+} from './users.js';

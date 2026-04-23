@@ -122,6 +122,8 @@ export default function Leitor({ user, perfil, adminAccess }) {
     canDeleteComment,
     handleDeleteComment,
     deletingCommentId,
+    banModal,
+    setBanModal,
   } = useChapterComments({
     db,
     chapterId: id,
@@ -130,6 +132,7 @@ export default function Leitor({ user, perfil, adminAccess }) {
     authorUid,
     adminAccess,
     user,
+    perfil,
     onRequireLogin: () =>
       navigate(buildLoginUrlWithRedirect(location.pathname, location.search)),
   });
@@ -586,6 +589,8 @@ export default function Leitor({ user, perfil, adminAccess }) {
           setModalLoginComentario(false);
           navigate(buildLoginUrlWithRedirect(location.pathname, location.search));
         }}
+        banModal={banModal}
+        onCloseBanModal={() => setBanModal(null)}
         privateProfileModal={privateProfileModal}
         onClosePrivateProfileModal={() => setPrivateProfileModal(null)}
       />

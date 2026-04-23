@@ -73,6 +73,60 @@
   gap: 10px;
 }
 
+.capitulos-admin-hub__author-results {
+  display: grid;
+  gap: 8px;
+}
+
+.capitulos-admin-hub__author-result {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(18, 18, 18, 0.88);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  color: #f1f1f1;
+  cursor: pointer;
+}
+
+.capitulos-admin-hub__author-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 42px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.capitulos-admin-hub__author-meta {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.capitulos-admin-hub__author-meta strong,
+.capitulos-admin-hub__author-meta span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capitulos-admin-hub__author-meta strong {
+  font-size: 0.88rem;
+  color: #f3f3f3;
+}
+
+.capitulos-admin-hub__author-meta span {
+  color: #f0cc72;
+  font-size: 0.76rem;
+}
+
 .capitulos-admin-hub__selector-actions {
   display: grid;
   gap: 8px;

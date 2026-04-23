@@ -5,6 +5,7 @@ import { requireAdminAuth, requirePermission } from '../adminRbac.js';
 import { sanitizeTrackingValue, normalizeTrackingSource } from '../trackingUtils.js';
 import { gerarRollupMensalFinancas } from '../system/rollup.js';
 import { buildPublicProfilesMapFromUsuarios } from '../shared/publicUserProfile.js';
+import { creatorAccessIsApprovedFromDb } from '../creatorRecord.js';
 
 const MS_DAY = 86400000;
 
@@ -42,6 +43,13 @@ function round2(value) {
   return Math.round(toNum(value, 0) * 100) / 100;
 }
 
+function normalizePremiumSource(event = {}) {
+  const raw = String(event?.source || event?.trafficSource || '').trim().toLowerCase();
+  if (raw === 'creator_link') return 'creator_link';
+  if (raw === 'platform') return 'platform';
+  return String(event?.attributionCreatorId || event?.creatorId || '').trim() ? 'creator_link' : 'platform';
+}
+
 function canonicalPremiumMemberUntil(profile = {}) {
   const raw = profile?.userEntitlements?.global;
   return toNum(raw?.memberUntil, 0);
@@ -55,6 +63,235 @@ function buildUserLabel(uid, usuarios, usuariosPublicos) {
     userName: pub.userName || priv.userName || 'Leitor',
     userAvatar: pub.userAvatar || priv.userAvatar || '',
     gender: normalizeGender(priv.gender),
+  };
+}
+
+function buildPeriodDateKeys(period) {
+  const keys = new Set();
+  const dayMs = MS_DAY;
+  const start = toNum(period?.startAt, 0);
+  const end = toNum(period?.endAt, 0);
+  if (!start || !end || end <= start) return keys;
+  for (let cursor = start; cursor < end; cursor += dayMs) {
+    const key = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(cursor));
+    keys.add(key);
+  }
+  return keys;
+}
+
+function creatorDisplayInfo(uid, creators, usuarios, usuariosPublicos) {
+  const creator = creators[uid] || {};
+  const usuario = usuarios[uid] || {};
+  const pub = usuariosPublicos[uid] || {};
+  const creatorProfile =
+    creator?.publicProfile?.creatorProfile ||
+    usuario?.publicProfile?.creatorProfile ||
+    {};
+
+  const username = String(
+    pub?.userHandle ||
+    pub?.username ||
+    usuario?.userHandle ||
+    usuario?.username ||
+    creator?.creatorUsername ||
+    creatorProfile?.username ||
+    ''
+  ).trim();
+
+  const displayName = String(
+    creatorProfile?.displayName ||
+    pub?.creatorDisplayName ||
+    pub?.userName ||
+    usuario?.creatorDisplayName ||
+    usuario?.userName ||
+    creator?.creatorDisplayName ||
+    'Criador'
+  ).trim();
+
+  const avatarUrl = String(
+    creatorProfile?.avatarUrl ||
+    pub?.userAvatar ||
+    usuario?.userAvatar ||
+    creator?.creatorAvatarUrl ||
+    ''
+  ).trim();
+
+  const monetizationLevel = toNum(
+    creatorProfile?.monetization?.level ??
+    creator?.monetizationLevel ??
+    usuario?.creatorMonetizationLevel,
+    0
+  );
+
+  return {
+    uid,
+    displayName,
+    username,
+    avatarUrl,
+    monetizationLevel,
+  };
+}
+
+function usuarioTemBanAtivo(usuario) {
+  if (!usuario || typeof usuario !== 'object') return false;
+  if (usuario?.moderation?.isBanned !== true) return false;
+  const expiresAt = toNum(usuario?.moderation?.currentBanExpiresAt, 0);
+  if (expiresAt > 0 && expiresAt <= Date.now()) return false;
+  return true;
+}
+
+function buildCreatorDashboard(creators, usuarios, usuariosPublicos, creatorStatsDaily, period) {
+  const dateKeys = buildPeriodDateKeys(period);
+  const rows = Object.keys(creators || {})
+    .filter((uid) => {
+      const usuario = usuarios?.[uid];
+      if (!usuario || typeof usuario !== 'object') return false;
+      if (usuarioTemBanAtivo(usuario)) return false;
+      return creatorAccessIsApprovedFromDb(usuario);
+    })
+    .map((uid) => {
+    const creator = creators[uid] || {};
+    const stats = creator?.stats || {};
+    const daily = creatorStatsDaily?.[uid] || {};
+    let periodViews = 0;
+    let periodLikes = 0;
+    let periodFollowers = 0;
+    let periodRevenue = 0;
+    let periodReaders = 0;
+
+    for (const key of dateKeys) {
+      const row = daily?.[key] || {};
+      periodViews += toNum(row?.totalViews, 0);
+      periodLikes += toNum(row?.likesTotal, 0);
+      periodFollowers += toNum(row?.followersAdded, 0);
+      periodRevenue += toNum(row?.revenueTotal, 0);
+      periodReaders += toNum(row?.uniqueReaders, 0);
+    }
+
+    const info = creatorDisplayInfo(uid, creators, usuarios, usuariosPublicos);
+    const totalViews = toNum(stats?.totalViews, 0);
+    const totalLikes = toNum(stats?.likesTotal, 0);
+    const totalFollowers = toNum(stats?.followersCount, 0);
+    const totalRevenue = toNum(stats?.revenueTotal, 0);
+
+      return {
+        ...info,
+        totalViews,
+        totalLikes,
+        totalFollowers,
+        totalRevenue: round2(totalRevenue),
+        periodViews,
+        periodLikes,
+        periodFollowers,
+        periodRevenue: round2(periodRevenue),
+        periodReaders,
+        engagementScore: periodViews + periodLikes * 8 + periodFollowers * 20,
+      };
+    });
+
+  const activeCreators = rows.filter((row) => row.totalViews > 0 || row.totalFollowers > 0 || row.totalLikes > 0);
+  const monetizedCreators = rows.filter((row) => row.monetizationLevel >= 2 || row.totalRevenue > 0);
+
+  return {
+    summary: {
+      totalCreators: rows.length,
+      activeCreators: activeCreators.length,
+      monetizedCreators: monetizedCreators.length,
+      periodViews: rows.reduce((sum, row) => sum + row.periodViews, 0),
+      periodRevenue: round2(rows.reduce((sum, row) => sum + row.periodRevenue, 0)),
+      periodFollowers: rows.reduce((sum, row) => sum + row.periodFollowers, 0),
+    },
+    topByRevenue: [...rows]
+      .filter((row) => row.periodRevenue > 0 || row.totalRevenue > 0)
+      .sort((a, b) => (b.periodRevenue - a.periodRevenue) || (b.totalRevenue - a.totalRevenue))
+      .slice(0, 8),
+    topByViews: [...rows]
+      .filter((row) => row.periodViews > 0 || row.totalViews > 0)
+      .sort((a, b) => (b.periodViews - a.periodViews) || (b.totalViews - a.totalViews))
+      .slice(0, 8),
+    topByEngagement: [...rows]
+      .filter((row) => row.engagementScore > 0)
+      .sort((a, b) => (b.engagementScore - a.engagementScore) || (b.periodReaders - a.periodReaders))
+      .slice(0, 8),
+  };
+}
+
+function buildContentDashboard(obras, capitulos, creators, usuarios, usuariosPublicos) {
+  const chaptersByWorkId = {};
+  for (const [chapterId, chapter] of Object.entries(capitulos || {})) {
+    const workId = String(chapter?.workId || chapter?.obraId || '').trim();
+    if (!workId) continue;
+    if (!chaptersByWorkId[workId]) chaptersByWorkId[workId] = [];
+    chaptersByWorkId[workId].push({ chapterId, ...(chapter || {}) });
+  }
+
+  const workRows = Object.entries(obras || {}).map(([workId, work]) => {
+    const creatorId = String(work?.creatorId || '').trim();
+    const author = creatorId
+      ? creatorDisplayInfo(creatorId, creators, usuarios, usuariosPublicos)
+      : { uid: '', displayName: 'Plataforma', username: '', avatarUrl: '', monetizationLevel: 0 };
+    const title = String(work?.title || work?.titulo || work?.nome || 'Obra').trim();
+    const chapterRows = chaptersByWorkId[workId] || [];
+    return {
+      workId,
+      title,
+      creatorId,
+      authorName: author.displayName,
+      authorUsername: author.username,
+      viewsCount: toNum(work?.viewsCount ?? work?.visualizacoes, 0),
+      likesCount: toNum(work?.likesCount, 0),
+      commentsCount: toNum(work?.commentsCount, 0),
+      chapterCount: chapterRows.length,
+      coverUrl: String(work?.coverUrl || work?.capaUrl || '').trim(),
+    };
+  });
+
+  const chapterRows = Object.entries(capitulos || {}).map(([chapterId, chapter]) => {
+    const workId = String(chapter?.workId || chapter?.obraId || '').trim();
+    const work = obras?.[workId] || {};
+    const creatorId = String(chapter?.creatorId || work?.creatorId || '').trim();
+    const author = creatorId
+      ? creatorDisplayInfo(creatorId, creators, usuarios, usuariosPublicos)
+      : { uid: '', displayName: 'Plataforma', username: '', avatarUrl: '', monetizationLevel: 0 };
+    return {
+      chapterId,
+      workId,
+      title: String(chapter?.title || chapter?.titulo || chapter?.nome || 'Capítulo').trim(),
+      workTitle: String(work?.title || work?.titulo || work?.nome || 'Obra').trim(),
+      authorName: author.displayName,
+      authorUsername: author.username,
+      viewsCount: toNum(chapter?.viewsCount ?? chapter?.visualizacoes, 0),
+      commentsCount: toNum(chapter?.commentsCount, 0),
+      likesCount: toNum(chapter?.likesCount, 0),
+      publishedAt: toNum(chapter?.publicReleaseAt || chapter?.dataUpload || chapter?.createdAt, 0),
+    };
+  });
+
+  return {
+    summary: {
+      works: workRows.length,
+      chapters: chapterRows.length,
+      totalViews: workRows.reduce((sum, row) => sum + row.viewsCount, 0),
+      totalLikes: workRows.reduce((sum, row) => sum + row.likesCount, 0),
+      totalComments: workRows.reduce((sum, row) => sum + row.commentsCount, 0),
+    },
+    topWorksByViews: [...workRows]
+      .filter((row) => row.viewsCount > 0)
+      .sort((a, b) => (b.viewsCount - a.viewsCount) || (b.likesCount - a.likesCount))
+      .slice(0, 8),
+    topWorksByEngagement: [...workRows]
+      .filter((row) => row.likesCount > 0 || row.commentsCount > 0)
+      .sort((a, b) => ((b.likesCount + b.commentsCount) - (a.likesCount + a.commentsCount)) || (b.viewsCount - a.viewsCount))
+      .slice(0, 8),
+    topChaptersByViews: [...chapterRows]
+      .filter((row) => row.viewsCount > 0)
+      .sort((a, b) => (b.viewsCount - a.viewsCount) || (b.publishedAt - a.publishedAt))
+      .slice(0, 8),
   };
 }
 
@@ -273,6 +510,12 @@ function aggregatePeriod(events, usuarios, usuariosPublicos, period) {
     apoioCount: 0,
     eventsCount: filtered.length,
   };
+  const premiumBreakdown = {
+    platformAmount: 0,
+    platformCount: 0,
+    creatorLinkAmount: 0,
+    creatorLinkCount: 0,
+  };
   const monthlyMap = new Map();
   const doadoresMap = new Map();
   const doacaoSexo = {
@@ -320,10 +563,18 @@ function aggregatePeriod(events, usuarios, usuariosPublicos, period) {
       : null;
 
     if (tipo === 'premium_aprovado') {
+      const source = normalizePremiumSource(event);
       totals.premiumAmount += amount;
       totals.premiumCount += 1;
       monthRow.premiumAmount += amount;
       monthRow.premiumCount += 1;
+      if (source === 'creator_link') {
+        premiumBreakdown.creatorLinkAmount += amount;
+        premiumBreakdown.creatorLinkCount += 1;
+      } else {
+        premiumBreakdown.platformAmount += amount;
+        premiumBreakdown.platformCount += 1;
+      }
       assinaturaSexo[sexo].amount += amount;
       assinaturaSexo[sexo].count += 1;
       if (uid && !assinantesNoPeriodo.has(uid) && age != null) assinaturaIdades.push(age);
@@ -371,6 +622,12 @@ function aggregatePeriod(events, usuarios, usuariosPublicos, period) {
     assinaturaVsDoacao: {
       assinatura: Math.round(totals.premiumAmount * 100) / 100,
       doacao: Math.round(totals.apoioAmount * 100) / 100,
+    },
+    premiumBreakdown: {
+      platformAmount: round2(premiumBreakdown.platformAmount),
+      platformCount: premiumBreakdown.platformCount,
+      creatorLinkAmount: round2(premiumBreakdown.creatorLinkAmount),
+      creatorLinkCount: premiumBreakdown.creatorLinkCount,
     },
     demografia: {
       doacaoPorSexo: doacaoSexo,
@@ -448,10 +705,14 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
     : defaultComparePeriod(period);
 
   const db = getDatabase();
-  const [eventsSnap, usuariosSnap, marketingSnap] = await Promise.all([
+  const [eventsSnap, usuariosSnap, marketingSnap, creatorsSnap, obrasSnap, capitulosSnap, creatorStatsDailySnap] = await Promise.all([
     db.ref('financas/eventos').get(),
     db.ref('usuarios').get(),
     db.ref('marketing/eventos').get(),
+    db.ref('creators').get(),
+    db.ref('obras').get(),
+    db.ref('capitulos').get(),
+    db.ref('creatorStatsDaily').get(),
   ]);
 
   const rawEvents = eventsSnap.exists()
@@ -463,6 +724,10 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
   const rawMarketingEvents = marketingSnap.exists() ? Object.values(marketingSnap.val() || {}) : [];
   const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
   const usuariosPublicos = buildPublicProfilesMapFromUsuarios(usuarios);
+  const creators = creatorsSnap.exists() ? creatorsSnap.val() || {} : {};
+  const obras = obrasSnap.exists() ? obrasSnap.val() || {} : {};
+  const capitulos = capitulosSnap.exists() ? capitulosSnap.val() || {} : {};
+  const creatorStatsDaily = creatorStatsDailySnap.exists() ? creatorStatsDailySnap.val() || {} : {};
 
   const current = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, period);
   const compare = aggregatePeriod(rawEvents, usuarios, usuariosPublicos, comparePeriod);
@@ -471,6 +736,8 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
   const integrity = buildIntegrityReport(rawEvents);
   const analyticsBase = buildAdvancedAnalytics(rawEvents, usuarios, usuariosPublicos, period, now);
   const acquisition = buildAcquisitionAnalytics(rawEvents, rawMarketingEvents, period);
+  const creatorDashboard = buildCreatorDashboard(creators, usuarios, usuariosPublicos, creatorStatsDaily, period);
+  const contentDashboard = buildContentDashboard(obras, capitulos, creators, usuarios, usuariosPublicos);
   const deltaAmount = current.totals.totalAmount - compare.totals.totalAmount;
   const deltaPct = compare.totals.totalAmount > 0 ? (deltaAmount / compare.totals.totalAmount) * 100 : null;
 
@@ -486,7 +753,7 @@ export const adminDashboardResumo = onCall({ region: 'us-central1' }, async (req
       deltaAmount: Math.round(deltaAmount * 100) / 100,
       deltaPercent: deltaPct == null ? null : Math.round(deltaPct * 10) / 10,
     },
-    analytics: { ...analyticsBase, acquisition },
+    analytics: { ...analyticsBase, acquisition, creatorDashboard, contentDashboard },
     integrity,
     generatedAt: now,
   };

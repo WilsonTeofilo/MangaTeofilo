@@ -33,7 +33,7 @@
       ".write": false,
       ".indexOn": ["creatorId", "obraId", "workId"],
       "$capId": {
-        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessCapitulos').val() === true) || (((root.child('usuarios').child(auth.uid).child('creatorApplicationStatus').val() === 'approved') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'active') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'onboarding')) && ((!data.exists() && newData.hasChild('obraId') && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid && (!data.hasChild('creatorId') || data.child('creatorId').val() === auth.uid)) || (data.exists() && newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid && newData.child('obraId').val() === data.child('obraId').val()))))",
+        ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessCapitulos').val() === true || (((root.child('usuarios').child(auth.uid).child('signupIntent').val() === 'creator') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'active') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'onboarding') || (root.child('usuarios').child(auth.uid).child('role').val() === 'mangaka')) && ((!data.exists() && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && root.child('obras').child(data.child('obraId').val()).child('creatorId').val() === auth.uid) || (data.exists() && newData.exists() && newData.child('obraId').val() === data.child('obraId').val() && newData.child('creatorId').val() === auth.uid && root.child('obras').child(newData.child('obraId').val()).child('creatorId').val() === auth.uid))))",
         "obraId": {
           ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^[a-z0-9_-]{2,40}$/))"
         },
@@ -89,7 +89,7 @@
       ".indexOn": ["creatorId"],
       "$obraId": {
         ".validate": "$obraId.matches(/^[a-z0-9_-]{2,40}$/)",
-        ".write": "auth != null && (((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessObras').val() === true) || (((root.child('usuarios').child(auth.uid).child('creatorApplicationStatus').val() === 'approved') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'active') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'onboarding')) && ((!data.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid) || (data.exists() && data.hasChild('creatorId') && data.child('creatorId').val() === auth.uid && ((!newData.exists()) || (newData.exists() && newData.hasChild('creatorId') && newData.child('creatorId').val() === auth.uid))))))",
+        ".write": "auth != null && ((root.child('admins').child('registry').child(auth.uid).child('role').val() === 'super_admin') || auth.token.panelRole === 'super_admin' || root.child('admins').child('registry').child(auth.uid).child('permissions').child('canAccessObras').val() === true || (((root.child('usuarios').child(auth.uid).child('signupIntent').val() === 'creator') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'active') || (root.child('usuarios').child(auth.uid).child('creatorStatus').val() === 'onboarding') || (root.child('usuarios').child(auth.uid).child('role').val() === 'mangaka')) && ((!data.exists() && newData.child('creatorId').val() === auth.uid) || (data.exists() && !newData.exists() && data.child('creatorId').val() === auth.uid) || (data.exists() && newData.exists() && data.child('creatorId').val() === auth.uid && newData.child('creatorId').val() === auth.uid))))",
         "titulo": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
         },
@@ -284,6 +284,7 @@
     },
 
     "usuarios": {
+      ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
       "$uid": {
         ".read": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))",
         ".write": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))",
@@ -565,6 +566,14 @@
       }
     },
 
+    "usuarios_publicos": {
+      ".read": true,
+      "$uid": {
+        ".read": true,
+        ".write": "auth != null && (auth.uid === $uid || (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin'))"
+      }
+    },
+
     "stats": {
       ".read": true,
       "contador": {
@@ -573,6 +582,7 @@
     },
 
     "creators": {
+      ".read": "auth != null && (root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
       "$creatorId": {
         ".read": "auth != null && (auth.uid === $creatorId || root.child('admins').child('registry').child(auth.uid).exists() || auth.token.panelRole === 'super_admin')",
         ".write": false,

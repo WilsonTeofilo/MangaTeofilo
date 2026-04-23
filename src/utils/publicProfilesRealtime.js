@@ -35,6 +35,8 @@ export function collectCreatorIdsFromWorksAndChapters(works = [], chapters = [])
 export function subscribePublicProfilesMap(db, creatorIds, onChange) {
   const ids = [...new Set((Array.isArray(creatorIds) ? creatorIds : []).map(normalizeUid).filter(Boolean))];
   const state = {};
+  const privateRows = {};
+  const publicRows = {};
 
   const emit = () => {
     onChange({ ...state });
@@ -42,23 +44,61 @@ export function subscribePublicProfilesMap(db, creatorIds, onChange) {
 
   emit();
 
-  const unsubs = ids.map((uid) =>
+  const rehydrateUid = (uid) => {
+    const privateRow = privateRows[uid];
+    const publicRow = publicRows[uid];
+    if (privateRow && typeof privateRow === 'object') {
+      state[uid] = buildPublicProfileFromUsuarioRow(
+        {
+          ...publicRow,
+          ...privateRow,
+        },
+        uid
+      );
+      emit();
+      return;
+    }
+    if (publicRow && typeof publicRow === 'object') {
+      state[uid] = buildPublicProfileFromUsuarioRow(publicRow, uid);
+      emit();
+      return;
+    }
+    delete state[uid];
+    emit();
+  };
+
+  const unsubs = ids.flatMap((uid) => ([
     onValue(
       ref(db, `usuarios/${uid}/publicProfile`),
       (snapshot) => {
         if (snapshot.exists()) {
-          state[uid] = buildPublicProfileFromUsuarioRow(snapshot.val() || {}, uid);
+          privateRows[uid] = snapshot.val() || {};
         } else {
-          delete state[uid];
+          delete privateRows[uid];
         }
-        emit();
+        rehydrateUid(uid);
       },
       () => {
-        delete state[uid];
-        emit();
+        delete privateRows[uid];
+        rehydrateUid(uid);
       }
-    )
-  );
+    ),
+    onValue(
+      ref(db, `usuarios_publicos/${uid}`),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          publicRows[uid] = snapshot.val() || {};
+        } else {
+          delete publicRows[uid];
+        }
+        rehydrateUid(uid);
+      },
+      () => {
+        delete publicRows[uid];
+        rehydrateUid(uid);
+      }
+    ),
+  ]));
 
   return () => {
     unsubs.forEach((unsub) => {

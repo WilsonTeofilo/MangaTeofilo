@@ -259,6 +259,18 @@
   padding: 12px 14px;
 }
 
+.admin-team-form textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f4f4;
+  padding: 12px 14px;
+  font: inherit;
+}
+
 .admin-team-form input[readonly] {
   color: #a7a7a7;
 }
@@ -334,5 +346,229 @@
 
   .admin-team-table {
     min-width: 640px;
+  }
+}
+
+.admin-users-shell {
+  gap: 18px;
+}
+
+.admin-users-toolbar {
+  display: grid;
+  gap: 10px;
+  min-width: min(460px, 100%);
+}
+
+.admin-users-toolbar input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f4f4;
+  padding: 12px 14px;
+}
+
+.admin-users-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-users-filter {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d8d8d8;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-users-filter.is-active {
+  border-color: rgba(255, 204, 0, 0.35);
+  background: rgba(255, 204, 0, 0.12);
+  color: #fff4c7;
+}
+
+.admin-users-panel-head {
+  align-items: stretch;
+}
+
+.admin-users-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+
+.admin-users-table-wrap {
+  min-width: 0;
+}
+
+.admin-users-row {
+  cursor: pointer;
+}
+
+.admin-users-row.is-selected {
+  background: rgba(255, 204, 0, 0.06);
+}
+
+.admin-users-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-users-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff5cd;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.admin-users-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-users-avatar--large {
+  width: 64px;
+  height: 64px;
+}
+
+.admin-users-kind-badge,
+.admin-users-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 94px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-users-kind-badge--writer {
+  background: rgba(96, 165, 250, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  color: #cce1ff;
+}
+
+.admin-users-kind-badge--reader {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ededed;
+}
+
+.admin-users-kind-badge--staff {
+  background: rgba(255, 204, 0, 0.14);
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  color: #ffe8a5;
+}
+
+.admin-users-status-badge.is-active {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  color: #c0ffd7;
+}
+
+.admin-users-status-badge.is-banned {
+  background: rgba(220, 38, 38, 0.14);
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  color: #ffd1d1;
+}
+
+.admin-users-detail {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.admin-users-detail__head,
+.admin-users-detail__actions,
+.admin-users-detail__meta,
+.admin-users-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-users-detail__meta span,
+.admin-users-summary p {
+  color: #b3b3b3;
+  margin: 0;
+}
+
+.admin-users-detail__actions {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.admin-users-detail__actions button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ececec;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-users-history {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-users-history h3 {
+  margin: 0;
+}
+
+.admin-users-history__list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-users-history__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-users-history__item p,
+.admin-users-history__item small {
+  margin: 4px 0 0;
+  color: #b3b3b3;
+}
+
+.admin-users-history__item button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ececec;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 1024px) {
+  .admin-users-layout {
+    grid-template-columns: 1fr;
   }
 }

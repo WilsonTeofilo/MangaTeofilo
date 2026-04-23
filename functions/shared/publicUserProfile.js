@@ -1,4 +1,5 @@
 const AVATAR_FALLBACK = '/assets/avatares/ava1.webp';
+import { resolveCanonicalPublicHandle } from './canonicalIdentity.js';
 
 function asString(value, fallback = '') {
   const normalized = String(value || '').trim();
@@ -55,17 +56,42 @@ function buildCreatorPublicMonetization(root = {}, supportOffer = {}) {
 function creatorAccessIsApproved(source = {}, root = {}) {
   const sourceCreatorProfileDirect = asObject(source.creatorProfile);
   const rootCreatorProfileDirect = asObject(root.creatorProfile);
-  const creatorApplicationStatus = asString(
-    source.creatorApplicationStatus || root.creatorApplicationStatus
-  ).toLowerCase();
   const creatorStatus = asString(source.creatorStatus || root.creatorStatus).toLowerCase();
   const sourceCreator = asObject(source.creator);
   const rootCreator = asObject(root.creator);
+  const signupIntent = asString(source.signupIntent || root.signupIntent).toLowerCase();
+  const accountType = asString(source.accountType || root.accountType).toLowerCase();
+  const creatorHandle = resolveCanonicalPublicHandle({
+    ...root,
+    ...source,
+    publicProfile: {
+      ...root,
+      ...source,
+      ...asObject(root.publicProfile),
+      ...asObject(source),
+    },
+    creator: {
+      ...rootCreator,
+      ...sourceCreator,
+      profile: {
+        ...rootCreatorProfileDirect,
+        ...sourceCreatorProfileDirect,
+      },
+    },
+  });
+  const creatorDisplayName = asString(
+    sourceCreatorProfileDirect.displayName ||
+      rootCreatorProfileDirect.displayName ||
+      source.creatorDisplayName ||
+      root.creatorDisplayName ||
+      source.userName ||
+      root.userName
+  );
+  const hasWriterIdentity = Boolean(creatorHandle || creatorDisplayName);
 
   return (
     source.isCreatorProfile === true ||
     root.isCreatorProfile === true ||
-    creatorApplicationStatus === 'approved' ||
     creatorStatus === 'active' ||
     creatorStatus === 'onboarding' ||
     sourceCreatorProfileDirect.isCreator === true ||
@@ -73,7 +99,11 @@ function creatorAccessIsApproved(source = {}, root = {}) {
     sourceCreator.isCreator === true ||
     rootCreator.isCreator === true ||
     sourceCreator.onboardingCompleted === true ||
-    rootCreator.onboardingCompleted === true
+    rootCreator.onboardingCompleted === true ||
+    source.creatorOnboardingCompleted === true ||
+    root.creatorOnboardingCompleted === true ||
+    ((signupIntent === 'creator' || accountType === 'writer' || accountType === 'creator') &&
+      hasWriterIdentity)
   );
 }
 
@@ -97,9 +127,23 @@ export function buildPublicProfileFromUsuarioRow(row = {}, uidOverride = null) {
   const sourceCreatorSocial = asObject(sourceCreatorProfile.socialLinks);
   const privateCreatorProfile = asObject(root?.creator?.profile);
   const privateCreatorSocial = asObject(root?.creator?.social);
-  const userHandle = asString(
-    root.userHandle || source.userHandle || privateCreatorProfile.username || sourceCreatorProfile.username
-  ).toLowerCase();
+  const userHandle = resolveCanonicalPublicHandle({
+    ...root,
+    ...source,
+    creator: {
+      ...asObject(root.creator),
+      profile: {
+        ...privateCreatorProfile,
+      },
+    },
+    publicProfile: {
+      ...asObject(root.publicProfile),
+      ...source,
+      creatorProfile: {
+        ...sourceCreatorProfile,
+      },
+    },
+  });
   const creatorDisplayName = asString(
     privateCreatorProfile.displayName ||
       sourceCreatorProfile.displayName ||

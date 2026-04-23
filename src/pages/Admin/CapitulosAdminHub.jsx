@@ -27,6 +27,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
     obraAtual,
     capitulosObra,
     capsSemWorkId,
+    authorLookupMatches,
   } = useCapitulosAdminHubData({
     db,
     canAccessWorkspace,
@@ -63,14 +64,36 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
         <div className="capitulos-admin-hub__selector-main">
           {!isCreatorWorkspace ? (
             <label>
-              Buscar por obra, @username ou UID
+              Buscar por obra ou @username
               <input
                 type="text"
                 value={obraQuery}
                 onChange={(e) => setObraQuery(String(e.target.value || ''))}
-                placeholder="Ex.: @sagaudim, uid do autor ou título da obra"
+                placeholder="Ex.: @sagaudim ou título da obra"
               />
             </label>
+          ) : null}
+          {!isCreatorWorkspace && obraQuery.trim().length >= 2 && authorLookupMatches.length > 0 ? (
+            <div className="capitulos-admin-hub__author-results" role="listbox" aria-label="Resultados da busca por autor">
+              {authorLookupMatches.map((entry) => (
+                <button
+                  key={entry.uid}
+                  type="button"
+                  className="capitulos-admin-hub__author-result"
+                  onClick={() => setObraQuery(`@${entry.handle}`)}
+                >
+                  <img
+                    className="capitulos-admin-hub__author-avatar"
+                    src={entry.avatarUrl || '/assets/fotos/shito.jpg'}
+                    alt={entry.displayName || entry.handle || 'Autor'}
+                  />
+                  <span className="capitulos-admin-hub__author-meta">
+                    <strong>{entry.displayName || 'Autor encontrado'}</strong>
+                    <span>{entry.handle ? `@${entry.handle}` : 'Sem @username publico'}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           ) : null}
           <label>
             Selecionar obra
@@ -79,9 +102,7 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
               {obras.map((obra) => (
                 <option key={obra.id} value={obra.id}>
                   {obra.tituloCurto || obra.titulo || obra.id}
-                  {!isCreatorWorkspace
-                    ? ` · ${obra.creatorHandle ? '@' + obra.creatorHandle : (obra.creatorId ? obra.creatorId : 'sem autor')}`
-                    : ''}
+                  {!isCreatorWorkspace ? ` · ${obra.authorLabel || 'Sem autor vinculado'}` : ''}
                 </option>
               ))}
             </select>
@@ -91,8 +112,8 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
               {obraQuery.trim()
                 ? (obras.length
                     ? `${obras.length} obra(s) encontrada(s) de ${obrasTotal} no catálogo.`
-                    : 'Nada encontrado para essa busca. Revise @username, UID ou título.')
-                : 'Digite @username, UID ou título para filtrar o catálogo e achar a obra certa.'}
+                    : 'Nada encontrado para essa busca. Revise @username ou título.')
+                : 'Digite @username ou título para filtrar o catálogo e achar a obra certa.'}
             </p>
           ) : null}
           <div className="capitulos-admin-hub__selector-actions">
@@ -117,10 +138,10 @@ export default function CapitulosAdminHub({ adminAccess, workspace = 'admin' }) 
           {!isCreatorWorkspace ? (
             <span>
               {obraAtual
-                ? (obraAtual.creatorHandle
-                    ? '@' + obraAtual.creatorHandle
-                    : obraAtual.creatorId
-                      ? obraAtual.creatorId
+                ? (obraAtual.authorState === 'linked'
+                    ? obraAtual.authorLabel
+                    : obraAtual.authorState === 'removed'
+                      ? 'Autor removido (obra reatribuível)'
                       : 'Obra da plataforma sem autor vinculado')
                 : 'Sem catálogo ativo'}
             </span>

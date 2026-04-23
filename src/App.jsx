@@ -78,6 +78,7 @@ const AdminPedidosHub = lazy(() => import('./pages/Admin/AdminPedidosHub.jsx'));
 const EquipeAdmin = lazy(() => import('./pages/Admin/EquipeAdmin.jsx'));
 const SessoesAdmin = lazy(() => import('./pages/Admin/SessoesAdmin.jsx'));
 const CriadoresAdmin = lazy(() => import('./pages/Admin/CriadoresAdmin.jsx'));
+const UsuariosAdmin = lazy(() => import('./pages/Admin/UsuariosAdmin.jsx'));
 const CreatorsApplyPage = lazy(() => import('./pages/Creators/CreatorsApplyPage.jsx'));
 const CreatorOnboardingPage = lazy(() => import('./pages/Creators/CreatorOnboardingPage.jsx'));
 const UsernamePublicRoute = lazy(() => import('./pages/Public/UsernamePublicRoute.jsx'));
@@ -121,9 +122,109 @@ function computePodeAcessarApp(usuario, perfilUsuario, adminAccess) {
   if (!usuario) return false;
   if (adminAccess?.canAccessAdmin) return true;
   if (!perfilUsuario) return false;
-  if (perfilUsuario.status === 'banido') return false;
-  if (perfilUsuario.status !== 'ativo') return false;
+  if (perfilUsuario.status !== 'ativo' && perfilUsuario.status !== 'banido') return false;
   return true;
+}
+
+function resolveBanInfo(perfilUsuario) {
+  const moderation = perfilUsuario?.moderation || {};
+  const isBanned = moderation?.isBanned === true || perfilUsuario?.status === 'banido';
+  const expiresAt = Number(moderation?.currentBanExpiresAt || 0) || 0;
+  const now = Date.now();
+  const active = Boolean(isBanned && (!expiresAt || expiresAt > now));
+  const totalBanCount = Number(moderation?.totalBanCount || 0) || 0;
+  return {
+    active,
+    reason: String(moderation?.lastBanReason || perfilUsuario?.banReason || '').trim(),
+    expiresAt: expiresAt || null,
+    totalBanCount,
+    bansRemaining: Math.max(0, 4 - totalBanCount),
+  };
+}
+
+function formatBanRemaining(expiresAt) {
+  const end = Number(expiresAt || 0);
+  if (!end) return 'sem prazo definido';
+  const diff = Math.max(0, end - Date.now());
+  const hours = Math.floor(diff / (60 * 60 * 1000));
+  const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+  if (hours > 0) return `${hours}h ${minutes}min`;
+  return `${Math.max(1, minutes)}min`;
+}
+
+function BanBlockedRoute({ banInfo, onGoProfile, onGoHome }) {
+  return (
+    <div style={{ minHeight: '70vh', display: 'grid', placeItems: 'center', padding: '32px 16px' }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          width: 'min(560px, 100%)',
+          background: '#10141f',
+          border: '1px solid rgba(255,215,0,0.18)',
+          borderRadius: '20px',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.45)',
+          padding: '24px',
+          color: '#f5f7fb',
+        }}
+      >
+        <p style={{ color: '#f1c232', fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', margin: 0 }}>
+          Conta temporariamente suspensa
+        </p>
+        <h2 style={{ margin: '10px 0 12px', fontSize: '1.8rem' }}>Você não pode acessar esta obra agora</h2>
+        <p style={{ margin: '0 0 12px', color: '#d7deea', lineHeight: 1.6 }}>
+          Sua conta está com ban ativo. Durante esse período, leitura, comentários e publicação ficam bloqueados.
+        </p>
+        <p style={{ margin: '0 0 8px', color: '#f5f7fb' }}>
+          <strong>Motivo:</strong> {banInfo.reason || 'Não informado pela equipe.'}
+        </p>
+        <p style={{ margin: '0 0 8px', color: '#f5f7fb' }}>
+          <strong>Tempo restante:</strong>{' '}
+          {banInfo.expiresAt
+            ? `${formatBanRemaining(banInfo.expiresAt)} (até ${new Date(banInfo.expiresAt).toLocaleString('pt-BR')})`
+            : 'sem prazo definido'}
+        </p>
+        <p style={{ margin: '0 0 20px', color: '#f5f7fb' }}>
+          <strong>Bans acumulados:</strong> {banInfo.totalBanCount} de 4.{' '}
+          {banInfo.bansRemaining > 0
+            ? `Faltam ${banInfo.bansRemaining} para exclusão permanente da conta.`
+            : 'O próximo passo é exclusão permanente.'}
+        </p>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={onGoProfile}
+            style={{
+              border: 0,
+              borderRadius: '999px',
+              padding: '12px 18px',
+              background: '#f1c232',
+              color: '#0f1218',
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            Ir para minha conta
+          </button>
+          <button
+            type="button"
+            onClick={onGoHome}
+            style={{
+              borderRadius: '999px',
+              padding: '12px 18px',
+              background: 'transparent',
+              color: '#f5f7fb',
+              border: '1px solid rgba(255,255,255,0.22)',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Voltar ao início
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 
@@ -181,6 +282,7 @@ function AppRoutes() {
   const roleContext = resolveAppRoleContext(perfilUsuario, adminAccess, {
     profileLoaded: perfilBelongsToCurrentUser,
   });
+  const banInfo = resolveBanInfo(perfilUsuario);
   const creatorCatalogUid = usuario?.uid && roleContext.isCreator ? usuario.uid : null;
   const { obrasVal: creatorObrasVal, capsVal: creatorCapsVal, produtosVal: creatorProdutosVal } =
     useCreatorScopedCatalog(db, creatorCatalogUid);
@@ -335,10 +437,23 @@ function AppRoutes() {
     location.pathname === '/login' ||
     location.pathname === '/perfil' ||
     location.pathname.startsWith('/creator/onboarding');
+  const bannedAccountOnly =
+    Boolean(podeAcessarApp) &&
+    banInfo.active === true &&
+    resolvedAppRole !== APP_ROLE.ADMIN;
+  const banPathAllowed =
+    location.pathname === '/login' ||
+    location.pathname === '/perfil';
+  const banPathUsesModal =
+    location.pathname.startsWith('/work/') ||
+    location.pathname.startsWith('/ler/');
 
   // Segurança UX: se o tracking abrir na home, empurra para /apoie mantendo query.
   if (location.pathname === '/' && cameFromPromoTracking) {
     return <Navigate to={`/apoie${location.search || ''}`} replace />;
+  }
+  if (bannedAccountOnly && !banPathAllowed && !banPathUsesModal) {
+    return <Navigate to="/perfil?ban=1" replace />;
   }
   if (requiresBirthDateCompletion && !birthDateGuardBypass) {
     return <Navigate to="/perfil?required=birthDate" replace />;
@@ -379,11 +494,19 @@ function AppRoutes() {
           <Route
             path="/work/:slug"
             element={
-              <ObraDetalhe
-                user={podeAcessarApp ? usuario : null}
-                perfil={podeAcessarApp ? perfilUsuario : null}
-                adminAccess={adminAccess}
-              />
+              bannedAccountOnly ? (
+                <BanBlockedRoute
+                  banInfo={banInfo}
+                  onGoProfile={() => window.location.assign('/perfil?ban=1')}
+                  onGoHome={() => window.location.assign('/')}
+                />
+              ) : (
+                <ObraDetalhe
+                  user={podeAcessarApp ? usuario : null}
+                  perfil={podeAcessarApp ? perfilUsuario : null}
+                  adminAccess={adminAccess}
+                />
+              )
             }
           />
           <Route
@@ -481,11 +604,19 @@ function AppRoutes() {
           <Route
             path="/ler/:id"
             element={
-              <Leitor
-                user={podeAcessarApp ? usuario : null}
-                perfil={podeAcessarApp ? perfilUsuario : null}
-                adminAccess={adminAccess}
-              />
+              bannedAccountOnly ? (
+                <BanBlockedRoute
+                  banInfo={banInfo}
+                  onGoProfile={() => window.location.assign('/perfil?ban=1')}
+                  onGoHome={() => window.location.assign('/')}
+                />
+              ) : (
+                <Leitor
+                  user={podeAcessarApp ? usuario : null}
+                  perfil={podeAcessarApp ? perfilUsuario : null}
+                  adminAccess={adminAccess}
+                />
+              )
             }
           />
           <Route path="/sobre-autor" element={<SobreAutor />} />
@@ -760,10 +891,22 @@ function AppRoutes() {
           />
           <Route path="/admin/orders" element={<Navigate to="/admin/pedidos?tab=producao" replace />} />
           <Route path="/admin/producao-fisica" element={<Navigate to="/admin/pedidos?tab=producao" replace />} />
-          <Route
-            path="/admin/sessoes"
-            element={
-              !routeShellReady ? (
+            <Route
+              path="/admin/usuarios"
+              element={
+                !routeShellReady ? (
+                  <div className="loading-screen">Carregando...</div>
+                ) : adminPathOk('/admin/usuarios') ? (
+                  <UsuariosAdmin adminAccess={adminAccess} />
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
+            />
+            <Route
+              path="/admin/sessoes"
+              element={
+                !routeShellReady ? (
                 <div className="shito-app-splash" aria-hidden="true" />
               ) : adminPathOk('/admin/sessoes') ? (
                 <SessoesAdmin adminAccess={adminAccess} />

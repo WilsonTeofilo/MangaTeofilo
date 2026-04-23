@@ -62,6 +62,62 @@ async function notifyCreatorRequestAdmins(
   );
 }
 
+async function queueCreatorMonetizationReview(
+  db,
+  uid,
+  row,
+  {
+    birthDateRaw,
+    displayName,
+    bioShort,
+    instagramUrl,
+    youtubeUrl,
+    compliance,
+    now,
+    profileImageUrl,
+    profileImageCrop,
+  }
+) {
+  const creatorDocM = assembleCreatorRecordForRtdb({
+    row,
+    birthDateIso: birthDateRaw,
+    displayName,
+    bio: bioShort,
+    instagramUrl,
+    youtubeUrl,
+    monetizationPreference: 'monetize',
+    creatorMonetizationStatus: 'disabled',
+    compliance,
+    now,
+  });
+  creatorDocM.monetization.application = {
+    ...(creatorDocM.monetization.application || {}),
+    status: 'pending',
+    requestedAt: now,
+    reviewedAt: null,
+    reviewedBy: null,
+    reviewReason: null,
+  };
+  creatorDocM.monetization.financial = {
+    ...(creatorDocM.monetization.financial || {}),
+    status: 'inactive',
+    activatedAt: null,
+    updatedAt: now,
+  };
+  const monetizationPatch = {
+    [`usuarios/${uid}/creator`]: creatorDocM,
+    [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: now,
+    [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
+    [`usuarios/${uid}/creatorCompliance`]: compliance,
+    [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
+    [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
+  };
+  if (!Number(row?.creatorRequestedAt || 0)) {
+    monetizationPatch[`usuarios/${uid}/creatorRequestedAt`] = now;
+  }
+  await db.ref().update(monetizationPatch);
+}
+
 function normalizeCreatorSocialUrl(raw, allowedHosts = []) {
   const value = String(raw || '').trim();
   if (!value) return '';
@@ -104,7 +160,8 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
   const creatorStatsRow = creatorStatsSnap.exists() ? creatorStatsSnap.val() || {} : {};
   const now = Date.now();
   const statusAtual = String(row?.creatorApplicationStatus || '').trim().toLowerCase();
-  if (statusAtual === 'requested') {
+  const alreadyHasCreatorAccess = creatorAccessIsApprovedFromDb(row);
+  if (statusAtual === 'requested' && alreadyHasCreatorAccess) {
     return { ok: true, status: 'requested', alreadyPending: true };
   }
 
@@ -153,10 +210,9 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     throw new HttpsError('invalid-argument', 'Data de nascimento invalida.');
   }
   const isAdult = age >= 18;
-  const isAlreadyCreator = creatorAccessIsApprovedFromDb(row);
-  const monetizationRequested =
-    isAlreadyCreator &&
-    String(payload.monetizationPreference || '').trim().toLowerCase() === 'monetize';
+  const isAlreadyCreator = alreadyHasCreatorAccess;
+  const wantsMonetization = String(payload.monetizationPreference || '').trim().toLowerCase() === 'monetize';
+  const monetizationRequested = wantsMonetization;
   const monetizationPreference = monetizationRequested ? 'monetize' : 'publish_only';
 
   const legalFullNameIn = String(payload.legalFullName || '').trim();
@@ -278,44 +334,17 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
         monetizationAlreadyApproved: true,
       };
     }
-    const creatorDocM = assembleCreatorRecordForRtdb({
-      row,
-      birthDateIso: birthDateRaw,
+    await queueCreatorMonetizationReview(db, uid, row, {
+      birthDateRaw,
       displayName,
-      bio: bioShort,
+      bioShort,
       instagramUrl,
       youtubeUrl,
-      monetizationPreference: 'monetize',
-      creatorMonetizationStatus: 'disabled',
       compliance,
       now,
+      profileImageUrl,
+      profileImageCrop,
     });
-    creatorDocM.monetization.application = {
-      ...(creatorDocM.monetization.application || {}),
-      status: 'pending',
-      requestedAt: now,
-      reviewedAt: null,
-      reviewedBy: null,
-      reviewReason: null,
-    };
-    creatorDocM.monetization.financial = {
-      ...(creatorDocM.monetization.financial || {}),
-      status: 'inactive',
-      activatedAt: null,
-      updatedAt: now,
-    };
-    const monetizationPatch = {
-      [`usuarios/${uid}/creator`]: creatorDocM,
-      [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: now,
-      [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
-      [`usuarios/${uid}/creatorCompliance`]: compliance,
-      [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
-      [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
-    };
-    if (!Number(row?.creatorRequestedAt || 0)) {
-      monetizationPatch[`usuarios/${uid}/creatorRequestedAt`] = now;
-    }
-    await db.ref().update(monetizationPatch);
     await pushUserNotification(db, uid, {
       type: 'creator_monetization',
       title: 'Solicitacao de monetizacao enviada',
@@ -355,7 +384,7 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
       instagramUrl: instagramUrl || null,
       youtubeUrl: youtubeUrl || null,
     },
-    status: 'pending',
+    status: 'approved',
     acceptTerms: true,
     createdAt: row?.creatorApplication?.createdAt || now,
     updatedAt: now,
@@ -373,50 +402,15 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     now,
   });
 
-  if (monetizationPreference === 'monetize') {
-    const approvalGate = evaluateCreatorApplicationApprovalGate(row, creatorStatsRow);
-    if (!approvalGate.ok) {
-      throw new HttpsError(
-        'failed-precondition',
-        `Para enviar candidatura com monetizacao, atinja as metas do Nivel 1: ${approvalGate.metrics.followers}/${approvalGate.thresholds.followers} seguidores, ${approvalGate.metrics.views}/${approvalGate.thresholds.views} views, ${approvalGate.metrics.likes}/${approvalGate.thresholds.likes} likes.`
-      );
-    }
-  }
-
-  if (monetizationPreference === 'publish_only') {
-    const prePatch = {
-      [`usuarios/${uid}/creator`]: creatorDocSubmit,
-      [`usuarios/${uid}/signupIntent`]: 'creator',
-      [`usuarios/${uid}/creatorApplication`]: creatorApplication,
-      [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
-      [`usuarios/${uid}/creatorPendingProfileImageCrop`]: profileImageCrop,
-      [`usuarios/${uid}/creatorBannerUrl`]: null,
-      [`usuarios/${uid}/publicProfile/creatorBannerUrl`]: null,
-      [`usuarios/${uid}/birthDate`]: birthDateRaw,
-      [`usuarios/${uid}/birthYear`]: Number.isInteger(birthYearFromDate) ? birthYearFromDate : null,
-      [`usuarios/${uid}/publicProfile/updatedAt`]: now,
-      [`usuarios/${uid}/creatorTermsAccepted`]: true,
-      [`usuarios/${uid}/creatorCompliance`]: null,
-    };
-    await db.ref().update(prePatch);
-    const snapAfter = await userRef.get();
-    const rowAfter = snapAfter.val() || {};
-    await finalizeCreatorApplicationApproval(db, uid, rowAfter, uid, { isAutoPublishOnly: true });
-    return {
-      ok: true,
-      status: 'approved',
-      autoApproved: true,
-      application: creatorApplication,
-      monetizationPreference,
-      monetizationRequested,
-      isAdult,
-    };
-  }
+  const approvalGate = monetizationPreference === 'monetize'
+    ? evaluateCreatorApplicationApprovalGate(row, creatorStatsRow)
+    : { ok: false };
+  const canQueueMonetizationNow = monetizationPreference === 'monetize' && isAdult && approvalGate.ok;
 
   const patch = {
     [`usuarios/${uid}/creator`]: creatorDocSubmit,
     [`usuarios/${uid}/signupIntent`]: 'creator',
-    [`usuarios/${uid}/creatorApplicationStatus`]: 'requested',
+    [`usuarios/${uid}/creatorApplicationStatus`]: 'approved',
     [`usuarios/${uid}/creatorApplication`]: creatorApplication,
     [`usuarios/${uid}/creatorMonetizationReviewRequestedAt`]: null,
     [`usuarios/${uid}/creatorPendingProfileImageUrl`]: profileImageUrl,
@@ -426,34 +420,78 @@ export const creatorSubmitApplication = onCall({ region: 'us-central1' }, async 
     [`usuarios/${uid}/birthDate`]: birthDateRaw,
     [`usuarios/${uid}/birthYear`]: Number.isInteger(birthYearFromDate) ? birthYearFromDate : null,
     [`usuarios/${uid}/creatorRequestedAt`]: now,
-    [`usuarios/${uid}/creatorRejectedAt`]: null,
-    [`usuarios/${uid}/creatorApprovedAt`]: null,
-    [`usuarios/${uid}/creatorReviewedBy`]: null,
-    [`usuarios/${uid}/creatorReviewReason`]: null,
-    [`usuarios/${uid}/creatorModerationAction`]: null,
-    [`usuarios/${uid}/creatorModerationBy`]: null,
-    [`usuarios/${uid}/creatorModeratedAt`]: null,
     [`usuarios/${uid}/creatorMonetizationReviewReason`]: null,
     [`usuarios/${uid}/publicProfile/updatedAt`]: now,
     [`usuarios/${uid}/creatorTermsAccepted`]: true,
-    [`usuarios/${uid}/creatorCompliance`]: compliance || null,
+    [`usuarios/${uid}/creatorCompliance`]: canQueueMonetizationNow ? compliance || null : null,
   };
   await db.ref().update(patch);
+  const snapAfter = await userRef.get();
+  const rowAfterApproval = snapAfter.val() || {};
+  await finalizeCreatorApplicationApproval(db, uid, rowAfterApproval, uid, { isAutoPublishOnly: true });
+
+  if (canQueueMonetizationNow) {
+    const rowAfterCreator = (await userRef.get()).val() || {};
+    await queueCreatorMonetizationReview(db, uid, rowAfterCreator, {
+      birthDateRaw,
+      displayName,
+      bioShort,
+      instagramUrl,
+      youtubeUrl,
+      compliance,
+      now,
+      profileImageUrl,
+      profileImageCrop,
+    });
+    await pushUserNotification(db, uid, {
+      type: 'creator_monetization',
+      title: 'Criador liberado e monetizacao enviada',
+      message:
+        'Seu perfil de escritor ja esta liberado para publicar. A revisao de monetizacao foi enviada para a equipe.',
+      data: { status: 'approved', monetizationStatus: 'pending', readPath: '/creator/monetizacao' },
+    });
+    await notifyCreatorRequestAdmins(db, {
+      applicantUid: uid,
+      displayName,
+      monetizationPreference: 'monetize',
+      monetizationOnly: true,
+    });
+    return {
+      ok: true,
+      status: 'approved',
+      autoApproved: true,
+      application: creatorApplication,
+      monetizationPreference: 'monetize',
+      monetizationRequested: true,
+      monetizationStatus: 'disabled',
+      isAdult,
+    };
+  }
 
   await pushUserNotification(db, uid, {
     type: 'creator_application',
-    title: 'Solicitacao enviada',
+    title: 'Acesso de escritor liberado',
     message:
       monetizationPreference === 'monetize'
-        ? 'Seu pedido de criador com monetizacao foi enviado. Se aprovado como creator, a monetizacao ja nasce pronta para uso.'
-        : 'Seu pedido de criador foi enviado para analise.',
-    data: { status: 'requested', monetizationPreference, monetizationRequested, isAdult },
+        ? 'Seu perfil de escritor ja esta liberado para publicar. A monetizacao continua bloqueada ate voce cumprir os requisitos e solicitar revisao.'
+        : 'Seu perfil de escritor ja esta liberado para publicar.',
+    data: {
+      status: 'approved',
+      monetizationPreference: monetizationPreference === 'monetize' ? 'publish_only' : monetizationPreference,
+      monetizationRequested: false,
+      isAdult,
+      readPath: '/perfil',
+    },
   });
-  await notifyCreatorRequestAdmins(db, {
-    applicantUid: uid,
-    displayName,
-    monetizationPreference,
-  });
-  return { ok: true, status: 'requested', application: creatorApplication };
+  return {
+    ok: true,
+    status: 'approved',
+    autoApproved: true,
+    application: creatorApplication,
+    monetizationPreference: canQueueMonetizationNow ? 'monetize' : 'publish_only',
+    monetizationRequested: canQueueMonetizationNow,
+    monetizationDeferred: monetizationPreference === 'monetize' && !canQueueMonetizationNow,
+    isAdult,
+  };
 });
 

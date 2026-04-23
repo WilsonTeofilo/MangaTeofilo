@@ -33,6 +33,8 @@ export default function ChapterComments({
   modalLoginComentario,
   onCloseLoginModal,
   onLoginRedirect,
+  banModal,
+  onCloseBanModal,
   privateProfileModal,
   onClosePrivateProfileModal,
 }) {
@@ -283,6 +285,52 @@ export default function ChapterComments({
                 onClick={onLoginRedirect}
               >
                 Sim, entrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {banModal && (
+        <div className="leitor-modal-backdrop" onClick={onCloseBanModal} role="presentation">
+          <div
+            className="leitor-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leitor-modal-ban-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button type="button" className="leitor-modal-fechar" onClick={onCloseBanModal} aria-label="Fechar">
+              x
+            </button>
+            <h2 id="leitor-modal-ban-title" className="leitor-modal-titulo">
+              Conta temporariamente suspensa
+            </h2>
+            <p className="leitor-modal-texto">
+              Durante o ban você não pode comentar, curtir ou interagir nas obras.
+            </p>
+            <p className="leitor-modal-texto">
+              <strong>Motivo:</strong> {banModal.reason || 'Não informado pela equipe.'}
+            </p>
+            <p className="leitor-modal-texto">
+              <strong>Tempo restante:</strong>{' '}
+              {banModal.expiresAt
+                ? `${banModal.remainingLabel || 'sem prazo definido'} (até ${new Date(banModal.expiresAt).toLocaleString('pt-BR')})`
+                : 'sem prazo definido'}
+            </p>
+            <p className="leitor-modal-texto">
+              <strong>Bans acumulados:</strong> {banModal.totalBanCount} de 4.{' '}
+              {banModal.bansRemaining > 0
+                ? `Faltam ${banModal.bansRemaining} para exclusão permanente.`
+                : 'A próxima etapa é exclusão permanente.'}
+            </p>
+            <div className="leitor-modal-acoes">
+              <button
+                type="button"
+                className="leitor-modal-btn leitor-modal-btn--primario"
+                onClick={onCloseBanModal}
+              >
+                Entendi
               </button>
             </div>
           </div>

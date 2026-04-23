@@ -21,6 +21,41 @@ import './HeaderV2.css';
 const MOBILE_BREAKPOINT = 768;
 const WORKSPACE_STORAGE_KEY = 'shito:last-workspace';
 
+function resolveHeaderBanInfo(perfil) {
+  const moderation = perfil?.moderation && typeof perfil.moderation === 'object' ? perfil.moderation : {};
+  const expiresAt = Number(moderation?.currentBanExpiresAt || 0) || 0;
+  const active =
+    (moderation?.isBanned === true || String(perfil?.status || '').trim().toLowerCase() === 'banido') &&
+    (!expiresAt || expiresAt > Date.now());
+  const totalBanCount = Number(moderation?.totalBanCount || 0) || 0;
+  return {
+    active,
+    reason: String(moderation?.lastBanReason || perfil?.banReason || '').trim(),
+    expiresAt: expiresAt || null,
+    totalBanCount,
+    bansRemaining: Math.max(0, 4 - totalBanCount),
+  };
+}
+
+function formatHeaderBanRemaining(expiresAt) {
+  const end = Number(expiresAt || 0);
+  if (!Number.isFinite(end) || end <= 0) return 'sem prazo definido';
+  const diff = Math.max(0, end - Date.now());
+  const totalSeconds = Math.floor(diff / 1000);
+  const dias = Math.floor(totalSeconds / 86400);
+  const horas = Math.floor((totalSeconds % 86400) / 3600);
+  const minutos = Math.floor((totalSeconds % 3600) / 60);
+  const segundos = totalSeconds % 60;
+  return [
+    dias > 0 ? `${dias}d` : null,
+    horas > 0 || dias > 0 ? `${horas}h` : null,
+    minutos > 0 || horas > 0 || dias > 0 ? `${minutos}m` : null,
+    `${segundos}s`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 export default function Header({
   usuario,
   perfil,
@@ -34,8 +69,10 @@ export default function Header({
   const navigate = useNavigate();
   const location = useLocation();
   const [menuAberto, setMenuAberto] = useState(false);
+  const [adminMenuAberto, setAdminMenuAberto] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [banBlockedModalOpen, setBanBlockedModalOpen] = useState(false);
   const [headerNotifications, setHeaderNotifications] = useState([]);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [storeCartItems, setStoreCartItems] = useState(() => getCartItems());
@@ -80,6 +117,7 @@ export default function Header({
     AVATAR_FALLBACK;
 
   const isPremium = !isAdmin && assinaturaPremiumAtiva(perfil);
+  const banInfo = useMemo(() => resolveHeaderBanInfo(perfil), [perfil]);
   const creatorMonetizationIsActive =
     resolveEffectiveCreatorMonetizationStatusFromDb(perfil) === 'active';
 
@@ -89,6 +127,7 @@ export default function Header({
     shellRole !== 'admin' &&
     !isMangakaPanel &&
     !canSeeAdminWorkspace;
+  const isAdminShell = canSeeAdminWorkspace;
 
   const lanceSuaLinhaPath =
     usuario && creatorNavAccess?.isMangaka && creatorMonetizationIsActive ? '/creator/print' : '/print-on-demand';
@@ -107,6 +146,40 @@ export default function Header({
 
   const isLanceRouteActive =
     location.pathname.startsWith('/print-on-demand') || location.pathname.startsWith('/creator/print');
+
+  const adminShellSections = useMemo(() => {
+    if (!isAdminShell) return [];
+    const sections = [];
+    const userItems = [
+      canAccessAdminPath('/admin/equipe', adminAccess) ? { label: 'Equipe ADM', path: '/admin/equipe' } : null,
+      canAccessAdminPath('/admin/criadores', adminAccess) ? { label: 'Criadores', path: '/admin/criadores' } : null,
+      canAccessAdminPath('/admin/usuarios', adminAccess) ? { label: 'Usuarios', path: '/admin/usuarios' } : null,
+      canAccessAdminPath('/admin/sessoes', adminAccess) ? { label: 'Sessoes', path: '/admin/sessoes' } : null,
+    ].filter(Boolean);
+    if (userItems.length) sections.push({ id: 'users', label: 'Usuarios', items: userItems });
+
+    const storeItems = [
+      canAccessAdminPath('/admin/products', adminAccess) ? { label: 'Produtos', path: '/admin/products' } : null,
+      canAccessAdminPath('/admin/pedidos', adminAccess) ? { label: 'Pedidos', path: '/admin/pedidos' } : null,
+      canAccessAdminPath('/admin/store/settings', adminAccess) ? { label: 'Configuracoes', path: '/admin/store/settings' } : null,
+    ].filter(Boolean);
+    if (storeItems.length) sections.push({ id: 'store', label: 'Loja', items: storeItems });
+
+    const artItems = [
+      canAccessAdminPath('/admin/obras', adminAccess) ? { label: 'Obras', path: '/admin/obras' } : null,
+      canAccessAdminPath('/admin/capitulos', adminAccess) ? { label: 'Capitulos', path: '/admin/capitulos' } : null,
+      canAccessAdminPath('/admin/avatares', adminAccess) ? { label: 'Avatares', path: '/admin/avatares' } : null,
+    ].filter(Boolean);
+    if (artItems.length) sections.push({ id: 'art', label: 'Arte', items: artItems });
+
+    const dashboardItems = [
+      canAccessAdminPath('/admin/dashboard', adminAccess) ? { label: 'Dashboard', path: '/admin/dashboard' } : null,
+      canAccessAdminPath('/admin/financeiro', adminAccess) ? { label: 'Financeiro', path: '/admin/financeiro' } : null,
+    ].filter(Boolean);
+    if (dashboardItems.length) sections.push({ id: 'dashboards', label: 'Dashboards', items: dashboardItems });
+
+    return sections;
+  }, [adminAccess, isAdminShell]);
 
   const workspaceMenus = useMemo(() => {
     const menus = [];
@@ -223,6 +296,7 @@ export default function Header({
     try {
       await signOut(auth);
       setMenuAberto(false);
+      setAdminMenuAberto(false);
       setAccountMenuOpen(false);
       setNotificationsOpen(false);
       navigate('/login');
@@ -232,9 +306,20 @@ export default function Header({
   };
 
   const pushRoute = (path, workspaceId = null) => {
+    const targetPath = String(path || '').trim() || '/';
+    const banAllowedPath = targetPath === '/perfil' || targetPath.startsWith('/perfil?') || targetPath === '/login';
+    if (banInfo.active && !banAllowedPath) {
+      setBanBlockedModalOpen(true);
+      setMenuAberto(false);
+      setAdminMenuAberto(false);
+      setAccountMenuOpen(false);
+      setNotificationsOpen(false);
+      return;
+    }
     if (workspaceId) persistWorkspace(workspaceId);
-    navigate(path);
+    navigate(targetPath);
     setMenuAberto(false);
+    setAdminMenuAberto(false);
     setAccountMenuOpen(false);
     setNotificationsOpen(false);
   };
@@ -243,6 +328,7 @@ export default function Header({
     // Fechamos os menus ao trocar de rota para evitar overlays presos em navegacao SPA.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMenuAberto(false);
+    setAdminMenuAberto(false);
     setNotificationsOpen(false);
     setAccountMenuOpen(false);
     setSelectedNotification(null);
@@ -257,8 +343,9 @@ export default function Header({
 
   useEffect(() => {
     const syncMenuState = () => {
-      if (window.innerWidth > MOBILE_BREAKPOINT) {
+      if (!isAdminShell && window.innerWidth > MOBILE_BREAKPOINT) {
         setMenuAberto(false);
+        setAdminMenuAberto(false);
         if (mobileMenuLockRef.current) {
           unlockBodyScroll('header-mobile-menu', { className: 'mobile-menu-open' });
           mobileMenuLockRef.current = false;
@@ -268,7 +355,7 @@ export default function Header({
     syncMenuState();
     window.addEventListener('resize', syncMenuState);
     return () => window.removeEventListener('resize', syncMenuState);
-  }, []);
+  }, [isAdminShell]);
 
   useEffect(() => {
     /**
@@ -308,7 +395,7 @@ export default function Header({
   }, []);
 
   useEffect(() => {
-    const mobileOpen = menuAberto && window.innerWidth <= MOBILE_BREAKPOINT;
+    const mobileOpen = (menuAberto || adminMenuAberto) && (isAdminShell || window.innerWidth <= MOBILE_BREAKPOINT);
     if (mobileOpen && !mobileMenuLockRef.current) {
       lockBodyScroll('header-mobile-menu', { className: 'mobile-menu-open' });
       mobileMenuLockRef.current = true;
@@ -323,7 +410,7 @@ export default function Header({
         mobileMenuLockRef.current = false;
       }
     };
-  }, [menuAberto]);
+  }, [adminMenuAberto, isAdminShell, menuAberto]);
 
   useEffect(() => {
     const syncCart = () => setStoreCartItems(getCartItems());
@@ -458,11 +545,13 @@ export default function Header({
   const handleToggleNotifications = async () => {
     setAccountMenuOpen(false);
     setSelectedNotification(null);
+    setAdminMenuAberto(false);
     setNotificationsOpen((prev) => !prev);
   };
 
   const handleToggleAccountMenu = () => {
     setNotificationsOpen(false);
+    setAdminMenuAberto(false);
     setAccountMenuOpen((prev) => !prev);
   };
 
@@ -480,6 +569,7 @@ export default function Header({
     setSelectedNotification(null);
     setNotificationsOpen(false);
     setMenuAberto(false);
+    setAdminMenuAberto(false);
     navigate(targetPath);
   };
 
@@ -533,26 +623,36 @@ export default function Header({
 
   return (
     <nav
-      className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''} ${canSeeAdminWorkspace ? 'reader-header--staff-shell' : ''} ${menuAberto ? 'menu-open' : ''}`}
+      className={`reader-header ${usuario ? 'reader-header--logged' : 'reader-header--guest'} ${isAdmin ? 'reader-header--admin' : ''} ${canSeeAdminWorkspace ? 'reader-header--staff-shell' : ''} ${(menuAberto || adminMenuAberto) ? 'menu-open' : ''}`}
     >
       <div className="nav-container">
-        <button type="button" className="nav-logo" onClick={() => pushRoute('/')}>
+        <button
+          type="button"
+          className="nav-logo"
+          onClick={() => pushRoute('/')}
+        >
           MangaTeofilo
         </button>
 
         <WorkspaceNav
+          isAdminShell={isAdminShell}
           menuAberto={menuAberto}
           setMenuAberto={setMenuAberto}
+          adminMenuAberto={adminMenuAberto}
+          setAdminMenuAberto={setAdminMenuAberto}
           primaryNavItems={primaryNavItems}
           primaryNavIsActive={primaryNavIsActive}
           isLanceRouteActive={isLanceRouteActive}
           lanceSuaLinhaPath={lanceSuaLinhaPath}
           showCreatorsNav={showCreatorsNav}
           pushRoute={pushRoute}
+          adminShellSections={adminShellSections}
+          currentPathname={location.pathname}
         />
 
         <NotificationCenter
           usuario={usuario}
+          isAdminShell={isAdminShell}
           showCreatorsNav={showCreatorsNav}
           pushRoute={pushRoute}
           combinedCartCount={combinedCartCount}
@@ -618,6 +718,68 @@ export default function Header({
               </button>
               <button type="button" className="header-notification-modal__primary" onClick={openSelectedNotificationPath}>
                 Abrir destino
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {banBlockedModalOpen ? (
+        <div
+          className="header-notification-modal"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setBanBlockedModalOpen(false);
+          }}
+        >
+          <div className="header-notification-modal__panel" role="dialog" aria-modal="true">
+            <div className="header-notification-modal__head">
+              <div>
+                <small>conta com ban</small>
+                <strong>Acesso bloqueado temporariamente</strong>
+              </div>
+              <button type="button" onClick={() => setBanBlockedModalOpen(false)} aria-label="Fechar aviso de ban">
+                x
+              </button>
+            </div>
+            <div className="header-notification-modal__body">
+              <p>
+                Sua conta está com ban ativo. Você pode entrar na conta para acompanhar notificações e o prazo da punição,
+                mas não pode acessar obras, biblioteca, loja nem outras áreas públicas bloqueadas.
+              </p>
+              <p>
+                <strong>Motivo:</strong> {banInfo.reason || 'Não informado pela equipe.'}
+              </p>
+              <p>
+                <strong>Tempo restante:</strong>{' '}
+                {banInfo.expiresAt
+                  ? `${formatHeaderBanRemaining(banInfo.expiresAt)} (até ${new Date(banInfo.expiresAt).toLocaleString('pt-BR')})`
+                  : 'sem prazo definido'}
+              </p>
+              <p>
+                <strong>Bans acumulados:</strong> {banInfo.totalBanCount} de 4.{' '}
+                {banInfo.bansRemaining > 0
+                  ? `Faltam ${banInfo.bansRemaining} para exclusão permanente da conta.`
+                  : 'A conta chegou ao limite de exclusão permanente.'}
+              </p>
+            </div>
+            <div className="header-notification-modal__actions">
+              <button
+                type="button"
+                className="header-notification-modal__ghost"
+                onClick={() => setBanBlockedModalOpen(false)}
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                className="header-notification-modal__primary"
+                onClick={() => {
+                  setBanBlockedModalOpen(false);
+                  navigate('/perfil?ban=1');
+                }}
+              >
+                Ir para minha conta
               </button>
             </div>
           </div>

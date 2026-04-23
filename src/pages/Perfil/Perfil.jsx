@@ -121,6 +121,7 @@ export default function Perfil({
   const [underageMonetizeModalOpen, setUnderageMonetizeModalOpen] = useState(false);
   const [readerProfilePublicDraft, setReaderProfilePublicDraft] = useState(false);
   const [lojaAvatarAuthorUnlocked, setLojaAvatarAuthorUnlocked] = useState(false);
+  const [banNowTs, setBanNowTs] = useState(() => Date.now());
   const mangakaFormAnchorRef = useRef(null);
   const mangakaBirthInputRef = useRef(null);
   const usernameInputRef = useRef(null);
@@ -291,6 +292,12 @@ export default function Perfil({
     return () => URL.revokeObjectURL(mangakaAvatarLocalPreview);
   }, [mangakaAvatarLocalPreview]);
 
+  useEffect(() => {
+    if (perfilDb?.moderation?.isBanned !== true) return undefined;
+    const intervalId = window.setInterval(() => setBanNowTs(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [perfilDb]);
+
   const perfilAvatarPreviewSrc =
     mangakaAvatarLocalPreview ||
     (resolvedIsMangaka && isTrustedProfileImageUrl(String(mangakaAvatarUrlDraft || '').trim())
@@ -300,6 +307,17 @@ export default function Perfil({
   const creatorApplicationStatus = String(perfilDb?.creatorApplicationStatus || '').trim().toLowerCase();
   const creatorMonetizationApplicationStatus = resolveCreatorMonetizationApplicationStatusFromDb(perfilDb || {});
   const creatorMonetizationStatus = resolveCreatorMonetizationStatusFromDb(perfilDb || {});
+  const moderationRow = perfilDb?.moderation && typeof perfilDb.moderation === 'object' ? perfilDb.moderation : {};
+  const banExpiresAt = Number(moderationRow?.currentBanExpiresAt || 0) || 0;
+  const banStillActive =
+    moderationRow?.isBanned === true && (!banExpiresAt || banExpiresAt > banNowTs);
+  const banInfo = {
+    isBanned: banStillActive,
+    reason: String(moderationRow?.lastBanReason || perfilDb?.banReason || '').trim(),
+    expiresAt: banExpiresAt || null,
+    totalBanCount: Number(moderationRow?.totalBanCount || 0) || 0,
+    bansRemaining: Math.max(0, 4 - (Number(moderationRow?.totalBanCount || 0) || 0)),
+  };
   const perfilComStats = useMemo(() => {
     const base = perfilDb && typeof perfilDb === 'object' ? perfilDb : {};
     if (!creatorStatsLive) return base;
@@ -626,6 +644,7 @@ export default function Perfil({
       creatorModerationAction={creatorModerationAction}
       isCreatorDraft={isCreatorDraft}
       isCreatorCandidate={isCreatorCandidate}
+      banInfo={banInfo}
     />
   );
 }

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { equalTo, get, onValue, orderByChild, query, ref as dbRef } from 'firebase/database';
 
-import { obraCreatorId } from '../../../config/obras';
-import { buildPublicProfileFromUsuarioRow } from '../../../utils/publicUserProfile';
+import { obraCreatorId, resolveObraAuthorState } from '../../../config/obras';
 import { normalizeUsernameInput } from '../../../utils/usernameValidation';
+import {
+  buildAdminCreatorDirectory,
+  findAdminCreatorLookupMatches,
+} from '../../../utils/adminCreatorDirectory';
 
 function toSortedObras(raw) {
   return Object.entries(raw || {})
@@ -15,22 +18,24 @@ function toRecordList(raw) {
   return Object.entries(raw || {}).map(([id, data]) => ({ id, ...(data || {}) }));
 }
 
-function mergeCapitulosLists(...lists) {
-  const map = new Map();
-  lists.flat().forEach((item) => {
-    const id = String(item?.id || '').trim();
-    if (!id) return;
-    map.set(id, item);
-  });
-  return Array.from(map.values());
-}
-
 function capituloDaObra(cap, obraId) {
   const alvo = String(obraId || '').trim().toLowerCase();
   if (!alvo) return true;
   const workId = String(cap?.workId || '').trim().toLowerCase();
   const obraRef = String(cap?.obraId || '').trim().toLowerCase();
   return (workId && workId === alvo) || (obraRef && obraRef === alvo);
+}
+
+function buildChapterRowsByWork(allCapitulos = []) {
+  const map = new Map();
+  (Array.isArray(allCapitulos) ? allCapitulos : []).forEach((cap) => {
+    const workId = String(cap?.workId || cap?.obraId || '').trim().toLowerCase();
+    if (!workId) return;
+    const current = map.get(workId) || [];
+    current.push(cap);
+    map.set(workId, current);
+  });
+  return map;
 }
 
 export function useCapitulosAdminHubData({
@@ -51,51 +56,34 @@ export function useCapitulosAdminHubData({
     if (!canAccessWorkspace || isCreatorWorkspace) return () => {};
 
     let cancelled = false;
-    Promise.all([
+    Promise.allSettled([
       get(dbRef(db, 'usernames')),
       get(dbRef(db, 'usuarios')),
+      get(dbRef(db, 'usuarios_publicos')),
+      get(dbRef(db, 'creators')),
     ])
-      .then(([usernamesSnap, usuariosSnap]) => {
+      .then(([usernamesResult, usuariosResult, usuariosPublicosResult, creatorsResult]) => {
         if (cancelled) return;
-        const usernames = usernamesSnap.exists() ? usernamesSnap.val() || {} : {};
-        const usuarios = usuariosSnap.exists() ? usuariosSnap.val() || {} : {};
-        const byUid = {};
-
-        Object.entries(usernames || {}).forEach(([handleKey, uidValue]) => {
-          const uid = String(uidValue || '').trim();
-          if (!uid) return;
-          const perfil = buildPublicProfileFromUsuarioRow(usuarios?.[uid] || {}, uid);
-          const handle = normalizeUsernameInput(handleKey || perfil?.userHandle || '');
-          const displayName = String(
-            perfil?.creatorDisplayName ||
-              perfil?.userName ||
-              (handle ? '@' + handle : uid)
-          ).trim();
-          byUid[uid] = {
-            uid,
-            handle,
-            displayName,
-          };
-        });
-
-        Object.keys(usuarios || {}).forEach((uid) => {
-          const normalizedUid = String(uid || '').trim();
-          if (!normalizedUid || byUid[normalizedUid]) return;
-          const perfil = buildPublicProfileFromUsuarioRow(usuarios?.[normalizedUid] || {}, normalizedUid);
-          const handle = normalizeUsernameInput(perfil?.userHandle || '');
-          const displayName = String(
-            perfil?.creatorDisplayName ||
-              perfil?.userName ||
-              (handle ? '@' + handle : normalizedUid)
-          ).trim();
-          byUid[normalizedUid] = {
-            uid: normalizedUid,
-            handle,
-            displayName,
-          };
-        });
-
-        setCreatorLookupByUid(byUid);
+        const usernamesSnap =
+          usernamesResult.status === 'fulfilled' ? usernamesResult.value : null;
+        const usuariosSnap =
+          usuariosResult.status === 'fulfilled' ? usuariosResult.value : null;
+        const usuariosPublicosSnap =
+          usuariosPublicosResult.status === 'fulfilled' ? usuariosPublicosResult.value : null;
+        const creatorsSnap =
+          creatorsResult.status === 'fulfilled' ? creatorsResult.value : null;
+        const usernames = usernamesSnap?.exists() ? usernamesSnap.val() || {} : {};
+        const usuarios = usuariosSnap?.exists() ? usuariosSnap.val() || {} : {};
+        const usuariosPublicos = usuariosPublicosSnap?.exists() ? usuariosPublicosSnap.val() || {} : {};
+        const creators = creatorsSnap?.exists() ? creatorsSnap.val() || {} : {};
+        setCreatorLookupByUid(
+          buildAdminCreatorDirectory({
+            usernames,
+            usuarios,
+            usuariosPublicos,
+            creators,
+          }).byUid
+        );
       })
       .catch(() => {
         if (cancelled) return;
@@ -158,55 +146,39 @@ export function useCapitulosAdminHubData({
       return () => unsubCreator();
     }
 
-    if (!obraId) return () => {};
-
-    let workList = [];
-    let obraList = [];
-    const syncCaps = () => setAllCapitulos(mergeCapitulosLists(workList, obraList));
-
-    const unsubWork = onValue(
-      query(dbRef(db, 'capitulos'), orderByChild('workId'), equalTo(obraId)),
+    const unsubAdmin = onValue(
+      dbRef(db, 'capitulos'),
       (snapshot) => {
-        workList = toRecordList(snapshot.exists() ? snapshot.val() : {});
-        syncCaps();
+        const lista = toRecordList(snapshot.exists() ? snapshot.val() : {});
+        setAllCapitulos(lista);
       },
       () => {
-        workList = [];
-        syncCaps();
+        setAllCapitulos([]);
       }
     );
 
-    const unsubObra = onValue(
-      query(dbRef(db, 'capitulos'), orderByChild('obraId'), equalTo(obraId)),
-      (snapshot) => {
-        obraList = toRecordList(snapshot.exists() ? snapshot.val() : {});
-        syncCaps();
-      },
-      () => {
-        obraList = [];
-        syncCaps();
-      }
-    );
-
-    return () => {
-      unsubWork();
-      unsubObra();
-    };
+    return () => unsubAdmin();
   }, [canAccessWorkspace, db, isCreatorWorkspace, obraId, userUid]);
+
+  const chapterRowsByWork = useMemo(
+    () => buildChapterRowsByWork(allCapitulos),
+    [allCapitulos]
+  );
 
   const obrasComLookup = useMemo(
     () =>
       obras.map((obra) => {
-        const creatorId = String(obraCreatorId(obra) || '').trim();
-        const creatorEntry = creatorLookupByUid[creatorId] || null;
+        const chapterRows = chapterRowsByWork.get(String(obra?.id || '').trim().toLowerCase()) || [];
+        const author = resolveObraAuthorState(obra, {
+          creatorLookupByUid,
+          chapterRows,
+        });
         return {
           ...obra,
-          creatorId,
-          creatorHandle: creatorEntry?.handle || '',
-          creatorDisplayName: creatorEntry?.displayName || '',
+          ...author,
         };
       }),
-    [creatorLookupByUid, obras]
+    [chapterRowsByWork, creatorLookupByUid, obras]
   );
 
   const filteredObras = useMemo(() => {
@@ -217,19 +189,30 @@ export function useCapitulosAdminHubData({
       const titulo = String(obra.titulo || '').toLowerCase();
       const tituloCurto = String(obra.tituloCurto || '').toLowerCase();
       const slug = String(obra.slug || obra.id || '').toLowerCase();
-      const creatorId = String(obra.creatorId || '').toLowerCase();
-      const creatorHandle = String(obra.creatorHandle || '').toLowerCase();
-      const creatorDisplayName = String(obra.creatorDisplayName || '').toLowerCase();
+      const creatorId = String(obra.authorState === 'linked' ? obra.creatorId || '' : '').toLowerCase();
+      const creatorHandle = String(obra.authorState === 'linked' ? obra.creatorHandle || '' : '').toLowerCase();
+      const creatorDisplayName = String(obra.authorState === 'linked' ? obra.creatorDisplayName || '' : '').toLowerCase();
+      const authorLabel = String(obra.authorLabel || '').toLowerCase();
       return (
         titulo.includes(raw) ||
         tituloCurto.includes(raw) ||
         slug.includes(raw) ||
         creatorId === raw ||
         (compact && creatorHandle.includes(compact)) ||
-        creatorDisplayName.includes(raw)
+        creatorDisplayName.includes(raw) ||
+        authorLabel.includes(raw)
       );
     });
   }, [isCreatorWorkspace, obraQuery, obrasComLookup]);
+
+  const authorLookupMatches = useMemo(() => {
+    if (isCreatorWorkspace) return [];
+    const raw = String(obraQuery || '').trim();
+    const compact = normalizeUsernameInput(raw);
+    if (!compact || compact.length < 2) return [];
+    const byUid = Object.values(creatorLookupByUid || {});
+    return findAdminCreatorLookupMatches(raw, byUid, 6);
+  }, [creatorLookupByUid, isCreatorWorkspace, obraQuery]);
 
   const resolvedObraId = useMemo(() => {
     if (filteredObras.some((obra) => obra.id === obraId)) return obraId;
@@ -237,8 +220,14 @@ export function useCapitulosAdminHubData({
   }, [filteredObras, obraId]);
 
   const obraAtual = useMemo(
-    () => filteredObras.find((obra) => obra.id === resolvedObraId) || obrasComLookup.find((obra) => obra.id === resolvedObraId) || null,
-    [filteredObras, resolvedObraId, obrasComLookup]
+    () => {
+      return (
+        filteredObras.find((obra) => obra.id === resolvedObraId) ||
+        obrasComLookup.find((obra) => obra.id === resolvedObraId) ||
+        null
+      );
+    },
+    [filteredObras, obrasComLookup, resolvedObraId]
   );
 
   const capitulosObra = useMemo(() => {
@@ -263,5 +252,6 @@ export function useCapitulosAdminHubData({
     obraAtual,
     capitulosObra,
     capsSemWorkId,
+    authorLookupMatches,
   };
 }

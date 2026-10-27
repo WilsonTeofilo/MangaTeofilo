@@ -487,10 +487,16 @@ Ao concluir um item, atualize **esta tabela** e `AUDITORIA-ATUAL.md` no mesmo co
 
 ---
 
-### Próximos Passos Planejados — Bloco F (Tokens de Autenticação, Observabilidade & Testes de Frontend)
+| 94 | F5 | 🟢 **Unificação de Tokens no Frontend & Header:** Substituição de 408 literais hexadecimais em `LoginPage.tsx` (73), `WorkDetailPage.tsx` (76), `ReaderProfilePage.tsx` (57), `BibliotecaPage.tsx` (54), `ModerationBackofficePage.tsx` (52) e `Header.tsx` (96) consumindo as variáveis CSS oficiais da Banca de Rua (`var(--mn-*)`). |
+| 98 | F3/F7 | 🟢 **Migração de Status para Enums JPA & Flyway V26:** Criação de `CommentReportStatus`, `CommentStatus` e `MembershipStatus`, normalização via script V26, eliminação de strings literais em `CommentReportEntity`, `WorkCommentEntity`, `MembershipSubscriptionEntity` e nos serviços `WorkCommentService`, `MonetizationService`, `ChapterApplicationService`, `ChapterFileAccessGuard` e `MobileOfflineApplicationService`. |
+| 99 | F5 | 🟢 **Tipagem Estrita e Erradicação de `any` em Erros no Frontend:** Varredura completa eliminando 10 blocos `catch (err: any)` em `ReportModal.tsx`, `AccountProfilePage.tsx`, `BecomeWriterPage.tsx`, `CreatorChaptersPage.tsx`, `CreatorWorkspacePage.tsx`, `CreatorWorksPage.tsx` e `WorkDetailPage.tsx` substituídos por `catch (err: unknown)` com guard seguro de tipo. |
+
+---
+
+### Próximos Passos Planejados — Bloco F (Arquitetura Limpa, Observabilidade & Testes de Frontend)
 
 | # | Fase | Entrega Planejada |
 |---|---|---|
-| 94 | F5 | 📌 **Unificação de Tokens na Autenticação & Header:** Substituição dos literais hexadecimais restantes em `LoginPage.tsx` (48), `RegisterPage.tsx` (32) e `Header.tsx` (38) consumindo as variáveis CSS da Banca de Rua (`var(--mn-*)`). |
-| 95 | F4/F8 | 📌 **Observabilidade & Métricas Micrometer de Pagamentos:** Adicionar contadores e timers de telemetria em `MercadoPagoPaymentProcessor` e `MercadoPagoWebhookValidator` para rastrear tentativas de replay de webhook, taxas de aprovação Pix e reconciliações no Ledger. |
-| 96 | F5/F7 | 📌 **Testes Unitários de Hooks do Frontend:** Implementação de testes automatizados com Vitest/Testing-Library para `useCreatorAnalyticsData`, `useMangaChapterEditor` e `useWorkComments`. |
+| 100 | F1/F3 | ⏳ **Decomposição SRP de AuthApplicationService.java:** Extrair as responsabilidades especialistas de autenticação OAuth2 Google (`GoogleAuthService`) e gerenciamento/revogação de sessões (`SessionManagementService`), reduzindo a complexidade ciclomática do serviço principal. |
+| 101 | F4/F8 | ⏳ **Observabilidade & Métricas Micrometer de Pagamentos:** Adicionar contadores e timers de telemetria em `MercadoPagoPaymentProcessor` e `MercadoPagoWebhookValidator` para rastrear tentativas de replay de webhook, taxas de aprovação Pix e reconciliações no Ledger. |
+| 102 | F5/F7 | ⏳ **Testes Unitários de Hooks do Frontend:** Implementação de suíte de testes automatizados com Vitest/Testing-Library para `useCreatorAnalyticsData`, `useMangaChapterEditor` e `useWorkComments`. |

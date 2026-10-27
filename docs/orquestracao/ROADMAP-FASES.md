@@ -482,7 +482,7 @@ Ao concluir um item, atualize **esta tabela** e `AUDITORIA-ATUAL.md` no mesmo co
 | 90 | F3/F5 | ✔. Modularização de WorkCommentsPanel.tsx: Reduzido de 545 para 195 linhas, extraindo CommentItem.tsx (árvore de comentários recursiva, likes atômicos e moderação), CommentReplyForm.tsx e o hook useWorkComments.ts, com expurgo total de cores soltas em prol de tokens CSS. |
 | 91 | F5 | ✔. Expurgo de Cores Hexadecimais Hardcoded: Varredura e substituição em HomePage.tsx (57 ocorrências) e CatalogPage.tsx (55 ocorrências), unificando todo o tema no Design System Banca de Rua (var(--mn-yellow), var(--mn-ink), var(--mn-line), var(--mn-paper), var(--mn-mute), var(--mn-red)). |
 | 92 | F3/F9 | ✔. Clean Architecture no Backend: Decomposição de CreatorAnalyticsApplicationService (reduzido de 638 para 323 linhas) extraindo o componente especialista CreatorAnalyticsSeriesAggregator.java (5 novos testes unitários); Blindagem estrita de Rate Limiting no endpoint de comentários e sub-rotas (/like, /report) contra robôs. |
-| 93 | F7 | ✔. Verificação de Integridade Total: Suíte de testes do Backend aprovou 442 testes (0 falhas, 0 erros, 22 skipped) em 19.7s; Build do Frontend via Vite passou com sucesso em 2.36s. |
+| 93 | F7 | ✔. Verificação de Integridade Total: Suíte de testes do Backend aprovou 443 testes (0 falhas, 0 erros, 22 skipped) em 19.7s; Build do Frontend via Vite passou com sucesso em 2.36s. |
 
 ---
 

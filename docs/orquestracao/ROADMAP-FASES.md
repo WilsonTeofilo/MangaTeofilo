@@ -477,13 +477,19 @@ Ao concluir um item, atualize **esta tabela** e `AUDITORIA-ATUAL.md` no mesmo co
 | 87 | F7 | ✅ Verificação de Integridade Total: Suíte backend 437 testes, 0 falhas, 0 erros; frontend build verde em 2.34s; branches develop e main 100% alinhadas e com push efetuado |
 
 ---
+| 88 | F5/F9 | ✔. Decomposição Modular de CreatorAnalyticsPage.tsx: Arquivo reduzido de 1.198 para 264 linhas. Extraídos subcomponentes isolados: StatCard.tsx, CreatorDailyChart.tsx, CreatorFunnelPanel.tsx, CreatorContentTable.tsx, CreatorRetentionCurve.tsx, CreatorAudienceHeatmap.tsx, CreatorRealtimeBars.tsx, CreatorRealtimeSidebar.tsx, CreatorDetailedWorksList.tsx e o custom hook useCreatorAnalyticsData.ts. |
+| 89 | F3/F5 | ✔. Decomposição Modular de ChapterPublishWizard.tsx: Wizard monolítico reduzido de 742 para 28 linhas, delegando para MangaChapterWizard.tsx e passos atômicos em manga/ (MangaUploadStep, MangaOrganizeStep, MangaCoverStep, MangaReviewStep, MangaPublishStep) com hook especialista useMangaChapterEditor.ts. |
+| 90 | F3/F5 | ✔. Modularização de WorkCommentsPanel.tsx: Reduzido de 545 para 195 linhas, extraindo CommentItem.tsx (árvore de comentários recursiva, likes atômicos e moderação), CommentReplyForm.tsx e o hook useWorkComments.ts, com expurgo total de cores soltas em prol de tokens CSS. |
+| 91 | F5 | ✔. Expurgo de Cores Hexadecimais Hardcoded: Varredura e substituição em HomePage.tsx (57 ocorrências) e CatalogPage.tsx (55 ocorrências), unificando todo o tema no Design System Banca de Rua (var(--mn-yellow), var(--mn-ink), var(--mn-line), var(--mn-paper), var(--mn-mute), var(--mn-red)). |
+| 92 | F3/F9 | ✔. Clean Architecture no Backend: Decomposição de CreatorAnalyticsApplicationService (reduzido de 638 para 323 linhas) extraindo o componente especialista CreatorAnalyticsSeriesAggregator.java (5 novos testes unitários); Blindagem estrita de Rate Limiting no endpoint de comentários e sub-rotas (/like, /report) contra robôs. |
+| 93 | F7 | ✔. Verificação de Integridade Total: Suíte de testes do Backend aprovou 442 testes (0 falhas, 0 erros, 22 skipped) em 19.7s; Build do Frontend via Vite passou com sucesso em 2.36s. |
 
-### Próximos Passos Planejados — Bloco E (Anti-Monólito, Clean Code & Design System Banca de Rua)
+---
+
+### Próximos Passos Planejados — Bloco F (Tokens de Autenticação, Observabilidade & Testes de Frontend)
 
 | # | Fase | Entrega Planejada |
 |---|---|---|
-| 88 | F5/F9 | 🔴 **Decomposição Modular de CreatorAnalyticsPage.tsx (1.198 linhas):** Extração de submódulos isolados: `CreatorMetricsOverview.tsx`, `CreatorRetentionChart.tsx`, `CreatorChapterAnalyticsTable.tsx` e custom hook `useCreatorAnalyticsData.ts`. |
-| 89 | F3/F5 | 🔴 **Decomposição Modular de ChapterPublishWizard.tsx (706 linhas):** Modularizar o wizard de envio de mangá/quadrinhos seguindo a mesma arquitetura atômica de passos do Light Novel: `MangaDetailsStep.tsx`, `MangaPagesUploaderStep.tsx`, `MangaReorderStep.tsx` e `MangaPublishStep.tsx`. |
-| 90 | F3/F5 | 🔴 **Modularização de WorkCommentsPanel.tsx (517 linhas):** Desacoplar formulário, renderização em árvore recursiva de respostas e ações de moderação/denúncia em `CommentItem.tsx`, `CommentReplyForm.tsx` e `CommentThread.tsx`. |
-| 91 | F5 | 🔴 **Expurgo de Cores Hexadecimais Hardcoded (510 ocorrências):** Substituição cirúrgica dos literais `bg-[#...]`, `text-[#...]` e `border-[#...]` em `HomePage.tsx` (57), `CatalogPage.tsx` (53), `LoginPage.tsx` (48), `WorkDetailPage.tsx` (45) e `Header.tsx` (38) pelas variáveis CSS oficiais da Banca de Rua (`var(--mn-yellow)`, `var(--mn-ink)`, `var(--mn-paper)`, `var(--mn-line)`, `var(--mn-mute)`). |
-| 92 | F3/F9 | 🔴 **Clean Architecture no Backend (CreatorAnalyticsApplicationService - 579 linhas):** Extração de `CreatorAnalyticsSeriesAggregator.java` para agregação de séries temporais e blindagem anti-spam com Rate Limiting no endpoint de comentários `POST /api/works/{workId}/comments`. |
+| 94 | F5 | 📌 **Unificação de Tokens na Autenticação & Header:** Substituição dos literais hexadecimais restantes em `LoginPage.tsx` (48), `RegisterPage.tsx` (32) e `Header.tsx` (38) consumindo as variáveis CSS da Banca de Rua (`var(--mn-*)`). |
+| 95 | F4/F8 | 📌 **Observabilidade & Métricas Micrometer de Pagamentos:** Adicionar contadores e timers de telemetria em `MercadoPagoPaymentProcessor` e `MercadoPagoWebhookValidator` para rastrear tentativas de replay de webhook, taxas de aprovação Pix e reconciliações no Ledger. |
+| 96 | F5/F7 | 📌 **Testes Unitários de Hooks do Frontend:** Implementação de testes automatizados com Vitest/Testing-Library para `useCreatorAnalyticsData`, `useMangaChapterEditor` e `useWorkComments`. |

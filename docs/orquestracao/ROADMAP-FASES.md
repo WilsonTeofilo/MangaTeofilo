@@ -470,3 +470,20 @@ Ao concluir um item, atualize **esta tabela** e `AUDITORIA-ATUAL.md` no mesmo co
 | 83 | F1/F3/F5 | ✅ AUDITORIA-PENTE-FINO: Blindagem de visibilidade cautelar em ChapterApplicationService.readChapter (obras suspensas/LGPD bloqueiam capítulos), injeção de ObjectMapper singleton em ReadingProgressService (evitando alocação massiva por view), fix de onClickFileInput em NovelBlockItem, eliminação de XSS em ProseReaderView sem dangerouslySetInnerHTML, harmonização de glifos de separadores (getSeparatorGlyph), blindagem de schema do localStorage (sanitizeRestoredBlocks), validação estrita de MIME types (JPEG/PNG/WebP) e unificação completa de design tokens CSS nos componentes do leitor |
 
 > **Diagnóstico & Especificação:** ver docs/orquestracao/AUDITORIA-ARQUITETURA-REVISAO-GERAL.md para a análise completa linha a linha.
+
+| 84 | F3/F7 | ✅ Refatoração de WorkStatus para Enum de Domínio: DRAFT, ONGOING, COMPLETED, SUSPENDED, ARCHIVED_LGPD com V25 Flyway, eliminando comparações manuais de string em repositórios, serviços e controllers |
+| 85 | F4 | ✅ Decomposição Modular de MercadoPagoService (570 linhas) em classes especialistas: MercadoPagoWebhookValidator (HMAC-SHA256, timing attacks, replay 15 min), MercadoPagoCheckoutService (Checkout Pro, intents, locks) e MercadoPagoPaymentProcessor (ledger idempotente e conciliação) |
+| 86 | F1/F3/F5 | ✅ Auditoria e Saneamento de Pontas Soltas: Correção de assertWorkAccessible em ChapterApplicationService unificado com isAuthorOrModerator(work, currentUserId), e expurgo de resíduos de MOCK_CHAPTERS e fallbackToMock em App.tsx |
+| 87 | F7 | ✅ Verificação de Integridade Total: Suíte backend 437 testes, 0 falhas, 0 erros; frontend build verde em 2.34s; branches develop e main 100% alinhadas e com push efetuado |
+
+---
+
+### Próximos Passos Planejados — Bloco E (Anti-Monólito, Clean Code & Design System Banca de Rua)
+
+| # | Fase | Entrega Planejada |
+|---|---|---|
+| 88 | F5/F9 | 🔴 **Decomposição Modular de CreatorAnalyticsPage.tsx (1.198 linhas):** Extração de submódulos isolados: `CreatorMetricsOverview.tsx`, `CreatorRetentionChart.tsx`, `CreatorChapterAnalyticsTable.tsx` e custom hook `useCreatorAnalyticsData.ts`. |
+| 89 | F3/F5 | 🔴 **Decomposição Modular de ChapterPublishWizard.tsx (706 linhas):** Modularizar o wizard de envio de mangá/quadrinhos seguindo a mesma arquitetura atômica de passos do Light Novel: `MangaDetailsStep.tsx`, `MangaPagesUploaderStep.tsx`, `MangaReorderStep.tsx` e `MangaPublishStep.tsx`. |
+| 90 | F3/F5 | 🔴 **Modularização de WorkCommentsPanel.tsx (517 linhas):** Desacoplar formulário, renderização em árvore recursiva de respostas e ações de moderação/denúncia em `CommentItem.tsx`, `CommentReplyForm.tsx` e `CommentThread.tsx`. |
+| 91 | F5 | 🔴 **Expurgo de Cores Hexadecimais Hardcoded (510 ocorrências):** Substituição cirúrgica dos literais `bg-[#...]`, `text-[#...]` e `border-[#...]` em `HomePage.tsx` (57), `CatalogPage.tsx` (53), `LoginPage.tsx` (48), `WorkDetailPage.tsx` (45) e `Header.tsx` (38) pelas variáveis CSS oficiais da Banca de Rua (`var(--mn-yellow)`, `var(--mn-ink)`, `var(--mn-paper)`, `var(--mn-line)`, `var(--mn-mute)`). |
+| 92 | F3/F9 | 🔴 **Clean Architecture no Backend (CreatorAnalyticsApplicationService - 579 linhas):** Extração de `CreatorAnalyticsSeriesAggregator.java` para agregação de séries temporais e blindagem anti-spam com Rate Limiting no endpoint de comentários `POST /api/works/{workId}/comments`. |

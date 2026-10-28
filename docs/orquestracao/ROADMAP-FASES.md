@@ -493,10 +493,14 @@ Ao concluir um item, atualize **esta tabela** e `AUDITORIA-ATUAL.md` no mesmo co
 
 ---
 
+| 100 | F5 | 🟢 **Redesenho, Despoluição Visual e Decomposição Modular do Workspace do Autor:** Eliminação do padrão "card dentro de card" e carnaval de bordas concorrentes em `CreatorWorkspacePage.tsx`. Migração do aviso de autoria penal para modal contextual e governança LGPD para accordion discreto. Decomposição em `useCreatorWorkspaceData.ts`, `CreatorKpiHeader.tsx`, `CreatorOverviewTab.tsx`, `CreatorProfileSettingsTab.tsx`, `CreatorPrivacyAccordion.tsx` e `OriginalWorkDeclarationModal.tsx`. |
+
+---
+
 ### Próximos Passos Planejados — Bloco F (Arquitetura Limpa, Observabilidade & Testes de Frontend)
 
 | # | Fase | Entrega Planejada |
 |---|---|---|
-| 100 | F1/F3 | ⏳ **Decomposição SRP de AuthApplicationService.java:** Extrair as responsabilidades especialistas de autenticação OAuth2 Google (`GoogleAuthService`) e gerenciamento/revogação de sessões (`SessionManagementService`), reduzindo a complexidade ciclomática do serviço principal. |
-| 101 | F4/F8 | ⏳ **Observabilidade & Métricas Micrometer de Pagamentos:** Adicionar contadores e timers de telemetria em `MercadoPagoPaymentProcessor` e `MercadoPagoWebhookValidator` para rastrear tentativas de replay de webhook, taxas de aprovação Pix e reconciliações no Ledger. |
-| 102 | F5/F7 | ⏳ **Testes Unitários de Hooks do Frontend:** Implementação de suíte de testes automatizados com Vitest/Testing-Library para `useCreatorAnalyticsData`, `useMangaChapterEditor` e `useWorkComments`. |
+| 101 | F1/F3 | ⏳ **Decomposição SRP de AuthApplicationService.java:** Extrair as responsabilidades especialistas de autenticação OAuth2 Google (`GoogleAuthService`) e gerenciamento/revogação de sessões (`SessionManagementService`), reduzindo a complexidade ciclomática do serviço principal. |
+| 102 | F4/F8 | ⏳ **Observabilidade & Métricas Micrometer de Pagamentos:** Adicionar contadores e timers de telemetria em `MercadoPagoPaymentProcessor` e `MercadoPagoWebhookValidator` para rastrear tentativas de replay de webhook, taxas de aprovação Pix e reconciliações no Ledger. |
+| 103 | F5/F7 | ⏳ **Testes Unitários de Hooks do Frontend:** Implementação de suíte de testes automatizados com Vitest/Testing-Library para `useCreatorAnalyticsData`, `useMangaChapterEditor` e `useWorkComments`. |

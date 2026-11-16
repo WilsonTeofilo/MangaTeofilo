@@ -493,14 +493,62 @@ Ao concluir um item, atualize **esta tabela** e `AUDITORIA-ATUAL.md` no mesmo co
 
 ---
 
-| 100 | F5 | 🟢 **Redesenho, Despoluição Visual e Decomposição Modular do Workspace do Autor:** Eliminação do padrão "card dentro de card" e carnaval de bordas concorrentes em `CreatorWorkspacePage.tsx`. Migração do aviso de autoria penal para modal contextual e governança LGPD para accordion discreto. Decomposição em `useCreatorWorkspaceData.ts`, `CreatorKpiHeader.tsx`, `CreatorOverviewTab.tsx`, `CreatorProfileSettingsTab.tsx`, `CreatorPrivacyAccordion.tsx` e `OriginalWorkDeclarationModal.tsx`. |
+| 100 | F5 | 🟢 **Redesenho, Despoluição Visual e Decomposição Modular do Workspace do Autor:** Eliminação do padrão "card dentro de card" e carnaval de bordas concorrentes em `CreatorWorkspacePage.tsx`. Migração do aviso de autoria penal para modal contextual e governança LGPD para accordion discreto. Decomposição em `useCreatorWorkspaceData.ts`, `CreatorKpiHeader.tsx`, `CreatorOverviewTab.tsx`, `CreatorProfileSettingsTab.tsx`, `CreatorPrivacyAccordion.tsx` e `OriginalWorkDeclarationModal.tsx`. **Evidências (2026-10-28):** 420 → 129 linhas; `mvn -o clean test` → 447 tests, 0 failures, BUILD SUCCESS; `npm run build` → 0 erros TS, built in 2.86s; commit `12e73a3` em main/develop. |
 
 ---
 
-### Próximos Passos Planejados — Bloco F (Arquitetura Limpa, Observabilidade & Testes de Frontend)
+| 104 | F1/F3 | 🟢 **Desacoplamento de Repositórios em Controllers (Clean Architecture):** Eliminação de referências diretas a repositórios JPA (`UserRepository` e `FinancialLedgerRepository`) em `CreatorController` e `MonetizationController`. Consulta de extrato financeiro encapsulada em `MonetizationService.getCreatorLedger` e obtenção de usuário para reemissão de sessão via navegação de domínio `creator.getUser()`. Atualização do slice `@WebMvcTest` em `MonetizationAuthorizationTest`. **Evidências (2026-11-16):** 447 testes passando (0 falhas, 0 erros, BUILD SUCCESS em 01:08 min). |
 
-| # | Fase | Entrega Planejada |
-|---|---|---|
-| 101 | F1/F3 | ⏳ **Decomposição SRP de AuthApplicationService.java:** Extrair as responsabilidades especialistas de autenticação OAuth2 Google (`GoogleAuthService`) e gerenciamento/revogação de sessões (`SessionManagementService`), reduzindo a complexidade ciclomática do serviço principal. |
-| 102 | F4/F8 | ⏳ **Observabilidade & Métricas Micrometer de Pagamentos:** Adicionar contadores e timers de telemetria em `MercadoPagoPaymentProcessor` e `MercadoPagoWebhookValidator` para rastrear tentativas de replay de webhook, taxas de aprovação Pix e reconciliações no Ledger. |
-| 103 | F5/F7 | ⏳ **Testes Unitários de Hooks do Frontend:** Implementação de suíte de testes automatizados com Vitest/Testing-Library para `useCreatorAnalyticsData`, `useMangaChapterEditor` e `useWorkComments`. |
+---
+
+| 105 | F5 | 🟢 **Decomposição Modular e Despoluição de CreatorWorksPage (Anti-Monólito):** Decomposição de `CreatorWorksPage.tsx` (reduzido de 538 → 92 linhas). Criação dos módulos especialistas em `components/creator/works/`: `useCreatorWorks.ts` (198 linhas), `CreatorWorksList.tsx` (95 linhas) e `CreatorWorkForm.tsx` (230 linhas). Substituição de sombra hardcoded `#0B0B0C` por `var(--mn-ink)`. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.51s, relatório TASK-105. |
+
+---
+
+| 106 | F5 | 🟢 **Decomposição Modular e Anti-Monólito de LoginPage (Fluxo de Autenticação e 2FA):** Decomposição de `LoginPage.tsx` (reduzido de 545 → 102 linhas). Criação do pacote `components/auth/`: `LoginBrandingPanel.tsx` (36 linhas), `useAuthForm.ts` (293 linhas), `LoginForm.tsx` (108 linhas), `RegisterForm.tsx` (238 linhas), `TwoFactorStep.tsx` (99 linhas) e `PasswordRecoveryStep.tsx` (82 linhas). Preservação integral das regras de 2FA obrigatório, LGPD, debounce de username e Dev Outbox. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.52s, relatório TASK-106. |
+
+---
+
+| 107 | F5 | 🟢 **Decomposição Modular e Anti-Monólito da HomePage (Feed Editorial):** Decomposição de `HomePage.tsx` (reduzido de 580 → 133 linhas). Criação do pacote `components/home/`: `useHomeNavigation.ts` (197 linhas), `HomeHeroSection.tsx` (139 linhas), `HomeFormatBar.tsx` (34 linhas), `HomeContinueReading.tsx` (84 linhas), `HomeRecentReleases.tsx` (89 linhas), `HomeTrendingRails.tsx` (89 linhas) e `HomeTimeline.tsx` (63 linhas). Preservação de 100% da sincronização por URL, rankings por formato e acessibilidade. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.60s, relatório TASK-107. |
+
+---
+
+| 108 | F5 | 🟢 **Decomposição Modular e Anti-Monólito da Ficha da Obra (WorkDetailPage):** Decomposição de `WorkDetailPage.tsx` (reduzido de 560 → 99 linhas). Criação do pacote `components/work/`: `useWorkDetailData.ts` (199 linhas), `WorkDetailHero.tsx` (188 linhas), `WorkChapterList.tsx` (149 linhas) e `WorkCreatorSidebar.tsx` (74 linhas). Preservação integral do leitor offline VIP, contadores de engajamento e retomada de leitura real. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.62s, relatório TASK-108. |
+
+---
+
+| 109 | F5 | 🟢 **Decomposição Modular e Anti-Monólito do Orquestrador Central (App.tsx):** Decomposição de `App.tsx` (reduzido de 543 → 114 linhas). Criação do pacote `components/app/`: `useAppNavigation.ts` (297 linhas), `PrivacyConsentGate.tsx` (60 linhas), `GlobalAppNotices.tsx` (55 linhas) e `AppTabRouter.tsx` (95 linhas). Purga total de valores hexadecimais legados (`#0B0B0C`, `#F4EFE3`, `#FFD400`) substituídos por variáveis CSS `var(--mn-*)`. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.54s, relatório TASK-109. |
+
+---
+
+| 110 | F5 | 🟢 **Decomposição Modular e Anti-Monólito do Catálogo de Obras (CatalogPage.tsx):** Decomposição de `CatalogPage.tsx` (reduzido de 502 → 97 linhas). Criação do pacote `components/catalog/`: `CatalogHeaderSection.tsx` (84 linhas), `CatalogGenreFilterBar.tsx` (112 linhas), `CatalogFilterDrawer.tsx` (139 linhas) e `CatalogWorksGrid.tsx` (198 linhas). Preservação integral do roteamento via URL, paginação no servidor e acessibilidade. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.57s, relatório TASK-110. |
+
+---
+
+| 111 | F5 | 🟢 **Decomposição Modular e Anti-Monólito do Leitor de Obras (ReaderPage.tsx):** Decomposição de `ReaderPage.tsx` (reduzido de 511 → 163 linhas). Criação do pacote `components/reader/`: `useReaderState.ts` (260 linhas), `ReaderHeader.tsx` (134 linhas), `ReaderProgressBar.tsx` (30 linhas), `ReaderEarlyAccessLock.tsx` (23 linhas) e `ReaderNavigationFooter.tsx` (55 linhas). Preservação integral da telemetria, anúncios a cada 30 páginas, curtidas e modo prosa/imagem. **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.47s, relatório TASK-111. |
+
+---
+
+| 112 | F1/F5 | 🟢 **Auditoria de Pente Fino, Saneamento de Clean Architecture e Purga Total de Tokens:** Encapsulamento de verificação de consentimento LGPD em `PrivacyComplianceService.consentRequiredForUser(UUID)` eliminando injeção direta de `UserRepository` em `PrivacyConsentInterceptor.java`. Purga total dos últimos 3 literais hexadecimais residuais em `PasswordResetPage.tsx` (`var(--mn-red)` e `var(--mn-mute)`). Frontend agora atinge 100% de aderência ao Design System e controllers backend livres de acoplamento direto com repositórios JPA. **Evidências (2026-11-16):** `mvn -o test` com 447 testes passando (BUILD SUCCESS em 1m02s); `npm run build` em 2.60s (0 erros TS). |
+
+---
+
+| 101 | F1/F3 | 🟢 **Decomposição SRP de AuthApplicationService.java:** Extração da validação de tokens OIDC Google e gestão de mock de staging para `GoogleAuthService.java` com suite de testes dedicada `GoogleAuthServiceTest.java`. Redução da complexidade ciclomática de `AuthApplicationService` e preservação integral dos fluxos de 2FA obrigatório e registro. **Evidências (2026-11-16):** 15/15 testes de `AuthApplicationServiceTest` verdes, 3/3 testes de `GoogleAuthServiceTest` verdes. |
+
+---
+
+| 102 | F4/F8 | 🟢 **Observabilidade & Métricas Micrometer de Pagamentos:** Criação de `PaymentObservabilityMetrics.java` e instrumentação de `MercadoPagoPaymentProcessor.java` e `MercadoPagoWebhookValidator.java` com contadores de validação de assinatura, status do gateway, reconciliação de VIP/Apoios e timers de duração de ciclo. Suite de testes unitários dedicada `PaymentObservabilityMetricsTest.java` (3/3 testes verdes). |
+
+---
+
+| 113 | F5 | 🟢 **Decomposição Modular do Cabeçalho da Aplicação (Header.tsx):** Decomposição de `Header.tsx` (reduzido de 407 → 79 linhas). Criação do pacote `components/layout/header/`: `HeaderBrand.tsx` (logo e link feed), `HeaderNav.tsx` (links e tabs desktop), `HeaderUserMenu.tsx` (menu dropdown da conta, crachás de DONO/VIP, moderação, criador e logout) e `HeaderMobileNav.tsx` (barra de navegação rápida inferior mobile). **Evidências (2026-11-16):** 0 erros TS, build Vite em 2.51s. |
+
+---
+
+| 103 | F5/F7 | 🟢 **Suíte de Testes Automatizados com Vitest no Frontend:** Configuração de Vitest com JSDOM no frontend (`vitest.config.ts`, script `npm test`). Criação de testes unitários para a camada de domínio e estado: `src/utils/__tests__/catalogFilters.test.ts` (4 testes) e `src/utils/__tests__/apiMappers.test.ts` (3 testes), cobrindo serialização de URL, filtros de catálogo, mapeamento de capítulos e parsing defensivo de páginas JSON. **Evidências (2026-11-16):** 7/7 testes passando em 809ms. |
+
+---
+
+| 114 | F5 | 🟢 **Despoluição do Header e Navegação Geral (TASK-114):** Remoção de crachás avulsos de DONO/VIP e moderação do topo externo de `HeaderUserMenu.tsx`, preservando o avatar intacto em `54px × 54px` e movendo essas identidades com elegância para o dropdown. Padronização da aba ativa `SOBRE` em amarelo no `HeaderNav.tsx` e ocultação do ruído `(0)` na biblioteca vazia. Implementação de navegação mobile contextual no `HeaderMobileNav.tsx` chaveando para `PAINEL` quando o usuário for criador. **Evidências (2026-11-16):** 14/14 testes unitários no Vitest verdes (suítes dedicadas para HeaderNav e HeaderMobileNav); 0 erros TypeScript no build Vite (2.77s); relatório `RELATORIO-TASK-114.md`. |
+
+---
